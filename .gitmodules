@@ -1,0 +1,3 @@
+[submodule "External/theallelectricsmartgrid"]
+	path = External/theallelectricsmartgrid
+	url = https://github.com/jvictor0/theallelectricsmartgrid.git
