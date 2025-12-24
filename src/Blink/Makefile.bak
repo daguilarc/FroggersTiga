@@ -1,0 +1,147 @@
+# =========================
+# User configuration
+# =========================
+
+DAISY_DIR := $(HOME)/Desktop/DaisyExamples
+
+LIBDAISY_DIR := $(DAISY_DIR)/libDaisy
+DAISYSP_DIR  := $(DAISY_DIR)/DaisySP
+
+BUILD_DIR := build
+TARGET := Blink
+
+# =========================
+# Toolchain (explicit, no magic)
+# =========================
+
+CC  := /opt/homebrew/bin/arm-none-eabi-gcc-14.3.1
+CXX := /Applications/ArmGNUToolchain/14.3.rel1/arm-none-eabi/bin/arm-none-eabi-g++
+AR  := /opt/homebrew/bin/arm-none-eabi-ar
+OBJCOPY := /opt/homebrew/bin/arm-none-eabi-objcopy
+SIZE := /opt/homebrew/bin/arm-none-eabi-size
+
+# =========================
+# MCU / ABI flags (STM32H750)
+# =========================
+
+CPU_FLAGS := \
+	-mcpu=cortex-m7 \
+	-mthumb \
+	-mfpu=fpv5-d16 \
+	-mfloat-abi=hard
+
+DEFS := \
+	-DUSE_HAL_DRIVER \
+	-DSTM32H750xx \
+	-DSTM32H750IB \
+	-DCORE_CM7 \
+	-DARM_MATH_CM7 \
+	-DUSE_FULL_LL_DRIVER \
+	-DHSE_VALUE=16000000
+
+# =========================
+# Include paths
+# =========================
+
+INCLUDES := \
+	-I$(LIBDAISY_DIR) \
+	-I$(LIBDAISY_DIR)/src \
+	-I$(LIBDAISY_DIR)/src/sys \
+	-I$(LIBDAISY_DIR)/src/usbd \
+	-I$(LIBDAISY_DIR)/src/usbh \
+	-I$(LIBDAISY_DIR)/Drivers/CMSIS/Include \
+	-I$(LIBDAISY_DIR)/Drivers/CMSIS/DSP/Include \
+	-I$(LIBDAISY_DIR)/Drivers/CMSIS/Device/ST/STM32H7xx/Include \
+	-I$(LIBDAISY_DIR)/Drivers/STM32H7xx_HAL_Driver/Inc \
+	-I$(LIBDAISY_DIR)/Middlewares/ST/STM32_USB_Device_Library/Core/Inc \
+	-I$(LIBDAISY_DIR)/Middlewares/ST/STM32_USB_Host_Library/Core/Inc \
+	-I$(LIBDAISY_DIR)/Middlewares/ST/STM32_USB_Host_Library/Class/MSC/Inc \
+	-I$(LIBDAISY_DIR)/Middlewares/Third_Party/FatFs/src \
+	-I$(LIBDAISY_DIR)/core \
+	-I$(DAISYSP_DIR)/Source
+
+# =========================
+# Compiler flags
+# =========================
+
+CXXFLAGS := \
+	$(CPU_FLAGS) \
+	$(DEFS) \
+	$(INCLUDES) \
+	-O2 \
+	-g \
+	-ggdb \
+	-std=gnu++14 \
+	-fno-exceptions \
+	-fno-rtti \
+	-ffunction-sections \
+	-fdata-sections \
+	-Wall \
+	-Wno-register \
+	-Wno-missing-attributes \
+	-Wno-stringop-overflow
+
+# =========================
+# Linker flags
+# =========================
+
+LDSCRIPT := $(LIBDAISY_DIR)/core/STM32H750IB_flash.lds
+
+LDFLAGS := \
+	$(CPU_FLAGS) \
+	--specs=nano.specs \
+	--specs=nosys.specs \
+	-T$(LDSCRIPT) \
+	-Wl,--gc-sections \
+	-Wl,--print-memory-usage \
+	-Wl,-Map=$(BUILD_DIR)/$(TARGET).map
+
+LIBS := \
+	-L$(LIBDAISY_DIR)/build \
+	-L$(DAISYSP_DIR)/build \
+	-ldaisy \
+	-ldaisysp \
+	-lc \
+	-lm \
+	-lnosys
+
+# =========================
+# Sources
+# =========================
+
+SRCS := Blink.cpp
+OBJS := $(SRCS:%.cpp=$(BUILD_DIR)/%.o)
+
+# =========================
+# Rules
+# =========================
+
+all: $(BUILD_DIR)/$(TARGET).elf
+
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+
+$(BUILD_DIR)/%.o: %.cpp | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/$(TARGET).elf: $(OBJS)
+	$(CXX) $^ $(LDFLAGS) $(LIBS) -o $@
+	$(SIZE) $@
+
+bin: $(BUILD_DIR)/$(TARGET).elf
+	$(OBJCOPY) -O binary $< $(BUILD_DIR)/$(TARGET).bin
+
+clean:
+	rm -rf $(BUILD_DIR)
+
+DFU_UTIL ?= dfu-util
+DFU_ID   ?= ,0483:df11
+DFU_ADDR ?= 0x08000000
+
+bin: $(BUILD_DIR)/$(TARGET).elf
+	$(OBJCOPY) -O binary $< $(BUILD_DIR)/$(TARGET).bin
+
+program-dfu: bin
+	$(DFU_UTIL) -a 0 -s $(DFU_ADDR):leave -D $(BUILD_DIR)/$(TARGET).bin -d $(DFU_ID) || true
+
+.PHONY: all clean bin program-dfu

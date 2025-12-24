@@ -1,0 +1,4 @@
+TARGET := Blink
+SRCS := main.cpp
+
+include ../mk/daisy.mk
