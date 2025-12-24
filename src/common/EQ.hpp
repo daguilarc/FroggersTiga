@@ -37,7 +37,7 @@ struct EQ
     EQ()
         : m_lowShelf()
         , m_lowGain(1.0f)
-        , m_lowFreq(100.0f)
+        , m_lowFreq(200.0f)
         , m_lowMidPeak()
         , m_lowMidGain(1.0f)
         , m_lowMidFreq(500.0f)

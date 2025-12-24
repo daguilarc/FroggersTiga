@@ -60,3 +60,35 @@ struct Comb
         }
     }
 };
+
+struct PureDelay
+{
+    static constexpr size_t x_size = 8192;
+    float m_delayLine[x_size];
+    size_t m_index;
+    float m_delaySamples;
+
+    PureDelay()
+        : m_delayLine{0.0f}
+        , m_index(0)
+        , m_delaySamples(0.0f)
+    {
+    }
+
+    void SetDelaySamples(float freq)
+    {
+        m_delaySamples = 1.0 / freq;
+    }
+
+    float Process(float input)
+    {
+        m_delayLine[m_index] = input;
+        float lowExact = m_index + x_size - m_delaySamples;
+        float frac = lowExact - std::floor(lowExact);
+        size_t idx0 = static_cast<size_t>(lowExact) % x_size;
+        size_t idx1 = (idx0 + 1) % x_size;
+        float output = m_delayLine[idx0] * (1.0f - frac) + m_delayLine[idx1] * frac;
+        m_index = (m_index + 1) % x_size;
+        return output;
+    }
+};

@@ -162,21 +162,24 @@ struct FrogBlock
 {
     PolynomialDrive m_polynomialDrive;
     WaveTable const* m_sinTable;
+    TanhSaturator<false> m_tanhSaturator;
     SampleRateReducer m_sampleRateReducer1;
     SampleRateReducer m_sampleRateReducer2;
     DigitalReorganizer m_digitalReorganizer;
     Oversampler2x m_oversampler;
-    float m_mix;
+    float m_fuzz;
 
     FrogBlock()
         : m_polynomialDrive()
         , m_sinTable(&WaveTable::GetSine())
+        , m_tanhSaturator()
         , m_sampleRateReducer1()
         , m_sampleRateReducer2()
         , m_digitalReorganizer()
         , m_oversampler()
-        , m_mix(0)
+        , m_fuzz(0)
     {
+        m_tanhSaturator.SetInputGain(1.0f);
     }
 
     float Process(float input)
@@ -188,13 +191,12 @@ struct FrogBlock
             float out = m_polynomialDrive.Process(in);
             float sinIn = out / 4;
             sinIn = sinIn - std::floor(sinIn);
-            return m_sinTable->Evaluate(sinIn);
+            return m_sinTable->Evaluate(sinIn) * (1 - m_fuzz) + m_fuzz * m_tanhSaturator.Process(out);
         });
 
         output = m_digitalReorganizer.Process(output);
         output = m_sampleRateReducer1.Process(output);
         output = m_sampleRateReducer2.Process(output);
-        output = output * m_mix + input * (1 - m_mix);
         return output;
     }
 };
