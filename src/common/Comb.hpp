@@ -1,6 +1,10 @@
 #pragma once
 
-#include "SmartGridInclude.hpp"
+#include <cmath>
+
+#include "OPLowPassFilter.hpp"
+#include "PhaseUtils.hpp"
+#include "TanhSaturator.hpp"
 
 struct Comb
 {

@@ -5,7 +5,7 @@
 #include <cstring>
 #include <algorithm>
 #include <cmath>
-#include "SmartGridInclude.hpp"
+#include "RGen.hpp"
 #include "ModMgr.hpp"
 
 struct ParameterName

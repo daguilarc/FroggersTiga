@@ -3,7 +3,6 @@
 #include "Page.hpp"
 #include "SchmidtTrigger.hpp"
 #include "daisy_field.h"
-#include "daisysp.h"
 #include <functional>
 
 struct DaisyIO

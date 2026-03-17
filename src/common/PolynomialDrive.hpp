@@ -1,18 +1,22 @@
 #pragma once
 
-#include "SmartGridInclude.hpp"
+#include <cmath>
+
+#include "OPLowPassFilter.hpp"
+#include "PhaseUtils.hpp"
 #include "RuntimeParam.hpp"
+#include "SampleRateReducer.hpp"
+#include "SDDSine.hpp"
+#include "TanhSaturator.hpp"
 
 struct PolynomialDrive
 {
     RuntimeParam m_gain;
     RuntimeParam m_coefs[5];
-    WaveTable const* m_sinTable;
 
     PolynomialDrive()
         : m_gain()
         , m_coefs{}
-        , m_sinTable(&WaveTable::GetSine())
     {
     }
 
@@ -42,23 +46,23 @@ struct PolynomialDrive
         float phase = coefsKnob;
         float phase0 = phase * 1.0f;
         phase0 = phase0 - std::floor(phase0);
-        m_coefs[0].SetTarget(1.0 + 10.0f * m_sinTable->Evaluate(phase0));
+        m_coefs[0].SetTarget(1.0f + 10.0f * SDDSine::Evaluate(phase0));
 
         float phase1 = phase * 1.618f + 0.25f * (computedGain - 1);
         phase1 = phase1 - std::floor(phase1);
-        m_coefs[1].SetTarget(10.0f * m_sinTable->Evaluate(phase1));
+        m_coefs[1].SetTarget(10.0f * SDDSine::Evaluate(phase1));
 
         float phase2 = phase * 2.718f;
         phase2 = phase2 - std::floor(phase2);
-        m_coefs[2].SetTarget(10.0f * m_sinTable->Evaluate(phase2));
+        m_coefs[2].SetTarget(10.0f * SDDSine::Evaluate(phase2));
 
         float phase3 = phase * 3.141f + 0.25f * (computedGain - 1);
         phase3 = phase3 - std::floor(phase3);
-        m_coefs[3].SetTarget(10.0f * m_sinTable->Evaluate(phase3));
+        m_coefs[3].SetTarget(10.0f * SDDSine::Evaluate(phase3));
 
         float phase4 = phase * 4.669f;
         phase4 = phase4 - std::floor(phase4);
-        m_coefs[4].SetTarget(10.0f * m_sinTable->Evaluate(phase4));
+        m_coefs[4].SetTarget(10.0f * SDDSine::Evaluate(phase4));
     }
 };
 
@@ -161,7 +165,6 @@ struct DigitalReorganizer
 struct FrogBlock
 {
     PolynomialDrive m_polynomialDrive;
-    WaveTable const* m_sinTable;
     TanhSaturator<false> m_tanhSaturator;
     SampleRateReducer m_sampleRateReducer1;
     SampleRateReducer m_sampleRateReducer2;
@@ -171,7 +174,6 @@ struct FrogBlock
 
     FrogBlock()
         : m_polynomialDrive()
-        , m_sinTable(&WaveTable::GetSine())
         , m_tanhSaturator()
         , m_sampleRateReducer1()
         , m_sampleRateReducer2()
@@ -190,8 +192,7 @@ struct FrogBlock
         {
             float out = m_polynomialDrive.Process(in);
             float sinIn = out / 4;
-            sinIn = sinIn - std::floor(sinIn);
-            return m_sinTable->Evaluate(sinIn) * (1 - m_fuzz) + m_fuzz * m_tanhSaturator.Process(out);
+            return SDDSine::Evaluate(sinIn) * (1 - m_fuzz) + m_fuzz * m_tanhSaturator.Process(out);
         });
 
         output = m_digitalReorganizer.Process(output);
