@@ -1,8 +1,8 @@
 #pragma once
 
-#include "SmartGridInclude.hpp"
-#include "../../External/theallelectricsmartgrid/private/src/ButterworthFilter.hpp"
 #include <cmath>
+
+#include "BiquadSection.hpp"
 
 struct EQ
 {

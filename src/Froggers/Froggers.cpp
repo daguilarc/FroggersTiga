@@ -3,7 +3,7 @@
 
 int main(void)
 {
-    App<Froggers> app;
+    static App<Froggers> app;
     app.LetsFuckingDoThisShit();
     return 0;
 }

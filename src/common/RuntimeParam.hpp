@@ -1,6 +1,6 @@
 #pragma once
 
-#include "SmartGridInclude.hpp"
+#include "OPLowPassFilter.hpp"
 
 struct RuntimeParam
 {

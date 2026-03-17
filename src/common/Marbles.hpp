@@ -1,7 +1,11 @@
 #pragma once
 
+#include <cmath>
+
 #include "Page.hpp"
-#include "SmartGridInclude.hpp"
+#include "OPLowPassFilter.hpp"
+#include "PhaseUtils.hpp"
+#include "RGen.hpp"
 
 struct Marbles
 {
