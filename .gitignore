@@ -1,0 +1,9 @@
+# libDaisy — regenerate with `make vendor-libs` from repo root
+External/libDaisy/build/
+
+# DaisySP (when enabled)
+External/DaisySP/build/
+External/DaisySP/DaisySP-LGPL/build/
+
+# OS cruft
+.DS_Store
