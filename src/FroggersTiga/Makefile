@@ -1,5 +1,5 @@
-TARGET := Froggers
-SRCS := Froggers.cpp
+TARGET := FroggersTiga
+SRCS := FroggersTiga.cpp
 
 include ../mk/daisy.mk
 

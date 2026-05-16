@@ -21,12 +21,12 @@ struct Marbles
 
     Page* m_page;
 
-    void Config(PageManager* pageManager)
+    void InitPage(PageManager* pageManager, Page* page)
     {
-        m_output[0] = &pageManager->m_modMgr.m_mods[4];
-        m_output[1] = &pageManager->m_modMgr.m_mods[5];
+        m_output[0] = &pageManager->m_modMgr.m_mods[5];
+        m_output[1] = &pageManager->m_modMgr.m_mods[6];
 
-        m_page = pageManager->AddPage();
+        m_page = page;
         m_page->InitParam("PROB", 0, 1.0);
         m_page->InitParam("DJV1", 1, 0.5f);
         m_page->InitParam("SZ1", 2, 1);

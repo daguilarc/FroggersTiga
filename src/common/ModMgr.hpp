@@ -4,6 +4,7 @@ struct ModMgr
 {
     static constexpr size_t x_numMods = 7;
     float m_mods[x_numMods];
+    bool m_externalCvActive[4];
 
     ModMgr()
     {
@@ -11,10 +12,18 @@ struct ModMgr
         {
             m_mods[i] = 0.0f;
         }
+        for (size_t i = 0; i < 4; i++)
+        {
+            m_externalCvActive[i] = false;
+        }
     }  
 
     float Modulate(float knobValue, int index, float amount)
     {
+        if (index < 4 && !m_externalCvActive[index])
+        {
+            return knobValue;
+        }
         return std::min(std::max(knobValue * (1.0f - amount) + m_mods[index] * amount, 0.0f), 1.0f);
     }
 };

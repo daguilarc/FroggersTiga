@@ -10,11 +10,24 @@ SYSTEM_FILES_DIR ?= $(LIBDAISY_DIR)/core
 BUILD_DIR ?= build
 
 # Toolchain
+# Default: Apple-style install from https://developer.arm.com/downloads/-/gnu-a
 PREFERRED_GCC_PATH := /Applications/ArmGNUToolchain/14.3.rel1/arm-none-eabi/bin
-GCC_PATH := $(PREFERRED_GCC_PATH)
+ALT_APPLE_GCC_PATH := /Applications/ArmGNUToolchain/15.2.rel1/arm-none-eabi/bin
+GCC_PATH ?= $(PREFERRED_GCC_PATH)
 
 ifeq ($(wildcard $(GCC_PATH)/arm-none-eabi-g++),)
-$(error Required toolchain not found at "$(GCC_PATH)". Install Arm GNU Toolchain 14.3.rel1 there)
+GCC_PATH := $(ALT_APPLE_GCC_PATH)
+endif
+
+ifeq ($(wildcard $(GCC_PATH)/arm-none-eabi-g++),)
+ARM_CXX := $(shell command -v arm-none-eabi-g++ 2>/dev/null)
+ifneq ($(ARM_CXX),)
+GCC_PATH := $(patsubst %/,%,$(dir $(ARM_CXX)))
+endif
+endif
+
+ifeq ($(wildcard $(GCC_PATH)/arm-none-eabi-g++),)
+$(error No arm-none-eabi-g++ found. Install Arm GNU Toolchain under $(PREFERRED_GCC_PATH) or $(ALT_APPLE_GCC_PATH), or install arm-none-eabi-gcc on PATH (e.g. brew), or run: make GCC_PATH=/path/to/arm-none-eabi/bin)
 endif
 
 TOOLCHAIN_PREFIX ?= arm-none-eabi-

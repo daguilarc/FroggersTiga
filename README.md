@@ -1,6 +1,11 @@
-# Dazed And Con Fielded
+# FroggersTiga
 
-This repo now vendors the Daisy SDK and bootloader assets so the Daisy-specific build inputs live in-tree.
+Firmware for **Daisy Field**: three loosely coupled oscillators with phase modulation and cross-coupling, polynomial drive / digital reshaping, comb filter and resonant bump, algorithmic reverb, CV modulation routing, and Marbles-style random modulation sources.
+
+This repository ships **self-contained** Daisy tooling (`External/libDaisy`, DaisySP optional): synth sources and boot workflow live **in-tree**—you do not need `~/Desktop/DaisyExamples`.
+
+- **Operator docs:** [`MANUAL.md`](MANUAL.md) — pages, buttons, modulation workflow, safe flash sequence  
+- **License:** MIT — see [`LICENSE`](LICENSE) (copyright JoYo and Diego Manuel)
 
 ## Vendored Dependencies
 
@@ -12,8 +17,6 @@ This repo now vendors the Daisy SDK and bootloader assets so the Daisy-specific 
   - optional, only used when `USE_DAISYSP=1`
 - `External/DaisySP/DaisySP-LGPL`
   - included with DaisySP for optional LGPL modules
-
-The build no longer depends on `~/Desktop/DaisyExamples`.
 
 ## Host Requirements
 
@@ -27,11 +30,7 @@ The repo is self-contained for Daisy sources, linker scripts, libraries, and boo
 - `dfu-util`
 - `make`
 
-The build requires the Arm 14.3 toolchain at:
-
-`/Applications/ArmGNUToolchain/14.3.rel1/arm-none-eabi/bin`
-
-If that toolchain is missing, the makefiles now fail immediately with an error instead of falling back to a different `arm-none-eabi-*` toolchain from `PATH`.
+The toolchain prefix is resolved in [`src/mk/config.mk`](src/mk/config.mk): by default it looks under **`/Applications/ArmGNUToolchain/14.3.rel1/arm-none-eabi/bin`**, then **`…/15.2.rel1/…`**, then `arm-none-eabi-*` on `PATH`. If none match, `make` errors immediately instead of failing obscurely later.
 
 ## Repo Layout
 
@@ -42,7 +41,9 @@ If that toolchain is missing, the makefiles now fail immediately with an error i
 - `src/mk/daisy.mk`
   - shared app build rules
 - `src/<AppName>/Makefile`
-  - per-app wrapper makefiles
+  - per-app wrapper makefiles (primary synth firmware lives under **`src/FroggersTiga/`**)
+- `src/FroggersTiga/`
+  - **`FroggersTiga` firmware:** [`Makefile`](src/FroggersTiga/Makefile), [`FroggersTiga.hpp`](src/FroggersTiga/FroggersTiga.hpp), [`FroggersTiga.cpp`](src/FroggersTiga/FroggersTiga.cpp)
 
 ## Build Flow
 
@@ -83,6 +84,20 @@ Clean the vendored libraries:
 ```sh
 make clean-vendor
 ```
+
+### FroggersTiga (primary firmware)
+
+From [`src/FroggersTiga`](src/FroggersTiga):
+
+```sh
+make clean
+make
+make program-dfu
+```
+
+Full rationale for **`clean → make → program-dfu`** is in [`MANUAL.md`](MANUAL.md).
+
+### Other apps (e.g. minimal Blink template)
 
 Build a normal app that links for internal flash:
 
@@ -188,7 +203,8 @@ The vendored Daisy SDK build path was verified by:
 
 - building the vendored libraries with `make vendor-libs`
 - building `src/Blink` with the repo-default `BOOT_NONE` configuration
+- building **`src/FroggersTiga`** (`make` produces `build/FroggersTiga.{elf,bin}`)
 
-With the repo-wide `BOOT_NONE` policy, larger programs may not fit in internal flash. In particular, `Froggers` previously exceeded the 128 KB internal flash region and would need to be reduced in size to build in this mode.
+With the repo-wide `BOOT_NONE` policy, larger programs may not fit in internal flash. **`FroggersTiga`** has previously approached internal-flash limits and may require size-conscious changes if flash usage grows.
 
 `src/TestControl` still has existing compile errors in project code and external dependencies that are unrelated to the vendoring change.

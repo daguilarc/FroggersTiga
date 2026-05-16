@@ -185,7 +185,7 @@ struct Parameter
         }
         else
         {
-            m_modIndex = rgen.RangeGen(ModMgr::x_numMods - 1);
+            m_modIndex = static_cast<uint8_t>(rgen.RangeGen(ModMgr::x_numMods));
         }
     }
 
