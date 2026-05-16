@@ -3,6 +3,7 @@
 #include "Page.hpp"
 #include "SchmidtTrigger.hpp"
 #include "daisy_field.h"
+#include <cmath>
 #include <functional>
 
 struct DaisyIO
@@ -11,23 +12,25 @@ struct DaisyIO
     daisy::DaisyField m_field;
     std::function<void(int)> m_buttonCallback;
     SchmidtTrigger m_gateTrigger{0.2f, 0.1f};
+    float m_prevCv[4]{0.0f, 0.0f, 0.0f, 0.0f};
+    float m_cvPresence[4]{0.0f, 0.0f, 0.0f, 0.0f};
 
     void ProcessControls()
     {
         m_field.ProcessAllControls();
 
+        if (m_field.sw[0].RisingEdge())
+        {
+            m_pageManager.PagePrevious();
+        }
+        
+        if (m_field.sw[1].RisingEdge())
+        {
+            m_pageManager.PageNext();
+        }
+
         if (m_pageManager.m_modIndex == 255)
         {
-            if (m_field.sw[0].RisingEdge())
-            {
-                m_pageManager.PagePrevious();
-            }
-            
-            if (m_field.sw[1].RisingEdge())
-            {
-                m_pageManager.PageNext();
-            }
-
             if (m_field.KeyboardRisingEdge(0))
             {
                 m_pageManager.RandomizeCurrentPage();
@@ -56,6 +59,12 @@ struct DaisyIO
                 m_buttonCallback(i);
             }
         }
+        // Physical mapping target (verified from device behavior):
+        // A1..A7 -> indices 8..14, A8 -> index 15.
+        if (m_field.KeyboardRisingEdge(15))
+        {
+            m_buttonCallback(4);
+        }
 
         // Check analog gate input for rising edge
         //
@@ -69,24 +78,35 @@ struct DaisyIO
         m_field.SetCvOut1(m_pageManager.m_modMgr.m_mods[4] * 4096);
         m_field.SetCvOut2(m_pageManager.m_modMgr.m_mods[5] * 4096);
 
+        for (size_t i = 0; i < 4; i++)
+        {
+            float cv = m_field.GetCvValue(i);
+            float diff = std::fabs(cv - m_prevCv[i]);
+            m_prevCv[i] = cv;
+            float indicator = (0.02f < cv || 0.003f < diff) ? 1.0f : 0.0f;
+            m_cvPresence[i] = std::max(m_cvPresence[i] * 0.98f, indicator);
+            m_pageManager.m_modMgr.m_externalCvActive[i] = 0.1f < m_cvPresence[i];
+            m_pageManager.m_modMgr.m_mods[i] = cv;
+        }
+
+        // Physical A1..A7 map to M1..M7.
+        static constexpr uint8_t x_aAssignKeys[ModMgr::x_numMods] = {8, 9, 10, 11, 12, 13, 14};
         for (size_t i = 0; i < ModMgr::x_numMods; i++)
         {
-            if (i < 4)
+            uint8_t key = x_aAssignKeys[i];
+            if (m_field.KeyboardRisingEdge(key))
             {
-                m_pageManager.m_modMgr.m_mods[i] = m_field.GetCvValue(i);
+                m_pageManager.StartModTracking(static_cast<uint8_t>(i));
             }
-
-            if (m_field.KeyboardRisingEdge(i + 8))
-            {
-                m_pageManager.StartModTracking(i);
-            }
-            else if (m_field.KeyboardFallingEdge(i + 8))
+            else if (m_field.KeyboardFallingEdge(key) && m_pageManager.m_modIndex == i)
             {
                 m_pageManager.StopModTracking();
             }
 
             m_field.led_driver.SetLed(i, m_pageManager.m_modIndex == i ? 1.0f : 0.0f);
         }
+
+        m_field.led_driver.SetLed(7, 0.0f);
 
         for (size_t i = 0; i < Parameter::x_numParameters; i++)
         {
