@@ -47,7 +47,7 @@ When fuegoization is active, the firmware does **not** require the physical knob
 - **High `FUEG`:** easier to “catch” a parameter when you touch a knob, but **coarser** effective resolution.
 - **Low `FUEG`:** normal pick-up behavior; you must land closer to the stored value.
 
-Display tracking badges (`<`, `>`, space, `-`) still reflect this logic.
+See [Knob tracking](#knob-tracking) for what the display symbols mean and how to activate a knob.
 
 ### Which pages have `FUEG`
 
@@ -65,6 +65,27 @@ Display tracking badges (`<`, `>`, space, `-`) still reflect this logic.
 
 On the **Audio** page only, the **raw `FUEG` knob** (not fuegoized) is also read as **PM3** depth: extra phase modulation from **VCO2 → VCO3** when the cross-coupler is on the 2→3 side. So on Audio, knob 8 is **both** the page fuegoizer **and** a dedicated PM depth control.
 
+Diego designed it this way because he ran out of parameters on this page and got lazy, sorry.
+
+---
+
+## Knob tracking
+
+Each parameter row on the OLED ends with a **tracking badge** — a single character that tells you whether the physical knob is controlling that parameter yet.
+
+| Badge | Meaning |
+|-------|---------|
+| **`>`** | The physical knob is **below** the stored value. The parameter is **not** updating. Turn that knob **clockwise** until you pass through the stored value; the badge clears to a blank and the knob takes over. |
+| **`<`** | The physical knob is **above** the stored value. Turn **counter-clockwise** until you pass through the stored value to activate tracking. |
+| **` `** (blank) | **Tracking** — the knob is live and moves the parameter normally. |
+| **`-`** | Idle — seen briefly when you first land on a page before pickup is evaluated. |
+
+This is intentional **pickup** behavior: after a page change, randomize, or any time the stored value and the physical knob disagree, the firmware waits for you to **cross** the stored value before it hands control to the knob. That avoids jumps when you touch a knob that was left in a very different position.
+
+With **fuegoization** active, “close enough” compares only the **high bits** (the part fuego leaves alone), so pickup can feel easier but coarser — see above.
+
+**Mod-assign mode** (`A1..A7` held): the same symbols apply to modulation depth instead of the main parameter value.
+
 ---
 
 ## Page order (`SW1` / `SW2`)
@@ -74,10 +95,18 @@ On the **Audio** page only, the **raw `FUEG` knob** (not fuegoized) is also read
 3. **Reverb** — stereo-ish algorithmic reverb send  
 4. **Filter** — delay, comb, resonant peak (in series before reverb)  
 5. **Drive** — distortion / digital destruction (first in the FX chain after osc mix)
+(note: on some initializations, device may start on page 5; we may try to fix this)
 
 ---
 
 ## Buttons
+
+### A row
+
+| Key | Action |
+|-----|--------|
+| `A1..A7` | Hold to select modulation source **`M1..M7`**; turn knobs to set depth |
+| `A8` | Cycle **VCO1** wave: sine → saw → square → sine |
 
 ### B row
 
@@ -91,13 +120,6 @@ On the **Audio** page only, the **raw `FUEG` knob** (not fuegoized) is also read
 | `B6` | Randomize **XCPL** toward **1→2** coupling (lower half of knob) |
 | `B7` | Randomize **XCPL** toward **2→3** coupling (upper half of knob) |
 | `B8` | Cycle **VCO2** wave: sine → saw → square → sine |
-
-### A row
-
-| Key | Action |
-|-----|--------|
-| `A1..A7` | Hold to select modulation source **`M1..M7`**; turn knobs to set depth |
-| `A8` | Cycle **VCO1** wave: sine → saw → square → sine |
 
 ---
 
