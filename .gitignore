@@ -2,5 +2,6 @@
 wasm/build/
 desktop/build/
 desktop/dist/
+vcv/
 .DS_Store
 **/.DS_Store

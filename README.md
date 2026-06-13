@@ -280,13 +280,4 @@ Links `src/core/` + `DesktopHostIO` only (no libDaisy). Transport bar: **Play/St
 
 **Release packages:** See [`desktop/PACKAGING.md`](desktop/PACKAGING.md) for DMG / Windows installer commands. Push tag `desktop-vX.Y.Z` (must match `project(FroggersTigaDesktop VERSION ...)` in `desktop/CMakeLists.txt`) to trigger `.github/workflows/desktop-release.yml` and publish GitHub Release assets.
 
-## VCV Rack plugin (GPL wrapper)
-
-Rack-facing code lives only under [`vcv/`](vcv/) (**GPL-3.0-or-later**). It links the MIT [`src/core/`](src/core/) engine via `PagedHostIO`. See [`vcv/LICENSE_BOUNDARY.md`](vcv/LICENSE_BOUNDARY.md).
-
-```bash
-export RACK_DIR=~/Rack-SDK   # https://github.com/VCVRack/Rack-SDK
-cd vcv && ./build.sh
-```
-
 Parameter and host UX reference: [`SIM_MANUAL.md`](SIM_MANUAL.md) and [`QUICK_DICT.md`](QUICK_DICT.md).
