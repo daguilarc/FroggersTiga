@@ -350,12 +350,6 @@ body {
   background: var(--knob);
 }
 
-.mod-bay-hint {
-  margin: 0 0 0.35rem;
-  font-size: 0.65rem;
-  opacity: 0.65;
-}
-
 .mod-select {
   font-size: 0.6rem;
   max-width: 5.5rem;
@@ -441,6 +435,7 @@ body {
 
 @media (max-width: 720px) {
   .knobs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     height: auto;
     min-height: 0;
   }
@@ -474,14 +469,20 @@ body {
 }
 
 .knob-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto;
   align-items: center;
-  justify-content: center;
   gap: 0.25rem;
   width: 100%;
 }
 
+.knob-row .rotary-knob {
+  justify-self: center;
+}
+
 .vco-morph-btn {
+  position: relative;
+  z-index: 1;
   background: transparent;
   border: none;
   color: var(--knob);
@@ -578,10 +579,6 @@ body {
 
 .mod-led[data-on="true"]::before {
   background: var(--accent);
-}
-
-#mod-bay .mod-bay-hint {
-  flex: 1 1 100%;
 }
 
 @media (min-width: 721px) {

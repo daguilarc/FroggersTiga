@@ -22,6 +22,8 @@ Each of the eight `.knob-col` elements on the current page SHALL render as a bor
 - **THEN** mod source dropdowns update
 - **AND** knob column heights remain uniform across all eight columns
 
+## ADDED Requirements
+
 ### Requirement: Hint slot uses reserved height
 
 The hint slot below the parameter label SHALL reserve fixed vertical space on every column. Hint text SHALL NOT be hidden when a mod source is assigned.

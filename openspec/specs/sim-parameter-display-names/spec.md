@@ -13,6 +13,12 @@ Desktop submodule panels and web knob columns SHALL display the **sim display na
 - **WHEN** the user views the Audio panel or web Audio page
 - **THEN** rows 0–2 are labeled **VCO1**, **VCO2**, **VCO3**
 
+#### Scenario: Audio envelope row
+
+- **WHEN** the user views the Audio panel or web Audio page row 6
+- **THEN** the label reads **VCO Envelope**
+- **AND** the label does not read **VCO level**
+
 #### Scenario: Reverb panel readable labels
 
 - **WHEN** the user views the Reverb panel or web Reverb page

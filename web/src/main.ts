@@ -74,9 +74,9 @@ const helpModalClose = document.getElementById("help-modal-close") as HTMLButton
 
 const helpDocCache = new Map<string, string>();
 const HELP_DOC_PATHS: Record<string, { title: string; path: string }> = {
-  manual: { title: "Manual", path: "/sim-manual.md" },
-  "quick-dict": { title: "Quick Dict", path: "/quick-dict.md" },
-  license: { title: "License", path: "/license.md" },
+  manual: { title: "Manual", path: `${import.meta.env.BASE_URL}sim-manual.md` },
+  "quick-dict": { title: "Quick Dict", path: `${import.meta.env.BASE_URL}quick-dict.md` },
+  license: { title: "License", path: `${import.meta.env.BASE_URL}license.md` },
 };
 
 let workletNode: AudioWorkletNode | null = null;
@@ -692,10 +692,11 @@ async function setExternalEnabled(enabled: boolean): Promise<void> {
   }
 
   try {
+    const mobileMic = window.matchMedia("(max-width: 720px)").matches;
     mediaStream = await navigator.mediaDevices.getUserMedia({
       audio: {
-        echoCancellation: false,
-        noiseSuppression: false,
+        echoCancellation: mobileMic,
+        noiseSuppression: mobileMic,
         autoGainControl: false,
       },
     });

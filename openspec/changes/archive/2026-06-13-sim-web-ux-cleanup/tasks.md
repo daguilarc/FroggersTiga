@@ -45,4 +45,4 @@
 
 ## 8. Archive
 
-- [ ] 8.1 Archive change; merge specs into `openspec/specs/`
+- [x] 8.1 Archive change; merge specs into `openspec/specs/`

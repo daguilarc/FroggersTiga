@@ -27,7 +27,7 @@ On the Audio host page, VCO1–VCO3 knob columns SHALL display a clickable wavef
 - **THEN** the waveform SVG updates within the same animation frame (optimistic local cycle)
 - **AND** the next `screen` message reconciles morph values from WASM
 
-### Requirement: Rand waveforms affects inline morph buttons
+### Requirement: Rand waves affects inline morph buttons
 
 The global **Rand waveforms** control SHALL randomize VCO morphs in WASM and the inline VCO1–VCO3 waveform buttons SHALL update on the next `screen` message.
 

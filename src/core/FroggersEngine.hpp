@@ -89,7 +89,7 @@ struct FroggersEngine
     OPLowPassFilter m_extEnvFilter;
     SchmidtTrigger m_extGate;
     TanhSaturator<true> m_extInputLimiter;
-    static constexpr float x_extInputLimiterDrive = 3.0f;
+    static constexpr float x_extInputLimiterDrive = 5.0f;
 
     float m_sampleRate = 44100.0f;
     bool m_simWaveMorph = false;

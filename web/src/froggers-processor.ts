@@ -1,3 +1,12 @@
+const EXT_IN_PAD = 0.4;
+const EXT_IN_DRIVE = 2.5;
+
+function softLimit(x: number): number {
+  const x2 = x * x;
+  const y = (x * (27 + x2)) / (27 + 9 * x2);
+  return Math.max(-1, Math.min(1, y));
+}
+
 const WASM_IMPORTS: WebAssembly.Imports = {
   wasi_snapshot_preview1: {
     fd_write: () => 0,
@@ -323,10 +332,11 @@ class FroggersProcessor extends AudioWorkletProcessor {
       const outROff = outRPtr ? outRPtr >> 2 : 0;
 
       if (this.externalEnabled && input) {
-        heap.set(input.subarray(0, n), inOff);
         let blockPeak = 0;
         for (let i = 0; i < n; i++) {
-          const sample = Math.abs(input[i]);
+          const limited = softLimit(EXT_IN_DRIVE * input[i] * EXT_IN_PAD);
+          heap[inOff + i] = limited;
+          const sample = Math.abs(limited);
           if (sample > blockPeak) {
             blockPeak = sample;
           }

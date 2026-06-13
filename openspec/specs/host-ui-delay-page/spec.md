@@ -5,44 +5,39 @@ TBD - created by archiving change stereo-delay-page. Update Purpose after archiv
 ## Requirements
 ### Requirement: Sim page list of six
 
-Web and desktop sim hosts SHALL present six pages: **Audio**, **Marbles**, **Reverb**, **Filter**, **Drive**, **Delay**. Pages 0–4 SHALL map to core engine pages. Page 5 (**Delay**) SHALL use host `DelayState` only.
+Web and desktop sim hosts SHALL present six pages: **Audio**, **Marbles**, **Reverb**, **Filter**, **Drive**, **Delay**. Pages 0–4 SHALL map to core engine pages. Page 5 (**Delay**) SHALL use host `DelayState` only. Web Delay page chrome SHALL NOT use a distinct accent color or border treatment from other host pages.
 
 #### Scenario: Web page indicator
 
 - **WHEN** the user navigates to Delay on web
 - **THEN** the page label SHALL read `Delay (6/6)` or equivalent
-- **AND** OLED rows SHALL show **DTIM** through **DMIX** and **FUEG**, not WASM row names
+- **AND** row labels SHALL show sim display names from delay exports (**Delay time** through **Crunch**)
 
 #### Scenario: Desktop six visible panels
 
-- **WHEN** the desktop application opens at default width (**1680×720**; was ≥ 2016 px)
+- **WHEN** the desktop application opens at default width
 - **THEN** six sub-module panels SHALL be visible including **Delay**
+
+#### Scenario: Delay chrome matches other pages
+
+- **WHEN** the user views the Delay page on web
+- **THEN** page chrome border and title color match Audio–Drive pages
+- **AND** no orange accent border is applied
 
 ### Requirement: Web mobile page arrows
 
-The web simulator SHALL provide large previous/next controls flanking the knob area. Touch targets SHALL be at least 44×44 CSS pixels.
+The web simulator SHALL provide large previous/next controls flanking the knob area on viewports at most 720px wide. Touch targets SHALL be at least 44×44 CSS pixels. On viewports wider than 720px, visible flanking arrows are optional; page pills and keyboard `[` / `]` navigation SHALL remain available.
 
 #### Scenario: Mobile layout
 
 - **WHEN** viewport width is at most 720 px
 - **THEN** prev/next arrows SHALL remain beside the knob column without horizontal scroll of the knobs
 
-#### Scenario: Host page navigation
+#### Scenario: Desktop layout without flanking arrows
 
-- **WHEN** the user taps next from Drive (host index 4)
-- **THEN** host page index SHALL become 5 (Delay)
-- **AND** WASM `froggers_current_page()` SHALL remain unchanged
-
-#### Scenario: WASM page sync on core pages
-
-- **WHEN** host page index changes to a value in 0–4
-- **THEN** the worklet SHALL call `froggers_select_page(host, hostPage)` so WASM current page matches the visible UI page
-
-#### Scenario: Delay page does not move WASM page
-
-- **WHEN** host page index is 5
-- **THEN** knob and mod messages SHALL use delay exports only
-- **AND** `froggers_set_knob` and `froggers_select_page` SHALL NOT be called for UI knob updates
+- **WHEN** viewport width is greater than 720 px
+- **THEN** the knob grid MAY span the full `#app` content width without visible flanking arrows
+- **AND** page navigation via pills and keyboard SHALL still work
 
 ### Requirement: Randomize parity
 
