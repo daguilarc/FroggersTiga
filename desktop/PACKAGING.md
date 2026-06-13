@@ -57,7 +57,7 @@ Artefact locations:
 ./desktop/scripts/package-macos.sh
 ```
 
-Output: `desktop/dist/FroggersTiga-<version>-macOS.dmg`
+Output: `desktop/dist/FroggersTiga.dmg`
 
 Mount the DMG, drag **FroggersTiga.app** to **Applications**, then open the app.
 
@@ -67,7 +67,7 @@ Mount the DMG, drag **FroggersTiga.app** to **Applications**, then open the app.
 ./desktop/scripts/package-windows.ps1
 ```
 
-Output: `desktop/dist/FroggersTiga-<version>-Windows-Setup.exe`
+Output: `desktop/dist/FroggersTiga-Setup.exe`
 
 ## Unsigned builds
 
@@ -91,8 +91,8 @@ git push origin desktop-v1.0.0
 
 Workflow `.github/workflows/desktop-release.yml` builds on `macos-14` and `windows-latest`, then attaches:
 
-- `FroggersTiga-<version>-macOS.dmg`
-- `FroggersTiga-<version>-Windows-Setup.exe`
+- `FroggersTiga.dmg`
+- `FroggersTiga-Setup.exe`
 
 to the GitHub Release for that tag.
 

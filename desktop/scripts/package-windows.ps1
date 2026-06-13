@@ -45,7 +45,7 @@ New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
     "/DOutputDir=$DistDir" `
     $IssFile
 
-$OutputExe = Join-Path $DistDir "FroggersTiga-$Version-Windows-Setup.exe"
+$OutputExe = Join-Path $DistDir "FroggersTiga-Setup.exe"
 if (-not (Test-Path $OutputExe)) {
     Write-Error "expected installer not created: $OutputExe"
 }

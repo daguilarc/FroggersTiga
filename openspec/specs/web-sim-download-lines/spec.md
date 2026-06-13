@@ -12,8 +12,8 @@ The web sim SHALL display a download line directly below the browser simulator s
 
 - **WHEN** a user opens the web sim page
 - **THEN** they see text equivalent to "Download the desktop app: macOS | Windows"
-- **AND** **macOS** links to the GitHub Release macOS DMG asset
-- **AND** **Windows** links to the GitHub Release Windows Setup asset
+- **AND** **macOS** links to `FroggersTiga.dmg` on the GitHub Release
+- **AND** **Windows** links to `FroggersTiga-Setup.exe` on the GitHub Release
 
 ### Requirement: Copyright and license line
 

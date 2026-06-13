@@ -11,7 +11,7 @@ The desktop packaging flow SHALL produce a compressed DMG file containing `Frogg
 #### Scenario: Package macOS after Release build
 
 - **WHEN** an operator runs `desktop/scripts/package-macos.sh` after a successful Release CMake build
-- **THEN** a file `desktop/dist/FroggersTiga-<version>-macOS.dmg` is created
+- **THEN** a file `desktop/dist/FroggersTiga.dmg` is created
 - **AND** mounting the DMG shows `FroggersTiga.app` and an `Applications` folder link
 
 #### Scenario: DMG app launches
@@ -31,17 +31,22 @@ The desktop packaging flow SHALL produce a single Windows Setup executable that 
 #### Scenario: Package Windows with Inno Setup
 
 - **WHEN** Inno Setup 6 is available and an operator runs the Windows packaging script after a Release build
-- **THEN** a file `desktop/dist/FroggersTiga-<version>-Windows-Setup.exe` is created
+- **THEN** a file `desktop/dist/FroggersTiga-Setup.exe` is created
 - **AND** running the installer places FroggersTiga in the chosen directory with Start Menu shortcut
 
-### Requirement: Versioned artifact filenames
+### Requirement: Fixed product download filenames
 
-Packaging scripts SHALL embed the CMake project version in output filenames.
+Packaging scripts SHALL use stable product filenames without version or platform suffixes in the download name.
 
-#### Scenario: Version in filename
+#### Scenario: macOS download name
 
-- **WHEN** `desktop/CMakeLists.txt` declares `project(FroggersTigaDesktop VERSION 1.0.0)`
-- **THEN** packaged artifacts include `1.0.0` in their filenames
+- **WHEN** packaging completes on macOS
+- **THEN** the DMG is named `FroggersTiga.dmg`
+
+#### Scenario: Windows download name
+
+- **WHEN** packaging completes on Windows
+- **THEN** the installer is named `FroggersTiga-Setup.exe`
 
 #### Scenario: Tag semver matches CMake VERSION
 
@@ -56,7 +61,7 @@ A GitHub Actions workflow SHALL build macOS and Windows packages on desktop rele
 
 - **WHEN** a maintainer pushes tag `desktop-v1.0.0` with matching CMake `VERSION 1.0.0`
 - **THEN** CI builds Release on `macos-14` and `windows-latest`
-- **AND** attaches `FroggersTiga-1.0.0-macOS.dmg` and `FroggersTiga-1.0.0-Windows-Setup.exe` to the GitHub Release
+- **AND** attaches `FroggersTiga.dmg` and `FroggersTiga-Setup.exe` to the GitHub Release
 
 #### Scenario: Packaging documented for local use
 

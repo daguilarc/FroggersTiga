@@ -24,7 +24,7 @@ else
   exit 1
 fi
 
-OUTPUT_DMG="${DIST_DIR}/FroggersTiga-${VERSION}-macOS.dmg"
+OUTPUT_DMG="${DIST_DIR}/FroggersTiga.dmg"
 STAGE_DIR="$(mktemp -d)"
 trap 'rm -rf "$STAGE_DIR"' EXIT
 

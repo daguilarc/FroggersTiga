@@ -30,7 +30,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
-          path: desktop/dist/FroggersTiga-*-macOS.dmg
+          path: desktop/dist/FroggersTiga.dmg
           if-no-files-found: error
 
   build-windows:
@@ -59,7 +59,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-setup
-          path: desktop/dist/FroggersTiga-*-Windows-Setup.exe
+          path: desktop/dist/FroggersTiga-Setup.exe
           if-no-files-found: error
 
   release:
