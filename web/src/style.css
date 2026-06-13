@@ -11,6 +11,10 @@
   box-sizing: border-box;
 }
 
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   margin: 0;
   font-family: "SF Mono", "Fira Code", ui-monospace, monospace;
@@ -279,7 +283,7 @@ body {
 
 .mod-bay {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.5rem;
   margin-bottom: 1rem;
   padding: 0.5rem;
@@ -425,7 +429,7 @@ body {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0.4rem;
-  align-items: end;
+  align-items: stretch;
   height: auto;
 }
 
@@ -555,14 +559,26 @@ body {
   background: var(--accent);
 }
 
-#mod-bay {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
 #mod-bay .mod-bay-hint {
   flex: 1 1 100%;
+}
+
+@media (min-width: 721px) {
+  .field-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .page-nav {
+    display: none;
+  }
+
+  .knobs {
+    grid-column: 1;
+  }
+
+  .global-strip {
+    justify-content: center;
+  }
 }
 
 .switches {

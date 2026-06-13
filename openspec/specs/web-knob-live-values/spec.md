@@ -14,7 +14,7 @@ When the user is not dragging a knob column, the rotary knob position SHALL refl
 
 #### Scenario: Patched row live modulation
 
-- **WHEN** a row has mod source VCO level, Marbles 1, or Marbles 2, audio is playing, and the user is not dragging that column
+- **WHEN** a row has mod source VCO Envelope, Marbles 1 S&H, or Marbles 2 S&H, audio is playing, and the user is not dragging that column
 - **THEN** the knob position updates to `rows[i].value` on each `screen` tick
 - **AND** the knob visibly tracks CV movement (wiggles) like the desktop sim and thenoriegas.info
 
@@ -58,8 +58,8 @@ Knob column primary labels SHALL remain the static page parameter names from `HO
 
 #### Scenario: Delay page hints preserved
 
-- **WHEN** the Delay page is active and a row has no mod source
-- **THEN** delay hint text under the label still displays per existing delay UX
+- **WHEN** the Delay page is active
+- **THEN** delay hint slot under the label keeps its reserved height per knob-column layout spec
 
 ### Requirement: Screen sync does not split display value by patch state
 
