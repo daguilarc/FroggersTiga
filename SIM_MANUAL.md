@@ -28,11 +28,15 @@ Operator guide for the **desktop** and **web browser** simulators. Knob names ma
 
 Three internal mod sources drive per-knob modulation:
 
-- **VCO Envelope** — slow level from the VCO mix (continuous CV trace)
-- **Marbles 1 S&H** — random CV channel 1 (green LED on step; press **Marbles** to step)
-- **Marbles 2 S&H** — random CV channel 2
+- **VCO Envelope** — slow level from the VCO mix (continuous CV scope trace)
+- **Marbles 1 S&H** — sample-and-hold random CV on mod channel 1 (see **Marbles outputs** below)
+- **Marbles 2 S&H** — sample-and-hold random CV on mod channel 2
 
-Assign a source with the **Mod source** dropdown under each knob. When a source is selected, the knob controls **mod depth** instead of the base parameter. VCO Envelope shows a CV scope trace; Marbles sources show a green on/off LED.
+**Marbles outputs (S&H):** Each channel draws a random value from its marble bag when you press **Marbles** (or the gate). There is no internal clock — values change only on a step. **Slew** smooths glides between held values; it does not trigger new steps. The held voltage is normalized **0–100%** on the mod bus (the same CV you patch to knobs).
+
+**Green LED (Marbles 1 / Marbles 2):** Shows the held mod CV for that channel while **Play** is on. **Green** = CV above **55%** of full scale. **Dim** = CV at or below 55%, or audio stopped. VCO Envelope uses a scope trace instead of an LED.
+
+On **web**, assign a source with the **Mod source** dropdown under each knob. When a source is selected, the knob controls **mod depth** instead of the base parameter. On **desktop**, drag a patch cable from the mod rack jack to a knob input.
 
 ## Page 1 — Audio
 
@@ -51,6 +55,8 @@ Click the waveform icon beside VCO1–VCO3 (right of each knob on the Audio page
 
 ## Page 2 — Marbles
 
+Marbles is a dual **sample-and-hold** random CV source. Knobs configure two independent bags; **Marbles 1 S&H** and **Marbles 2 S&H** in the mod bay / mod sources panel are the outputs (patch or assign them like any mod source). Press **Marbles** to step both channels.
+
 | Row | Parameter |
 |-----|-----------|
 | 1 | Step chance |
@@ -61,6 +67,8 @@ Click the waveform icon beside VCO1–VCO3 (right of each knob on the Audio page
 | 6 | Bag size 2 |
 | 7 | Slew 2 |
 | 8 | Crunch |
+
+**Slew 1** / **Slew 2** smooth the output toward each new held value; they do not clock the module. After a step, watch the mod indicator: green when that channel's held CV is above **55%**, dim otherwise (see **Mod bay**).
 
 ## Page 3 — Reverb
 
@@ -119,7 +127,7 @@ Click the waveform icon beside VCO1–VCO3 (right of each knob on the Audio page
 ### Desktop
 
 - Five adjacent submodule panels (no page switching) plus a **Delay** overlay page.
-- **Mod rack** with patch cables — drag from a mod source to a knob to assign modulation.
+- **Mod rack** with patch cables — drag from a mod source to a knob to assign modulation. **VCO Envelope** shows a CV scope; **Marbles 1 S&H** / **Marbles 2 S&H** show a green LED (on when held mod CV > **55%** while playing).
 - **MIDI Settings** — QWERTY piano keyboard or hardware MIDI device for pitch CV.
 - **Ext. In.** — requires **Ext. In. on + Play**; routes mic, line-in, or USB interface input to the engine. macOS may prompt for audio input access on first capture.
 - **Audio Settings** — choose output and input devices.

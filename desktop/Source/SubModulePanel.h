@@ -22,6 +22,12 @@ private:
     void updateRowKnobDisplay(int row);
     void updateFuegKnobDisplay();
     void layoutPanel();
+    void layoutParameterRow(juce::Rectangle<int> rowArea,
+                            bool hasWave,
+                            juce::Label& label,
+                            juce::Slider& knob,
+                            WaveMorphButton* waveButton,
+                            juce::Rectangle<int>& jackBounds);
     juce::Rectangle<float> inputJackScreenBounds(int row) const;
 
     uint8_t m_pageIndex;

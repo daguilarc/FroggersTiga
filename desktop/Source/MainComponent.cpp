@@ -325,7 +325,8 @@ void MainComponent::resized()
     const int panelW = area.getWidth() / 6;
     for (int i = 0; i < 6; i++)
     {
-        m_panels[static_cast<size_t>(i)]->setBounds(area.removeFromLeft(panelW).reduced(2));
+        const int w = (i == 5) ? area.getWidth() : panelW;
+        m_panels[static_cast<size_t>(i)]->setBounds(area.removeFromLeft(w));
     }
 
     m_cableOverlay.setBounds(getLocalBounds());

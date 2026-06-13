@@ -1,4 +1,5 @@
 #include "AudioEngine.h"
+#include "AudioSettingsComponent.h"
 #include "DelayState.hpp"
 #include "MidiSettingsComponent.h"
 #include "TanhSaturator.hpp"
@@ -84,12 +85,18 @@ AudioEngine::AudioEngine()
                 static_cast<int>(channel) + 1, static_cast<int>(cc), static_cast<int>(value)));
         }
     };
-    m_deviceManager.initialiseWithDefaultDevices(2, 2);
+    m_deviceManager.initialiseWithDefaultDevices(0, 2);
     juce::AudioDeviceManager::AudioDeviceSetup setup;
     m_deviceManager.getAudioDeviceSetup(setup);
     setup.sampleRate = kSimSampleRate;
+    setup.inputDeviceName.clear();
+    setup.inputChannels.clear();
+    setup.useDefaultInputChannels = false;
+    setup.outputChannels.clear();
+    setup.outputChannels.setBit(0);
+    setup.outputChannels.setBit(1);
+    setup.useDefaultOutputChannels = false;
     m_deviceManager.setAudioDeviceSetup(setup, true);
-    syncInputChannelSetup();
     m_host.SetSampleRate(kSimSampleRate);
     m_delay.setSampleRate(kSimSampleRate);
     if (auto* device = m_deviceManager.getCurrentAudioDevice())
@@ -304,18 +311,11 @@ void AudioEngine::showAudioSettings(juce::Component* parent)
     juce::DialogWindow::LaunchOptions opts;
     opts.dialogTitle = "Audio Settings";
     opts.dialogBackgroundColour = juce::Colour(0xff2b3038);
-    opts.content.setOwned(new juce::AudioDeviceSelectorComponent(
-        m_deviceManager, 0, 2, 1, 2, false, false, true, false));
+    opts.content.setOwned(new AudioSettingsComponent(*this, []() {}));
     opts.componentToCentreAround = parent;
     opts.useNativeTitleBar = true;
-    opts.resizable = true;
-    if (auto* dialog = opts.launchAsync())
-    {
-        dialog->enterModalState(true,
-                                juce::ModalCallbackFunction::create([this](int) {
-                                    syncInputChannelSetup();
-                                }));
-    }
+    opts.resizable = false;
+    opts.launchAsync();
 }
 
 void AudioEngine::showMidiSettings(juce::Component* parent)

@@ -7,7 +7,8 @@ constexpr int kKnobSize = 38;
 constexpr int kJackSize = 20;
 constexpr int kTailGap = 2;
 constexpr int kRowHeight = 36;
-constexpr int kMinLabelWidth = 72;
+constexpr int kLabelRowH = 14;
+constexpr juce::uint32 kModuleBorder = 0xff3d444d;
 
 int fixedTailWidth(bool hasWave)
 {
@@ -15,14 +16,14 @@ int fixedTailWidth(bool hasWave)
     return hasWave ? (kWaveWidth + kTailGap + knobJack) : knobJack;
 }
 
-void layoutRowTail(juce::Rectangle<int>& row,
-                   bool hasWave,
-                   juce::Slider& knob,
-                   WaveMorphButton* waveButton,
-                   juce::Rectangle<int>& jackBounds)
+void layoutControlCluster(juce::Rectangle<int>& area,
+                          bool hasWave,
+                          juce::Slider& knob,
+                          WaveMorphButton* waveButton,
+                          juce::Rectangle<int>& jackBounds)
 {
     const int tailW = fixedTailWidth(hasWave);
-    auto tail = row.removeFromRight(tailW);
+    auto tail = area.removeFromRight(tailW);
     jackBounds = tail.removeFromRight(kJackSize).withSizeKeepingCentre(kJackSize, kJackSize);
     tail.removeFromRight(kTailGap);
     knob.setBounds(tail.removeFromRight(kKnobSize).withSizeKeepingCentre(kKnobSize, kKnobSize));
@@ -142,6 +143,18 @@ SubModulePanel::SubModulePanel(uint8_t pageIndex, juce::String title, IPanelBack
     setSize(300, 480);
 }
 
+void SubModulePanel::layoutParameterRow(juce::Rectangle<int> rowArea,
+                                        bool hasWave,
+                                        juce::Label& label,
+                                        juce::Slider& knob,
+                                        WaveMorphButton* waveButton,
+                                        juce::Rectangle<int>& jackBounds)
+{
+    auto inner = rowArea;
+    label.setBounds(inner.removeFromTop(kLabelRowH));
+    layoutControlCluster(inner, hasWave, knob, waveButton, jackBounds);
+}
+
 void SubModulePanel::updateRowKnobDisplay(int row)
 {
     const uint8_t mod = m_backend.getModSource(static_cast<uint8_t>(row));
@@ -232,27 +245,31 @@ void SubModulePanel::layoutPanel()
 
     for (int i = 0; i < 7; i++)
     {
-        auto row = area.removeFromTop(kRowHeight).reduced(0, 1);
+        auto rowArea = area.removeFromTop(kRowHeight);
         const bool hasWave = m_backend.hasVcoWaveButtons() && i < 3;
         WaveMorphButton* wave =
             hasWave ? &m_waveButtons[static_cast<size_t>(i)] : nullptr;
-        layoutRowTail(row,
-                      hasWave,
-                      m_sliders[static_cast<size_t>(i)],
-                      wave,
-                      m_inputJackBounds[static_cast<size_t>(i)]);
-        const int labelW = juce::jmax(kMinLabelWidth, row.getWidth());
-        m_paramLabels[static_cast<size_t>(i)].setBounds(row.removeFromLeft(labelW));
+        layoutParameterRow(rowArea,
+                           hasWave,
+                           m_paramLabels[static_cast<size_t>(i)],
+                           m_sliders[static_cast<size_t>(i)],
+                           wave,
+                           m_inputJackBounds[static_cast<size_t>(i)]);
     }
 
-    auto fuegRow = area.removeFromTop(kRowHeight).reduced(0, 1);
-    layoutRowTail(fuegRow, false, m_fueg, nullptr, m_inputJackBounds[7]);
-    const int fuegLabelW = juce::jmax(kMinLabelWidth, fuegRow.getWidth());
-    m_fuegLabel.setBounds(fuegRow.removeFromLeft(fuegLabelW));
+    layoutParameterRow(area.removeFromTop(kRowHeight),
+                       false,
+                       m_fuegLabel,
+                       m_fueg,
+                       nullptr,
+                       m_inputJackBounds[7]);
 }
 
 void SubModulePanel::paint(juce::Graphics& g)
 {
+    g.setColour(juce::Colour(kModuleBorder));
+    g.drawRect(getLocalBounds(), 1.0f);
+
     for (int row = 0; row < 8; row++)
     {
         const uint8_t mod = m_backend.getModSource(static_cast<uint8_t>(row));

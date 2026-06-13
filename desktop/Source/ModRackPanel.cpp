@@ -18,9 +18,9 @@ ModRackPanel::ModRackPanel(DesktopHostIO& host)
         addAndMakeVisible(box);
     }
     m_marbles1.setTooltip(
-        "Marbles 1 S&H — random CV steps on Marbles press. Green LED on when level > 55%.");
+        "Marbles 1 S&H — held random mod CV (0–100%). Steps on Marbles press. Green LED when CV > 55% while playing.");
     m_marbles2.setTooltip(
-        "Marbles 2 S&H — random CV steps on Marbles press. Green LED on when level > 55%.");
+        "Marbles 2 S&H — held random mod CV (0–100%). Steps on Marbles press. Green LED when CV > 55% while playing.");
     setSize(1200, 72);
 }
 

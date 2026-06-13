@@ -45,6 +45,7 @@ target_sources(FroggersTigaDesktop PRIVATE
     Source/WaveMorphButton.cpp
     Source/PatchCableOverlay.cpp
     Source/MidiSettingsComponent.cpp
+    Source/AudioSettingsComponent.cpp
     Source/AudioEngine.cpp
     Source/AudioRecorder.cpp
     Source/RecordButton.cpp
