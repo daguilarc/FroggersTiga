@@ -24,4 +24,6 @@ private:
     DesktopHostIO& m_host;
     CvScopeDisplay m_scope;
     juce::Rectangle<int> m_jackBounds;
+    float m_lastLevel = 0.0f;
+    bool m_audioRunning = false;
 };

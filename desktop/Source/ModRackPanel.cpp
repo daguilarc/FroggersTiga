@@ -6,8 +6,8 @@ ModRackPanel::ModRackPanel(DesktopHostIO& host)
     : m_host(host)
     , m_midi("MIDI", 0, m_host)
     , m_vcoFeat("VCO Envelope", 4, m_host)
-    , m_marbles1("Marbles 1", 5, m_host)
-    , m_marbles2("Marbles 2", 6, m_host)
+    , m_marbles1("Marbles 1 S&H", 5, m_host)
+    , m_marbles2("Marbles 2 S&H", 6, m_host)
 {
     for (juce::Component* box :
          {static_cast<juce::Component*>(&m_midi),
@@ -18,9 +18,9 @@ ModRackPanel::ModRackPanel(DesktopHostIO& host)
         addAndMakeVisible(box);
     }
     m_marbles1.setTooltip(
-        "Random CV — press Marbles to step. Flat between steps is normal; SLW adds a ramp. PROB may skip. Start Play for live trace.");
+        "Marbles 1 S&H — random CV steps on Marbles press. Green LED on when level > 55%.");
     m_marbles2.setTooltip(
-        "Random CV — press Marbles to step. Flat between steps is normal; SLW adds a ramp. PROB may skip. Start Play for live trace.");
+        "Marbles 2 S&H — random CV steps on Marbles press. Green LED on when level > 55%.");
     setSize(1200, 72);
 }
 

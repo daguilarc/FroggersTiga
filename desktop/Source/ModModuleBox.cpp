@@ -4,19 +4,11 @@ namespace
 {
 constexpr uint8_t kMarblesMod1 = 5;
 constexpr uint8_t kMarblesMod2 = 6;
-constexpr int kStepOversample = 4;
+constexpr float kLedOnThreshold = 0.55f;
 
 bool isMarblesMod(uint8_t modIndex)
 {
     return modIndex == kMarblesMod1 || modIndex == kMarblesMod2;
-}
-
-void pushOversampled(CvScopeDisplay& scope, float level, int count)
-{
-    for (int i = 0; i < count; ++i)
-    {
-        scope.pushSample(level);
-    }
 }
 } // namespace
 
@@ -25,14 +17,9 @@ ModModuleBox::ModModuleBox(juce::String label, uint8_t modIndex, DesktopHostIO& 
     , m_modIndex(modIndex)
     , m_host(host)
 {
-    addAndMakeVisible(m_scope);
-    if (isMarblesMod(modIndex))
+    if (!isMarblesMod(modIndex))
     {
-        m_scope.setTraceMode(CvTraceMode::StepHold);
-        m_scope.setShowGrid(true);
-    }
-    else
-    {
+        addAndMakeVisible(m_scope);
         m_scope.setTraceMode(CvTraceMode::Continuous);
         m_scope.setShowGrid(false);
     }
@@ -53,29 +40,9 @@ void ModModuleBox::refresh(bool audioRunning)
 {
     if (isMarblesMod(m_modIndex))
     {
-        if (!audioRunning)
-        {
-            m_scope.pushSample(m_host.GetCvOut(m_modIndex));
-            m_scope.setIdle(true);
-            return;
-        }
-        m_scope.setIdle(false);
-        float rangeMin = 0.0f;
-        float rangeMax = 0.0f;
-        if (m_host.consumeModScopeRange(m_modIndex, rangeMin, rangeMax))
-        {
-            if (rangeMin != rangeMax)
-            {
-                pushOversampled(m_scope, rangeMin, kStepOversample);
-                pushOversampled(m_scope, rangeMax, kStepOversample);
-            }
-            else
-            {
-                m_scope.pushSample(rangeMax);
-            }
-            return;
-        }
-        m_scope.pushSample(m_host.GetCvOut(m_modIndex));
+        m_audioRunning = audioRunning;
+        m_lastLevel = m_host.GetCvOut(m_modIndex);
+        repaint();
         return;
     }
 
@@ -89,6 +56,21 @@ void ModModuleBox::paint(juce::Graphics& g)
     g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
     g.drawText(m_label, getLocalBounds().removeFromTop(10), juce::Justification::centred);
 
+    auto area = getLocalBounds().reduced(2);
+    area.removeFromTop(12);
+    const int indicatorH = 44;
+    auto indicatorArea = area.removeFromTop(indicatorH);
+
+    if (isMarblesMod(m_modIndex))
+    {
+        const float cx = indicatorArea.getCentreX();
+        const float cy = indicatorArea.getCentreY();
+        const float radius = 8.0f;
+        const bool on = m_audioRunning && m_lastLevel > kLedOnThreshold;
+        g.setColour(on ? juce::Colour(0xff3fb950) : juce::Colour(0xff21262d));
+        g.fillEllipse(cx - radius, cy - radius, radius * 2.0f, radius * 2.0f);
+    }
+
     g.setColour(juce::Colour(0xff3d4450));
     g.fillEllipse(m_jackBounds.toFloat());
     g.setColour(juce::Colour(0xffc8d0dc));
@@ -100,6 +82,13 @@ void ModModuleBox::resized()
     auto area = getLocalBounds().reduced(2);
     area.removeFromTop(12);
     const int scopeH = 44;
-    m_scope.setBounds(area.removeFromTop(scopeH));
+    if (!isMarblesMod(m_modIndex))
+    {
+        m_scope.setBounds(area.removeFromTop(scopeH));
+    }
+    else
+    {
+        area.removeFromTop(scopeH);
+    }
     m_jackBounds = area.withSizeKeepingCentre(14, 14);
 }

@@ -1,12 +1,21 @@
 const wasmUrl = `${import.meta.env.BASE_URL}froggers.wasm`;
 const processorUrl = `${import.meta.env.BASE_URL}froggers-processor.js`;
 import { CvScopeCanvas } from "./CvScopeCanvas";
+import { ModLedIndicator } from "./ModLedIndicator";
 import { RotaryKnob } from "./RotaryKnob";
 
 const HOST_PAGE_COUNT = 6;
 const PAGE_NAMES = ["Audio", "Marbles", "Reverb", "Filter", "Drive", "Delay"];
-const INTERNAL_MOD_INDICES = [4, 5, 6];
-const INTERNAL_MOD_LABELS = ["VCO level", "Marbles 1", "Marbles 2"];
+
+type ModBayIndicator =
+  | { kind: "scope"; modIndex: number; scope: CvScopeCanvas }
+  | { kind: "led"; modIndex: number; led: ModLedIndicator };
+
+const modBayIndicators: ModBayIndicator[] = [
+  { kind: "scope", modIndex: 4, scope: new CvScopeCanvas("VCO Envelope", "continuous") },
+  { kind: "led", modIndex: 5, led: new ModLedIndicator("Marbles 1 S&H") },
+  { kind: "led", modIndex: 6, led: new ModLedIndicator("Marbles 2 S&H") },
+];
 
 const PAGE_BLURBS: Record<number, string> = {
   0: "Three VCOs, coupling, and output level.",
@@ -18,7 +27,7 @@ const PAGE_BLURBS: Record<number, string> = {
 };
 
 const HOST_PAGE_LABELS: string[][] = [
-  ["VCO1", "VCO2", "VCO3", "Cross-coupler", "Phase mod 1", "Phase mod 2", "VCO level", "Crunch"],
+  ["VCO1", "VCO2", "VCO3", "Cross-coupler", "Phase mod 1", "Phase mod 2", "VCO Envelope", "Crunch"],
   ["Step chance", "Deja vu 1", "Bag size 1", "Slew 1", "Deja vu 2", "Bag size 2", "Slew 2", "Crunch"],
   ["Wet/dry", "Room size", "Decay", "Pre-delay", "Damping", "Stereo width", "Diffusion", "Crunch"],
   ["Comb offset", "Peak freq", "Peak gain", "Peak Q", "Comb delay", "Comb feedback", "Comb LP", "Crunch"],
@@ -29,12 +38,6 @@ const HOST_PAGE_LABELS: string[][] = [
 const DELAY_HINTS: Record<number, string> = {
   0: "~0–2 s",
 };
-
-const modScopes = [
-  new CvScopeCanvas("VCO level", "continuous"),
-  new CvScopeCanvas("Marbles 1", "stepHold"),
-  new CvScopeCanvas("Marbles 2", "stepHold"),
-];
 
 interface ScreenRow {
   name: string;
@@ -156,8 +159,8 @@ function waveSvg(morph: number): string {
 
 function initModBay(): void {
   modBayEl.innerHTML = "";
-  for (const scope of modScopes) {
-    modBayEl.appendChild(scope.element);
+  for (const entry of modBayIndicators) {
+    modBayEl.appendChild(entry.kind === "scope" ? entry.scope.element : entry.led.element);
   }
 }
 
@@ -166,16 +169,21 @@ function renderModBay(
   levels: number[],
   running: boolean
 ): void {
-  for (let i = 0; i < modScopes.length; i++) {
-    const modIndex = INTERNAL_MOD_INDICES[i];
-    const block = scopeSamples?.[i];
-    if (block && block.length > 0) {
-      modScopes[i].pushBlock(block);
-    } else {
-      modScopes[i].pushSample(levels[modIndex] ?? 0);
+  for (let i = 0; i < modBayIndicators.length; i++) {
+    const entry = modBayIndicators[i];
+    const level = levels[entry.modIndex] ?? 0;
+    if (entry.kind === "scope") {
+      const block = scopeSamples?.[i];
+      if (block && block.length > 0) {
+        entry.scope.pushBlock(block);
+      } else {
+        entry.scope.pushSample(level);
+      }
+      entry.scope.setIdle(!running);
+      entry.scope.draw();
+      continue;
     }
-    modScopes[i].setIdle(!running);
-    modScopes[i].draw();
+    entry.led.setLevel(running ? level : 0);
   }
   modBayEl.classList.toggle("collapsed", !modBayExpanded);
   modBayToggle.setAttribute("aria-expanded", String(modBayExpanded));
@@ -184,7 +192,7 @@ function renderModBay(
 
 function renderVcoMorphButtons(wasmPage: number): void {
   lastWasmPage = wasmPage;
-  const show = hostPage === 0 && wasmPage === 0;
+  const show = hostPage === 0;
   for (let i = 0; i < vcoMorphBtns.length; i++) {
     const btn = vcoMorphBtns[i];
     btn.hidden = !show;
@@ -241,20 +249,8 @@ function syncTransportUi(): void {
 function renderPageChrome(): void {
   pageChromeTitle.textContent = `${PAGE_NAMES[hostPage]} (${hostPage + 1}/${HOST_PAGE_COUNT})`;
   pageChromeBlurb.textContent = PAGE_BLURBS[hostPage] ?? "";
-  pageChromeEl.classList.toggle("delay-page", isDelayPage());
   for (let i = 0; i < pagePillButtons.length; i++) {
     pagePillButtons[i].classList.toggle("active", i === hostPage);
-  }
-}
-
-function applyDelayKnobHints(): void {
-  if (!isDelayPage()) {
-    return;
-  }
-  for (let i = 0; i < 8; i++) {
-    const modActive = Number(modSelects[i]?.value ?? 255) !== 255;
-    knobHintLabels[i].textContent = DELAY_HINTS[i] ?? "";
-    knobHintLabels[i].style.display = modActive ? "none" : "block";
   }
 }
 
@@ -262,16 +258,8 @@ function applyStaticKnobLabels(page: number): void {
   const labels = HOST_PAGE_LABELS[page] ?? HOST_PAGE_LABELS[0];
   for (let i = 0; i < 8; i++) {
     knobMainLabels[i].textContent = labels[i] ?? "";
-    if (page === 5) {
-      knobHintLabels[i].textContent = DELAY_HINTS[i] ?? "";
-      knobHintLabels[i].style.display = "block";
-    } else {
-      knobHintLabels[i].textContent = "";
-      knobHintLabels[i].style.display = "none";
-    }
-  }
-  if (page === 5) {
-    applyDelayKnobHints();
+    knobHintLabels[i].textContent = page === 5 ? (DELAY_HINTS[i] ?? "") : "";
+    knobHintLabels[i].style.display = "block";
   }
 }
 
@@ -309,20 +297,15 @@ function requireEngineForAction(): boolean {
 }
 
 function syncKnobUi(rows: ScreenRow[]): void {
-  let modSourceChanged = false;
   for (let i = 0; i < 8; i++) {
     const row = rows[i];
     const modIdx = modSelectIndex(row.modSource);
     if (modSelects[i] && modSelects[i].selectedIndex !== modIdx) {
       modSelects[i].selectedIndex = modIdx;
-      modSourceChanged = true;
     }
     if (rotaryKnobs[i] && !knobDragging[i]) {
       rotaryKnobs[i].setValue(row.value);
     }
-  }
-  if (modSourceChanged && isDelayPage()) {
-    applyDelayKnobHints();
   }
 }
 
@@ -368,7 +351,7 @@ function onScreenUpdate(data: Record<string, unknown>): void {
 for (let i = 0; i < PAGE_NAMES.length; i++) {
   const pill = document.createElement("button");
   pill.type = "button";
-  pill.className = "page-pill" + (i === 5 ? " delay-pill" : "");
+  pill.className = "page-pill";
   pill.textContent = PAGE_NAMES[i];
   pill.addEventListener("click", () => setHostPage(i));
   pagePillsEl.appendChild(pill);
@@ -434,6 +417,18 @@ for (let i = 0; i < 8; i++) {
     morphBtn.title = "Click to cycle wave morph (sine ↔ saw ↔ square)";
     const vcoIndex = i;
     morphBtn.addEventListener("click", () => {
+      if (!requireEngineForAction()) {
+        return;
+      }
+      const v = lastMorphs[vcoIndex] ?? 0;
+      let next = 0;
+      if (v < 0.25) {
+        next = 0.5;
+      } else if (v < 0.75) {
+        next = 1;
+      }
+      lastMorphs[vcoIndex] = next;
+      morphBtn.innerHTML = waveSvg(next);
       send({ type: "cycleVcoMorph", index: vcoIndex });
     });
     knobRow.appendChild(morphBtn);
@@ -450,14 +445,13 @@ for (let i = 0; i < 8; i++) {
   modSelect.className = "mod-select";
   modSelect.innerHTML =
     '<option value="255">None</option>' +
-    '<option value="4">VCO level</option>' +
-    '<option value="5">Marbles 1</option>' +
-    '<option value="6">Marbles 2</option>';
+    '<option value="4">VCO Envelope</option>' +
+    '<option value="5">Marbles 1 S&H</option>' +
+    '<option value="6">Marbles 2 S&H</option>';
   modSelect.addEventListener("change", () => {
     const modIndex = Number(modSelect.value);
     if (isDelayPage()) {
       send({ type: "delayModSource", row: i, modIndex });
-      applyDelayKnobHints();
     } else {
       send({ type: "modSource", row: i, modIndex });
     }
@@ -505,6 +499,9 @@ pageRandModBtn.addEventListener("click", () => {
 });
 
 document.getElementById("rand-morphs")?.addEventListener("click", () => {
+  if (!requireEngineForAction()) {
+    return;
+  }
   send({ type: "randomizeMorphs" });
 });
 document.getElementById("rand-all")?.addEventListener("click", () => {

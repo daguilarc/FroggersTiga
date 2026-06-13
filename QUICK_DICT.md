@@ -5,9 +5,9 @@ Sim column labels → short gloss. Full sim guide → in-app **Manual**. Daisy F
 ## Sim mod sources
 
 MIDI : QWERTY piano or hardware notes → pitch CV × velocity
-VCO level : Slow level from VCO mix
-Marbles 1 : Random CV channel 1 — press Marbles to step
-Marbles 2 : Random CV channel 2
+VCO Envelope : Slow level from VCO mix
+Marbles 1 S&H : Random CV channel 1 — press Marbles to step
+Marbles 2 S&H : Random CV channel 2
 
 ## Transport (sim)
 
@@ -19,7 +19,7 @@ Randmod : Mod sources + depths on current page
 Rand All : All pages + Delay knobs
 Rand Mods : All mod routes
 Marbles : Step both marble bags
-Rand waves : Randomize VCO morph (sine/saw/square blend)
+Rand waveforms : Randomize VCO morph (sine/saw/square blend)
 
 ## Audio
 
@@ -29,7 +29,7 @@ VCO3 : Frequency (sine)
 Cross-coupler : CCW 1→2, CW 2→3 from noon
 Phase mod 1 : VCO2 → VCO1 when coupled
 Phase mod 2 : VCO1+VCO3 → VCO2
-VCO level : VCO-only level when no external in
+VCO Envelope : VCO-only level when no external in
 Crunch : Scramble knobs 1–7 (Field: FUEG; also PM3 + mix on Audio page)
 
 ## Marbles

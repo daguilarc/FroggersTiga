@@ -5,7 +5,6 @@
   --text: #e6edf3;
   --accent: #3fb950;
   --knob: #58a6ff;
-  --delay-accent: #d29922;
 }
 
 * {
@@ -192,18 +191,10 @@ body {
   border-radius: 4px;
 }
 
-.page-chrome.delay-page {
-  border-color: var(--delay-accent);
-}
-
 .page-chrome-head h2 {
   margin: 0 0 0.25rem;
   font-size: 1rem;
   color: var(--knob);
-}
-
-.page-chrome.delay-page .page-chrome-head h2 {
-  color: var(--delay-accent);
 }
 
 .page-chrome-blurb {
@@ -255,11 +246,6 @@ body {
   color: var(--knob);
 }
 
-.page-pill.delay-pill.active {
-  border-color: var(--delay-accent);
-  color: var(--delay-accent);
-}
-
 .knob-col.highlight {
   outline: 1px solid var(--knob);
   border-radius: 4px;
@@ -277,6 +263,7 @@ body {
   text-align: center;
   max-width: 4rem;
   line-height: 1.2;
+  min-height: 1.2em;
 }
 
 .mod-source-label {
@@ -535,6 +522,37 @@ body {
 
 .mod-scope-idle .mod-scope-canvas {
   opacity: 0.35;
+}
+
+.mod-led-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.mod-led {
+  width: 100%;
+  min-height: 40px;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mod-led::before {
+  content: "";
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #21262d;
+}
+
+.mod-led[data-on="true"]::before {
+  background: var(--accent);
 }
 
 #mod-bay {
