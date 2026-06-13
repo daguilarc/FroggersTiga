@@ -33,6 +33,7 @@ struct PagedHostIO
         m_pageManager.Finalize();
         m_pageManager.SanitizeSimModAssignments();
         m_engine.SetSimWaveMorph(true);
+        m_engine.SetSimDedicatedPm3Knob(true);
         m_gateTrigger.Reset(m_gateHigh);
     }
 

@@ -21,18 +21,18 @@ const PAGE_BLURBS: Record<number, string> = {
   0: "Three VCOs, coupling, and output level.",
   1: "Marbles random CV — press Marbles to step.",
   2: "Reverb mix, size, decay, stereo width, and diffusion.",
-  3: "Comb offset, peak EQ, comb filter, and Crunch.",
+  3: "Comb offset, peak EQ, comb filter, and Crispy.",
   4: "Drive, SRR, XOR grit, and fuzz.",
   5: "Stereo delay — send, feedback, width, detune, mod.",
 };
 
 const HOST_PAGE_LABELS: string[][] = [
-  ["VCO1", "VCO2", "VCO3", "Cross-coupler", "Phase mod 1", "Phase mod 2", "VCO Envelope", "Crunch"],
-  ["Step chance", "Deja vu 1", "Bag size 1", "Slew 1", "Deja vu 2", "Bag size 2", "Slew 2", "Crunch"],
-  ["Wet/dry", "Room size", "Decay", "Pre-delay", "Damping", "Stereo width", "Diffusion", "Crunch"],
-  ["Comb offset", "Peak freq", "Peak gain", "Peak Q", "Comb delay", "Comb feedback", "Comb LP", "Crunch"],
-  ["Drive", "Shape", "SRR 1", "SRR 2", "XOR", "Bit depth", "Fuzz", "Crunch"],
-  ["Delay time", "Send", "Feedback", "Stereo width", "Detune", "Mod depth", "Wet mix", "Crunch"],
+  ["VCO1", "VCO2", "VCO3", "Cross-coupler", "Phase mod 1", "Phase mod 2", "Phase mod 3", "Crispy"],
+  ["Step chance", "Deja vu 1", "Bag size 1", "Slew 1", "Deja vu 2", "Bag size 2", "Slew 2", "Crispy"],
+  ["Wet/dry", "Room size", "Decay", "Pre-delay", "Damping", "Stereo width", "Diffusion", "Crispy"],
+  ["Comb offset", "Peak freq", "Peak gain", "Peak Q", "Comb delay", "Comb feedback", "Comb LP", "Crispy"],
+  ["Drive", "Shape", "SRR 1", "SRR 2", "XOR", "Bit depth", "Fuzz", "Crispy"],
+  ["Delay time", "Send", "Feedback", "Stereo width", "Detune", "Mod depth", "Wet mix", "Crispy"],
 ];
 
 const DELAY_HINTS: Record<number, string> = {
@@ -401,7 +401,6 @@ for (let i = 0; i < 8; i++) {
 
   const hintLabel = document.createElement("span");
   hintLabel.className = "knob-hint";
-  col.appendChild(hintLabel);
   knobHintLabels.push(hintLabel);
 
   const knob = new RotaryKnob(
@@ -441,6 +440,7 @@ for (let i = 0; i < 8; i++) {
   knobRow.className = "knob-row";
   knobRow.appendChild(knob.element);
   col.appendChild(knobRow);
+  col.appendChild(hintLabel);
 
   const modLabel = document.createElement("span");
   modLabel.className = "mod-source-label";

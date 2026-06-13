@@ -7,7 +7,7 @@ Operator guide for the **desktop** and **web browser** simulators. Knob names ma
 1. Wait for **Engine ready — click Play** (web) or open the desktop app.
 2. Click **Play** — VCO output is audible with **External / Ext. In.** off.
 3. Use page pills or **◀ ▶** to switch pages (Audio → Marbles → Reverb → Filter → Drive → Delay).
-4. Turn knobs 1–7 for parameters; knob 8 is always **Crunch** on every page.
+4. Turn knobs 1–7 for parameters; knob 8 is always **Crispy** on every page.
 5. Expand **Mod sources** to assign VCO Envelope, Marbles 1 S&H, or Marbles 2 S&H to any knob via the dropdown below each slider.
 
 ## Transport
@@ -48,10 +48,12 @@ On **web**, assign a source with the **Mod source** dropdown under each knob. Wh
 | 4 | Cross-coupler |
 | 5 | Phase mod 1 |
 | 6 | Phase mod 2 |
-| 7 | VCO Envelope |
-| 8 | Crunch |
+| 7 | Phase mod 3 |
+| 8 | Crispy |
 
-Click the waveform icon beside VCO1–VCO3 (right of each knob on the Audio page) to cycle sine ↔ saw ↔ square morph.
+Click the waveform icon beside VCO1–VCO3 (between the label and knob on the Audio page) to cycle sine ↔ saw ↔ square morph.
+
+**Phase mod 3** (row 7) sets VCO2 → VCO3 phase-mod depth when the cross-coupler is turned toward 2→3. **Crispy** scrambles knobs 1–7 and blends external ring-mod topology when external input is present; it no longer controls PM3 on sim hosts.
 
 ## Page 2 — Marbles
 
@@ -66,7 +68,7 @@ Marbles is a dual **sample-and-hold** random CV source. Knobs configure two inde
 | 5 | Deja vu 2 |
 | 6 | Bag size 2 |
 | 7 | Slew 2 |
-| 8 | Crunch |
+| 8 | Crispy |
 
 **Slew 1** / **Slew 2** smooth the output toward each new held value; they do not clock the module. After a step, watch the mod indicator: green when that channel's held CV is above **55%**, dim otherwise (see **Mod bay**).
 
@@ -81,7 +83,7 @@ Marbles is a dual **sample-and-hold** random CV source. Knobs configure two inde
 | 5 | Damping |
 | 6 | Stereo width |
 | 7 | Diffusion |
-| 8 | Crunch |
+| 8 | Crispy |
 
 ## Page 4 — Filter
 
@@ -94,7 +96,7 @@ Marbles is a dual **sample-and-hold** random CV source. Knobs configure two inde
 | 5 | Comb delay |
 | 6 | Comb feedback |
 | 7 | Comb LP |
-| 8 | Crunch |
+| 8 | Crispy |
 
 ## Page 5 — Drive
 
@@ -107,7 +109,7 @@ Marbles is a dual **sample-and-hold** random CV source. Knobs configure two inde
 | 5 | XOR |
 | 6 | Bit depth |
 | 7 | Fuzz |
-| 8 | Crunch |
+| 8 | Crispy |
 
 ## Page 6 — Delay
 
@@ -120,7 +122,7 @@ Marbles is a dual **sample-and-hold** random CV source. Knobs configure two inde
 | 5 | Detune |
 | 6 | Mod depth |
 | 7 | Wet mix |
-| 8 | Crunch |
+| 8 | Crispy |
 
 ## Desktop vs web
 

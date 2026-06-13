@@ -14,7 +14,7 @@ Marbles 2 S&H : S&H random mod CV ch.2 — step with Marbles; LED green when hel
 Play : Audio on/off
 Stop : Audio off
 Ext. In. : Line/mic in for ring mod (desktop)
-Randomize : Knobs 1–7 on current page (not Crunch)
+Randomize : Knobs 1–7 on current page (not Crispy)
 Randmod : Mod sources + depths on current page
 Rand All : All pages + Delay knobs
 Rand Mods : All mod routes
@@ -29,8 +29,8 @@ VCO3 : Frequency (sine)
 Cross-coupler : CCW 1→2, CW 2→3 from noon
 Phase mod 1 : VCO2 → VCO1 when coupled
 Phase mod 2 : VCO1+VCO3 → VCO2
-VCO Envelope : VCO-only level when no external in
-Crunch : Scramble knobs 1–7 (Field: FUEG; also PM3 + mix on Audio page)
+Phase mod 3 : VCO2 → VCO3 when cross-coupler is CW (2→3)
+Crispy : Scramble knobs 1–7 (Field: FUEG; mix topology when external in)
 
 ## Marbles
 
@@ -41,7 +41,7 @@ Slew 1 : Channel 1 glide between held values (not a clock) → Marbles 1 S&H
 Deja vu 2 : Channel 2 bag walk / re-roll
 Bag size 2 : Channel 2 marbles (2–8)
 Slew 2 : Channel 2 glide between held values → Marbles 2 S&H
-Crunch : Scramble knobs 1–7 (Field: FUEG)
+Crispy : Scramble knobs 1–7 (Field: FUEG)
 
 ## Reverb
 
@@ -52,7 +52,7 @@ Pre-delay : Time before reverb tank
 Damping : HF loss in feedback
 Stereo width : Reverb L/R spread
 Diffusion : Cross-feed between reverb lines
-Crunch : Scramble knobs 1–7 (Field: FUEG)
+Crispy : Scramble knobs 1–7 (Field: FUEG)
 
 ## Filter
 
@@ -63,7 +63,7 @@ Peak Q : Peaking EQ Q
 Comb delay : Comb pitch
 Comb feedback : Comb resonance
 Comb LP : Darken comb feedback
-Crunch : Scramble knobs 1–7 (Field: FUEG)
+Crispy : Scramble knobs 1–7 (Field: FUEG)
 
 ## Drive
 
@@ -74,7 +74,7 @@ SRR 2 : Sample-rate reducer 2
 XOR : XOR bit mask on samples
 Bit depth : Low-bit scramble depth
 Fuzz : Sine/tanh blend
-Crunch : Scramble knobs 1–7 (Field: FUEG)
+Crispy : Scramble knobs 1–7 (Field: FUEG)
 
 ## Delay
 
@@ -85,7 +85,7 @@ Stereo width : L/R separation
 Detune : Stereo pitch offset on repeats
 Mod depth : LFO on delay time
 Wet mix : Delay wet level
-Crunch : Scramble knobs 1–7 (Field: FUEG)
+Crispy : Scramble knobs 1–7 (Field: FUEG)
 
 ## Field-only
 

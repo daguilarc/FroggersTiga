@@ -68,6 +68,11 @@ target_compile_definitions(FroggersTigaDesktop PRIVATE
     JUCE_APPLICATION_VERSION_STRING="${PROJECT_VERSION}"
 )
 
+# MSVC does not define M_PI unless _USE_MATH_DEFINES is set before <cmath>.
+if(MSVC)
+    target_compile_definitions(FroggersTigaDesktop PRIVATE _USE_MATH_DEFINES)
+endif()
+
 target_link_libraries(FroggersTigaDesktop PRIVATE
     FroggersTigaAssets
     juce::juce_audio_utils

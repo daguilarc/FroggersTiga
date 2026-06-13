@@ -352,7 +352,9 @@ body {
 
 .mod-select {
   font-size: 0.6rem;
-  max-width: 5.5rem;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--border);
@@ -450,9 +452,9 @@ body {
 }
 
 .knob-col {
-  display: grid;
-  grid-auto-rows: auto;
-  justify-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   align-content: start;
   gap: 0.25rem;
   min-width: 0;
@@ -462,6 +464,13 @@ body {
   border: 1px solid var(--border);
   border-radius: 4px;
   height: auto;
+  isolation: isolate;
+  overflow: clip;
+}
+
+.knob-col > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .knob-col label {
@@ -494,6 +503,8 @@ body {
   font: inherit;
   flex-shrink: 0;
   line-height: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .vco-morph-btn:hover .wave-icon {

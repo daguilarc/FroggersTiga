@@ -105,9 +105,9 @@ SubModulePanel::SubModulePanel(uint8_t pageIndex, juce::String title, IPanelBack
         }
     }
 
-    m_fuegLabel.setText("Crunch", juce::dontSendNotification);
+    m_fuegLabel.setText(m_backend.getRowName(7), juce::dontSendNotification);
     m_fuegLabel.setJustificationType(juce::Justification::centredLeft);
-    m_fuegLabel.setTooltip("Crunch — scramble knobs 1–7 (Field OLED: FUEG; see Manual)");
+    m_fuegLabel.setTooltip("Crispy — scramble knobs 1–7 (Field OLED: FUEG; see Manual)");
     addAndMakeVisible(m_fuegLabel);
 
     m_fueg.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);

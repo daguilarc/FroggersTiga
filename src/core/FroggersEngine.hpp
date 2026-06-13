@@ -34,6 +34,7 @@ struct FroggersEngine
     RuntimeParam m_xcpl;
     RuntimeParam m_pm1;
     RuntimeParam m_pm2;
+    RuntimeParam m_pm3;
     RuntimeParam m_oscLvl;
 
     float m_ph1;
@@ -93,6 +94,7 @@ struct FroggersEngine
 
     float m_sampleRate = 44100.0f;
     bool m_simWaveMorph = false;
+    bool m_simDedicatedPm3Knob = false;
     VcoWaveMorph m_vcoMorph[3];
     float m_envelopeLevel = 0.0f;
     SimFxInsertFn m_simFxInsert = nullptr;
@@ -124,7 +126,7 @@ struct FroggersEngine
     void ApplySmoothingRates()
     {
         RuntimeParam* params[] = {
-            &m_v1vo, &m_v2vo, &m_v3vo, &m_xcpl, &m_pm1, &m_pm2, &m_oscLvl,
+            &m_v1vo, &m_v2vo, &m_v3vo, &m_xcpl, &m_pm1, &m_pm2, &m_pm3, &m_oscLvl,
             &m_rvMix, &m_rvSize, &m_rvDecay, &m_rvPre, &m_rvDamp, &m_rvWidth, &m_rvDiffusion,
             &m_pureDelaySeconds, &m_bumpFreq, &m_bumpResonance, &m_bumpWidth,
             &m_comf, &m_comq, &m_cmlp,
@@ -148,6 +150,11 @@ struct FroggersEngine
     void SetSimWaveMorph(bool enabled)
     {
         m_simWaveMorph = enabled;
+    }
+
+    void SetSimDedicatedPm3Knob(bool enabled)
+    {
+        m_simDedicatedPm3Knob = enabled;
     }
 
     void SetSimFxInsert(SimFxInsertFn fn, void* ctx)
@@ -322,7 +329,15 @@ struct FroggersEngine
         m_xcpl.SetTarget(m_audioGenParams->GetParam(3));
         m_pm1.SetTarget(ZeroedExp(m_audioGenParams->GetParam(4)));
         m_pm2.SetTarget(ZeroedExp(m_audioGenParams->GetParam(5)));
-        m_oscLvl.SetTarget(ExpMap(0.01f, 1.0f, m_audioGenParams->GetParam(6)));
+        if (m_simDedicatedPm3Knob)
+        {
+            m_pm3.SetTarget(ZeroedExp(m_audioGenParams->GetParam(6)));
+            m_oscLvl.SetTarget(ExpMap(0.01f, 1.0f, 0.4f));
+        }
+        else
+        {
+            m_oscLvl.SetTarget(ExpMap(0.01f, 1.0f, m_audioGenParams->GetParam(6)));
+        }
 
         m_rvMix.SetTarget(m_reverbParams->GetParam(0));
         m_rvSize.SetTarget(ExpMap(0.05f, 1.0f, m_reverbParams->GetParam(1)));
@@ -572,7 +587,7 @@ struct FroggersEngine
 
         float pm1d = m_pm1.Process();
         float pm2d = m_pm2.Process();
-        float pm3d = ZeroedExp(fuegKnob);
+        float pm3d = m_simDedicatedPm3Knob ? m_pm3.Process() : ZeroedExp(fuegKnob);
 
         float f1 = m_v1vo.Process();
         float f2 = m_v2vo.Process();
