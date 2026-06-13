@@ -289,4 +289,4 @@ export RACK_DIR=~/Rack-SDK   # https://github.com/VCVRack/Rack-SDK
 cd vcv && ./build.sh
 ```
 
-Planning source of truth: `openspec/changes/sim-hosts-multi-ui/` (supersedes `.cursor/plans/desktop_sim_vcv_rack.plan.md` for host UX and sample rate).
+Parameter and host UX reference: [`SIM_MANUAL.md`](SIM_MANUAL.md) and [`QUICK_DICT.md`](QUICK_DICT.md).

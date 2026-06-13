@@ -25,4 +25,4 @@ cp -r dist/FroggersTiga ~/.local/share/Rack2/plugins/FroggersTiga/
 
 ## Status
 
-Minimal audio-through wrapper using `PagedHostIO` + `FroggersEngine`. Full Field-parity jacks and UI are §6.3 in `openspec/changes/sim-hosts-multi-ui/tasks.md`.
+Minimal audio-through wrapper using `PagedHostIO` + `FroggersEngine`. Full Field-parity jacks and UI are not implemented yet.
