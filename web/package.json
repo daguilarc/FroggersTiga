@@ -4,15 +4,18 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "predev": "node ../scripts/check-wasm-present.mjs",
+    "predev": "npm run build:worklet && node ../scripts/check-wasm-present.mjs",
     "dev": "vite",
+    "build:worklet": "node ../scripts/build-worklet.mjs",
+    "verify:worklet": "node ../scripts/verify-worklet-js.mjs",
     "build:wasm": "cd ../wasm && (test -f ../.emsdk/emsdk_env.sh && . ../.emsdk/emsdk_env.sh); emcmake cmake -B build && cmake --build build && cp build/froggers.wasm ../web/public/froggers.wasm && node ../scripts/verify-wasm-exports.mjs",
     "sync:docs": "sh ../scripts/sync-help-docs.sh",
-    "build": "npm run sync:docs && tsc && vite build",
+    "build": "npm run sync:docs && npm run build:worklet && npm run verify:worklet && tsc && vite build",
     "build:all": "npm run build:wasm && npm run build",
     "preview": "vite preview"
   },
   "devDependencies": {
+    "esbuild": "^0.25.0",
     "typescript": "^5.7.2",
     "vite": "^6.0.3"
   }

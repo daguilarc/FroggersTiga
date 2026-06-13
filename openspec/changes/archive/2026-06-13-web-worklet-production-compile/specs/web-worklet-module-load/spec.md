@@ -1,8 +1,5 @@
-# web-worklet-module-load Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change web-sim-bootstrap-fix. Update Purpose after archive.
-## Requirements
 ### Requirement: AudioWorklet processor uses plain module URL
 
 The web sim SHALL load the AudioWorklet processor from `${import.meta.env.BASE_URL}froggers-processor.js`, a **transpiled ES module** produced by the worklet build script and copied from `web/public/` to `dist/` by Vite. It SHALL NOT use Vite `?url` or `?worker&url` imports for the processor (both are incompatible with production AudioWorklet deployment on static hosts).
@@ -27,4 +24,3 @@ The web sim SHALL load the AudioWorklet processor from `${import.meta.env.BASE_U
 - **THEN** the worklet URL ends in `.js`
 - **AND** the worklet URL is not under `assets/` with a content hash
 - **AND** `addModule` does not fail due to `video/mp2t` or TypeScript parse errors
-

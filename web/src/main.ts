@@ -1,6 +1,5 @@
-import processorUrl from "./froggers-processor.ts?url";
-
 const wasmUrl = `${import.meta.env.BASE_URL}froggers.wasm`;
+const processorUrl = `${import.meta.env.BASE_URL}froggers-processor.js`;
 import { CvScopeCanvas } from "./CvScopeCanvas";
 import { RotaryKnob } from "./RotaryKnob";
 
