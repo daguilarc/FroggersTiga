@@ -6,7 +6,6 @@ This repository ships **self-contained** Daisy tooling (`External/libDaisy`, Dai
 
 - **Operator docs:** [`MANUAL.md`](MANUAL.md) — pages, buttons, modulation workflow, safe flash sequence  
 - **Quick Dict:** [`QUICK_DICT.md`](QUICK_DICT.md) — abbreviated parameter glossary  
-- **Sim manual verify:** [`MANUAL_VERIFY.md`](MANUAL_VERIFY.md) — human sign-off checklist (active work: `desktop-header-hit-test`, `web-chrome-cohesion`)  
 - **License:** MIT — see [`LICENSE`](LICENSE) (copyright JoYoFresh and Diego Aguilar-Canabal)
 
 ## Vendored Dependencies
