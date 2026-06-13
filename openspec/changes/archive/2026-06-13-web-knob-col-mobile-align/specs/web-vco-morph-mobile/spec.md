@@ -1,8 +1,5 @@
-# web-vco-morph-mobile Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change web-vco-morph-mobile. Update Purpose after archive.
-## Requirements
 ### Requirement: VCO morph visible on mobile Audio page
 
 The web sim SHALL display VCO morph waveform buttons on the Audio page at mobile viewport widths without overlap from adjacent knobs. Morph controls SHALL sit in the vertical stack between the parameter label and the rotary knob inside each VCO column cell.
@@ -27,13 +24,3 @@ The knob grid on viewports ≥721px SHALL remain a single row of four columns. V
 - **WHEN** the viewport is ≥721px wide on the Audio page
 - **THEN** eight knob cells appear in one 4×2 grid (four columns) as before this change
 - **AND** morph waveform buttons appear between VCO labels and knobs, not beside them
-
-### Requirement: Mobile page navigation preserved
-
-Mobile layout fixes SHALL preserve flanking page-nav arrows and centered `#app` column alignment.
-
-#### Scenario: Mobile nav arrows remain
-
-- **WHEN** the viewport is ≤720px wide
-- **THEN** previous/next page buttons remain visible flanking the knob grid
-

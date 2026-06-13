@@ -368,6 +368,37 @@ for (let i = 0; i < 8; i++) {
   col.appendChild(mainLabel);
   knobMainLabels.push(mainLabel);
 
+  if (i < 3) {
+    const morphBtn = document.createElement("button");
+    morphBtn.type = "button";
+    morphBtn.className = "vco-morph-btn";
+    morphBtn.hidden = true;
+    morphBtn.title = "Click to cycle wave morph (sine ↔ saw ↔ square)";
+    const vcoIndex = i;
+    morphBtn.addEventListener("click", () => {
+      if (!requireEngineForAction()) {
+        return;
+      }
+      const v = lastMorphs[vcoIndex] ?? 0;
+      let next = 0;
+      if (v < 0.25) {
+        next = 0.5;
+      } else if (v < 0.75) {
+        next = 1;
+      }
+      lastMorphs[vcoIndex] = next;
+      morphBtn.innerHTML = waveSvg(next);
+      send({ type: "cycleVcoMorph", index: vcoIndex });
+    });
+    col.appendChild(morphBtn);
+    vcoMorphBtns.push(morphBtn);
+  } else {
+    const morphSlot = document.createElement("span");
+    morphSlot.className = "knob-morph-slot";
+    morphSlot.setAttribute("aria-hidden", "true");
+    col.appendChild(morphSlot);
+  }
+
   const hintLabel = document.createElement("span");
   hintLabel.className = "knob-hint";
   col.appendChild(hintLabel);
@@ -409,31 +440,6 @@ for (let i = 0; i < 8; i++) {
   const knobRow = document.createElement("div");
   knobRow.className = "knob-row";
   knobRow.appendChild(knob.element);
-  if (i < 3) {
-    const morphBtn = document.createElement("button");
-    morphBtn.type = "button";
-    morphBtn.className = "vco-morph-btn";
-    morphBtn.hidden = true;
-    morphBtn.title = "Click to cycle wave morph (sine ↔ saw ↔ square)";
-    const vcoIndex = i;
-    morphBtn.addEventListener("click", () => {
-      if (!requireEngineForAction()) {
-        return;
-      }
-      const v = lastMorphs[vcoIndex] ?? 0;
-      let next = 0;
-      if (v < 0.25) {
-        next = 0.5;
-      } else if (v < 0.75) {
-        next = 1;
-      }
-      lastMorphs[vcoIndex] = next;
-      morphBtn.innerHTML = waveSvg(next);
-      send({ type: "cycleVcoMorph", index: vcoIndex });
-    });
-    knobRow.appendChild(morphBtn);
-    vcoMorphBtns.push(morphBtn);
-  }
   col.appendChild(knobRow);
 
   const modLabel = document.createElement("span");

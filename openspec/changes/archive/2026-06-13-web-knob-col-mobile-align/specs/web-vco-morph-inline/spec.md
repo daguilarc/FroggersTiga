@@ -1,8 +1,5 @@
-# web-vco-morph-inline Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change web-knob-column-cleanup. Update Purpose after archive.
-## Requirements
 ### Requirement: VCO morph buttons live in VCO knob columns
 
 On the Audio host page, VCO1–VCO3 knob columns SHALL display a clickable waveform morph control between the parameter label and the rotary knob. The control SHALL use the same waveform SVG styling (blue stroke, 28×28). Clicking SHALL send `cycleVcoMorph` for that VCO index after the engine is ready.
@@ -29,13 +26,3 @@ On the Audio host page, VCO1–VCO3 knob columns SHALL display a clickable wavef
 - **WHEN** the user clicks a VCO morph button while playing on the Audio page
 - **THEN** the waveform SVG updates within the same animation frame (optimistic local cycle)
 - **AND** the next `screen` message reconciles morph values from WASM
-
-### Requirement: Rand waves affects inline morph buttons
-
-The global **Rand waveforms** control SHALL randomize VCO morphs in WASM and the inline VCO1–VCO3 waveform buttons SHALL update on the next `screen` message.
-
-#### Scenario: Rand waveforms on Audio page
-
-- **WHEN** the user clicks Rand waveforms on the Audio page
-- **THEN** all three inline waveform buttons change shape within one screen tick
-
