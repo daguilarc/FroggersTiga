@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FroggersTiga Simulator</title>
+    <link rel="icon" type="image/png" href="/FroggersTiga/froggerstiga.png" />
+    <link rel="apple-touch-icon" href="/FroggersTiga/froggerstiga.png" />
+    <script type="module" crossorigin src="/FroggersTiga/assets/index-CbFyKnl1.js"></script>
+    <link rel="stylesheet" crossorigin href="/FroggersTiga/assets/index-DsWz8uGT.css">
+  </head>
+  <body>
+    <div id="app">
+      <header class="app-header">
+        <button
+          type="button"
+          id="app-header-trigger"
+          class="app-header-trigger"
+          aria-haspopup="menu"
+          aria-expanded="false"
+          aria-label="About"
+        >
+          <img src="/FroggersTiga/froggerstiga.png" alt="" class="app-logo" width="48" height="48" />
+          <div class="app-header-text">
+            <h1>FroggersTiga</h1>
+            <p class="subtitle">Browser simulator — VCO-only until external audio is enabled</p>
+          </div>
+        </button>
+        <div id="app-help-menu" class="app-help-menu" hidden role="menu" aria-label="About">
+          <p class="app-help-menu-title">About</p>
+          <button type="button" data-help="manual">Manual</button>
+          <button type="button" data-help="quick-dict">Quick Dict</button>
+          <button type="button" data-help="license">License</button>
+        </div>
+      </header>
+      <div id="help-modal" class="help-modal" hidden aria-modal="true" role="dialog">
+        <div class="help-modal-panel">
+          <header class="help-modal-head">
+            <h2 id="help-modal-title">About</h2>
+            <button type="button" id="help-modal-close" aria-label="Close">×</button>
+          </header>
+          <pre id="help-modal-body" class="help-modal-body"></pre>
+        </div>
+      </div>
+      <div class="controls-top">
+        <button id="play-btn" type="button" class="transport play">Play</button>
+        <button id="stop-btn" type="button" class="transport stop" disabled>Stop</button>
+        <button id="external-btn" type="button">External: Off</button>
+        <div id="external-meter" class="external-meter" aria-hidden="true">
+          <span id="external-meter-fill" class="external-meter-fill"></span>
+        </div>
+        <span id="status" class="status">Click Play to start</span>
+      </div>
+      <button id="mod-bay-toggle" type="button" class="mod-bay-toggle" aria-expanded="true">
+        Mod sources ▾
+      </button>
+      <p class="mod-bay-hint">CV trace while playing</p>
+      <div id="mod-bay" class="mod-bay" aria-label="Mod sources"></div>
+      <section id="page-chrome" class="page-chrome">
+        <div class="page-chrome-head">
+          <h2 id="page-chrome-title">Page</h2>
+          <p id="page-chrome-blurb" class="page-chrome-blurb"></p>
+        </div>
+        <div class="page-chrome-actions">
+          <button id="page-rand-knobs" type="button">Randomize</button>
+          <button id="page-rand-mod" type="button">Randomize mod</button>
+        </div>
+      </section>
+      <div class="field-layout" id="field-layout">
+        <button id="page-prev" type="button" class="page-nav" aria-label="Previous page">◀</button>
+        <div class="knobs" id="knobs"></div>
+        <button id="page-next" type="button" class="page-nav" aria-label="Next page">▶</button>
+      </div>
+      <nav id="page-pills" class="page-pills" aria-label="Pages"></nav>
+      <div class="global-strip">
+        <button id="rand-all" type="button">Rand All</button>
+        <button id="rand-mod" type="button">Rand Mods</button>
+        <button id="marbles-btn" type="button">Marbles</button>
+        <button id="rand-morphs" type="button">Rand waves</button>
+      </div>
+      <p class="hint">Keys: <kbd>[</kbd> previous page · <kbd>]</kbd> next page · <kbd>m</kbd> Marbles</p>
+    </div>
+  </body>
+</html>
