@@ -1,5 +1,6 @@
 .emsdk/
 wasm/build/
 desktop/build/
+desktop/dist/
 .DS_Store
 **/.DS_Store

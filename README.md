@@ -272,11 +272,13 @@ Native app with **five adjacent sub-module panels** (Audio → Drive), **mod rac
 ```sh
 cd desktop
 cmake -B build
-cmake --build build
-./build/FroggersTigaDesktop_artefacts/FroggersTiga.app/Contents/MacOS/FroggersTiga   # macOS path may vary
+cmake --build build --config Release
+./build/FroggersTigaDesktop_artefacts/Release/FroggersTiga.app/Contents/MacOS/FroggersTiga   # macOS
 ```
 
 Links `src/core/` + `DesktopHostIO` only (no libDaisy). Transport bar: **Play/Stop**, format toggles (**WAV/MP3/FLAC/OGG**), **Record** (stereo export), **MIDI**, **Audio**. **WAV** and **OGG** export work in default JUCE builds; **MP3** needs `JUCE_USE_MP3AUDIOFORMAT` + LAME at compile time; **FLAC** needs `JUCE_USE_FLAC`. macOS menu **FroggersTiga → Manual / Quick Dict / License** (embedded docs).
+
+**Release packages:** See [`desktop/PACKAGING.md`](desktop/PACKAGING.md) for DMG / Windows installer commands. Push tag `desktop-vX.Y.Z` (must match `project(FroggersTigaDesktop VERSION ...)` in `desktop/CMakeLists.txt`) to trigger `.github/workflows/desktop-release.yml` and publish GitHub Release assets.
 
 ## VCV Rack plugin (GPL wrapper)
 

@@ -27,6 +27,7 @@ juce_add_binary_data(FroggersTigaAssets
 juce_add_gui_app(FroggersTigaDesktop
     PRODUCT_NAME "FroggersTiga"
     COMPANY_NAME "FroggersTiga"
+    BUNDLE_ID "com.froggers.tiga.desktop"
     ICON_BIG "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Icon.png"
     ICON_SMALL "${CMAKE_CURRENT_SOURCE_DIR}/Resources/Icon.png"
     MICROPHONE_PERMISSION_ENABLED TRUE

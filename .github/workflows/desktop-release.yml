@@ -1,0 +1,89 @@
+name: Desktop Release
+
+on:
+  push:
+    tags:
+      - 'desktop-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches CMake VERSION
+        run: ./desktop/scripts/verify-tag-version.sh "${{ github.ref_name }}"
+
+      - name: Configure and build Release
+        run: |
+          cd desktop
+          cmake -B build
+          cmake --build build --config Release
+
+      - name: Package DMG
+        run: ./desktop/scripts/package-macos.sh
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: desktop/dist/FroggersTiga-*-macOS.dmg
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches CMake VERSION
+        shell: bash
+        run: ./desktop/scripts/verify-tag-version.sh "${{ github.ref_name }}"
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      - name: Configure and build Release
+        run: |
+          cd desktop
+          cmake -B build
+          cmake --build build --config Release
+
+      - name: Package Windows installer
+        shell: pwsh
+        run: ./desktop/scripts/package-windows.ps1
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-setup
+          path: desktop/dist/FroggersTiga-*-Windows-Setup.exe
+          if-no-files-found: error
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [build-macos, build-windows]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-dmg
+          path: dist
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-setup
+          path: dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Desktop ${{ github.ref_name }}
+          generate_release_notes: true
+          files: dist/*
