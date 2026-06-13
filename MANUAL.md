@@ -5,7 +5,7 @@ Firmware for **Daisy Field**: external input plus three VCOs, drive/DSP, algorit
 ## Quick Start
 
 - Power on and connect audio in/out.
-- **`SW1` / `SW2`**: previous / next parameter page.
+- **`SW1` / `SW2`**: previous / next parameter page (works anytime, including during mod-assign — paging exits assign mode).
 - **Knobs 1–7**: page parameters (after modulation and fuegoization — see below).
 - **Knob 8 (`FUEG`)**: fuegoizer amount on pages that use it.
 - **`A1..A7`**: hold to assign modulation from `M1..M7`.
@@ -14,7 +14,8 @@ Firmware for **Daisy Field**: external input plus three VCOs, drive/DSP, algorit
 ## Signal flow (audio)
 
 ```text
-input + oscillator mix
+external input + three VCOs
+  → mix (FUEG continuum when external present; VCO-only when silent)
   → Drive (polynomial drive, fuzz, digital reorganizer, SRR)
   → Pure delay
   → Comb filter
@@ -22,6 +23,15 @@ input + oscillator mix
   → Reverb (wet/dry)
   → output
 ```
+
+**Mix topology** (only when external audio is detected above ~−40 dBFS):
+
+| `FUEG` | Topology |
+|--------|----------|
+| Left (0) | Product ring mod: external × VCO1 × VCO2 × VCO3 |
+| Right (1) | Parallel ring mod: average of external × each VCO |
+
+Sweeping `FUEG` left → right (or back) morphs between those two ring-mod topologies. The blend uses an exponential curve (same family as PM/coupling), so the sound stays near each endpoint longer and transitions faster toward the other. When the input is silent, the firmware plays **VCO-only** (`OLVL` × oscillator mix); the continuum does not apply without external audio.
 
 Modulation and Marbles run in parallel; they shape **parameter values**, not a separate audio bus.
 
@@ -53,7 +63,7 @@ See [Knob tracking](#knob-tracking) for what the display symbols mean and how to
 
 | Page   | Knobs 1–7 fuegoized? | Knob 8 |
 |--------|----------------------|--------|
-| Audio  | Yes                  | `FUEG` (also PM3 — see Audio page) |
+| Audio  | Yes                  | `FUEG` (also PM3 + mix topology — see Audio page) |
 | Marbles| Yes                  | `FUEG` |
 | Reverb | Yes                  | `FUEG` |
 | Filter | Yes                  | `FUEG` |
@@ -61,9 +71,14 @@ See [Knob tracking](#knob-tracking) for what the display symbols mean and how to
 
 `B1` randomize **does not** randomize `FUEG` itself (so you can randomize the other seven without losing your fuego setting).
 
-### Audio page exception: PM3
+### Audio page exception: PM3 and mix topology
 
-On the **Audio** page only, the **raw `FUEG` knob** (not fuegoized) is also read as **PM3** depth: extra phase modulation from **VCO2 → VCO3** when the cross-coupler is on the 2→3 side. So on Audio, knob 8 is **both** the page fuegoizer **and** a dedicated PM depth control.
+On the **Audio** page only, the **stored Audio-page `FUEG` value** (raw, not fuegoized) is read for two extra DSP roles — always from the Audio page parameter store, even when you are viewing another page:
+
+1. **PM3 depth** — extra phase modulation from **VCO2 → VCO3** when the cross-coupler is on the 2→3 side.
+2. **Mix topology** — morph from product ring mod (left) ↔ parallel ring mod (right) when external audio is present.
+
+So on Audio, knob 8 is the page fuegoizer **and** PM3 depth **and** the external/VCO entanglement continuum.
 
 Diego designed it this way because he ran out of parameters on this page and got lazy, sorry.
 
@@ -161,8 +176,8 @@ Three oscillators mixed into the input, with cross-coupling and three PM paths.
 | 4 | `XCPL` | **Cross-coupler** — one knob, two directions from noon: **CCW** enables 1→2 coupling strength; **CW** enables 2→3; **noon** = independent VCOs. Strength uses exponential curve from noon. |
 | 5 | `PM1A` | Phase-mod depth: **VCO2 modulates VCO1** when 1→2 coupling is active |
 | 6 | `PM2A` | Phase-mod depth: **VCO1 and VCO3 modulate VCO2** (1→2 and 2→3 paths) |
-| 7 | `OLVL` | How much the oscillator mix is added to the **external input** before Drive |
-| 8 | `FUEG` | Fuegoizer for knobs 1–7; **also PM3 depth** (VCO2 → VCO3 PM when 2→3 coupling is on) |
+| 7 | `OLVL` | Oscillator level for **VCO-only** output when external input is silent (no effect on external ring-mod mix) |
+| 8 | `FUEG` | Fuegoizer for knobs 1–7; **also PM3 depth** (VCO2 → VCO3 PM when 2→3 coupling is on); **also mix topology** (product ↔ parallel ring mod) |
 
 **Waveforms:** VCO1 (`A8`) and VCO2 (`B8`): sine → saw → square. VCO3 is always sine.
 
@@ -177,7 +192,7 @@ Two independent “bags” of random values, **manually** advanced with **`B5`**
 | Knob | Label | What it does |
 |------|-------|----------------|
 | 1 | `PROB` | Per-channel chance that a **`B5`** press actually steps (higher = more likely) |
-| 2 | `DJV1` | Channel 1 **déjà vu** — below noon: step through bag, sometimes **re-roll** current marble; above noon: mostly step, sometimes **random jump** in bag |
+| 2 | `DJV1` | Channel 1 **Deja vu** — below noon: step through bag, sometimes **re-roll** current marble; above noon: mostly step, sometimes **random jump** in bag |
 | 3 | `SZ1` | Channel 1 bag size (**2–8** marbles) |
 | 4 | `SLW1` | Channel 1 output slew (low-pass on the active marble value → `M6`) |
 | 5 | `DJV2` | Same as `DJV1` for channel 2 |
@@ -256,23 +271,45 @@ First processing stage on `(input + oscillators)`.
 
 ## Build and flash (firmware update)
 
-From `src/FroggersTiga`:
+Matches [dazed-and-con-fielded](https://github.com/jvictor0/dazed-and-con-fielded) except the app directory is **`src/FroggersTiga`** (not `src/Froggers`).
+
+**First time (or after libDaisy changes), from repo root:**
 
 ```sh
+make vendor-libs
+```
+
+**Every firmware update:**
+
+```sh
+cd src/FroggersTiga
 make clean
 make
+```
+
+Put the Field in **DFU mode** (required every flash):
+
+1. Connect USB (Seed port on the Field).
+2. Hold **BOOT**.
+3. Press **RESET** (or power-cycle) while holding **BOOT**.
+4. Release **BOOT** — verify with `dfu-util -l` that **`[0483:df11]`** appears.
+
+Then flash (still in `src/FroggersTiga`):
+
+```sh
 make program-dfu
 ```
 
-Then reset or power-cycle the Field.
+`program-dfu` uses `-s 0x08000000:leave` and resets into the new firmware when flash succeeds.
 
-Use this after code changes so the flashed `.bin` matches your tree.
+**Confirm you flashed FroggersTiga:** `build/FroggersTiga.bin` should be ~84 KB (the older `src/Froggers` build in dazed-and-con-fielded is ~81 KB and lacks the Audio/VCO page).
 
 ---
 
 ## Troubleshooting
 
+- **`SW1` / `SW2` seem dead:** the tactile switch LEDs should light while each switch is held. If an LED lights but OLED page labels do not change (`V1VO` ↔ `PROB` ↔ `RVMX` …), the UI path is wrong; if neither LED lights, the switch or flash failed. Re-flash **`src/FroggersTiga`** (not dazed `src/Froggers`). Old dazed firmware blocks page switches while **`A1..A7`** mod-assign is held.  
 - **Weird knob behavior on a page:** check **`FUEG`** — high fuegoization is supposed to make small moves jumpy.  
 - **Modulation seems dead on CV:** confirm cable and that the input is above the auto-bypass threshold.  
 - **Marbles not changing:** you must press **`B5`**; it does not free-run.  
-- **After editing firmware:** run `clean → make → program-dfu` before judging behavior.
+- **After editing firmware:** from `src/FroggersTiga`, run `clean → make`, DFU mode, then `program-dfu` before judging behavior.

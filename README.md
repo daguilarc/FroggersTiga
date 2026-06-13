@@ -5,7 +5,9 @@ Firmware for **Daisy Field**: three loosely coupled oscillators with phase modul
 This repository ships **self-contained** Daisy tooling (`External/libDaisy`, DaisySP optional): synth sources and boot workflow live **in-tree**—you do not need `~/DaisyExamples`.
 
 - **Operator docs:** [`MANUAL.md`](MANUAL.md) — pages, buttons, modulation workflow, safe flash sequence  
-- **License:** MIT — see [`LICENSE`](LICENSE) (copyright JoYo and Diego Manuel)
+- **Quick Dict:** [`QUICK_DICT.md`](QUICK_DICT.md) — abbreviated parameter glossary  
+- **Sim manual verify:** [`MANUAL_VERIFY.md`](MANUAL_VERIFY.md) — human sign-off checklist (active work: `desktop-header-hit-test`, `web-chrome-cohesion`)  
+- **License:** MIT — see [`LICENSE`](LICENSE) (copyright JoYoFresh and Diego Aguilar-Canabal)
 
 ## Vendored Dependencies
 
@@ -30,7 +32,13 @@ The repo is self-contained for Daisy sources, linker scripts, libraries, and boo
 - `dfu-util`
 - `make`
 
-The toolchain prefix is resolved in [`src/mk/config.mk`](src/mk/config.mk): by default it looks under **`/Applications/ArmGNUToolchain/14.3.rel1/arm-none-eabi/bin`**, then **`…/15.2.rel1/…`**, then `arm-none-eabi-*` on `PATH`. If none match, `make` errors immediately instead of failing obscurely later.
+The build requires **Arm GNU Toolchain 14.3.rel1** installed under:
+
+`/Applications/ArmGNUToolchain/14.3.rel1`
+
+(Apple Silicon: `arm-gnu-toolchain-14.3.rel1-darwin-arm64-arm-none-eabi.tar.xz` from [Arm GNU downloads](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads). Extract and `sudo mv` the folder to that path.)
+
+`make` looks for `arm-none-eabi-g++` in `14.3.rel1/bin` or `14.3.rel1/arm-none-eabi/bin`. It does not use Homebrew or other versions from `PATH`.
 
 ## Repo Layout
 
@@ -87,15 +95,28 @@ make clean-vendor
 
 ### FroggersTiga (primary firmware)
 
+Same flow as [dazed-and-con-fielded](https://github.com/jvictor0/dazed-and-con-fielded), but build **`src/FroggersTiga`** (not `src/Froggers`).
+
+From repo root (first time):
+
+```sh
+make vendor-libs
+```
+
 From [`src/FroggersTiga`](src/FroggersTiga):
 
 ```sh
 make clean
 make
+```
+
+Enter **DFU mode** (hold BOOT, press RESET, release BOOT; `dfu-util -l` must show `0483:df11`), then:
+
+```sh
 make program-dfu
 ```
 
-Full rationale for **`clean → make → program-dfu`** is in [`MANUAL.md`](MANUAL.md).
+`program-dfu` writes to `0x08000000` with `:leave` (auto-reset into firmware). Full procedure is in [`MANUAL.md`](MANUAL.md).
 
 ### Other apps (e.g. minimal Blink template)
 
@@ -208,3 +229,62 @@ The vendored Daisy SDK build path was verified by:
 With the repo-wide `BOOT_NONE` policy, larger programs may not fit in internal flash. **`FroggersTiga`** has previously approached internal-flash limits and may require size-conscious changes if flash usage grows.
 
 `src/TestControl` still has existing compile errors in project code and external dependencies that are unrelated to the vendoring change.
+
+## Browser simulator (GitHub Pages)
+
+Static WASM + Web Audio sim at repo `docs/` (published from `main`).
+
+**Local dev (first clone):**
+
+```sh
+cd web
+npm install
+npm run build:all       # build WASM + sync docs + web bundle
+npm run dev
+```
+
+If WASM is already built:
+
+```sh
+cd web
+npm install
+npm run dev             # predev checks web/public/froggers.wasm exists
+```
+
+Rebuild WASM after core changes (requires [Emscripten](https://emscripten.org/)):
+
+```sh
+cd web && npm run build:wasm    # verifies exports after copy
+```
+
+- Paged Field-style UI (8 knobs, SW1/SW2, OLED mock); mod dropdown **below** each slider (`None | VCO feat | Marbles 1 | Marbles 2`)
+- Default **44.1 kHz** (`audioContext.sampleRate`)
+- **Mic** toggle default **off** (VCO-only until enabled)
+
+**Help docs:** `SIM_MANUAL.md` (sim operators — embedded in desktop/web Help → Manual) and `MANUAL.md` (Daisy Field firmware — repository only, not shipped to sim hosts). `QUICK_DICT.md` is a short parameter glossary.
+
+**Publish:** GitHub **Settings → Pages → branch `main` / `/docs`**. CI workflow `.github/workflows/pages.yml` rebuilds on push to `main`.
+
+## Desktop simulator (JUCE)
+
+Native app with **five adjacent sub-module panels** (Audio → Drive), **mod rack + patch cables**, and shared global strip. No page switching.
+
+```sh
+cd desktop
+cmake -B build
+cmake --build build
+./build/FroggersTigaDesktop_artefacts/FroggersTiga.app/Contents/MacOS/FroggersTiga   # macOS path may vary
+```
+
+Links `src/core/` + `DesktopHostIO` only (no libDaisy). Transport bar: **Play/Stop**, format toggles (**WAV/MP3/FLAC/OGG**), **Record** (stereo export), **MIDI**, **Audio**. **WAV** and **OGG** export work in default JUCE builds; **MP3** needs `JUCE_USE_MP3AUDIOFORMAT` + LAME at compile time; **FLAC** needs `JUCE_USE_FLAC`. macOS menu **FroggersTiga → Manual / Quick Dict / License** (embedded docs).
+
+## VCV Rack plugin (GPL wrapper)
+
+Rack-facing code lives only under [`vcv/`](vcv/) (**GPL-3.0-or-later**). It links the MIT [`src/core/`](src/core/) engine via `PagedHostIO`. See [`vcv/LICENSE_BOUNDARY.md`](vcv/LICENSE_BOUNDARY.md).
+
+```bash
+export RACK_DIR=~/Rack-SDK   # https://github.com/VCVRack/Rack-SDK
+cd vcv && ./build.sh
+```
+
+Planning source of truth: `openspec/changes/sim-hosts-multi-ui/` (supersedes `.cursor/plans/desktop_sim_vcv_rack.plan.md` for host UX and sample rate).

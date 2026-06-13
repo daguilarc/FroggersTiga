@@ -23,7 +23,7 @@ struct DaisyIO
         {
             m_pageManager.PagePrevious();
         }
-        
+
         if (m_field.sw[1].RisingEdge())
         {
             m_pageManager.PageNext();
@@ -113,7 +113,10 @@ struct DaisyIO
             m_pageManager.KnobUpdate(i, m_field.knob[i].Process());
             m_field.led_driver.SetLed(i + 16, m_pageManager.IsTracking(i) ? 1.0f : 0.0f);
         }
-        
+
+        m_field.led_driver.SetLed(daisy::DaisyField::LED_SW_1, m_field.sw[0].Pressed() ? 1.0f : 0.0f);
+        m_field.led_driver.SetLed(daisy::DaisyField::LED_SW_2, m_field.sw[1].Pressed() ? 1.0f : 0.0f);
+
         m_field.led_driver.SwapBuffersAndTransmit();
     }
 

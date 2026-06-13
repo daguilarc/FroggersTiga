@@ -35,6 +35,7 @@ DEFS_COMMON := \
 	-DFILEIO_ENABLE_FATFS_READER
 
 INCLUDES_COMMON := \
+	-I$(REPO_ROOT)/src/core \
 	-I$(REPO_ROOT)/src/common \
 	-I$(LIBDAISY_DIR) \
 	-I$(LIBDAISY_DIR)/src \
@@ -169,8 +170,7 @@ bin: $(BUILD_DIR)/$(TARGET).elf
 	$(OBJCOPY) -O binary $< $(BUILD_DIR)/$(TARGET).bin
 
 program-dfu: bin
-	$(DFU_UTIL) -a 0 -s $(DFU_ADDR) -D $(BUILD_DIR)/$(TARGET).bin -d ,0483:$(USBPID)
-	@echo "Flash complete. Press reset (or power cycle) to run firmware."
+	$(DFU_UTIL) -a 0 -s $(DFU_ADDR):leave -D $(BUILD_DIR)/$(TARGET).bin -d ,0483:$(USBPID)
 
 program-boot:
 	$(DFU_UTIL) -a 0 -s $(INTERNAL_ADDRESS):leave -D $(BOOT_BIN) -d ,0483:$(STM_PID)

@@ -12,6 +12,7 @@ struct App
     void Config()
     {
         m_app.Config(&m_daisyIO.m_pageManager);
+        m_app.SetSampleRate(48000.0f);
     }
 
     static void StaticProcess(daisy::AudioHandle::InputBuffer in, daisy::AudioHandle::OutputBuffer out, size_t size)

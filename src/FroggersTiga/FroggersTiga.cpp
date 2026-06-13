@@ -1,4 +1,4 @@
-#include "../common/Include.hpp"
+#include "../common/App.hpp"
 #include "FroggersTiga.hpp"
 
 int main(void)
@@ -7,4 +7,3 @@ int main(void)
     app.LetsFuckingDoThisShit();
     return 0;
 }
-

@@ -1,0 +1,46 @@
+name: GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup emsdk
+        uses: mymind/emsdk-action@v1
+
+      - name: Build WASM
+        run: |
+          cd wasm
+          emcmake cmake -B build
+          cmake --build build
+          cp build/froggers.wasm ../web/public/froggers.wasm
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build web
+        run: |
+          cd web
+          npm install
+          VITE_BASE=/FroggersTiga/ npm run build
+          mkdir -p ../docs
+          cp -r dist/* ../docs/
+
+      - name: Commit docs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/
+          git diff --staged --quiet || git commit -m "ci: update GitHub Pages assets"
+          git push

@@ -1,0 +1,5 @@
+.emsdk/
+wasm/build/
+desktop/build/
+.DS_Store
+**/.DS_Store
