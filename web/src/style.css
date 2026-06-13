@@ -71,9 +71,30 @@ body {
 }
 
 .subtitle {
-  margin: 0 0 1rem;
+  margin: 0 0 0.5rem;
   opacity: 0.7;
   font-size: 0.85rem;
+}
+
+.sim-meta {
+  margin: 0 0 1rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  opacity: 0.85;
+}
+
+.sim-meta p {
+  margin: 0.2rem 0;
+}
+
+.sim-meta a {
+  color: var(--knob);
+  text-decoration: none;
+}
+
+.sim-meta a:hover,
+.sim-meta a:focus-visible {
+  text-decoration: underline;
 }
 
 .controls-top {
