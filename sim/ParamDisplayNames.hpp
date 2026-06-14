@@ -13,7 +13,7 @@ constexpr uint8_t kRandomHostPage = 1;
 inline const char* forHostPage(uint8_t hostPage)
 {
     static const char* kPages[kNumHostPages] = {
-        "Audio", "Random", "Reverb", "Filter", "Drive", "Delay",
+        "Audio", "Random S&H", "Reverb", "Filter", "Drive", "Delay",
     };
     if (hostPage >= kNumHostPages)
     {

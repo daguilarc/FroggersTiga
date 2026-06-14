@@ -141,15 +141,7 @@ void AudioEngine::handleIncomingMidiMessage(juce::MidiInput*,
 
 void AudioEngine::openDefaultMidi()
 {
-    const auto devices = juce::MidiInput::getAvailableDevices();
-    if (!devices.isEmpty())
-    {
-        setMidiInputDevice(devices[0].identifier);
-    }
-    else
-    {
-        setMidiInputDevice({});
-    }
+    setMidiInputDevice(juce::String(kComputerKeyboardMidiId));
     setMidiOutputDevice(juce::String(kNoMidiOutId));
 }
 
@@ -363,6 +355,11 @@ void AudioEngine::setMidiInputDevice(const juce::String& identifier)
         m_midiInDeviceId.clear();
         return;
     }
+    if (identifier == kComputerKeyboardMidiId)
+    {
+        m_midiInDeviceId = juce::String(kComputerKeyboardMidiId);
+        return;
+    }
 
     m_midiInDeviceId = identifier;
     m_midiIn = juce::MidiInput::openDevice(identifier, this);
@@ -372,9 +369,24 @@ void AudioEngine::setMidiInputDevice(const juce::String& identifier)
     }
 }
 
+bool AudioEngine::isComputerKeyboardMidiEnabled() const
+{
+    return m_midiInDeviceId == kComputerKeyboardMidiId;
+}
+
 bool AudioEngine::isHardwareMidiInputOpenFailed() const
 {
-    return m_midiInDeviceId.isNotEmpty() && m_midiIn == nullptr;
+    return !isComputerKeyboardMidiEnabled() && m_midiInDeviceId.isNotEmpty() && m_midiIn == nullptr;
+}
+
+void AudioEngine::feedComputerKeyboardCc1(uint8_t ccValue)
+{
+    if (!isComputerKeyboardMidiEnabled())
+    {
+        return;
+    }
+    auto& bridge = m_host.m_midiBridge;
+    bridge.PushMidiCc(bridge.m_inChannel1, bridge.m_inCc1, ccValue);
 }
 
 const juce::String& AudioEngine::getMidiInputDeviceIdentifier() const

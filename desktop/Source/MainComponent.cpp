@@ -3,6 +3,46 @@
 #include "DesktopChromeLayout.hpp"
 #include "ParamDisplayNames.hpp"
 
+namespace
+{
+struct KeyNote
+{
+    int keyCode;
+    int note;
+};
+
+constexpr KeyNote kQwertyPianoKeys[] = {
+    {'A', 60}, {'W', 61}, {'S', 62}, {'E', 63}, {'D', 64}, {'F', 65}, {'T', 66}, {'G', 67},
+    {'Y', 68}, {'H', 69}, {'U', 70}, {'J', 71}, {'K', 72}, {'O', 73}, {'L', 74}, {'P', 75},
+};
+
+constexpr int kQwertyPitchLow = 60;
+constexpr float kQwertyPitchSpan = 16.0f;
+
+int noteForKeyCode(int keyCode)
+{
+    for (const KeyNote& keyNote : kQwertyPianoKeys)
+    {
+        if (keyNote.keyCode == keyCode)
+        {
+            return keyNote.note;
+        }
+    }
+    return -1;
+}
+
+bool isModalDialogOpen()
+{
+    return juce::ModalComponentManager::getInstance()->getNumModalComponents() > 0;
+}
+
+bool isTextEntryFocused()
+{
+    juce::Component* focused = juce::Component::getCurrentlyFocusedComponent();
+    return focused != nullptr && dynamic_cast<juce::TextEditor*>(focused) != nullptr;
+}
+} // namespace
+
 AudioEngine& MainComponent::audioEngine()
 {
     return *m_audioEngine;
@@ -63,6 +103,7 @@ void MainComponent::initFromEngine()
     m_play.onClick = [this]() {
         audioEngine().startAudio();
         updateTransportUi();
+        grabKeyboardFocus();
     };
     addAndMakeVisible(m_play);
 
@@ -122,6 +163,8 @@ void MainComponent::initFromEngine()
         }
     });
 
+    setWantsKeyboardFocus(true);
+
     setSize(DesktopChromeLayout::kDefaultWidth, DesktopChromeLayout::kDefaultHeight);
     updateTransportUi();
     startTimerHz(15);
@@ -175,6 +218,95 @@ void MainComponent::handleRecordClick()
 void MainComponent::mouseDown(const juce::MouseEvent& event)
 {
     juce::Component::mouseDown(event);
+    grabKeyboardFocus();
+}
+
+bool MainComponent::shouldCaptureQwertyMidi() const
+{
+    if (!audioEngine().isComputerKeyboardMidiEnabled())
+    {
+        return false;
+    }
+    if (isModalDialogOpen())
+    {
+        return false;
+    }
+    if (isTextEntryFocused())
+    {
+        return false;
+    }
+    return true;
+}
+
+void MainComponent::recomputeQwertyCcFromHeldKeys()
+{
+    uint8_t maxVel = 0;
+    int highestNote = -1;
+    for (size_t i = 0; i < m_qwertyHeldVelocity.size(); i++)
+    {
+        const uint8_t vel = m_qwertyHeldVelocity[i];
+        if (vel == 0)
+        {
+            continue;
+        }
+        if (vel > maxVel)
+        {
+            maxVel = vel;
+        }
+        if (highestNote < static_cast<int>(i))
+        {
+            highestNote = static_cast<int>(i);
+        }
+    }
+
+    uint8_t ccValue = 0;
+    if (highestNote >= 0 && maxVel > 0)
+    {
+        float pitchStep =
+            static_cast<float>(highestNote - kQwertyPitchLow + 1) / kQwertyPitchSpan;
+        pitchStep = juce::jlimit(0.0f, 1.0f, pitchStep);
+        ccValue = static_cast<uint8_t>(juce::jlimit(0, 127, static_cast<int>(pitchStep * maxVel)));
+    }
+    audioEngine().feedComputerKeyboardCc1(ccValue);
+}
+
+bool MainComponent::keyPressed(const juce::KeyPress& key)
+{
+    if (!shouldCaptureQwertyMidi())
+    {
+        return false;
+    }
+    const int note = noteForKeyCode(key.getKeyCode());
+    if (note < 0)
+    {
+        return false;
+    }
+    m_qwertyHeldVelocity[static_cast<size_t>(note)] = 127;
+    recomputeQwertyCcFromHeldKeys();
+    return true;
+}
+
+bool MainComponent::keyStateChanged(bool /*isKeyDown*/)
+{
+    if (!shouldCaptureQwertyMidi())
+    {
+        return false;
+    }
+    bool handled = false;
+    for (const KeyNote& keyNote : kQwertyPianoKeys)
+    {
+        if (juce::KeyPress::isKeyCurrentlyDown(keyNote.keyCode))
+        {
+            m_qwertyHeldVelocity[static_cast<size_t>(keyNote.note)] = 127;
+            handled = true;
+        }
+        else
+        {
+            m_qwertyHeldVelocity[static_cast<size_t>(keyNote.note)] = 0;
+        }
+    }
+    recomputeQwertyCcFromHeldKeys();
+    return handled;
 }
 
 void MainComponent::syncPatchPorts()

@@ -15,6 +15,9 @@ MidiSettingsComponent::MidiSettingsComponent(AudioEngine& engine, std::function<
     m_inSectionLabel.setText("MIDI In", juce::dontSendNotification);
     m_inSectionLabel.setFont(juce::Font(14.0f, juce::Font::bold));
     m_inLabel.setText("Device", juce::dontSendNotification);
+    m_inDevice.setTooltip(
+        "Computer keyboard: QWERTY keys drive MIDI CC 1 in the mod rack. "
+        "Select a hardware device for external MIDI CC instead.");
     m_inCc1GroupLabel.setText("MIDI CC 1", juce::dontSendNotification);
     m_inCc1GroupLabel.setFont(juce::Font(12.0f, juce::Font::bold));
     m_inCh1Label.setText("Ch", juce::dontSendNotification);
@@ -139,16 +142,23 @@ void MidiSettingsComponent::timerCallback()
 
 void MidiSettingsComponent::updateStatus()
 {
-    if (m_engine.getMidiInputDeviceIdentifier().isEmpty())
-    {
-        m_inStatus.setText("No MIDI input device selected.", juce::dontSendNotification);
-        m_inStatus.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
-        return;
-    }
     if (m_engine.isHardwareMidiInputOpenFailed())
     {
         m_inStatus.setText("Could not open selected MIDI input device.", juce::dontSendNotification);
         m_inStatus.setColour(juce::Label::textColourId, juce::Colours::orange);
+        return;
+    }
+    if (m_engine.isComputerKeyboardMidiEnabled())
+    {
+        m_inStatus.setText("Computer keyboard → MIDI CC 1 (not physical MIDI out).",
+                           juce::dontSendNotification);
+        m_inStatus.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+        return;
+    }
+    if (m_engine.getMidiInputDeviceIdentifier().isEmpty())
+    {
+        m_inStatus.setText("No MIDI input device selected.", juce::dontSendNotification);
+        m_inStatus.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
         return;
     }
     m_inStatus.setText("Hardware MIDI in active.", juce::dontSendNotification);
@@ -162,8 +172,9 @@ void MidiSettingsComponent::refreshDeviceLists()
 
     m_inDevice.clear();
     m_outDevice.clear();
-    m_inDevice.addItem("None", 1);
-    int inIdx = 2;
+    m_inDevice.addItem("Computer keyboard", 1);
+    m_inDevice.addItem("None", 2);
+    int inIdx = 3;
     for (const auto& dev : juce::MidiInput::getAvailableDevices())
     {
         m_inDevice.addItem(dev.name, inIdx++);
@@ -176,14 +187,18 @@ void MidiSettingsComponent::refreshDeviceLists()
         m_outDevice.addItem(dev.name, outIdx++);
     }
 
-    if (prevIn.isEmpty())
+    if (m_engine.isComputerKeyboardMidiEnabled())
     {
         m_inDevice.setSelectedId(1, juce::dontSendNotification);
     }
+    else if (prevIn.isEmpty())
+    {
+        m_inDevice.setSelectedId(2, juce::dontSendNotification);
+    }
     else
     {
-        int selectId = 1;
-        int id = 2;
+        int selectId = 2;
+        int id = 3;
         for (const auto& dev : juce::MidiInput::getAvailableDevices())
         {
             if (dev.identifier == prevIn)
@@ -228,12 +243,18 @@ void MidiSettingsComponent::applyInputDevice()
     }
     if (id == 1)
     {
+        m_engine.setMidiInputDevice(juce::String(AudioEngine::kComputerKeyboardMidiId));
+        updateStatus();
+        return;
+    }
+    if (id == 2)
+    {
         m_engine.setMidiInputDevice({});
         updateStatus();
         return;
     }
     const auto devices = juce::MidiInput::getAvailableDevices();
-    const int deviceIndex = id - 2;
+    const int deviceIndex = id - 3;
     if (deviceIndex >= 0 && deviceIndex < devices.size())
     {
         m_engine.setMidiInputDevice(devices[static_cast<size_t>(deviceIndex)].identifier);

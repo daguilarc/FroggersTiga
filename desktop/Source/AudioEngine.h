@@ -31,6 +31,7 @@ class AudioEngine : public juce::AudioIODeviceCallback,
 {
 public:
     static constexpr const char* kNoMidiOutId = "__none__";
+    static constexpr const char* kComputerKeyboardMidiId = "__computer_keyboard__";
 
     AudioEngine(bool pluginHosted = false);
     ~AudioEngine() override;
@@ -59,7 +60,9 @@ public:
     void showMidiSettings(juce::Component* parent);
     void setMidiInputDevice(const juce::String& identifier);
     void setMidiOutputDevice(const juce::String& identifier);
+    bool isComputerKeyboardMidiEnabled() const;
     bool isHardwareMidiInputOpenFailed() const;
+    void feedComputerKeyboardCc1(uint8_t ccValue);
     const juce::String& getMidiInputDeviceIdentifier() const;
     const juce::String& getMidiOutputDeviceIdentifier() const;
     void setTransportChangedCallback(std::function<void()> callback);
@@ -107,7 +110,7 @@ private:
     AudioRecorder m_recorder;
     std::unique_ptr<juce::MidiInput> m_midiIn;
     std::unique_ptr<juce::MidiOutput> m_midiOut;
-    juce::String m_midiInDeviceId;
+    juce::String m_midiInDeviceId{kComputerKeyboardMidiId};
     juce::String m_midiOutDeviceId{kNoMidiOutId};
     std::function<void()> m_transportChangedCallback;
     bool m_audioRunning = false;

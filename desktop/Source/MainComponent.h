@@ -25,6 +25,8 @@ public:
 
     void resized() override;
     void mouseDown(const juce::MouseEvent& event) override;
+    bool keyPressed(const juce::KeyPress& key) override;
+    bool keyStateChanged(bool isKeyDown) override;
 
 private:
     void initFromEngine();
@@ -32,6 +34,8 @@ private:
     void updateTransportUi();
     void syncPatchPorts();
     void handleRecordClick();
+    bool shouldCaptureQwertyMidi() const;
+    void recomputeQwertyCcFromHeldKeys();
 
     AudioEngine& audioEngine();
     const AudioEngine& audioEngine() const;
@@ -53,4 +57,5 @@ private:
     std::array<std::unique_ptr<DesktopPanelBackend>, 5> m_coreBackends;
     std::unique_ptr<DelayHostBackend> m_delayBackend;
     std::array<std::unique_ptr<SubModulePanel>, 6> m_panels;
+    std::array<uint8_t, 128> m_qwertyHeldVelocity{};
 };

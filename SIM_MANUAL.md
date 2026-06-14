@@ -163,7 +163,7 @@ Random is a dual **sample-and-hold** random CV source. Knobs configure two indep
 
 - Dual MIDI CC→CV mod inputs (**MIDI CC 1** / **MIDI CC 2**) on desktop mod rack and web mod bay
 - Web **External MIDI** (permission-gated Web MIDI CC ingest)
-- CC-only MIDI In — notes and QWERTY piano removed
+- CC-only MIDI path — hardware CC + **Computer keyboard** (QWERTY → **MIDI CC 1**); note queue removed
 - Audio page row 7 labeled **Phase mod 3** (PM3 knob parity)
 - Web mod-source labels and dropdown options from wasm (`ParamDisplayNames` authority)
 - Five-column desktop mod rack; five-entry web mod bay
