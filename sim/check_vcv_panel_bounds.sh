@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validates VCV panel layout constants in FieldParityWidget.hpp fit within HP bounds.
+# Validates VCV panel layout constants in VcvPanelLayout.hpp fit within HP bounds.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -16,10 +16,15 @@ read_const() {
 }
 
 kPrimaryHp="$(read_const kPrimaryHp)"
-kExpanderHp="$(read_const kExpanderHp)"
+kVoicingHp="$(read_const kVoicingHp)"
+kFxHp="$(read_const kFxHp)"
 kColumnHp="$(read_const kColumnHp)"
-kExpanderColumns="$(read_const kExpanderColumns)"
+kVoicingColumns="$(read_const kVoicingColumns)"
+kFxColumns="$(read_const kFxColumns)"
 kRows="$(grep -E 'constexpr uint8_t kNumRows = [0-9]+' "$ROOT/sim/ParamDisplayNames.hpp" | sed -E 's/.*= *([0-9]+);.*/\1/')"
+primaryCcYGrid="$(read_const kPrimaryCcEnableYGrid)"
+primaryGateGridX="$(read_const kPrimaryGateGridX)"
+primaryCcGridX0="$(grep 'kPrimaryCcEnableGridX' "$HEADER" | sed -E 's/.*\{ *([0-9.]+)f,.*/\1/')"
 
 GRID=15
 RACK_HEIGHT=380
@@ -27,10 +32,17 @@ RACK_HEIGHT=380
 primaryRightGrid="$(read_const kPrimaryRightmostIoGrid)"
 
 primaryWidthPx="$(awk "BEGIN { print ${kPrimaryHp} * ${GRID} }")"
-expanderWidthPx="$(awk "BEGIN { print ${kExpanderHp} * ${GRID} }")"
-columnWidthPx="$(awk "BEGIN { print ${kColumnHp} * ${GRID} }")"
+kMainHp="$(awk "BEGIN { print ${kPrimaryHp} + ${kVoicingHp} }")"
+mainWidthPx="$(awk "BEGIN { print ${kMainHp} * ${GRID} }")"
+fxWidthPx="$(awk "BEGIN { print ${kFxHp} * ${GRID} }")"
 
-# Primary I/O rightmost jack must fit primary panel width.
+if grep -q 'constexpr float kMainHp = kPrimaryHp + kVoicingHp' "$HEADER"; then
+    :
+else
+    echo "check_vcv_panel_bounds: kMainHp must equal kPrimaryHp + kVoicingHp in header" >&2
+    exit 1
+fi
+
 primaryRightPx="$(awk "BEGIN { print ${primaryRightGrid} * ${GRID} }")"
 if awk "BEGIN { exit !(${primaryRightPx} <= ${primaryWidthPx}) }"; then
     :
@@ -39,26 +51,48 @@ else
     exit 1
 fi
 
-# Expander column widget span: knob centered + mod jack at +3 GRID → right edge ~+4.5 GRID from center.
-halfSpanGrid=4.5
-for ((col = 0; col < kExpanderColumns; col++)); do
-    centerHp="$(awk "BEGIN { print ${kColumnHp} * (0.5 + ${col}) }")"
-    leftEdgeHp="$(awk "BEGIN { print ${centerHp} - ${halfSpanGrid} }")"
-    rightEdgeHp="$(awk "BEGIN { print ${centerHp} + ${halfSpanGrid} }")"
-    colLeftHp="$(awk "BEGIN { print ${col} * ${kColumnHp} }")"
-    colRightHp="$(awk "BEGIN { print (${col} + 1) * ${kColumnHp} }")"
+# CC switches must be >= 2 GRID from gate jack on X; CC row is well above bottom I/O row.
+ccGateXDelta="$(awk "BEGIN { print ${primaryCcGridX0} - ${primaryGateGridX} }")"
+if awk "BEGIN { exit !(${ccGateXDelta} >= 2) }"; then
+    :
+else
+    echo "check_vcv_panel_bounds: CC enable too close to gate on X (dx=${ccGateXDelta} GRID)" >&2
+    exit 1
+fi
 
-    if awk "BEGIN { exit !(${leftEdgeHp} >= ${colLeftHp} && ${rightEdgeHp} <= ${colRightHp}) }"; then
-        :
-    else
-        echo "check_vcv_panel_bounds: column ${col} widgets span outside ${kColumnHp} HP column" >&2
-        exit 1
-    fi
-done
+check_expander_columns() {
+    local hp="$1"
+    local columns="$2"
+    local label="$3"
+    local hpOffset="${4:-0}"
+    local halfSpanGrid=4.5
+    local colWidthHp
+    colWidthHp="$(awk "BEGIN { print ${hp} / ${columns} }")"
+    for ((col = 0; col < columns; col++)); do
+        local centerHp leftEdgeHp rightEdgeHp colLeftHp colRightHp
+        centerHp="$(awk "BEGIN { print ${hpOffset} + ${colWidthHp} * (0.5 + ${col}) }")"
+        leftEdgeHp="$(awk "BEGIN { print ${centerHp} - ${halfSpanGrid} }")"
+        rightEdgeHp="$(awk "BEGIN { print ${centerHp} + ${halfSpanGrid} }")"
+        colLeftHp="$(awk "BEGIN { print ${hpOffset} + ${col} * ${colWidthHp} }")"
+        colRightHp="$(awk "BEGIN { print ${hpOffset} + (${col} + 1) * ${colWidthHp} }")"
 
-# Row Y positions must fit panel height.
+        if awk "BEGIN { exit !(${leftEdgeHp} >= ${colLeftHp} && ${rightEdgeHp} <= ${colRightHp}) }"; then
+            :
+        else
+            echo "check_vcv_panel_bounds: ${label} column ${col} widgets span outside column bounds" >&2
+            exit 1
+        fi
+    done
+}
+
+check_expander_columns "$kVoicingHp" "$kVoicingColumns" "main voicing" "$kPrimaryHp"
+check_expander_columns "$kFxHp" "$kFxColumns" "fx" "0"
+
 rowStep="$(awk "BEGIN { print ${RACK_HEIGHT} / (${kRows} + 2) }")"
-lastRowY="$(awk "BEGIN { print ${rowStep} * (1.5 + ${kRows} - 1) }")"
+headerGrid="$(read_const kHeaderStripGridY)"
+headerPx="$(awk "BEGIN { print ${headerGrid} * ${GRID} }")"
+lastRowY="$(awk "BEGIN { print ${headerPx} + ${rowStep} * (1.5 + ${kRows} - 1) }")"
+primaryIoY="$(awk "BEGIN { print ${headerPx} + ${RACK_HEIGHT} - 2.5 * ${GRID} }")"
 if awk "BEGIN { exit !(${lastRowY} <= ${RACK_HEIGHT}) }"; then
     :
 else
@@ -66,13 +100,27 @@ else
     exit 1
 fi
 
-# Expander width must equal columns × column HP.
-expectedExpanderHp="$(awk "BEGIN { print ${kExpanderColumns} * ${kColumnHp} }")"
-if awk "BEGIN { exit !(${kExpanderHp} == ${expectedExpanderHp}) }"; then
+if awk "BEGIN { exit !(${primaryIoY} <= ${RACK_HEIGHT}) }"; then
     :
 else
-    echo "check_vcv_panel_bounds: expander HP ${kExpanderHp} != ${kExpanderColumns}×${kColumnHp}" >&2
+    echo "check_vcv_panel_bounds: primary I/O row exceeds panel height (${primaryIoY} > ${RACK_HEIGHT})" >&2
     exit 1
 fi
 
-echo "check_vcv_panel_bounds: OK (primary=${kPrimaryHp}HP expander=${kExpanderHp}HP columns=${kExpanderColumns})"
+expectedVoicingHp="$(awk "BEGIN { print ${kVoicingColumns} * ${kColumnHp} }")"
+if awk "BEGIN { exit !(${kVoicingHp} == ${expectedVoicingHp}) }"; then
+    :
+else
+    echo "check_vcv_panel_bounds: voicing HP ${kVoicingHp} != ${kVoicingColumns}×${kColumnHp}" >&2
+    exit 1
+fi
+
+expectedFxHp="$(awk "BEGIN { print ${kFxColumns} * ${kColumnHp} + 12 }")"
+if awk "BEGIN { exit !(${kFxHp} == ${expectedFxHp}) }"; then
+    :
+else
+    echo "check_vcv_panel_bounds: fx HP ${kFxHp} != ${kFxColumns}×${kColumnHp}+12" >&2
+    exit 1
+fi
+
+echo "check_vcv_panel_bounds: OK (main=${kMainHp}HP fx=${kFxHp}HP)"

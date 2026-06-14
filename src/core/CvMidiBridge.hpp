@@ -25,7 +25,7 @@ struct CvMidiBridge
     uint8_t m_inCc2 = 2;
     float m_inCcLevel1 = 0.0f;
     float m_inCcLevel2 = 0.0f;
-    bool m_inCcEnabled[2] = {true, true};
+    bool m_inCcEnabled[2] = {true, false};
     std::array<MidiCcEvent, kMidiCcQueueSize> m_ccQueue{};
     std::atomic<int> m_ccWrite{0};
     std::atomic<int> m_ccRead{0};

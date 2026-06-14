@@ -1,5 +1,8 @@
 #include "SubModulePanel.h"
 
+#include "AudioPairArLayout.hpp"
+#include "ParamDisplayNames.hpp"
+
 namespace
 {
 constexpr int kWaveWidth = 28;
@@ -140,7 +143,51 @@ SubModulePanel::SubModulePanel(uint8_t pageIndex, juce::String title, IPanelBack
     };
     addAndMakeVisible(m_fueg);
 
-    setSize(300, 480);
+    if (m_backend.hasPairArBand())
+    {
+        for (int i = 0; i < AudioPairArLayout::kCellCount; i++)
+        {
+            const int index = i;
+            addAndMakeVisible(m_pairArLabels[static_cast<size_t>(i)]);
+
+            m_pairArSliders[static_cast<size_t>(i)].setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+            m_pairArSliders[static_cast<size_t>(i)].setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+            m_pairArSliders[static_cast<size_t>(i)].setRange(0.0, 1.0, 0.001);
+            m_pairArSliders[static_cast<size_t>(i)].setValue(0.5);
+            m_pairArSliders[static_cast<size_t>(i)].onValueChange = [this, index]() {
+                const uint8_t mod = m_backend.getPairArModSource(static_cast<uint8_t>(index));
+                const float v = static_cast<float>(m_pairArSliders[static_cast<size_t>(index)].getValue());
+                if (mod == 255)
+                {
+                    m_backend.setPairArKnob(static_cast<uint8_t>(index), v);
+                }
+                else
+                {
+                    m_backend.setPairArModDepth(static_cast<uint8_t>(index), v);
+                }
+            };
+            m_pairArSliders[static_cast<size_t>(i)].onDragStart = [this, index]() {
+                m_pairArDragging[static_cast<size_t>(index)] = true;
+                const uint8_t mod = m_backend.getPairArModSource(static_cast<uint8_t>(index));
+                if (mod != 255)
+                {
+                    m_pairArSliders[static_cast<size_t>(index)].setValue(
+                        m_backend.getPairArModDepth(static_cast<uint8_t>(index)),
+                        juce::dontSendNotification);
+                }
+            };
+            m_pairArSliders[static_cast<size_t>(i)].onDragEnd = [this, index]() {
+                m_pairArDragging[static_cast<size_t>(index)] = false;
+                updatePairArKnobDisplay(index);
+            };
+            addAndMakeVisible(m_pairArSliders[static_cast<size_t>(i)]);
+        }
+        setSize(300, 480 + AudioPairArLayout::kBandTopPad + AudioPairArLayout::kBandHeight);
+    }
+    else
+    {
+        setSize(300, 480);
+    }
 }
 
 void SubModulePanel::layoutParameterRow(juce::Rectangle<int> rowArea,
@@ -184,6 +231,24 @@ juce::Rectangle<float> SubModulePanel::inputJackScreenBounds(int row) const
     return localAreaToGlobal(m_inputJackBounds[static_cast<size_t>(row)]).toFloat();
 }
 
+juce::Rectangle<float> SubModulePanel::pairArJackScreenBounds(int index) const
+{
+    return localAreaToGlobal(m_pairArJackBounds[static_cast<size_t>(index)]).toFloat();
+}
+
+void SubModulePanel::updatePairArKnobDisplay(int index)
+{
+    const uint8_t mod = m_backend.getPairArModSource(static_cast<uint8_t>(index));
+    if (mod == 255)
+    {
+        m_pairArSliders[static_cast<size_t>(index)].setValue(
+            m_backend.getPairArKnob(static_cast<uint8_t>(index)), juce::dontSendNotification);
+        return;
+    }
+    m_pairArSliders[static_cast<size_t>(index)].setValue(
+        m_backend.getPairArEffectiveKnob(static_cast<uint8_t>(index)), juce::dontSendNotification);
+}
+
 void SubModulePanel::collectInputPorts(std::vector<PatchCableOverlay::InputPort>& ports) const
 {
     for (int row = 0; row < 8; row++)
@@ -192,6 +257,20 @@ void SubModulePanel::collectInputPorts(std::vector<PatchCableOverlay::InputPort>
         port.page = m_pageIndex;
         port.row = static_cast<uint8_t>(row);
         port.screenBounds = inputJackScreenBounds(row);
+        ports.push_back(port);
+    }
+
+    if (!m_backend.hasPairArBand())
+    {
+        return;
+    }
+
+    for (int i = 0; i < AudioPairArLayout::kCellCount; i++)
+    {
+        PatchCableOverlay::InputPort port;
+        port.page = m_pageIndex;
+        port.row = static_cast<uint8_t>(AudioPairArLayout::kModRowBase + i);
+        port.screenBounds = pairArJackScreenBounds(i);
         ports.push_back(port);
     }
 }
@@ -220,6 +299,19 @@ void SubModulePanel::refresh()
     if (!m_fuegDragging)
     {
         updateFuegKnobDisplay();
+    }
+
+    if (m_backend.hasPairArBand())
+    {
+        for (int i = 0; i < AudioPairArLayout::kCellCount; i++)
+        {
+            m_pairArLabels[static_cast<size_t>(i)].setText(
+                m_backend.getPairArName(static_cast<uint8_t>(i)));
+            if (!m_pairArDragging[static_cast<size_t>(i)])
+            {
+                updatePairArKnobDisplay(i);
+            }
+        }
     }
 }
 
@@ -263,6 +355,39 @@ void SubModulePanel::layoutPanel()
                        m_fueg,
                        nullptr,
                        m_inputJackBounds[7]);
+
+    if (m_backend.hasPairArBand())
+    {
+        area.removeFromTop(AudioPairArLayout::kBandTopPad);
+        layoutPairArBand(area.removeFromTop(AudioPairArLayout::kBandHeight));
+    }
+}
+
+void SubModulePanel::layoutPairArBand(juce::Rectangle<int> bandArea)
+{
+    const int colCount = AudioPairArLayout::kCellCount;
+    const int totalGap = (colCount - 1) * AudioPairArLayout::kColumnPad;
+    const int colW = (bandArea.getWidth() - totalGap) / colCount;
+    int x = bandArea.getX();
+    const int y = bandArea.getY();
+    const int h = bandArea.getHeight();
+
+    for (int i = 0; i < colCount; i++)
+    {
+        juce::Rectangle<int> col(x, y, colW, h);
+        x += colW + AudioPairArLayout::kColumnPad;
+
+        m_pairArJackBounds[static_cast<size_t>(i)] =
+            col.removeFromTop(AudioPairArLayout::kJackSize)
+                .withSizeKeepingCentre(AudioPairArLayout::kJackSize, AudioPairArLayout::kJackSize);
+        col.removeFromTop(AudioPairArLayout::kStackGap);
+        m_pairArSliders[static_cast<size_t>(i)].setBounds(
+            col.removeFromTop(AudioPairArLayout::kKnobSize)
+                .withSizeKeepingCentre(AudioPairArLayout::kKnobSize, AudioPairArLayout::kKnobSize));
+        col.removeFromTop(AudioPairArLayout::kStackGap);
+        m_pairArLabels[static_cast<size_t>(i)].setBounds(
+            col.removeFromTop(AudioPairArLayout::kPairArLabelZoneH));
+    }
 }
 
 void SubModulePanel::paint(juce::Graphics& g)
@@ -288,5 +413,27 @@ void SubModulePanel::paint(juce::Graphics& g)
     {
         g.fillEllipse(m_inputJackBounds[static_cast<size_t>(row)].toFloat());
         g.drawEllipse(m_inputJackBounds[static_cast<size_t>(row)].toFloat(), 1.0f);
+    }
+
+    if (!m_backend.hasPairArBand())
+    {
+        return;
+    }
+
+    for (int i = 0; i < AudioPairArLayout::kCellCount; i++)
+    {
+        const uint8_t mod = m_backend.getPairArModSource(static_cast<uint8_t>(i));
+        if (mod != 255)
+        {
+            g.setColour(juce::Colour(0xff5a9fd4).withAlpha(0.55f));
+            g.drawEllipse(m_pairArSliders[static_cast<size_t>(i)].getBounds().toFloat().reduced(1.0f), 2.0f);
+        }
+    }
+
+    for (int i = 0; i < AudioPairArLayout::kCellCount; i++)
+    {
+        g.setColour(juce::Colour(0xffc8d0dc));
+        g.fillEllipse(m_pairArJackBounds[static_cast<size_t>(i)].toFloat());
+        g.drawEllipse(m_pairArJackBounds[static_cast<size_t>(i)].toFloat(), 1.0f);
     }
 }

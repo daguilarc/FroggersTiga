@@ -14,7 +14,11 @@ endfunction()
 
 add_sim_test(Fuegoize_test Fuegoize_test.cpp)
 add_sim_test(HookIdentity_test HookIdentity_test.cpp)
+add_sim_test(PairArEnvelope_test PairArEnvelope_test.cpp)
+add_sim_test(AudioPairArEffective_test AudioPairArEffective_test.cpp)
 
 enable_testing()
 add_test(NAME Fuegoize_test COMMAND Fuegoize_test)
 add_test(NAME HookIdentity_test COMMAND HookIdentity_test)
+add_test(NAME PairArEnvelope_test COMMAND PairArEnvelope_test)
+add_test(NAME AudioPairArEffective_test COMMAND AudioPairArEffective_test)

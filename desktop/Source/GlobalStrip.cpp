@@ -1,9 +1,19 @@
 #include "GlobalStrip.h"
 
+#include "ParamDisplayNames.hpp"
+
 GlobalStrip::GlobalStrip(DesktopHostIO& host, DelayState& delay)
     : m_host(host)
     , m_delay(delay)
 {
+    m_randomizeAll.setButtonText(
+        ParamDisplayNames::forGlobalStrip(ParamDisplayNames::GlobalStripAction::RandAll));
+    m_randomizeMod.setButtonText(
+        ParamDisplayNames::forGlobalStrip(ParamDisplayNames::GlobalStripAction::RandMods));
+    m_randomizeVcoWaveform.setButtonText(
+        ParamDisplayNames::forGlobalStrip(ParamDisplayNames::GlobalStripAction::RandWaveforms));
+    m_marbles.setButtonText(
+        ParamDisplayNames::forGlobalStrip(ParamDisplayNames::GlobalStripAction::MarblesStep));
     m_randomizeAll.onClick = [this]() { m_host.EnqueueRandomizeAllPages(); };
     m_randomizeMod.onClick = [this]() { m_host.EnqueueRandomizeAllMod(); };
     m_randomizeVcoWaveform.onClick = [this]() { m_host.RandomizeVcoMorphs(); };
@@ -12,7 +22,7 @@ GlobalStrip::GlobalStrip(DesktopHostIO& host, DelayState& delay)
     m_randomizeAll.setTooltip("Randomize all pages + Delay knobs");
     m_randomizeMod.setTooltip("Randomize mod routes on all pages");
     m_randomizeVcoWaveform.setTooltip("Randomize VCO waveform morph (sine/saw/square blend)");
-    m_marbles.setTooltip("Step both random bags");
+    m_marbles.setTooltip("Resample both random S&H channels (draws from bags)");
 
     for (juce::Component* c : {static_cast<juce::Component*>(&m_randomizeAll),
                               static_cast<juce::Component*>(&m_randomizeMod),

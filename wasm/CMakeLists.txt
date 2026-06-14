@@ -42,6 +42,14 @@ set(EXPORTED_FUNCS
     _froggers_mod_source_available
     _froggers_set_cc_pair_enabled
     _froggers_cc_pair_enabled
+    _froggers_set_audio_pair_ar_knob
+    _froggers_get_audio_pair_ar_knob
+    _froggers_get_audio_pair_ar_effective
+    _froggers_set_audio_pair_ar_mod_source
+    _froggers_get_audio_pair_ar_mod_source
+    _froggers_set_audio_pair_ar_mod_depth
+    _froggers_get_audio_pair_ar_mod_depth
+    _froggers_audio_pair_ar_name
     _froggers_row_value
     _froggers_row_badge
     _froggers_current_page

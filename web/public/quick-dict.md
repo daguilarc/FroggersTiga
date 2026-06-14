@@ -7,8 +7,8 @@ Short glosses for sim knob and mod labels. Full guide → in-app **Manual**. Dai
 MIDI CC 1 — Hardware/Web MIDI CC → latched CV (default ch 1, CC 1); disable greys column and clears routes
 MIDI CC 2 — Hardware/Web MIDI CC → latched CV (default ch 1, CC 2); disable greys column and clears routes
 VCO Envelope — Slow level from VCO mix; scope trace
-Random 1 S&H — S&H random mod CV ch.1 — step with Random; see Mod indicators in Manual
-Random 2 S&H — S&H random mod CV ch.2 — step with Random; see Mod indicators in Manual
+Random 1 S&H — S&H random mod CV ch.1 — resample with Rand Resample; see Mod indicators in Manual
+Random 2 S&H — S&H random mod CV ch.2 — resample with Rand Resample; see Mod indicators in Manual
 
 ## Transport
 
@@ -19,7 +19,7 @@ Randomize — Knobs 1–7 on current page (not Crispy)
 Rand mod — Mod sources + depths on current page
 Rand All — All pages + Delay knobs
 Rand Mods — All mod routes
-Random — Step both random bags
+Rand Resample — Resample both S&H channels (draws from bags)
 Rand waveforms — Randomize VCO morph (sine/saw/square blend)
 
 ## Global
@@ -35,10 +35,14 @@ Cross-coupler — CCW 1→2, CW 2→3 from noon
 Phase mod 1 — VCO2 → VCO1 when coupled
 Phase mod 2 — VCO1+VCO3 → VCO2
 Phase mod 3 — VCO2 → VCO3 when cross-coupler is CW (2→3)
+Att. 1+2 — Pair-sum attack (VCO1+VCO2); panel abbrev for Attack
+Rel. 1+2 — Pair-sum release (VCO1+VCO2); not reverb Decay
+Att. 2+3 — Pair-sum attack (VCO2+VCO3)
+Rel. 2+3 — Pair-sum release (VCO2+VCO3)
 
 ## Random
 
-Step chance — Probability each channel steps on Random press
+Step chance — Probability each channel resamples on Rand Resample press
 Deja vu 1 — Channel 1 bag walk / re-roll
 Bag size 1 — Channel 1 values (2–8)
 Slew 1 — Channel 1 glide between held values (not a clock) → Random 1 S&H

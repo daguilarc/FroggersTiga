@@ -57,4 +57,40 @@ inline const char* forHostPageRow(uint8_t hostPage, uint8_t row)
     }
     return kTable[hostPage][row];
 }
+
+inline const char* forAudioPairAr(uint8_t index)
+{
+    static const char* kLabels[4] = {
+        "Att. 1+2", "Rel. 1+2", "Att. 2+3", "Rel. 2+3",
+    };
+    if (index >= 4)
+    {
+        return "";
+    }
+    return kLabels[index];
+}
+
+enum class GlobalStripAction : uint8_t
+{
+    RandAll = 0,
+    RandMods = 1,
+    MarblesStep = 2,
+    RandWaveforms = 3,
+};
+
+inline const char* forGlobalStrip(GlobalStripAction action)
+{
+    switch (action)
+    {
+        case GlobalStripAction::RandAll:
+            return "Rand All";
+        case GlobalStripAction::RandMods:
+            return "Rand Mods";
+        case GlobalStripAction::MarblesStep:
+            return "Rand Resample";
+        case GlobalStripAction::RandWaveforms:
+            return "Rand waveforms";
+    }
+    return "";
+}
 } // namespace ParamDisplayNames

@@ -23,6 +23,54 @@ struct IPanelBackend
     virtual float getVcoMorph(size_t index) const = 0;
     virtual float getVcoDisplayMorph(size_t index) const = 0;
     virtual void cycleVcoMorph(size_t index) = 0;
+    virtual DesktopHostIO* desktopHost()
+    {
+        return nullptr;
+    }
+    virtual bool hasPairArBand() const
+    {
+        return false;
+    }
+    virtual void setPairArKnob(uint8_t index, float value)
+    {
+        (void)index;
+        (void)value;
+    }
+    virtual float getPairArKnob(uint8_t index) const
+    {
+        (void)index;
+        return 0.5f;
+    }
+    virtual float getPairArEffectiveKnob(uint8_t index) const
+    {
+        (void)index;
+        return 0.5f;
+    }
+    virtual void setPairArModSource(uint8_t index, uint8_t modIndex)
+    {
+        (void)index;
+        (void)modIndex;
+    }
+    virtual void setPairArModDepth(uint8_t index, float depth)
+    {
+        (void)index;
+        (void)depth;
+    }
+    virtual uint8_t getPairArModSource(uint8_t index) const
+    {
+        (void)index;
+        return 255;
+    }
+    virtual float getPairArModDepth(uint8_t index) const
+    {
+        (void)index;
+        return 0.5f;
+    }
+    virtual const char* getPairArName(uint8_t index) const
+    {
+        (void)index;
+        return "";
+    }
 };
 
 struct DesktopPanelBackend : IPanelBackend
@@ -101,6 +149,65 @@ struct DesktopPanelBackend : IPanelBackend
     void cycleVcoMorph(size_t index) override
     {
         m_host.CycleVcoMorph(index);
+    }
+
+    DesktopHostIO* desktopHost() override
+    {
+        return &m_host;
+    }
+
+    bool hasPairArBand() const override
+    {
+        return m_pageIndex == 0;
+    }
+
+    void setPairArKnob(uint8_t index, float value) override
+    {
+        if (m_pageIndex == 0)
+        {
+            m_host.SetAudioPairArKnob(index, value);
+        }
+    }
+
+    float getPairArKnob(uint8_t index) const override
+    {
+        return m_pageIndex == 0 ? m_host.GetAudioPairArKnob(index) : 0.5f;
+    }
+
+    float getPairArEffectiveKnob(uint8_t index) const override
+    {
+        return m_pageIndex == 0 ? m_host.GetAudioPairArEffective(index) : 0.5f;
+    }
+
+    void setPairArModSource(uint8_t index, uint8_t modIndex) override
+    {
+        if (m_pageIndex == 0)
+        {
+            m_host.SetAudioPairArModSource(index, modIndex);
+        }
+    }
+
+    void setPairArModDepth(uint8_t index, float depth) override
+    {
+        if (m_pageIndex == 0)
+        {
+            m_host.SetAudioPairArModDepth(index, depth);
+        }
+    }
+
+    uint8_t getPairArModSource(uint8_t index) const override
+    {
+        return m_pageIndex == 0 ? m_host.GetAudioPairArModSource(index) : 255;
+    }
+
+    float getPairArModDepth(uint8_t index) const override
+    {
+        return m_pageIndex == 0 ? m_host.GetAudioPairArModDepth(index) : 0.5f;
+    }
+
+    const char* getPairArName(uint8_t index) const override
+    {
+        return m_pageIndex == 0 ? ParamDisplayNames::forAudioPairAr(index) : "";
     }
 
     uint8_t pageIndex() const

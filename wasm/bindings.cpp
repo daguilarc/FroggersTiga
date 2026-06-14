@@ -1,4 +1,5 @@
 #include "ParamDisplayNames.hpp"
+#include "AudioPairArState.hpp"
 #include "WasmSimHost.hpp"
 
 #include <cstdlib>
@@ -427,6 +428,71 @@ int froggers_cc_pair_enabled(WasmSimHost* host, int pairIndex)
         return 0;
     }
     return host->io.m_midiBridge.isCcPairEnabled(static_cast<uint8_t>(pairIndex)) ? 1 : 0;
+}
+
+void froggers_set_audio_pair_ar_knob(WasmSimHost* host, int index, float value)
+{
+    if (host && index >= 0 && index < static_cast<int>(AudioPairArState::kCount))
+    {
+        host->io.SetAudioPairArKnob(static_cast<uint8_t>(index), value);
+    }
+}
+
+float froggers_get_audio_pair_ar_knob(WasmSimHost* host, int index)
+{
+    if (!host || index < 0 || index >= static_cast<int>(AudioPairArState::kCount))
+    {
+        return 0.0f;
+    }
+    return host->io.GetAudioPairArKnob(static_cast<uint8_t>(index));
+}
+
+float froggers_get_audio_pair_ar_effective(WasmSimHost* host, int index)
+{
+    if (!host || index < 0 || index >= static_cast<int>(AudioPairArState::kCount))
+    {
+        return 0.0f;
+    }
+    return host->io.GetAudioPairArEffective(static_cast<uint8_t>(index));
+}
+
+void froggers_set_audio_pair_ar_mod_source(WasmSimHost* host, int index, int modIndex)
+{
+    if (host && index >= 0 && index < static_cast<int>(AudioPairArState::kCount))
+    {
+        host->io.SetAudioPairArModSource(static_cast<uint8_t>(index), static_cast<uint8_t>(modIndex));
+    }
+}
+
+int froggers_get_audio_pair_ar_mod_source(WasmSimHost* host, int index)
+{
+    if (!host || index < 0 || index >= static_cast<int>(AudioPairArState::kCount))
+    {
+        return 255;
+    }
+    return static_cast<int>(host->io.GetAudioPairArModSource(static_cast<uint8_t>(index)));
+}
+
+void froggers_set_audio_pair_ar_mod_depth(WasmSimHost* host, int index, float depth)
+{
+    if (host && index >= 0 && index < static_cast<int>(AudioPairArState::kCount))
+    {
+        host->io.SetAudioPairArModDepth(static_cast<uint8_t>(index), depth);
+    }
+}
+
+float froggers_get_audio_pair_ar_mod_depth(WasmSimHost* host, int index)
+{
+    if (!host || index < 0 || index >= static_cast<int>(AudioPairArState::kCount))
+    {
+        return 0.0f;
+    }
+    return host->io.GetAudioPairArModDepth(static_cast<uint8_t>(index));
+}
+
+const char* froggers_audio_pair_ar_name(int index)
+{
+    return ParamDisplayNames::forAudioPairAr(static_cast<uint8_t>(index));
 }
 
 }

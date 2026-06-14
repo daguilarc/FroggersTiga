@@ -75,6 +75,14 @@ interface WasmExports {
   froggers_mod_source_available: (host: number, modIndex: number) => number;
   froggers_set_cc_pair_enabled: (host: number, pairIndex: number, enabled: number) => void;
   froggers_cc_pair_enabled: (host: number, pairIndex: number) => number;
+  froggers_set_audio_pair_ar_knob: (host: number, index: number, value: number) => void;
+  froggers_get_audio_pair_ar_knob: (host: number, index: number) => number;
+  froggers_get_audio_pair_ar_effective: (host: number, index: number) => number;
+  froggers_set_audio_pair_ar_mod_source: (host: number, index: number, modIndex: number) => void;
+  froggers_get_audio_pair_ar_mod_source: (host: number, index: number) => number;
+  froggers_set_audio_pair_ar_mod_depth: (host: number, index: number, depth: number) => void;
+  froggers_get_audio_pair_ar_mod_depth: (host: number, index: number) => number;
+  froggers_audio_pair_ar_name: (index: number) => number;
   malloc: (size: number) => number;
   free: (ptr: number) => void;
 }
@@ -102,7 +110,10 @@ type UiMessage =
   | { type: "external"; enabled: boolean }
   | { type: "setRunning"; running: boolean }
   | { type: "midiCc"; channel: number; cc: number; value: number }
-  | { type: "setCcPairEnabled"; pairIndex: number; enabled: boolean };
+  | { type: "setCcPairEnabled"; pairIndex: number; enabled: boolean }
+  | { type: "pairArKnob"; index: number; value: number }
+  | { type: "pairArModSource"; index: number; modIndex: number }
+  | { type: "pairArModDepth"; index: number; depth: number };
 
 interface ProcessorCtorOptions {
   processorOptions?: { wasmModule?: WebAssembly.Module };
@@ -263,6 +274,12 @@ class FroggersProcessor extends AudioWorkletProcessor {
     } else if (msg.type === "setCcPairEnabled") {
       wasm.froggers_set_cc_pair_enabled(host, msg.pairIndex, msg.enabled ? 1 : 0);
       this.postAssignableModOptions();
+    } else if (msg.type === "pairArKnob") {
+      wasm.froggers_set_audio_pair_ar_knob(host, msg.index, msg.value);
+    } else if (msg.type === "pairArModSource") {
+      wasm.froggers_set_audio_pair_ar_mod_source(host, msg.index, msg.modIndex);
+    } else if (msg.type === "pairArModDepth") {
+      wasm.froggers_set_audio_pair_ar_mod_depth(host, msg.index, msg.depth);
     } else if (msg.type === "setRunning") {
       this.audioRunning = msg.running;
       if (msg.running) {
@@ -343,6 +360,24 @@ class FroggersProcessor extends AudioWorkletProcessor {
     for (let i = 0; i < 3; i++) {
       morphs.push(this.wasm.froggers_get_vco_display_morph(this.host, i));
     }
+
+    const pairArRows = [];
+    if (this.hostPage === 0) {
+      for (let i = 0; i < 4; i++) {
+        const modSource = this.wasm.froggers_get_audio_pair_ar_mod_source(this.host, i);
+        pairArRows.push({
+          name: this.readCString(this.wasm.froggers_audio_pair_ar_name(i)),
+          value:
+            modSource === 255
+              ? this.wasm.froggers_get_audio_pair_ar_knob(this.host, i)
+              : this.wasm.froggers_get_audio_pair_ar_effective(this.host, i),
+          badge: " ",
+          modSource,
+          modDepth: this.wasm.froggers_get_audio_pair_ar_mod_depth(this.host, i),
+        });
+      }
+    }
+
     for (let i = 0; i < 7; i++) {
       modLevels.push(this.wasm.froggers_mod_level(this.host, i));
     }
@@ -358,6 +393,7 @@ class FroggersProcessor extends AudioWorkletProcessor {
       wasmPage: this.wasm.froggers_current_page(this.host),
       pageName: HOST_PAGE_NAMES[this.hostPage] ?? `Page ${this.hostPage}`,
       rows,
+      pairArRows,
       morphs,
       modLevels,
       scopeSamples,

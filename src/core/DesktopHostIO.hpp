@@ -3,6 +3,7 @@
 #include "CvMidiBridge.hpp"
 #include "CvPresence.hpp"
 #include "DelayState.hpp"
+#include "AudioPairArState.hpp"
 #include "SimModSource.hpp"
 
 #include <cmath>
@@ -28,7 +29,8 @@ enum class HostMutationType : uint8_t
     DelaySetModSource = 7,
     DelayRandomizeKnobs = 8,
     DelayRandomizeMod = 9,
-    CycleMorph = 10
+    CycleMorph = 10,
+    PairArSetModSource = 11
 };
 
 struct HostMutation
@@ -47,6 +49,7 @@ struct DesktopHostIO
 
     PageManager m_pageManager;
     FroggersEngine m_engine;
+    AudioPairArState m_pairAr;
     CvMidiBridge m_midiBridge;
     DelayState* m_delay = nullptr;
     std::function<void(int)> m_buttonCallback;
@@ -123,6 +126,7 @@ struct DesktopHostIO
                 break;
             case HostMutationType::RandomizeAllMod:
                 m_pageManager.RandomizeAllPagesModSim(m_midiBridge);
+                m_pairAr.randomizeMod(m_midiBridge);
                 if (m_delay)
                 {
                     m_delay->randomizeMod(m_midiBridge);
@@ -159,6 +163,14 @@ struct DesktopHostIO
             case HostMutationType::CycleMorph:
                 m_engine.CycleVcoMorph(mutation.morphIndex);
                 break;
+            case HostMutationType::PairArSetModSource:
+                if (IsValidSimModAssignment(mutation.modIndex)
+                    && (mutation.modIndex == 255
+                        || IsSimModSourceAvailable(mutation.modIndex, m_midiBridge)))
+                {
+                    m_pairAr.setModSource(mutation.row, mutation.modIndex);
+                }
+                break;
         }
     }
 
@@ -187,6 +199,9 @@ struct DesktopHostIO
         m_engine.Config(&m_pageManager);
         m_pageManager.SetAllParamsTracking();
         m_pageManager.SanitizeSimModAssignments();
+        m_pairAr.init(44100.0f);
+        m_pairAr.sanitizeModSources();
+        m_engine.SetAudioPairArState(&m_pairAr);
         if (m_delay)
         {
             m_delay->sanitizeModSources();
@@ -199,6 +214,7 @@ struct DesktopHostIO
     void SetSampleRate(float sampleRate)
     {
         m_engine.SetSampleRate(sampleRate);
+        m_pairAr.setSampleRate(sampleRate);
     }
 
     void SetPageKnob(uint8_t page, uint8_t position, float value)
@@ -282,6 +298,50 @@ struct DesktopHostIO
         mutation.row = row;
         mutation.modIndex = modIndex;
         enqueueMutation(mutation);
+    }
+
+    void EnqueuePairArSetModSource(uint8_t index, uint8_t modIndex)
+    {
+        HostMutation mutation;
+        mutation.type = HostMutationType::PairArSetModSource;
+        mutation.row = index;
+        mutation.modIndex = modIndex;
+        enqueueMutation(mutation);
+    }
+
+    void SetAudioPairArKnob(uint8_t index, float value)
+    {
+        m_pairAr.setKnob(index, value);
+    }
+
+    float GetAudioPairArKnob(uint8_t index) const
+    {
+        return m_pairAr.getKnob(index);
+    }
+
+    float GetAudioPairArEffective(uint8_t index) const
+    {
+        return m_pairAr.getEffectiveKnob(index, m_pageManager.m_modMgr.m_mods);
+    }
+
+    uint8_t GetAudioPairArModSource(uint8_t index) const
+    {
+        return m_pairAr.getModSource(index);
+    }
+
+    float GetAudioPairArModDepth(uint8_t index) const
+    {
+        return m_pairAr.getModDepth(index);
+    }
+
+    void SetAudioPairArModDepth(uint8_t index, float depth)
+    {
+        m_pairAr.setModDepth(index, depth);
+    }
+
+    void SetAudioPairArModSource(uint8_t index, uint8_t modIndex)
+    {
+        EnqueuePairArSetModSource(index, modIndex);
     }
 
     void SetVcoMorph(size_t index, float value)
@@ -410,6 +470,7 @@ struct DesktopHostIO
             {
                 m_delay->clearModRoutesForIndex(modIndex);
             }
+            m_pairAr.clearModRoutesForIndex(modIndex);
         }
     }
 
@@ -458,6 +519,7 @@ struct DesktopHostIO
     void ProcessBlock(const float* in, float* out, size_t n)
     {
         tickControls();
+        m_pairAr.beginBlock(m_pageManager.m_modMgr.m_mods);
         m_engine.ProcessBlock(in, out, n);
         updateMarblesScopeAccum();
         m_midiBridge.tickMidiOut(m_engine.GetEnvelopeLevel(), m_midiOut);

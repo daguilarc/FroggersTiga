@@ -1,6 +1,6 @@
 # FroggersTiga Simulator Manual
 
-**Release v1.0.1** — desktop app, web sim, and VST/AU plugin share this operator guide.
+**Release v1.0.3** — desktop app, web sim, and VST/AU plugin share this operator guide.
 
 This guide covers the **desktop**, **web**, and **plugin** simulators. On-screen knob names match this manual. For Daisy Field hardware, see `MANUAL.md` in the repository.
 
@@ -39,7 +39,7 @@ Six pages — **Audio**, **Random**, **Reverb**, **Filter**, **Drive**, and **De
 | **Rand mod** (page) | Randomize mod sources and depths on the current page |
 | **Rand All** | Randomize all pages + Delay |
 | **Rand Mods** | Randomize all mod routes |
-| **Random** | Step both random bags |
+| **Rand Resample** | Resample both random S&H channels (draws from bags) |
 | **Rand waveforms** | Randomize VCO waveform morph (Audio page) |
 
 ## Mod bay
@@ -77,7 +77,7 @@ Disable a CC input to grey its mod column, block new routes, clear existing ones
 
 ### Random S&H
 
-Each random channel draws a value from its bag when you press **Random**. There is no internal clock — values change only on a step. **Slew** smooths glides between held values; it does not trigger new steps. Held voltage is normalized **0–100%** on the mod bus (the same CV you patch to knobs).
+Each random channel draws a value from its bag when you press **Rand Resample**. There is no internal clock — values change only on a resample. **Slew** smooths glides between held values; it does not trigger new steps. Held voltage is normalized **0–100%** on the mod bus (the same CV you patch to knobs).
 
 ## Page reference
 
@@ -98,13 +98,22 @@ Three VCOs, cross-coupling, and phase modulation. Click the waveform icon beside
 | 7 | Phase mod 3 | VCO2 → VCO3 when cross-coupler is CW (2→3) |
 | 8 | Crispy | See Global controls |
 
+**Pair-sum AR (Audio only):** Four extra controls shape how the (VCO1+VCO2) and (VCO2+VCO3) sums rise and fall in the mix. On **desktop**, they appear as a horizontal band below the eight vertical rows (jack → knob → label). On **web**, they are a third row of four knobs on the Audio page only. Panel labels abbreviate **Attack** as **Att.** and **Release** as **Rel.** (**Rel.** is combined decay+release for the pair sum — not reverb row **Decay**).
+
+| Control | What it does |
+|---------|--------------|
+| Att. 1+2 | Attack — rise time when the VCO1+VCO2 pair level increases |
+| Rel. 1+2 | Release — fall time when the pair level decreases |
+| Att. 2+3 | Attack — rise time for the VCO2+VCO3 pair |
+| Rel. 2+3 | Release — fall time for the VCO2+VCO3 pair |
+
 ### Page 2 — Random
 
-Dual sample-and-hold random CV. Knobs configure two independent bags; **Random 1 S&H** and **Random 2 S&H** in the mod bay are the outputs. Press **Random** to step both channels. For stepping, slew, and LED behavior, see **Random S&H** in Mod bay.
+Dual sample-and-hold random CV. Knobs configure two independent bags; **Random 1 S&H** and **Random 2 S&H** in the mod bay are the outputs. Press **Rand Resample** to resample both channels. For stepping, slew, and LED behavior, see **Random S&H** in Mod bay.
 
 | Row | Parameter | What it does |
 |-----|-----------|--------------|
-| 1 | Step chance | Probability each channel steps on Random press |
+| 1 | Step chance | Probability each channel resamples on **Rand Resample** press |
 | 2 | Deja vu 1 | Channel 1 bag walk / re-roll |
 | 3 | Bag size 1 | Channel 1 values (2–8) |
 | 4 | Slew 1 | Channel 1 glide between held values (not a clock) |
@@ -170,8 +179,8 @@ Dual sample-and-hold random CV. Knobs configure two independent bags; **Random 1
 ### Desktop
 
 - Five adjacent submodule panels (no page switching) plus a **Delay** overlay page.
-- **Mod rack** with patch cables — drag from a mod source to a knob to assign modulation.
-- **MIDI Settings** — two CC→CV inputs (MIDI CC 1 and MIDI CC 2, each Channel + CC + **On** enable toggle) plus hardware MIDI Out for VCO envelope export. VST/AU inherits the same core gating (defaults both CC on).
+- **Mod rack** with patch cables — drag from a mod source to a knob to assign modulation (including the four pair-sum AR jacks on the Audio panel bottom band).
+- **MIDI Settings** — two CC→CV inputs (MIDI CC 1 and MIDI CC 2, each Channel + CC + **On** enable toggle) plus hardware MIDI Out for VCO envelope export. VST/AU inherits the same core gating (MIDI CC 1 on by default, MIDI CC 2 off).
 - **Ext. In.** — requires **Ext. In. on + Play**; routes mic, line-in, or USB interface input to the engine. macOS may prompt for audio input access on first capture.
 - **Audio Settings** — choose output and input devices.
 
@@ -181,6 +190,7 @@ Dual sample-and-hold random CV. Knobs configure two independent bags; **Random 1
 - Mod assignment via dropdowns below each knob (no patch cables).
 - **External MIDI** — Web MIDI access is requested when you turn **External MIDI** on. Default is **Off**; Play alone does not prompt for MIDI. When External MIDI is off, the **MIDI CC 1** scope is greyed in the mod bay. When on, matching CC 1 messages update the scope (default: channel 1, CC 1). Web does not expose MIDI CC 2.
 - **External** — microphone permission is requested when you turn **External** on. Default is **Off**; Play alone does not prompt for mic access. A peak meter beside **External** shows input level when External is on and audio is playing. If the meter stays empty for about a second, check mic permission and input level in the status line. If permission is denied, allow microphone in browser site settings and click **External** again.
+- **Mobile browsers** — External + mic uses a play-and-record audio session. **Without headphones**, iPhone Safari often routes synth output to the **earpiece** (top speaker), not the bottom loudspeaker. **With headphones**, output in the headset is normal. Turn **External** off or reload the page to restore built-in speaker playback. Desktop browsers are not affected; use the desktop app for full output routing control.
 
 ### VST3 / AU plugin (local-only)
 
@@ -197,6 +207,14 @@ VST/AU sources are **not published** on the public GitHub repo. Keep plugin sour
 **Daisy Field hardware:** see `MANUAL.md` in the repository for firmware operation, OLED symbols, pickup badges, and flash procedure.
 
 ## Version history
+
+### v1.0.3
+
+- Audio page **pair-AR** controls (Attack/Release 1+2 and 2+3) with mod CV on desktop and web
+- Pair-AR knobs track live modulation like other assignable knobs
+- **MIDI CC 2** defaults **Off** on desktop/VST (CC 1 on); web unchanged
+- Mobile browser audio routing hints and session handling when **External Audio** uses the mic
+- Global strip **Rand Resample** label (marbles step); web Playwright e2e harness
 
 ### v1.0.1 (initial sim release)
 

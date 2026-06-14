@@ -2,6 +2,7 @@
 
 #include "CvMidiBridge.hpp"
 #include "CvPresence.hpp"
+#include "AudioPairArState.hpp"
 #include "ParamDisplayNames.hpp"
 #include "SimModSource.hpp"
 
@@ -18,6 +19,7 @@ struct PagedHostIO
 {
     PageManager m_pageManager;
     FroggersEngine m_engine;
+    AudioPairArState m_pairAr;
     CvMidiBridge m_midiBridge;
     std::function<void(int)> m_buttonCallback;
     SchmidtTrigger m_gateTrigger{0.2f, 0.1f};
@@ -35,6 +37,9 @@ struct PagedHostIO
         m_engine.Config(&m_pageManager);
         m_pageManager.Finalize();
         m_pageManager.SanitizeSimModAssignments();
+        m_pairAr.init(44100.0f);
+        m_pairAr.sanitizeModSources();
+        m_engine.SetAudioPairArState(&m_pairAr);
         m_engine.SetSimWaveMorph(true);
         m_engine.SetSimDedicatedPm3Knob(true);
         m_gateTrigger.Reset(m_gateHigh);
@@ -43,6 +48,7 @@ struct PagedHostIO
     void SetSampleRate(float sampleRate)
     {
         m_engine.SetSampleRate(sampleRate);
+        m_pairAr.setSampleRate(sampleRate);
     }
 
     void SetKnob(size_t index, float value)
@@ -119,6 +125,7 @@ struct PagedHostIO
     void RandomizeAllMod()
     {
         m_pageManager.RandomizeAllPagesModSim(m_midiBridge);
+        m_pairAr.randomizeMod(m_midiBridge);
     }
 
     void RandomizePage(uint8_t page)
@@ -140,7 +147,9 @@ struct PagedHostIO
         m_midiBridge.setCcPairEnabled(pairIndex, enabled);
         if (!enabled)
         {
-            m_pageManager.ClearModRoutesForIndex(CvMidiBridge::kCcModIndices[pairIndex]);
+            const uint8_t modIndex = CvMidiBridge::kCcModIndices[pairIndex];
+            m_pageManager.ClearModRoutesForIndex(modIndex);
+            m_pairAr.clearModRoutesForIndex(modIndex);
         }
     }
 
@@ -190,6 +199,49 @@ struct PagedHostIO
     void SetRowModDepth(size_t row, float depth)
     {
         m_pageManager.SetPageModDepth(m_pageManager.m_currentPage, static_cast<uint8_t>(row), depth);
+    }
+
+    void SetAudioPairArKnob(uint8_t index, float value)
+    {
+        m_pairAr.setKnob(index, value);
+    }
+
+    float GetAudioPairArKnob(uint8_t index) const
+    {
+        return m_pairAr.getKnob(index);
+    }
+
+    float GetAudioPairArEffective(uint8_t index) const
+    {
+        return m_pairAr.getEffectiveKnob(index, m_pageManager.m_modMgr.m_mods);
+    }
+
+    uint8_t GetAudioPairArModSource(uint8_t index) const
+    {
+        return m_pairAr.getModSource(index);
+    }
+
+    float GetAudioPairArModDepth(uint8_t index) const
+    {
+        return m_pairAr.getModDepth(index);
+    }
+
+    void SetAudioPairArModDepth(uint8_t index, float depth)
+    {
+        m_pairAr.setModDepth(index, depth);
+    }
+
+    void SetAudioPairArModSource(uint8_t index, uint8_t modIndex)
+    {
+        if (!IsValidSimModAssignment(modIndex))
+        {
+            return;
+        }
+        if (modIndex != 255 && !IsSimModSourceAvailable(modIndex, m_midiBridge))
+        {
+            return;
+        }
+        m_pairAr.setModSource(index, modIndex);
     }
 
     void SetSw1(bool down)
@@ -282,6 +334,7 @@ struct PagedHostIO
     void ProcessBlock(const float* in, float* out, size_t n)
     {
         tickControls();
+        m_pairAr.beginBlock(m_pageManager.m_modMgr.m_mods);
         m_engine.ProcessBlock(in, out, n);
     }
 

@@ -21,7 +21,16 @@ EXPORTS='[
   "_froggers_delay_set_row_mod_source","_froggers_delay_get_row_mod_source",
   "_froggers_delay_set_row_mod_depth","_froggers_delay_get_row_mod_depth",
   "_froggers_delay_row_name","_froggers_delay_randomize_knobs","_froggers_delay_randomize_mod",
-  "_froggers_copy_scope_samples",
+  "_froggers_set_cc_pair_enabled","_froggers_cc_pair_enabled",
+  "_froggers_set_audio_pair_ar_knob","_froggers_get_audio_pair_ar_knob",
+  "_froggers_get_audio_pair_ar_effective",
+  "_froggers_set_audio_pair_ar_mod_source","_froggers_get_audio_pair_ar_mod_source",
+  "_froggers_set_audio_pair_ar_mod_depth","_froggers_get_audio_pair_ar_mod_depth",
+  "_froggers_audio_pair_ar_name",
+  "_froggers_assignable_mod_count","_froggers_assignable_mod_index",
+  "_froggers_mod_source_available","_froggers_mod_source_name",
+  "_froggers_push_midi_cc",
+  "_froggers_randomize_page","_froggers_randomize_page_mod",
   "_malloc","_free"
 ]'
 

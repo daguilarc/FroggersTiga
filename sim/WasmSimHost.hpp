@@ -90,6 +90,7 @@ struct WasmSimHost
             const uint8_t modIndex = CvMidiBridge::kCcModIndices[pairIndex];
             io.m_pageManager.ClearModRoutesForIndex(modIndex);
             delay.clearModRoutesForIndex(modIndex);
+            io.m_pairAr.clearModRoutesForIndex(modIndex);
         }
     }
 

@@ -1,5 +1,7 @@
 #include "PatchCableOverlay.h"
 
+#include "AudioPairArLayout.hpp"
+
 #include <cmath>
 
 PatchCableOverlay::PatchCableOverlay(DesktopHostIO& host, DelayState& delay)
@@ -27,6 +29,13 @@ void PatchCableOverlay::removeCablesForModIndex(uint8_t modIndex)
 
 uint8_t PatchCableOverlay::getModSource(uint8_t page, uint8_t row) const
 {
+    if (page == AudioPairArLayout::kAudioHostPage
+        && row >= AudioPairArLayout::kModRowBase
+        && row < AudioPairArLayout::kModRowBase + AudioPairArLayout::kCellCount)
+    {
+        return m_host.GetAudioPairArModSource(
+            static_cast<uint8_t>(row - AudioPairArLayout::kModRowBase));
+    }
     if (page >= DelayState::kDelayPageIndex)
     {
         return m_delay.getModSource(row);
@@ -38,6 +47,14 @@ void PatchCableOverlay::setModSource(uint8_t page, uint8_t row, uint8_t modIndex
 {
     if (modIndex != 255 && !m_host.IsModSourceAvailable(modIndex))
     {
+        return;
+    }
+    if (page == AudioPairArLayout::kAudioHostPage
+        && row >= AudioPairArLayout::kModRowBase
+        && row < AudioPairArLayout::kModRowBase + AudioPairArLayout::kCellCount)
+    {
+        m_host.EnqueuePairArSetModSource(
+            static_cast<uint8_t>(row - AudioPairArLayout::kModRowBase), modIndex);
         return;
     }
     if (page >= DelayState::kDelayPageIndex)

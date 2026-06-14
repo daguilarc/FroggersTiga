@@ -1,7 +1,7 @@
 {
   "name": "froggers-tiga-sim",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.3",
   "type": "module",
   "scripts": {
     "predev": "npm run build:worklet && node ../scripts/check-wasm-present.mjs",
@@ -12,9 +12,12 @@
     "sync:docs": "sh ../scripts/sync-help-docs.sh",
     "build": "npm run sync:docs && npm run build:worklet && npm run verify:worklet && tsc && vite build",
     "build:all": "npm run build:wasm && npm run build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "devDependencies": {
+    "@playwright/test": "^1.51.0",
     "esbuild": "^0.25.0",
     "typescript": "^5.7.2",
     "vite": "^6.0.3"

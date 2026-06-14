@@ -634,6 +634,7 @@ void AudioEngine::renderSimOutputBlock(const float* inputChannel0,
 
     m_host.tickControls();
     m_delay.beginBlock(m_host.m_pageManager.m_modMgr.m_mods);
+    m_host.m_pairAr.beginBlock(m_host.m_pageManager.m_modMgr.m_mods);
     m_host.m_engine.ProcessBlock(m_inBlock.data(), m_monoBlock.data(), n);
     m_host.updateMarblesScopeAccum();
     const StereoFxSpread spread = makeStereoFxSpread(

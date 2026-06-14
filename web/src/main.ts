@@ -5,6 +5,9 @@ import { ModLedIndicator } from "./ModLedIndicator";
 import { RotaryKnob } from "./RotaryKnob";
 
 const HOST_PAGE_COUNT = 6;
+const CORE_KNOB_COUNT = 8;
+const PAIR_AR_KNOB_COUNT = 4;
+const TOTAL_KNOB_COUNT = CORE_KNOB_COUNT + PAIR_AR_KNOB_COUNT;
 const PAGE_NAMES = ["Audio", "Random S&H", "Reverb", "Filter", "Drive", "Delay"];
 
 type ModBaySpec = { modIndex: number; kind: "scope" | "led" };
@@ -34,8 +37,8 @@ interface AssignableModOption {
 let assignableModOptions: AssignableModOption[] = [];
 
 const PAGE_BLURBS: Record<number, string> = {
-  0: "Three VCOs, cross-coupling, and phase modulation.",
-  1: "Random CV — press Random to step.",
+  0: "Three VCOs, cross-coupling, phase modulation, and pair-sum AR.",
+  1: "Random CV — press Rand Resample to step.",
   2: "Reverb mix, size, decay, stereo width, and diffusion.",
   3: "Comb offset, peak EQ, comb filter, and Crispy.",
   4: "Drive, SRR, XOR grit, and fuzz.",
@@ -107,8 +110,9 @@ let swipeStartY = 0;
 const INPUT_PEAK_SILENT = 1e-4;
 const SILENT_SCREEN_TICKS = 17;
 
-const knobDragging = new Array<boolean>(8).fill(false);
+const knobDragging = new Array<boolean>(TOTAL_KNOB_COUNT).fill(false);
 let lastScreenRows: ScreenRow[] = [];
+let lastPairArRows: ScreenRow[] = [];
 let lastMorphs = [0, 0, 0];
 let lastWasmPage = 0;
 let silentScreenTicks = 0;
@@ -129,6 +133,14 @@ function isDelayPage(): boolean {
   return hostPage === 5;
 }
 
+function isPairArKnob(index: number): boolean {
+  return index >= CORE_KNOB_COUNT;
+}
+
+function pairArCellIndex(index: number): number {
+  return index - CORE_KNOB_COUNT;
+}
+
 function modSelectIndex(modSource: number): number {
   if (modSource === 255) {
     return 0;
@@ -141,7 +153,9 @@ function populateModSelects(options: AssignableModOption[]): void {
   assignableModOptions = options;
   for (let i = 0; i < modSelects.length; i++) {
     const select = modSelects[i];
-    const row = lastScreenRows[i];
+    const row = isPairArKnob(i)
+      ? lastPairArRows[pairArCellIndex(i)]
+      : lastScreenRows[i];
     const currentMod = row?.modSource ?? 255;
     select.innerHTML = '<option value="255">None</option>';
     for (const option of options) {
@@ -242,6 +256,37 @@ function renderInputMeter(peak: number, active: boolean): void {
   externalMeterFillEl.style.width = `${width}%`;
 }
 
+type MobileAudioSessionMode = "playback" | "reset" | "externalOn" | "externalOff";
+
+function isMobileWeb(): boolean {
+  return (
+    window.matchMedia("(max-width: 720px)").matches ||
+    /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+  );
+}
+
+function applyMobileAudioSession(mode: MobileAudioSessionMode): void {
+  if (!isMobileWeb() || !("audioSession" in navigator)) {
+    return;
+  }
+  const session = (navigator as Navigator & { audioSession: { type: string } }).audioSession;
+  try {
+    if (mode === "externalOff") {
+      session.type = "playback";
+      session.type = "auto";
+      return;
+    }
+    const sessionType: Record<Exclude<MobileAudioSessionMode, "externalOff">, string> = {
+      playback: "playback",
+      reset: "auto",
+      externalOn: "play-and-record",
+    };
+    session.type = sessionType[mode];
+  } catch {
+    // Audio Session API is experimental on some mobile browsers
+  }
+}
+
 function playingStatusBase(): string {
   if (!audioRunning || !audioContext) {
     return "";
@@ -251,20 +296,27 @@ function playingStatusBase(): string {
   return `Playing — ${extLabel} — ${midiLabel} — ${audioContext.sampleRate | 0} Hz`;
 }
 
+function mobileExternalRoutingHint(): string {
+  if (!isMobileWeb() || !externalEnabled || !audioRunning) {
+    return "";
+  }
+  return " — without headphones, iOS may use the earpiece; plug in headphones or turn External off for speaker";
+}
+
 function applyPlayingStatus(): void {
   const base = playingStatusBase();
   if (!base) {
     return;
   }
-  statusEl.textContent = inputSilentHint
-    ? `${base} — input silent (check mic permission / level)`
-    : base;
+  const silentSuffix = inputSilentHint ? " — input silent (check mic permission / level)" : "";
+  statusEl.textContent = `${base}${silentSuffix}${mobileExternalRoutingHint()}`;
 }
 
 function layoutKnobCols(): void {
   knobsEl.innerHTML = "";
-  for (const col of knobCols) {
-    knobsEl.appendChild(col);
+  const visibleCount = hostPage === 0 ? TOTAL_KNOB_COUNT : CORE_KNOB_COUNT;
+  for (let i = 0; i < visibleCount; i++) {
+    knobsEl.appendChild(knobCols[i]);
   }
 }
 
@@ -289,12 +341,19 @@ function renderPageChrome(): void {
   }
 }
 
-function applyKnobLabelsFromRows(rows: ScreenRow[]): void {
-  for (let i = 0; i < 8; i++) {
+function applyKnobLabelsFromRows(rows: ScreenRow[], pairArRows: ScreenRow[]): void {
+  for (let i = 0; i < CORE_KNOB_COUNT; i++) {
     const row = rows[i];
     knobMainLabels[i].textContent = row?.name ?? "…";
     knobHintLabels[i].textContent = hostPage === 5 ? (DELAY_HINTS[i] ?? "") : "";
     knobHintLabels[i].style.display = "block";
+  }
+  for (let i = 0; i < PAIR_AR_KNOB_COUNT; i++) {
+    const colIndex = CORE_KNOB_COUNT + i;
+    const row = pairArRows[i];
+    knobMainLabels[colIndex].textContent = row?.name ?? "…";
+    knobHintLabels[colIndex].textContent = "";
+    knobHintLabels[colIndex].style.display = hostPage === 0 ? "block" : "none";
   }
 }
 
@@ -313,8 +372,9 @@ function applyModSourceLabels(names: string[]): void {
 function setHostPage(page: number): void {
   hostPage = ((page % HOST_PAGE_COUNT) + HOST_PAGE_COUNT) % HOST_PAGE_COUNT;
   renderPageChrome();
-  if (lastScreenRows.length === 8) {
-    applyKnobLabelsFromRows(lastScreenRows);
+  layoutKnobCols();
+  if (lastScreenRows.length === CORE_KNOB_COUNT) {
+    applyKnobLabelsFromRows(lastScreenRows, lastPairArRows);
   }
   renderVcoMorphButtons(lastWasmPage);
   if (workletNode) {
@@ -325,8 +385,9 @@ function setHostPage(page: number): void {
 function changeHostPage(delta: number): void {
   hostPage = ((hostPage + delta) % HOST_PAGE_COUNT + HOST_PAGE_COUNT) % HOST_PAGE_COUNT;
   renderPageChrome();
-  if (lastScreenRows.length === 8) {
-    applyKnobLabelsFromRows(lastScreenRows);
+  layoutKnobCols();
+  if (lastScreenRows.length === CORE_KNOB_COUNT) {
+    applyKnobLabelsFromRows(lastScreenRows, lastPairArRows);
   }
   renderVcoMorphButtons(lastWasmPage);
   if (workletNode) {
@@ -347,9 +408,9 @@ function requireEngineForAction(): boolean {
   return false;
 }
 
-function syncKnobUi(rows: ScreenRow[]): void {
-  applyKnobLabelsFromRows(rows);
-  for (let i = 0; i < 8; i++) {
+function syncKnobUi(rows: ScreenRow[], pairArRows: ScreenRow[]): void {
+  applyKnobLabelsFromRows(rows, pairArRows);
+  for (let i = 0; i < CORE_KNOB_COUNT; i++) {
     const row = rows[i];
     const modIdx = modSelectIndex(row.modSource);
     if (modSelects[i] && modSelects[i].selectedIndex !== modIdx) {
@@ -357,6 +418,23 @@ function syncKnobUi(rows: ScreenRow[]): void {
     }
     if (rotaryKnobs[i] && !knobDragging[i]) {
       rotaryKnobs[i].setValue(row.value);
+    }
+  }
+  if (hostPage !== 0) {
+    return;
+  }
+  for (let i = 0; i < PAIR_AR_KNOB_COUNT; i++) {
+    const colIndex = CORE_KNOB_COUNT + i;
+    const row = pairArRows[i];
+    if (!row) {
+      continue;
+    }
+    const modIdx = modSelectIndex(row.modSource);
+    if (modSelects[colIndex] && modSelects[colIndex].selectedIndex !== modIdx) {
+      modSelects[colIndex].selectedIndex = modIdx;
+    }
+    if (rotaryKnobs[colIndex] && !knobDragging[colIndex]) {
+      rotaryKnobs[colIndex].setValue(row.value);
     }
   }
 }
@@ -368,7 +446,9 @@ function onScreenUpdate(data: Record<string, unknown>): void {
     renderPageChrome();
   }
   const rows = data.rows as ScreenRow[];
+  const pairArRows = (data.pairArRows as ScreenRow[] | undefined) ?? [];
   lastScreenRows = rows;
+  lastPairArRows = pairArRows;
   const modSourceNames = data.modSourceNames as string[] | undefined;
   if (modSourceNames && modSourceNames.length >= modBayIndicators.length) {
     applyModSourceLabels(modSourceNames);
@@ -383,8 +463,9 @@ function onScreenUpdate(data: Record<string, unknown>): void {
     data.modLevels as number[],
     audioRunning
   );
-  syncKnobUi(rows);
+  syncKnobUi(rows, pairArRows);
   renderVcoMorphButtons(wasmPage);
+  layoutKnobCols();
 
   const meterActive = externalEnabled && audioRunning;
   const inputPeak = meterActive ? Math.max(0, Number(data.inputPeak ?? 0)) : 0;
@@ -413,9 +494,12 @@ for (let i = 0; i < PAGE_NAMES.length; i++) {
   pagePillButtons.push(pill);
 }
 
-for (let i = 0; i < 8; i++) {
+for (let i = 0; i < TOTAL_KNOB_COUNT; i++) {
   const col = document.createElement("div");
   col.className = "knob-col";
+  if (isPairArKnob(i)) {
+    col.dataset.pairAr = "true";
+  }
 
   const mainLabel = document.createElement("label");
   mainLabel.className = "knob-label-main";
@@ -461,6 +545,15 @@ for (let i = 0; i < 8; i++) {
   const knob = new RotaryKnob(
     (v) => {
       const modIdx = Number(modSelects[i]?.value ?? 255);
+      if (isPairArKnob(i)) {
+        const pairIndex = pairArCellIndex(i);
+        if (modIdx !== 255) {
+          send({ type: "pairArModDepth", index: pairIndex, depth: v });
+        } else {
+          send({ type: "pairArKnob", index: pairIndex, value: v });
+        }
+        return;
+      }
       if (isDelayPage()) {
         if (modIdx !== 255) {
           send({ type: "delayModDepth", row: i, depth: v });
@@ -481,6 +574,14 @@ for (let i = 0; i < 8; i++) {
     () => {
       const modIdx = Number(modSelects[i]?.value ?? 255);
       if (modIdx === 255) {
+        return;
+      }
+      if (isPairArKnob(i)) {
+        const row = lastPairArRows[pairArCellIndex(i)];
+        if (!row || row.modSource !== modIdx) {
+          return;
+        }
+        knob.setValue(row.modDepth);
         return;
       }
       const row = lastScreenRows[i];
@@ -507,6 +608,10 @@ for (let i = 0; i < 8; i++) {
   modSelect.innerHTML = '<option value="255">None</option>';
   modSelect.addEventListener("change", () => {
     const modIndex = Number(modSelect.value);
+    if (isPairArKnob(i)) {
+      send({ type: "pairArModSource", index: pairArCellIndex(i), modIndex });
+      return;
+    }
     if (isDelayPage()) {
       send({ type: "delayModSource", row: i, modIndex });
     } else {
@@ -709,6 +814,7 @@ function disconnectExternalStream(): void {
     mediaStream.getTracks().forEach((t) => t.stop());
     mediaStream = null;
   }
+  applyMobileAudioSession("externalOff");
 }
 
 function disconnectExternalMidi(): void {
@@ -821,7 +927,8 @@ async function setExternalEnabled(enabled: boolean): Promise<void> {
   }
 
   try {
-    const mobileMic = window.matchMedia("(max-width: 720px)").matches;
+    applyMobileAudioSession("reset");
+    const mobileMic = isMobileWeb();
     mediaStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: mobileMic,
@@ -831,6 +938,7 @@ async function setExternalEnabled(enabled: boolean): Promise<void> {
     });
     micSource = audioContext.createMediaStreamSource(mediaStream);
     micSource.connect(workletNode);
+    applyMobileAudioSession("externalOn");
     applyExternalUi(true);
     if (audioRunning) {
       applyPlayingStatus();
@@ -1046,6 +1154,9 @@ async function startAudio(): Promise<void> {
     send({ type: "setRunning", running: true });
     send({ type: "external", enabled: externalEnabled });
     audioRunning = true;
+    if (!externalEnabled) {
+      applyMobileAudioSession("playback");
+    }
     syncTransportUi();
     if (externalEnabled) {
       await setExternalEnabled(true);
@@ -1065,14 +1176,7 @@ function stopAudio(): void {
   send({ type: "setRunning", running: false });
   transportIntentPlaying = false;
   audioRunning = false;
-  if (micSource) {
-    micSource.disconnect();
-    micSource = null;
-  }
-  if (mediaStream) {
-    mediaStream.getTracks().forEach((t) => t.stop());
-    mediaStream = null;
-  }
+  disconnectExternalStream();
   externalEnabled = false;
   externalBtn.textContent = "External Audio: Off";
   externalBtn.classList.remove("active");

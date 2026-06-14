@@ -3,6 +3,8 @@
 #include "Comb.hpp"
 #include "Marbles.hpp"
 #include "Page.hpp"
+#include "PairArEnvelope.hpp"
+#include "AudioPairArState.hpp"
 #include "PolynomialDrive.hpp"
 #include "ResonantBump.hpp"
 #include "RGen.hpp"
@@ -99,6 +101,9 @@ struct FroggersEngine
     float m_envelopeLevel = 0.0f;
     SimFxInsertFn m_simFxInsert = nullptr;
     void* m_simFxInsertCtx = nullptr;
+    AudioPairArState* m_pairAr = nullptr;
+    PairArEnvelope m_pair12;
+    PairArEnvelope m_pair23;
 
     static float WrapPhase(float p)
     {
@@ -161,6 +166,13 @@ struct FroggersEngine
     {
         m_simFxInsert = fn;
         m_simFxInsertCtx = ctx;
+    }
+
+    void SetAudioPairArState(AudioPairArState* state)
+    {
+        m_pairAr = state;
+        m_pair12.Reset();
+        m_pair23.Reset();
     }
 
     float GetEnvelopeLevel() const
@@ -620,10 +632,37 @@ struct FroggersEngine
         return {v1, v2, v3};
     }
 
+    float MixOscVoices(float v1, float v2, float v3)
+    {
+        if (!m_pairAr)
+        {
+            return (v1 + v2 + v3) * (1.0f / 3.0f);
+        }
+
+        m_pairAr->tickSmoothers();
+        const float sum12 = v1 + v2;
+        const float sum23 = v2 + v3;
+        const float target12 = std::fabs(sum12) * 0.5f;
+        const float target23 = std::fabs(sum23) * 0.5f;
+        const float e12 = m_pair12.Step(
+            target12,
+            m_pairAr->getEffectiveSmoothed(0),
+            m_pairAr->getEffectiveSmoothed(1),
+            m_sampleRate);
+        const float e23 = m_pair23.Step(
+            target23,
+            m_pairAr->getEffectiveSmoothed(2),
+            m_pairAr->getEffectiveSmoothed(3),
+            m_sampleRate);
+        const float p12 = std::copysign(e12, sum12 == 0.0f ? 1.0f : sum12);
+        const float p23 = std::copysign(e23, sum23 == 0.0f ? 1.0f : sum23);
+        return (p12 + v2 + p23) * (1.0f / 3.0f);
+    }
+
     float MixExternalAndOsc(float input, float v1, float v2, float v3,
                           float fueg, float olvl, bool hasExternal)
     {
-        float oscMix = (v1 + v2 + v3) * (1.0f / 3.0f);
+        float oscMix = MixOscVoices(v1, v2, v3);
         if (!hasExternal)
         {
             return olvl * oscMix;
