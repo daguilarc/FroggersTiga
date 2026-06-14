@@ -6,9 +6,9 @@ Operator guide for the **desktop** and **web browser** simulators. Knob names ma
 
 1. Wait for **Engine ready — click Play** (web) or open the desktop app.
 2. Click **Play** — VCO output is audible with **External / Ext. In.** off.
-3. Use page pills or **◀ ▶** to switch pages (Audio → Marbles → Reverb → Filter → Drive → Delay).
+3. Use page pills or **◀ ▶** to switch pages (Audio → Random → Reverb → Filter → Drive → Delay).
 4. Turn knobs 1–7 for parameters; knob 8 is always **Crunch** on every page.
-5. Expand **Mod sources** to assign VCO level, Marbles 1, or Marbles 2 to any knob via the dropdown below each slider.
+5. Expand **Mod sources** to assign VCO level, Random 1, or Random 2 to any knob via the dropdown below each slider.
 
 ## Transport
 
@@ -21,7 +21,7 @@ Operator guide for the **desktop** and **web browser** simulators. Knob names ma
 | **Rand mod** (page) | Randomize mod sources and depths on the current page |
 | **Rand All** | Randomize all pages + Delay |
 | **Rand Mods** | Randomize all mod routes |
-| **Marbles** | Step both marble bags |
+| **Random** | Step both random bags |
 | **Rand waves** | Randomize VCO waveform morph (Audio page) |
 
 ## Mod bay
@@ -29,8 +29,8 @@ Operator guide for the **desktop** and **web browser** simulators. Knob names ma
 Three internal mod sources drive per-knob modulation:
 
 - **VCO level** — slow level from the VCO mix
-- **Marbles 1** — random CV channel 1 (press **Marbles** to step)
-- **Marbles 2** — random CV channel 2
+- **Random 1** — random CV channel 1 (press **Random** to step)
+- **Random 2** — random CV channel 2
 
 Assign a source with the **Mod source** dropdown under each knob. When a source is selected, the knob controls **mod depth** instead of the base parameter. CV scope traces show activity for each source when audio is running.
 
@@ -49,7 +49,7 @@ Assign a source with the **Mod source** dropdown under each knob. When a source 
 
 Click the waveform icon beside VCO1–VCO3 (right of each knob on the Audio page) to cycle sine ↔ saw ↔ square morph.
 
-## Page 2 — Marbles
+## Page 2 — Random
 
 | Row | Parameter |
 |-----|-----------|

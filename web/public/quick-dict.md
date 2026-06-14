@@ -6,8 +6,8 @@ Sim column labels → short gloss. Full sim guide → in-app **Manual**. Daisy F
 
 MIDI : QWERTY piano or hardware notes → pitch CV × velocity
 VCO Envelope : Slow level from VCO mix
-Marbles 1 S&H : S&H random mod CV ch.1 — step with Marbles; LED green when held CV > 55%
-Marbles 2 S&H : S&H random mod CV ch.2 — step with Marbles; LED green when held CV > 55%
+Random 1 S&H : S&H random mod CV ch.1 — step with Random; LED green when held CV > 55%
+Random 2 S&H : S&H random mod CV ch.2 — step with Random; LED green when held CV > 55%
 
 ## Transport (sim)
 
@@ -18,7 +18,7 @@ Randomize : Knobs 1–7 on current page (not Crispy)
 Randmod : Mod sources + depths on current page
 Rand All : All pages + Delay knobs
 Rand Mods : All mod routes
-Marbles : Step both marble bags
+Random : Step both random bags
 Rand waveforms : Randomize VCO morph (sine/saw/square blend)
 
 ## Audio
@@ -32,15 +32,15 @@ Phase mod 2 : VCO1+VCO3 → VCO2
 Phase mod 3 : VCO2 → VCO3 when cross-coupler is CW (2→3)
 Crispy : Scramble knobs 1–7 (Field: FUEG; mix topology when external in)
 
-## Marbles
+## Random
 
-Step chance : Probability each channel steps on Marbles press
+Step chance : Probability each channel steps on Random press
 Deja vu 1 : Channel 1 bag walk / re-roll
-Bag size 1 : Channel 1 marbles (2–8)
-Slew 1 : Channel 1 glide between held values (not a clock) → Marbles 1 S&H
+Bag size 1 : Channel 1 values (2–8)
+Slew 1 : Channel 1 glide between held values (not a clock) → Random 1 S&H
 Deja vu 2 : Channel 2 bag walk / re-roll
-Bag size 2 : Channel 2 marbles (2–8)
-Slew 2 : Channel 2 glide between held values → Marbles 2 S&H
+Bag size 2 : Channel 2 values (2–8)
+Slew 2 : Channel 2 glide between held values → Random 2 S&H
 Crispy : Scramble knobs 1–7 (Field: FUEG)
 
 ## Reverb

@@ -8,6 +8,34 @@ constexpr uint8_t kNumHostPages = 6;
 constexpr uint8_t kNumRows = 8;
 constexpr uint8_t kCrispyRow = 7;
 constexpr uint8_t kDelayHostPage = 5;
+constexpr uint8_t kRandomHostPage = 1;
+
+inline const char* forHostPage(uint8_t hostPage)
+{
+    static const char* kPages[kNumHostPages] = {
+        "Audio", "Random", "Reverb", "Filter", "Drive", "Delay",
+    };
+    if (hostPage >= kNumHostPages)
+    {
+        return "";
+    }
+    return kPages[hostPage];
+}
+
+inline const char* forModSource(uint8_t modIndex)
+{
+    switch (modIndex)
+    {
+        case 4:
+            return "VCO Envelope";
+        case 5:
+            return "Random 1 S&H";
+        case 6:
+            return "Random 2 S&H";
+        default:
+            return "";
+    }
+}
 
 inline const char* forHostPageRow(uint8_t hostPage, uint8_t row)
 {

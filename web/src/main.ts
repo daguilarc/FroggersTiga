@@ -5,7 +5,7 @@ import { ModLedIndicator } from "./ModLedIndicator";
 import { RotaryKnob } from "./RotaryKnob";
 
 const HOST_PAGE_COUNT = 6;
-const PAGE_NAMES = ["Audio", "Marbles", "Reverb", "Filter", "Drive", "Delay"];
+const PAGE_NAMES = ["Audio", "Random", "Reverb", "Filter", "Drive", "Delay"];
 
 type ModBayIndicator =
   | { kind: "scope"; modIndex: number; scope: CvScopeCanvas }
@@ -13,13 +13,13 @@ type ModBayIndicator =
 
 const modBayIndicators: ModBayIndicator[] = [
   { kind: "scope", modIndex: 4, scope: new CvScopeCanvas("VCO Envelope", "continuous") },
-  { kind: "led", modIndex: 5, led: new ModLedIndicator("Marbles 1 S&H") },
-  { kind: "led", modIndex: 6, led: new ModLedIndicator("Marbles 2 S&H") },
+  { kind: "led", modIndex: 5, led: new ModLedIndicator("Random 1 S&H") },
+  { kind: "led", modIndex: 6, led: new ModLedIndicator("Random 2 S&H") },
 ];
 
 const PAGE_BLURBS: Record<number, string> = {
   0: "Three VCOs, coupling, and output level.",
-  1: "Marbles random CV — press Marbles to step.",
+  1: "Random CV — press Random to step.",
   2: "Reverb mix, size, decay, stereo width, and diffusion.",
   3: "Comb offset, peak EQ, comb filter, and Crispy.",
   4: "Drive, SRR, XOR grit, and fuzz.",
@@ -452,8 +452,8 @@ for (let i = 0; i < 8; i++) {
   modSelect.innerHTML =
     '<option value="255">None</option>' +
     '<option value="4">VCO Envelope</option>' +
-    '<option value="5">Marbles 1 S&H</option>' +
-    '<option value="6">Marbles 2 S&H</option>';
+    '<option value="5">Random 1 S&H</option>' +
+    '<option value="6">Random 2 S&H</option>';
   modSelect.addEventListener("change", () => {
     const modIndex = Number(modSelect.value);
     if (isDelayPage()) {

@@ -6,9 +6,9 @@ Operator guide for the **desktop** and **web browser** simulators. Knob names ma
 
 1. Wait for **Engine ready — click Play** (web) or open the desktop app.
 2. Click **Play** — VCO output is audible with **External / Ext. In.** off.
-3. Use page pills or **◀ ▶** to switch pages (Audio → Marbles → Reverb → Filter → Drive → Delay).
+3. Use page pills or **◀ ▶** to switch pages (Audio → Random → Reverb → Filter → Drive → Delay).
 4. Turn knobs 1–7 for parameters; knob 8 is always **Crispy** on every page.
-5. Expand **Mod sources** to assign VCO Envelope, Marbles 1 S&H, or Marbles 2 S&H to any knob via the dropdown below each slider.
+5. Expand **Mod sources** to assign VCO Envelope, Random 1 S&H, or Random 2 S&H to any knob via the dropdown below each slider.
 
 ## Transport
 
@@ -21,7 +21,7 @@ Operator guide for the **desktop** and **web browser** simulators. Knob names ma
 | **Rand mod** (page) | Randomize mod sources and depths on the current page |
 | **Rand All** | Randomize all pages + Delay |
 | **Rand Mods** | Randomize all mod routes |
-| **Marbles** | Step both marble bags |
+| **Random** | Step both random bags |
 | **Rand waveforms** | Randomize VCO waveform morph (Audio page) |
 
 ## Mod bay
@@ -29,12 +29,12 @@ Operator guide for the **desktop** and **web browser** simulators. Knob names ma
 Three internal mod sources drive per-knob modulation:
 
 - **VCO Envelope** — slow level from the VCO mix (continuous CV scope trace)
-- **Marbles 1 S&H** — sample-and-hold random CV on mod channel 1 (see **Marbles outputs** below)
-- **Marbles 2 S&H** — sample-and-hold random CV on mod channel 2
+- **Random 1 S&H** — sample-and-hold random CV on mod channel 1 (see **Random outputs** below)
+- **Random 2 S&H** — sample-and-hold random CV on mod channel 2
 
-**Marbles outputs (S&H):** Each channel draws a random value from its marble bag when you press **Marbles** (or the gate). There is no internal clock — values change only on a step. **Slew** smooths glides between held values; it does not trigger new steps. The held voltage is normalized **0–100%** on the mod bus (the same CV you patch to knobs).
+**Random outputs (S&H):** Each channel draws a random value from its random bag when you press **Random** (or the gate). There is no internal clock — values change only on a step. **Slew** smooths glides between held values; it does not trigger new steps. The held voltage is normalized **0–100%** on the mod bus (the same CV you patch to knobs).
 
-**Green LED (Marbles 1 / Marbles 2):** Shows the held mod CV for that channel while **Play** is on. **Green** = CV above **55%** of full scale. **Dim** = CV at or below 55%, or audio stopped. VCO Envelope uses a scope trace instead of an LED.
+**Green LED (Random 1 / Random 2):** Shows the held mod CV for that channel while **Play** is on. **Green** = CV above **55%** of full scale. **Dim** = CV at or below 55%, or audio stopped. VCO Envelope uses a scope trace instead of an LED.
 
 On **web**, assign a source with the **Mod source** dropdown under each knob. When a source is selected, the knob controls **mod depth** instead of the base parameter. On **desktop**, drag a patch cable from the mod rack jack to a knob input.
 
@@ -55,9 +55,9 @@ Click the waveform icon beside VCO1–VCO3 (between the label and knob on the Au
 
 **Phase mod 3** (row 7) sets VCO2 → VCO3 phase-mod depth when the cross-coupler is turned toward 2→3. **Crispy** scrambles knobs 1–7 and blends external ring-mod topology when external input is present; it no longer controls PM3 on sim hosts.
 
-## Page 2 — Marbles
+## Page 2 — Random
 
-Marbles is a dual **sample-and-hold** random CV source. Knobs configure two independent bags; **Marbles 1 S&H** and **Marbles 2 S&H** in the mod bay / mod sources panel are the outputs (patch or assign them like any mod source). Press **Marbles** to step both channels.
+Random is a dual **sample-and-hold** random CV source. Knobs configure two independent bags; **Random 1 S&H** and **Random 2 S&H** in the mod bay / mod sources panel are the outputs (patch or assign them like any mod source). Press **Random** to step both channels.
 
 | Row | Parameter |
 |-----|-----------|
@@ -129,7 +129,7 @@ Marbles is a dual **sample-and-hold** random CV source. Knobs configure two inde
 ### Desktop
 
 - Five adjacent submodule panels (no page switching) plus a **Delay** overlay page.
-- **Mod rack** with patch cables — drag from a mod source to a knob to assign modulation. **VCO Envelope** shows a CV scope; **Marbles 1 S&H** / **Marbles 2 S&H** show a green LED (on when held mod CV > **55%** while playing).
+- **Mod rack** with patch cables — drag from a mod source to a knob to assign modulation. **VCO Envelope** shows a CV scope; **Random 1 S&H** / **Random 2 S&H** show a green LED (on when held mod CV > **55%** while playing).
 - **MIDI Settings** — QWERTY piano keyboard or hardware MIDI device for pitch CV.
 - **Ext. In.** — requires **Ext. In. on + Play**; routes mic, line-in, or USB interface input to the engine. macOS may prompt for audio input access on first capture.
 - **Audio Settings** — choose output and input devices.

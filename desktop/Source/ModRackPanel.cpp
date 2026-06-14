@@ -1,13 +1,15 @@
 #include "ModRackPanel.h"
 
+#include "ParamDisplayNames.hpp"
+
 #include "DesktopChromeLayout.hpp"
 
 ModRackPanel::ModRackPanel(DesktopHostIO& host)
     : m_host(host)
     , m_midi("MIDI", 0, m_host)
     , m_vcoFeat("VCO Envelope", 4, m_host)
-    , m_marbles1("Marbles 1 S&H", 5, m_host)
-    , m_marbles2("Marbles 2 S&H", 6, m_host)
+    , m_marbles1(ParamDisplayNames::forModSource(5), 5, m_host)
+    , m_marbles2(ParamDisplayNames::forModSource(6), 6, m_host)
 {
     for (juce::Component* box :
          {static_cast<juce::Component*>(&m_midi),
@@ -18,9 +20,9 @@ ModRackPanel::ModRackPanel(DesktopHostIO& host)
         addAndMakeVisible(box);
     }
     m_marbles1.setTooltip(
-        "Marbles 1 S&H — held random mod CV (0–100%). Steps on Marbles press. Green LED when CV > 55% while playing.");
+        "Random 1 S&H — held random mod CV (0–100%). Steps on Random press. Green LED when CV > 55% while playing.");
     m_marbles2.setTooltip(
-        "Marbles 2 S&H — held random mod CV (0–100%). Steps on Marbles press. Green LED when CV > 55% while playing.");
+        "Random 2 S&H — held random mod CV (0–100%). Steps on Random press. Green LED when CV > 55% while playing.");
     setSize(1200, 72);
 }
 

@@ -17,5 +17,5 @@ private:
     juce::TextButton m_randomizeAll{"Rand All"};
     juce::TextButton m_randomizeMod{"Rand Mods"};
     juce::TextButton m_randomizeVcoWaveform{"Rand waves"};
-    juce::TextButton m_marbles{"Marbles"};
+    juce::TextButton m_marbles{"Random"};
 };

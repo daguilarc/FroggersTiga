@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 
 #include "DesktopChromeLayout.hpp"
+#include "ParamDisplayNames.hpp"
 
 namespace
 {
@@ -44,7 +45,14 @@ MainComponent::MainComponent()
     , m_cableOverlay(m_audio.getHost(), m_audio.getDelay())
     , m_strip(m_audio.getHost(), m_audio.getDelay())
 {
-    const char* titles[] = {"Audio", "Marbles", "Reverb", "Filter", "Drive", "Delay"};
+    const char* titles[] = {
+        ParamDisplayNames::forHostPage(0),
+        ParamDisplayNames::forHostPage(1),
+        ParamDisplayNames::forHostPage(2),
+        ParamDisplayNames::forHostPage(3),
+        ParamDisplayNames::forHostPage(4),
+        ParamDisplayNames::forHostPage(5),
+    };
     for (int i = 0; i < 5; i++)
     {
         m_coreBackends[static_cast<size_t>(i)] =

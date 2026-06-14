@@ -256,7 +256,7 @@ Rebuild WASM after core changes (requires [Emscripten](https://emscripten.org/))
 cd web && npm run build:wasm    # verifies exports after copy
 ```
 
-- Paged Field-style UI (8 knobs, SW1/SW2, OLED mock); mod dropdown **below** each slider (`None | VCO feat | Marbles 1 | Marbles 2`)
+- Paged Field-style UI (8 knobs, SW1/SW2, OLED mock); mod dropdown **below** each slider (`None | VCO feat | Random 1 | Random 2`)
 - Default **44.1 kHz** (`audioContext.sampleRate`)
 - **Mic** toggle default **off** (VCO-only until enabled)
 

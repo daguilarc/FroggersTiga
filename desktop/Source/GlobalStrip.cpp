@@ -12,7 +12,7 @@ GlobalStrip::GlobalStrip(DesktopHostIO& host, DelayState& delay)
     m_randomizeAll.setTooltip("Randomize all pages + Delay knobs");
     m_randomizeMod.setTooltip("Randomize mod routes on all pages");
     m_randomizeVcoWaveform.setTooltip("Randomize VCO waveform morph (sine/saw/square blend)");
-    m_marbles.setTooltip("Step both Marbles bags");
+    m_marbles.setTooltip("Step both random bags");
 
     for (juce::Component* c : {static_cast<juce::Component*>(&m_randomizeAll),
                               static_cast<juce::Component*>(&m_randomizeMod),

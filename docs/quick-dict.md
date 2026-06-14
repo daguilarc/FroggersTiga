@@ -6,8 +6,8 @@ Sim column labels → short gloss. Full sim guide → in-app **Manual**. Daisy F
 
 MIDI : QWERTY piano or hardware notes → pitch CV × velocity
 VCO level : Slow level from VCO mix
-Marbles 1 : Random CV channel 1 — press Marbles to step
-Marbles 2 : Random CV channel 2
+Random 1 : Random CV channel 1 — press Random to step
+Random 2 : Random CV channel 2
 
 ## Transport (sim)
 
@@ -18,7 +18,7 @@ Randomize : Knobs 1–7 on current page (not Crunch)
 Randmod : Mod sources + depths on current page
 Rand All : All pages + Delay knobs
 Rand Mods : All mod routes
-Marbles : Step both marble bags
+Random : Step both random bags
 Rand waves : Randomize VCO morph (sine/saw/square blend)
 
 ## Audio
@@ -32,15 +32,15 @@ Phase mod 2 : VCO1+VCO3 → VCO2
 VCO level : VCO-only level when no external in
 Crunch : Scramble knobs 1–7 (Field: FUEG; also PM3 + mix on Audio page)
 
-## Marbles
+## Random
 
 Step chance : B5 step probability per channel
 Deja vu 1 : Channel 1 bag walk / re-roll
-Bag size 1 : Channel 1 marbles (2–8)
-Slew 1 : Channel 1 output smoothing → Marbles 1
+Bag size 1 : Channel 1 values (2–8)
+Slew 1 : Channel 1 output smoothing → Random 1
 Deja vu 2 : Channel 2 bag walk / re-roll
-Bag size 2 : Channel 2 marbles (2–8)
-Slew 2 : Channel 2 output smoothing → Marbles 2
+Bag size 2 : Channel 2 values (2–8)
+Slew 2 : Channel 2 output smoothing → Random 2
 Crunch : Scramble knobs 1–7 (Field: FUEG)
 
 ## Reverb
