@@ -23,5 +23,6 @@ export const KNOB_LABEL_CROSS_COUPLER = coreKnobLabel(0, 3);
 export const KNOB_LABEL_ATT_1_2 = pairArKnobLabel(0);
 export const KNOB_LABEL_DRIVE = coreKnobLabel(4, 0);
 
+export const MOBILE_KNOB_GRID_COLUMNS = 3;
 export const KNOBS_SELECTOR = ".knobs";
 export const KNOB_LABEL_SELECTOR = ".knob-label-main";
