@@ -25,9 +25,10 @@ jobs:
 
       - name: Label authority checks
         run: |
-          chmod +x sim/check_param_display_names.sh sim/check_mod_source_labels.sh
+          chmod +x sim/check_param_display_names.sh sim/check_mod_source_labels.sh sim/check_operator_docs_sync.sh
           sim/check_param_display_names.sh
           sim/check_mod_source_labels.sh
+          sim/check_operator_docs_sync.sh
 
       - name: Setup emsdk
         uses: emscripten-core/setup-emsdk@v16

@@ -35,7 +35,7 @@ interface AssignableModOption {
 let assignableModOptions: AssignableModOption[] = [];
 
 const PAGE_BLURBS: Record<number, string> = {
-  0: "Three VCOs, coupling, and output level.",
+  0: "Three VCOs, cross-coupling, and phase modulation.",
   1: "Random CV — press Random to step.",
   2: "Reverb mix, size, decay, stereo width, and diffusion.",
   3: "Comb offset, peak EQ, comb filter, and Crispy.",
