@@ -15,3 +15,10 @@ export const STATUS_HINT_EXTERNAL_ON = "external on";
 export const STATUS_HINT_EARPIECE = "without headphones, iOS may use the earpiece";
 
 export const PLAYING_STATUS_TEXT = "Playing";
+
+export const KNOB_LABEL_VCO1 = "VCO1";
+export const KNOB_LABEL_CROSS_COUPLER = "Cross-coupler";
+export const KNOB_LABEL_ATT_1_2 = "Att. 1+2";
+
+export const KNOBS_SELECTOR = ".knobs";
+export const KNOB_LABEL_SELECTOR = ".knob-label-main";

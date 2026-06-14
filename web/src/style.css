@@ -438,6 +438,11 @@ body {
 
 .knobs {
   grid-column: 2;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.4rem;
+  align-items: stretch;
+  height: auto;
 }
 
 #page-next {
@@ -448,14 +453,6 @@ body {
   .field-layout {
     grid-template-columns: 1fr;
     gap: 0.75rem;
-  }
-
-  .knobs {
-    grid-column: 1;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: 100%;
-    height: auto;
-    min-height: 0;
   }
 
   .field-nav-row {
@@ -471,14 +468,18 @@ body {
     grid-row: auto;
   }
 
+  .knobs {
+    grid-column: 1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    height: auto;
+    min-height: 0;
+  }
+
   .knob-col .knob-label-main {
     white-space: normal;
     line-height: 1.15;
     overflow-wrap: break-word;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    overflow: hidden;
     width: 100%;
     min-height: 2.3em;
     font-size: clamp(0.55rem, 2.6vw, 0.65rem);
@@ -489,14 +490,6 @@ body {
   .knob-hint {
     max-width: 100%;
   }
-}
-
-.knobs {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.4rem;
-  align-items: stretch;
-  height: auto;
 }
 
 .knob-col {
