@@ -65,13 +65,14 @@ On **desktop** and **plugin**, drag a patch cable from a mod rack jack to a knob
 Disable a CC input to grey its mod column, block new routes, clear existing ones, and exclude it from random mod.
 
 - **Desktop / plugin:** MIDI Settings **On** toggle per CC pair.
-- **Web:** **CC 1** / **CC 2** buttons when External MIDI is on.
+- **Web:** **External MIDI** is the sole CC gate — CC 1 only (default channel 1, CC 1). MIDI CC 2 is not available on web.
 
 **QWERTY keyboard** (desktop) drives MIDI CC 1 only and respects the CC 1 enable flag.
 
 ### Mod indicators
 
-- **MIDI CC 1**, **MIDI CC 2**, and **VCO Envelope** show live CV scope traces.
+- **MIDI CC 1** and **VCO Envelope** show live CV scope traces on web and desktop.
+- **MIDI CC 2** scope appears on desktop and plugin only.
 - **Random 1 S&H** and **Random 2 S&H** show a green LED while **Play** is on: **green** when held CV is above **55%** of full scale; **dim** at or below 55%, or when audio is stopped.
 
 ### Random S&H
@@ -178,7 +179,7 @@ Dual sample-and-hold random CV. Knobs configure two independent bags; **Random 1
 
 - Paged Field-style UI — one page at a time, swipe or use pills to navigate.
 - Mod assignment via dropdowns below each knob (no patch cables).
-- **External MIDI** — Web MIDI access is requested when you turn **External MIDI** on (under **External** audio). Default is **Off**; Play alone does not prompt for MIDI. When External MIDI is off, **CC 1** and **CC 2** are disabled and greyed in the mod bay. Turning External MIDI on enables both CC inputs by default; use **CC 1** / **CC 2** buttons to disable either independently. Matching CC messages update enabled scopes (defaults: channel 1, CC 1 and CC 2).
+- **External MIDI** — Web MIDI access is requested when you turn **External MIDI** on. Default is **Off**; Play alone does not prompt for MIDI. When External MIDI is off, the **MIDI CC 1** scope is greyed in the mod bay. When on, matching CC 1 messages update the scope (default: channel 1, CC 1). Web does not expose MIDI CC 2.
 - **External** — microphone permission is requested when you turn **External** on. Default is **Off**; Play alone does not prompt for mic access. A peak meter beside **External** shows input level when External is on and audio is playing. If the meter stays empty for about a second, check mic permission and input level in the status line. If permission is denied, allow microphone in browser site settings and click **External** again.
 
 ### VST3 / AU plugin (local-only)
@@ -199,9 +200,9 @@ VST/AU sources are **not published** on the public GitHub repo. Keep plugin sour
 
 ### v1.0.1 (initial sim release)
 
-- Dual MIDI CC→CV mod inputs (**MIDI CC 1** / **MIDI CC 2**) on desktop mod rack and web mod bay
+- Dual MIDI CC→CV mod inputs on desktop mod rack (**MIDI CC 1** / **MIDI CC 2**); web mod bay exposes **MIDI CC 1** only
 - Web **External MIDI** (permission-gated Web MIDI CC ingest)
 - CC-only MIDI path — hardware CC + **Computer keyboard** (QWERTY → **MIDI CC 1**); note queue removed
 - Audio page row 7 labeled **Phase mod 3** (PM3 knob parity)
 - Web mod-source labels and dropdown options from wasm (`ParamDisplayNames` authority)
-- Five-column desktop mod rack; five-entry web mod bay
+- Five-column desktop mod rack; four-entry web mod bay (MIDI CC 1, VCO Envelope, Random 1/2)

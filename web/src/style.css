@@ -130,16 +130,6 @@ body {
 
 #external-btn.active,
 #external-midi-btn.active,
-.cc-enable-btn.active {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.cc-enable-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
 .mod-bay .mod-disabled {
   opacity: 0.38;
   filter: saturate(0.35);
