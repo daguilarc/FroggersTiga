@@ -3,6 +3,7 @@
 #include "AudioRecorder.h"
 #include "DelayState.hpp"
 #include "DesktopHostIO.hpp"
+#include "HostAudioConfig.hpp"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -87,6 +88,7 @@ public:
                             int numSamples,
                             const juce::MidiBuffer& midiIn);
     void setHostSampleRate(float sampleRate);
+    float getHostSampleRate() const;
     void ingestMidiMessage(const juce::MidiMessage& message);
 
 private:
@@ -120,6 +122,7 @@ private:
     InputRouteStatus m_inputRouteStatus = InputRouteStatus::Idle;
     int m_silentSampleCount = 0;
     bool m_lastBlockNonFinite = false;
+    float m_hostSampleRate = static_cast<float>(HostAudioConfig::kDefaultSampleRate);
     std::vector<float> m_inBlock;
     std::vector<float> m_monoBlock;
 };

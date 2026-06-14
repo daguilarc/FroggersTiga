@@ -1,6 +1,7 @@
 #include "AudioEngine.h"
 #include "AudioSettingsComponent.h"
 #include "DelayState.hpp"
+#include "HostAudioConfig.hpp"
 #include "MidiSettingsComponent.h"
 #include "TanhSaturator.hpp"
 
@@ -11,9 +12,7 @@
 
 namespace
 {
-constexpr float kSimSampleRate = 44100.0f;
 constexpr float kSilentPeakThreshold = 1.0e-4f;
-constexpr int kSilentCaptureSamples = 44100;
 
 juce::String extensionForFormat(ExportFormat format)
 {
@@ -77,7 +76,7 @@ AudioEngine::AudioEngine(bool pluginHosted)
 {
     m_host.setDelayState(&m_delay);
     m_host.Init();
-    m_delay.init(kSimSampleRate);
+    m_delay.init(m_hostSampleRate);
     m_host.m_engine.SetSimFxInsert(simDelayInsertCallback, &m_delay);
     m_host.m_midiOut = [this](uint8_t channel, uint8_t cc, uint8_t value) {
         if (m_midiOut)
@@ -88,8 +87,8 @@ AudioEngine::AudioEngine(bool pluginHosted)
     };
     if (m_pluginHosted)
     {
-        m_host.SetSampleRate(kSimSampleRate);
-        m_delay.setSampleRate(kSimSampleRate);
+        m_host.SetSampleRate(m_hostSampleRate);
+        m_delay.setSampleRate(m_hostSampleRate);
         m_audioRunning = true;
         return;
     }
@@ -97,7 +96,7 @@ AudioEngine::AudioEngine(bool pluginHosted)
     m_deviceManager.initialiseWithDefaultDevices(0, 2);
     juce::AudioDeviceManager::AudioDeviceSetup setup;
     m_deviceManager.getAudioDeviceSetup(setup);
-    setup.sampleRate = kSimSampleRate;
+    setup.sampleRate = m_hostSampleRate;
     setup.inputDeviceName.clear();
     setup.inputChannels.clear();
     setup.useDefaultInputChannels = false;
@@ -106,17 +105,12 @@ AudioEngine::AudioEngine(bool pluginHosted)
     setup.outputChannels.setBit(1);
     setup.useDefaultOutputChannels = false;
     m_deviceManager.setAudioDeviceSetup(setup, true);
-    m_host.SetSampleRate(kSimSampleRate);
-    m_delay.setSampleRate(kSimSampleRate);
     if (auto* device = m_deviceManager.getCurrentAudioDevice())
     {
-        if (std::abs(device->getCurrentSampleRate() - kSimSampleRate) > 1.0)
-        {
-            juce::Logger::writeToLog(
-                "FroggersTiga: requested 44100 Hz but device opened at "
-                + juce::String(device->getCurrentSampleRate()) + " Hz — pick a 44100-capable device in Audio Settings.");
-        }
+        m_hostSampleRate = static_cast<float>(device->getCurrentSampleRate());
     }
+    m_host.SetSampleRate(m_hostSampleRate);
+    m_delay.setSampleRate(m_hostSampleRate);
     openDefaultMidi();
 }
 
@@ -238,7 +232,8 @@ void AudioEngine::updateInputRouteStatus(int numInputChannels, float inputPeak, 
         return;
     }
     m_silentSampleCount += numSamples;
-    if (m_silentSampleCount >= kSilentCaptureSamples)
+    const int silentCaptureSamples = static_cast<int>(m_hostSampleRate);
+    if (m_silentSampleCount >= silentCaptureSamples)
     {
         m_inputRouteStatus = InputRouteStatus::SilentCapture;
         return;
@@ -478,7 +473,7 @@ bool AudioEngine::writeCaptureToFile(const juce::File& file,
     juce::StringPairArray metadata;
     std::unique_ptr<juce::AudioFormatWriter> writer(audioFormat->createWriterFor(
         stream.get(),
-        kSimSampleRate,
+        m_hostSampleRate,
         2,
         format == ExportFormat::Wav ? 24 : 0,
         metadata,
@@ -537,21 +532,18 @@ void AudioEngine::exportCapturedAudio(ExportFormat format,
 void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 {
     syncInputChannelSetup();
-    m_host.SetSampleRate(kSimSampleRate);
-    m_delay.setSampleRate(kSimSampleRate);
     if (device)
     {
+        m_hostSampleRate = static_cast<float>(device->getCurrentSampleRate());
         juce::Logger::writeToLog(
             "FroggersTiga: audio input channels active: "
-            + juce::String(device->getActiveInputChannels().countNumberOfSetBits()));
-        if (std::abs(device->getCurrentSampleRate() - kSimSampleRate) > 1.0)
-        {
-            juce::Logger::writeToLog(
-                "FroggersTiga: device rate is "
-                + juce::String(device->getCurrentSampleRate())
-                + " Hz; DSP runs at 44100 Hz.");
-        }
+            + juce::String(device->getActiveInputChannels().countNumberOfSetBits())
+            + " at "
+            + juce::String(m_hostSampleRate, 0)
+            + " Hz");
     }
+    m_host.SetSampleRate(m_hostSampleRate);
+    m_delay.setSampleRate(m_hostSampleRate);
 }
 
 void AudioEngine::audioDeviceStopped()
@@ -594,8 +586,14 @@ void AudioEngine::ingestMidiMessage(const juce::MidiMessage& message)
 
 void AudioEngine::setHostSampleRate(float sampleRate)
 {
+    m_hostSampleRate = sampleRate;
     m_host.SetSampleRate(sampleRate);
     m_delay.setSampleRate(sampleRate);
+}
+
+float AudioEngine::getHostSampleRate() const
+{
+    return m_hostSampleRate;
 }
 
 void AudioEngine::renderSimOutputBlock(const float* inputChannel0,

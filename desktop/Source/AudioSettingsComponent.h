@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AudioEngine.h"
+#include "HostAudioConfig.hpp"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -17,12 +18,16 @@ private:
     void refreshDeviceLists();
     void applyOutputDevice();
     void applyInputDevice();
+    void applySampleRate();
     void updateStatus();
     juce::AudioIODeviceType* getDeviceType() const;
+    double selectedSampleRate() const;
 
     AudioEngine& m_engine;
     std::function<void()> m_onClose;
 
+    juce::Label m_rateLabel;
+    juce::ComboBox m_sampleRate;
     juce::Label m_outLabel;
     juce::ComboBox m_outDevice;
     juce::TextButton m_testButton{"Test"};

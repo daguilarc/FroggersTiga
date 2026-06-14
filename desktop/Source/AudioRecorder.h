@@ -1,13 +1,15 @@
 #pragma once
 
+#include "HostAudioConfig.hpp"
+
 #include <cstddef>
 #include <vector>
 
 class AudioRecorder
 {
 public:
-    static constexpr size_t kMaxSamples = 44100 * 60 * 30;
-    static constexpr size_t kGrowChunk = 44100 * 10;
+    static constexpr size_t kMaxSamples = HostAudioConfig::maxRecordingSamples();
+    static constexpr size_t kGrowChunk = static_cast<size_t>(HostAudioConfig::kMaxSampleRate) * 10;
 
     void start();
     void stop();

@@ -46,6 +46,7 @@ AudioSettingsComponent::AudioSettingsComponent(AudioEngine& engine, std::functio
     : m_engine(engine)
     , m_onClose(std::move(onClose))
 {
+    m_rateLabel.setText("Sample rate", juce::dontSendNotification);
     m_outLabel.setText("Output", juce::dontSendNotification);
     m_inLabel.setText("Input", juce::dontSendNotification);
     m_inHelp.setText(
@@ -55,9 +56,16 @@ AudioSettingsComponent::AudioSettingsComponent(AudioEngine& engine, std::functio
     m_inMeterLabel.setText("Level", juce::dontSendNotification);
     m_status.setJustificationType(juce::Justification::centredLeft);
 
+    for (int i = 0; i < HostAudioConfig::kNumSupportedRates; ++i)
+    {
+        const int rateHz = static_cast<int>(HostAudioConfig::kSupportedRates[i]);
+        m_sampleRate.addItem(juce::String(rateHz) + " Hz", i + 1);
+    }
+
     m_testButton.setTooltip("Play a test tone on the selected output device");
     m_testButton.onClick = [this]() { m_engine.getDeviceManager().playTestSound(); };
 
+    m_sampleRate.onChange = [this]() { applySampleRate(); };
     m_outDevice.onChange = [this]() { applyOutputDevice(); };
     m_inDevice.onChange = [this]() { applyInputDevice(); };
     m_refresh.onClick = [this]() { refreshDeviceLists(); };
@@ -71,7 +79,9 @@ AudioSettingsComponent::AudioSettingsComponent(AudioEngine& engine, std::functio
     m_inMeter = std::make_unique<InputLevelMeter>(engine, m_engine.getDeviceManager());
     addAndMakeVisible(*m_inMeter);
 
-    for (juce::Component* c : {static_cast<juce::Component*>(&m_outLabel),
+    for (juce::Component* c : {static_cast<juce::Component*>(&m_rateLabel),
+                               static_cast<juce::Component*>(&m_sampleRate),
+                               static_cast<juce::Component*>(&m_outLabel),
                                static_cast<juce::Component*>(&m_outDevice),
                                static_cast<juce::Component*>(&m_testButton),
                                static_cast<juce::Component*>(&m_inLabel),
@@ -88,12 +98,22 @@ AudioSettingsComponent::AudioSettingsComponent(AudioEngine& engine, std::functio
     refreshDeviceLists();
     updateStatus();
     startTimerHz(4);
-    setSize(480, 220);
+    setSize(480, 248);
 }
 
 void AudioSettingsComponent::timerCallback()
 {
     updateStatus();
+}
+
+double AudioSettingsComponent::selectedSampleRate() const
+{
+    const int id = m_sampleRate.getSelectedId();
+    if (id >= 1 && id <= HostAudioConfig::kNumSupportedRates)
+    {
+        return HostAudioConfig::kSupportedRates[id - 1];
+    }
+    return HostAudioConfig::kDefaultSampleRate;
 }
 
 juce::AudioIODeviceType* AudioSettingsComponent::getDeviceType() const
@@ -123,6 +143,7 @@ void AudioSettingsComponent::refreshDeviceLists()
     m_engine.getDeviceManager().getAudioDeviceSetup(setup);
     const juce::String prevOut = setup.outputDeviceName;
     const juce::String prevIn = setup.inputDeviceName;
+    const double prevRate = setup.sampleRate;
 
     m_outDevice.clear();
     m_inDevice.clear();
@@ -171,6 +192,25 @@ void AudioSettingsComponent::refreshDeviceLists()
         m_inDevice.setSelectedId(selectIn, juce::dontSendNotification);
     }
 
+    const double nearestRate = HostAudioConfig::nearestSupportedRate(prevRate);
+    m_sampleRate.setSelectedId(HostAudioConfig::indexForRate(nearestRate) + 1, juce::dontSendNotification);
+
+    updateStatus();
+}
+
+void AudioSettingsComponent::applySampleRate()
+{
+    juce::AudioDeviceManager::AudioDeviceSetup setup;
+    m_engine.getDeviceManager().getAudioDeviceSetup(setup);
+    setup.sampleRate = selectedSampleRate();
+
+    const juce::String error = m_engine.getDeviceManager().setAudioDeviceSetup(setup, true);
+    if (error.isNotEmpty())
+    {
+        m_status.setText(error, juce::dontSendNotification);
+        m_status.setColour(juce::Label::textColourId, juce::Colours::orange);
+        return;
+    }
     updateStatus();
 }
 
@@ -202,7 +242,7 @@ void AudioSettingsComponent::applyOutputDevice()
     setup.outputChannels.setBit(0);
     setup.outputChannels.setBit(1);
     setup.useDefaultOutputChannels = false;
-    setup.sampleRate = 44100.0;
+    setup.sampleRate = selectedSampleRate();
 
     const juce::String error = m_engine.getDeviceManager().setAudioDeviceSetup(setup, true);
     if (error.isNotEmpty())
@@ -230,6 +270,7 @@ void AudioSettingsComponent::applyInputDevice()
 
     juce::AudioDeviceManager::AudioDeviceSetup setup;
     m_engine.getDeviceManager().getAudioDeviceSetup(setup);
+    setup.sampleRate = selectedSampleRate();
 
     if (id == 1)
     {
@@ -266,9 +307,13 @@ void AudioSettingsComponent::updateStatus()
     juce::AudioDeviceManager::AudioDeviceSetup setup;
     m_engine.getDeviceManager().getAudioDeviceSetup(setup);
 
+    const int rateHz = static_cast<int>(m_engine.getHostSampleRate());
+    juce::String line = "Audio: " + juce::String(rateHz) + " Hz";
+
     if (setup.inputDeviceName.isEmpty())
     {
-        m_status.setText("Input: none — no microphone permission requested.", juce::dontSendNotification);
+        line += " — Input: none (no microphone permission requested).";
+        m_status.setText(line, juce::dontSendNotification);
         m_status.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
         return;
     }
@@ -278,20 +323,25 @@ void AudioSettingsComponent::updateStatus()
         const int inCh = device->getActiveInputChannels().countNumberOfSetBits();
         if (inCh == 0)
         {
-            m_status.setText("Input device selected but no channels active.", juce::dontSendNotification);
+            line += " — Input device selected but no channels active.";
+            m_status.setText(line, juce::dontSendNotification);
             m_status.setColour(juce::Label::textColourId, juce::Colours::orange);
             return;
         }
     }
 
-    m_status.setText("Input device active. Enable Ext. In. on the main bar to route audio.",
-                     juce::dontSendNotification);
+    line += " — Input active. Enable Ext. In. on the main bar to route audio.";
+    m_status.setText(line, juce::dontSendNotification);
     m_status.setColour(juce::Label::textColourId, juce::Colours::lightgreen);
 }
 
 void AudioSettingsComponent::resized()
 {
     auto area = getLocalBounds().reduced(12);
+
+    m_rateLabel.setBounds(area.removeFromTop(16));
+    m_sampleRate.setBounds(area.removeFromTop(26));
+    area.removeFromTop(10);
 
     m_outLabel.setBounds(area.removeFromTop(16));
     auto outRow = area.removeFromTop(26);
@@ -314,7 +364,7 @@ void AudioSettingsComponent::resized()
     auto refreshRow = area.removeFromTop(26);
     m_refresh.setBounds(refreshRow.removeFromLeft(140));
     area.removeFromTop(4);
-    m_status.setBounds(area.removeFromTop(18));
+    m_status.setBounds(area.removeFromTop(36));
     area.removeFromTop(8);
     m_close.setBounds(area.removeFromTop(28).removeFromRight(80));
 }
