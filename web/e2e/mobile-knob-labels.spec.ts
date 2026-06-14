@@ -22,33 +22,53 @@ function labelBox(page: import("@playwright/test").Page, text: string) {
 test.describe("mobile knob labels", () => {
   test.use(MOBILE_USE);
 
-  test.beforeEach(async ({ context, page }) => {
-    await installGetUserMediaMock(page);
-    await context.grantPermissions(["microphone"]);
-    await page.goto("/");
+  test.describe("static labels", () => {
+    test.beforeEach(async ({ page }) => {
+      await page.goto("/");
+    });
+
+    test("labels visible on load without Play", async ({ page }) => {
+      expect(await knobGridColumnCount(page)).toBe(2);
+      for (const label of [KNOB_LABEL_VCO1, KNOB_LABEL_CROSS_COUPLER, KNOB_LABEL_ATT_1_2]) {
+        const el = labelBox(page, label);
+        await expect(el).toHaveText(label);
+        const box = await el.boundingBox();
+        expect(box).not.toBeNull();
+        expect(box!.height).toBeGreaterThan(0);
+      }
+    });
+
+    test("labels update when changing page", async ({ page }) => {
+      await page.getByRole("button", { name: "Drive" }).click();
+      const driveLabel = page.locator(KNOB_LABEL_SELECTOR).filter({ hasText: "Drive" }).first();
+      await expect(driveLabel).toHaveText("Drive");
+      await expect(labelBox(page, KNOB_LABEL_VCO1)).toHaveCount(0);
+    });
   });
 
-  test("mobile knob grid uses two columns after Play", async ({ page }) => {
-    await startSimAudio(page);
-    expect(await knobGridColumnCount(page)).toBe(2);
-  });
+  test.describe("after Play", () => {
+    test.beforeEach(async ({ context, page }) => {
+      await installGetUserMediaMock(page);
+      await context.grantPermissions(["microphone"]);
+      await page.goto("/");
+    });
 
-  test("mobile knob labels are visible on audio page", async ({ page }) => {
-    await startSimAudio(page);
-    expect(await knobGridColumnCount(page)).toBe(2);
+    test("knob grid uses two columns", async ({ page }) => {
+      await startSimAudio(page);
+      expect(await knobGridColumnCount(page)).toBe(2);
+    });
 
-    for (const label of [KNOB_LABEL_VCO1, KNOB_LABEL_CROSS_COUPLER]) {
-      const el = labelBox(page, label);
-      await expect(el).not.toHaveText("…");
-      const box = await el.boundingBox();
-      expect(box).not.toBeNull();
-      expect(box!.height).toBeGreaterThan(0);
-    }
+    test("labels remain visible on audio page", async ({ page }) => {
+      await startSimAudio(page);
+      expect(await knobGridColumnCount(page)).toBe(2);
 
-    const pairAr = labelBox(page, KNOB_LABEL_ATT_1_2);
-    await expect(pairAr).not.toHaveText("…");
-    const pairArBox = await pairAr.boundingBox();
-    expect(pairArBox).not.toBeNull();
-    expect(pairArBox!.height).toBeGreaterThan(0);
+      for (const label of [KNOB_LABEL_VCO1, KNOB_LABEL_CROSS_COUPLER, KNOB_LABEL_ATT_1_2]) {
+        const el = labelBox(page, label);
+        await expect(el).toHaveText(label);
+        const box = await el.boundingBox();
+        expect(box).not.toBeNull();
+        expect(box!.height).toBeGreaterThan(0);
+      }
+    });
   });
 });

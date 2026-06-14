@@ -2,6 +2,7 @@ const wasmUrl = `${import.meta.env.BASE_URL}froggers.wasm`;
 const processorUrl = `${import.meta.env.BASE_URL}froggers-processor.js`;
 import { CvScopeCanvas } from "./CvScopeCanvas";
 import { ModLedIndicator } from "./ModLedIndicator";
+import { coreKnobLabel, pairArKnobLabel } from "./paramDisplayNames";
 import { RotaryKnob } from "./RotaryKnob";
 
 const HOST_PAGE_COUNT = 6;
@@ -344,14 +345,14 @@ function renderPageChrome(): void {
 function applyKnobLabelsFromRows(rows: ScreenRow[], pairArRows: ScreenRow[]): void {
   for (let i = 0; i < CORE_KNOB_COUNT; i++) {
     const row = rows[i];
-    knobMainLabels[i].textContent = row?.name ?? "…";
+    knobMainLabels[i].textContent = row?.name ?? coreKnobLabel(hostPage, i);
     knobHintLabels[i].textContent = hostPage === 5 ? (DELAY_HINTS[i] ?? "") : "";
     knobHintLabels[i].style.display = "block";
   }
   for (let i = 0; i < PAIR_AR_KNOB_COUNT; i++) {
     const colIndex = CORE_KNOB_COUNT + i;
     const row = pairArRows[i];
-    knobMainLabels[colIndex].textContent = row?.name ?? "…";
+    knobMainLabels[colIndex].textContent = row?.name ?? pairArKnobLabel(i);
     knobHintLabels[colIndex].textContent = "";
     knobHintLabels[colIndex].style.display = hostPage === 0 ? "block" : "none";
   }
@@ -373,9 +374,7 @@ function setHostPage(page: number): void {
   hostPage = ((page % HOST_PAGE_COUNT) + HOST_PAGE_COUNT) % HOST_PAGE_COUNT;
   renderPageChrome();
   layoutKnobCols();
-  if (lastScreenRows.length === CORE_KNOB_COUNT) {
-    applyKnobLabelsFromRows(lastScreenRows, lastPairArRows);
-  }
+  applyKnobLabelsFromRows(lastScreenRows, lastPairArRows);
   renderVcoMorphButtons(lastWasmPage);
   if (workletNode) {
     send({ type: "hostPage", page: hostPage });
@@ -386,9 +385,7 @@ function changeHostPage(delta: number): void {
   hostPage = ((hostPage + delta) % HOST_PAGE_COUNT + HOST_PAGE_COUNT) % HOST_PAGE_COUNT;
   renderPageChrome();
   layoutKnobCols();
-  if (lastScreenRows.length === CORE_KNOB_COUNT) {
-    applyKnobLabelsFromRows(lastScreenRows, lastPairArRows);
-  }
+  applyKnobLabelsFromRows(lastScreenRows, lastPairArRows);
   renderVcoMorphButtons(lastWasmPage);
   if (workletNode) {
     send({ type: "hostPageDelta", delta });
@@ -1206,9 +1203,7 @@ stopBtn.addEventListener("click", () => {
 
 initModBay();
 renderPageChrome();
-for (let i = 0; i < 8; i++) {
-  knobMainLabels[i].textContent = "…";
-}
+applyKnobLabelsFromRows(lastScreenRows, lastPairArRows);
 renderVcoMorphButtons(0);
 renderInputMeter(0, false);
 renderModBay(undefined, [0, 0, 0, 0, 0, 0, 0], false);
