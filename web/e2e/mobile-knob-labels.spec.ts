@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import {
   KNOB_LABEL_ATT_1_2,
   KNOB_LABEL_CROSS_COUPLER,
+  KNOB_LABEL_DRIVE,
   KNOB_LABEL_SELECTOR,
   KNOB_LABEL_VCO1,
   KNOBS_SELECTOR,
@@ -69,6 +70,13 @@ test.describe("mobile knob labels", () => {
         expect(box).not.toBeNull();
         expect(box!.height).toBeGreaterThan(0);
       }
+    });
+
+    test("labels switch to static page table when page changes while playing", async ({ page }) => {
+      await startSimAudio(page);
+      await page.getByRole("button", { name: "Drive" }).click();
+      await expect(labelBox(page, KNOB_LABEL_DRIVE)).toHaveText(KNOB_LABEL_DRIVE);
+      await expect(labelBox(page, KNOB_LABEL_VCO1)).toHaveCount(0);
     });
   });
 });

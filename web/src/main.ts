@@ -343,16 +343,18 @@ function renderPageChrome(): void {
 }
 
 function applyKnobLabelsFromRows(rows: ScreenRow[], pairArRows: ScreenRow[]): void {
+  const wasmCore = rows.length === CORE_KNOB_COUNT ? rows : null;
+  const wasmPairAr = pairArRows.length === PAIR_AR_KNOB_COUNT ? pairArRows : null;
   for (let i = 0; i < CORE_KNOB_COUNT; i++) {
-    const row = rows[i];
-    knobMainLabels[i].textContent = row?.name ?? coreKnobLabel(hostPage, i);
+    const wasmName = wasmCore?.[i]?.name;
+    knobMainLabels[i].textContent = wasmName || coreKnobLabel(hostPage, i);
     knobHintLabels[i].textContent = hostPage === 5 ? (DELAY_HINTS[i] ?? "") : "";
     knobHintLabels[i].style.display = "block";
   }
   for (let i = 0; i < PAIR_AR_KNOB_COUNT; i++) {
     const colIndex = CORE_KNOB_COUNT + i;
-    const row = pairArRows[i];
-    knobMainLabels[colIndex].textContent = row?.name ?? pairArKnobLabel(i);
+    const wasmName = wasmPairAr?.[i]?.name;
+    knobMainLabels[colIndex].textContent = wasmName || pairArKnobLabel(i);
     knobHintLabels[colIndex].textContent = "";
     knobHintLabels[colIndex].style.display = hostPage === 0 ? "block" : "none";
   }
@@ -374,7 +376,7 @@ function setHostPage(page: number): void {
   hostPage = ((page % HOST_PAGE_COUNT) + HOST_PAGE_COUNT) % HOST_PAGE_COUNT;
   renderPageChrome();
   layoutKnobCols();
-  applyKnobLabelsFromRows(lastScreenRows, lastPairArRows);
+  applyKnobLabelsFromRows([], []);
   renderVcoMorphButtons(lastWasmPage);
   if (workletNode) {
     send({ type: "hostPage", page: hostPage });
@@ -385,7 +387,7 @@ function changeHostPage(delta: number): void {
   hostPage = ((hostPage + delta) % HOST_PAGE_COUNT + HOST_PAGE_COUNT) % HOST_PAGE_COUNT;
   renderPageChrome();
   layoutKnobCols();
-  applyKnobLabelsFromRows(lastScreenRows, lastPairArRows);
+  applyKnobLabelsFromRows([], []);
   renderVcoMorphButtons(lastWasmPage);
   if (workletNode) {
     send({ type: "hostPageDelta", delta });
