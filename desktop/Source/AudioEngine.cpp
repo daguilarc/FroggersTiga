@@ -333,14 +333,10 @@ void AudioEngine::showAudioSettings(juce::Component* parent)
 
 void AudioEngine::showMidiSettings(juce::Component* parent)
 {
-    if (m_pluginHosted)
-    {
-        return;
-    }
     juce::DialogWindow::LaunchOptions opts;
-    opts.dialogTitle = "MIDI Settings";
+    opts.dialogTitle = m_pluginHosted ? "MIDI CC Settings" : "MIDI Settings";
     opts.dialogBackgroundColour = juce::Colour(0xff2b3038);
-    opts.content.setOwned(new MidiSettingsComponent(*this, []() {}));
+    opts.content.setOwned(new MidiSettingsComponent(*this, []() {}, m_pluginHosted));
     opts.componentToCentreAround = parent;
     opts.useNativeTitleBar = true;
     opts.resizable = true;

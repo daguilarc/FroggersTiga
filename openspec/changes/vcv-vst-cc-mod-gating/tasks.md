@@ -1,20 +1,22 @@
-## 1. VCV — bridge ingest
+## 1. VCV — bridge ingest and unification
 
-- [ ] 1.1 Replace `drainVcvMidiIn` direct `mods[]` writes with `PushMidiCc` + `drainMidiIn`
-- [ ] 1.2 Wire `SetMidiCcPairEnabled` on VCV host IO; clear routes on disable
+- [x] 1.1 Replace `drainVcvMidiIn` direct `mods[]` writes with `host.m_midiBridge.PushMidiCc` per queued message; remove CC 3–4 branch
+- [x] 1.2 Delete module-level `midiBridge`; route `tickMidiOut` through `host.m_midiBridge`
+- [x] 1.3 Verify `ProcessBlock` → `tickControls` → `drainMidiIn` is the sole writer of `mods[0/1]` (no ingest-side `mods[]` mutation)
 
-## 2. VCV — panel UI
+## 2. VCV — panel enable UI
 
-- [ ] 2.1 Add CC1/CC2 enable toggles to field-parity panel (pair-indexed loop)
-- [ ] 2.2 Grey disabled CC mod columns; block assignment to unavailable indices
+- [x] 2.1 Add CC1/CC2 enable toggles on primary panel (pair-indexed loop → `host.SetMidiCcPairEnabled`)
+- [x] 2.2 Dim enable controls when off; confirm route clear on disable via core `ClearModRoutesForIndex`
 
 ## 3. VST — MIDI Settings parity
 
-- [ ] 3.1 Unblock CC enable controls for plugin-hosted mode (MIDI Settings or inline toggles)
-- [ ] 3.2 Verify DAW CC ingest respects enable flags with both CC default On
+- [x] 3.1 Remove `showMidiSettings` plugin-hosted early return; add plugin-hosted layout to `MidiSettingsComponent` (CC rows + enable toggles only)
+- [x] 3.2 Confirm toolbar MIDI Settings button opens dialog in plugin mode
+- [x] 3.3 Verify DAW CC ingest respects enable flags; mod rack greys disabled CC columns via existing `ModRackPanel::refresh`
 
 ## 4. Docs and verification
 
-- [ ] 4.1 Update `SIM_MANUAL.md` VST + VCV CC gating sections
-- [ ] 4.2 Sync help docs
-- [ ] 4.3 Build VCV plugin + VST; manual verify disable CC2 on each host
+- [x] 4.1 Update `SIM_MANUAL.md` VST section: CC enable toggles available in plugin MIDI Settings; DAW routes CC to plugin input
+- [x] 4.2 Sync help docs (`web/public/sim-manual.md`)
+- [x] 4.3 Build VCV plugin + VST; manual verify disable CC2 on VCV (mods[1] zero, routes cleared) and VST (grey column, DAW CC ignored)

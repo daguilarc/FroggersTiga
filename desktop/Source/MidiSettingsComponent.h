@@ -8,7 +8,9 @@ class MidiSettingsComponent : public juce::Component,
                               private juce::Timer
 {
 public:
-    MidiSettingsComponent(AudioEngine& engine, std::function<void()> onClose);
+    MidiSettingsComponent(AudioEngine& engine,
+                          std::function<void()> onClose,
+                          bool ccControlsOnly = false);
 
     void resized() override;
 
@@ -19,9 +21,11 @@ private:
     void applyOutputDevice();
     void updateStatus();
     void configureCcSlider(juce::Slider& slider);
+    void applyVisibility();
 
     AudioEngine& m_engine;
     std::function<void()> m_onClose;
+    bool m_ccControlsOnly = false;
 
     juce::Label m_inSectionLabel;
     juce::Label m_inLabel;

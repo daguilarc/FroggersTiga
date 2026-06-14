@@ -8,11 +8,21 @@ constexpr int kCcTextBoxWidth = 44;
 constexpr int kRowControlHeight = 24;
 } // namespace
 
-MidiSettingsComponent::MidiSettingsComponent(AudioEngine& engine, std::function<void()> onClose)
+MidiSettingsComponent::MidiSettingsComponent(AudioEngine& engine,
+                                           std::function<void()> onClose,
+                                           bool ccControlsOnly)
     : m_engine(engine)
     , m_onClose(std::move(onClose))
+    , m_ccControlsOnly(ccControlsOnly)
 {
-    m_inSectionLabel.setText("MIDI In", juce::dontSendNotification);
+    if (m_ccControlsOnly)
+    {
+        m_inSectionLabel.setText("MIDI CC", juce::dontSendNotification);
+    }
+    else
+    {
+        m_inSectionLabel.setText("MIDI In", juce::dontSendNotification);
+    }
     m_inSectionLabel.setFont(juce::Font(14.0f, juce::Font::bold));
     m_inLabel.setText("Device", juce::dontSendNotification);
     m_inDevice.setTooltip(
@@ -132,10 +142,33 @@ MidiSettingsComponent::MidiSettingsComponent(AudioEngine& engine, std::function<
         addAndMakeVisible(c);
     }
 
-    refreshDeviceLists();
-    updateStatus();
-    startTimerHz(4);
-    setSize(520, 420);
+    applyVisibility();
+    if (!m_ccControlsOnly)
+    {
+        refreshDeviceLists();
+        updateStatus();
+        startTimerHz(4);
+        setSize(520, 420);
+        return;
+    }
+    setSize(520, 180);
+}
+
+void MidiSettingsComponent::applyVisibility()
+{
+    const bool showHardware = !m_ccControlsOnly;
+    m_inLabel.setVisible(showHardware);
+    m_inDevice.setVisible(showHardware);
+    m_refresh.setVisible(showHardware);
+    m_inStatus.setVisible(showHardware);
+    m_outSectionLabel.setVisible(showHardware);
+    m_outLabel.setVisible(showHardware);
+    m_outDevice.setVisible(showHardware);
+    m_outHelp.setVisible(showHardware);
+    m_outCcLabel.setVisible(showHardware);
+    m_outCc.setVisible(showHardware);
+    m_outChLabel.setVisible(showHardware);
+    m_outChannel.setVisible(showHardware);
 }
 
 void MidiSettingsComponent::configureCcSlider(juce::Slider& slider)
@@ -148,11 +181,19 @@ void MidiSettingsComponent::configureCcSlider(juce::Slider& slider)
 
 void MidiSettingsComponent::timerCallback()
 {
+    if (m_ccControlsOnly)
+    {
+        return;
+    }
     updateStatus();
 }
 
 void MidiSettingsComponent::updateStatus()
 {
+    if (m_ccControlsOnly)
+    {
+        return;
+    }
     if (m_engine.isHardwareMidiInputOpenFailed())
     {
         m_inStatus.setText("Could not open selected MIDI input device.", juce::dontSendNotification);
@@ -298,6 +339,35 @@ void MidiSettingsComponent::resized()
     auto area = getLocalBounds().reduced(12);
     m_inSectionLabel.setBounds(area.removeFromTop(20));
     area.removeFromTop(4);
+
+    if (m_ccControlsOnly)
+    {
+        auto cc1Row = area.removeFromTop(24);
+        m_inCc1GroupLabel.setBounds(cc1Row.removeFromLeft(80));
+        m_inCh1Label.setBounds(cc1Row.removeFromLeft(24));
+        m_inChannel1.setBounds(cc1Row.removeFromLeft(kChannelControlWidth));
+        cc1Row.removeFromLeft(8);
+        m_inCc1Label.setBounds(cc1Row.removeFromLeft(24));
+        m_inCc1.setBounds(cc1Row.removeFromLeft(kCcControlWidth));
+        cc1Row.removeFromLeft(8);
+        m_inCc1Enable.setBounds(cc1Row.removeFromLeft(48));
+        area.removeFromTop(4);
+
+        auto cc2Row = area.removeFromTop(24);
+        m_inCc2GroupLabel.setBounds(cc2Row.removeFromLeft(80));
+        m_inCh2Label.setBounds(cc2Row.removeFromLeft(24));
+        m_inChannel2.setBounds(cc2Row.removeFromLeft(kChannelControlWidth));
+        cc2Row.removeFromLeft(8);
+        m_inCc2Label.setBounds(cc2Row.removeFromLeft(24));
+        m_inCc2.setBounds(cc2Row.removeFromLeft(kCcControlWidth));
+        cc2Row.removeFromLeft(8);
+        m_inCc2Enable.setBounds(cc2Row.removeFromLeft(48));
+
+        area.removeFromTop(12);
+        m_close.setBounds(area.removeFromTop(28).removeFromRight(80));
+        return;
+    }
+
     m_inLabel.setBounds(area.removeFromTop(16));
     auto inDevRow = area.removeFromTop(24);
     m_inDevice.setBounds(inDevRow.removeFromLeft(inDevRow.getWidth() - 120));
