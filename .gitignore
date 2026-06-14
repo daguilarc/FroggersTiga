@@ -17,5 +17,7 @@ desktop/Source/PluginProcessor.h
 desktop/FroggersTigaPlugin_artefacts/
 # OpenSpec agent planning — local-only; not published on public main (see .cursorignore)
 openspec/
+# Cursor IDE agent indexing — local-only
+.cursorignore
 .DS_Store
 **/.DS_Store
