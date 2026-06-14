@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-HEADER="$ROOT/vcv/src/widgets/FieldParityWidget.hpp"
+HEADER="$ROOT/sim/VcvPanelLayout.hpp"
 
 if [[ ! -f "$HEADER" ]]; then
     echo "check_vcv_panel_bounds: missing $HEADER" >&2
@@ -24,12 +24,14 @@ kRows="$(grep -E 'constexpr uint8_t kNumRows = [0-9]+' "$ROOT/sim/ParamDisplayNa
 GRID=15
 RACK_HEIGHT=380
 
+primaryRightGrid="$(read_const kPrimaryRightmostIoGrid)"
+
 primaryWidthPx="$(awk "BEGIN { print ${kPrimaryHp} * ${GRID} }")"
 expanderWidthPx="$(awk "BEGIN { print ${kExpanderHp} * ${GRID} }")"
 columnWidthPx="$(awk "BEGIN { print ${kColumnHp} * ${GRID} }")"
 
-# Primary I/O rightmost jack at 21.5 GRID (MIDI out button) must fit 24 HP panel.
-primaryRightPx="$(awk "BEGIN { print 21.5 * ${GRID} }")"
+# Primary I/O rightmost jack must fit primary panel width.
+primaryRightPx="$(awk "BEGIN { print ${primaryRightGrid} * ${GRID} }")"
 if awk "BEGIN { exit !(${primaryRightPx} <= ${primaryWidthPx}) }"; then
     :
 else
