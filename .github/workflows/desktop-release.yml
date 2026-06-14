@@ -22,7 +22,7 @@ jobs:
       - name: Configure and build Release
         run: |
           cd desktop
-          cmake -B build
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release
 
       - name: Package DMG
@@ -50,7 +50,7 @@ jobs:
       - name: Configure and build Release
         run: |
           cd desktop
-          cmake -B build
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release
 
       - name: Package Windows installer
