@@ -2,7 +2,7 @@ TARGET = libdaisysp-lgpl
 
 MODULE_DIR = Source
 
-# Each Module Directory is listed below with it's modules.
+# Each Module Directory is listed below with its modules.
 # Header only modules are listed commented out 
 # below the others.
 
