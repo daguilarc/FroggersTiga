@@ -275,7 +275,12 @@ void froggers_delay_set_row_mod_source(WasmSimHost* host, int row, int modIndex)
 {
     if (host && row >= 0 && row < 8)
     {
-        host->delay.setModSource(static_cast<uint8_t>(row), static_cast<uint8_t>(modIndex));
+        const uint8_t idx = static_cast<uint8_t>(modIndex);
+        if (IsValidSimModAssignment(idx)
+            && (idx == 255 || host->isModSourceAvailable(idx)))
+        {
+            host->delay.setModSource(static_cast<uint8_t>(row), idx);
+        }
     }
 }
 
@@ -326,7 +331,7 @@ void froggers_delay_randomize_mod(WasmSimHost* host)
 {
     if (host)
     {
-        host->delay.randomizeMod();
+        host->delay.randomizeMod(host->io.m_midiBridge);
     }
 }
 
@@ -357,19 +362,71 @@ void froggers_push_midi_cc(WasmSimHost* host, int channel, int cc, int value)
         static_cast<uint8_t>(value));
 }
 
-int froggers_assignable_mod_count()
+int froggers_assignable_mod_count(WasmSimHost* host)
 {
-    return 5;
+    if (!host)
+    {
+        return 0;
+    }
+    int count = 0;
+    static constexpr uint8_t kIndices[] = {0, 1, 4, 5, 6};
+    for (uint8_t idx : kIndices)
+    {
+        if (host->isModSourceAvailable(idx))
+        {
+            ++count;
+        }
+    }
+    return count;
 }
 
-int froggers_assignable_mod_index(int index)
+int froggers_assignable_mod_index(WasmSimHost* host, int index)
 {
-    static constexpr uint8_t kIndices[] = {0, 1, 4, 5, 6};
-    if (index < 0 || index >= 5)
+    if (!host || index < 0)
     {
         return -1;
     }
-    return kIndices[index];
+    static constexpr uint8_t kIndices[] = {0, 1, 4, 5, 6};
+    int slot = 0;
+    for (uint8_t idx : kIndices)
+    {
+        if (!host->isModSourceAvailable(idx))
+        {
+            continue;
+        }
+        if (slot == index)
+        {
+            return idx;
+        }
+        ++slot;
+    }
+    return -1;
+}
+
+int froggers_mod_source_available(WasmSimHost* host, int modIndex)
+{
+    if (!host)
+    {
+        return 0;
+    }
+    return host->isModSourceAvailable(static_cast<uint8_t>(modIndex)) ? 1 : 0;
+}
+
+void froggers_set_cc_pair_enabled(WasmSimHost* host, int pairIndex, int enabled)
+{
+    if (host && pairIndex >= 0 && pairIndex < 2)
+    {
+        host->setMidiCcPairEnabled(static_cast<uint8_t>(pairIndex), enabled != 0);
+    }
+}
+
+int froggers_cc_pair_enabled(WasmSimHost* host, int pairIndex)
+{
+    if (!host || pairIndex < 0 || pairIndex >= 2)
+    {
+        return 0;
+    }
+    return host->io.m_midiBridge.isCcPairEnabled(static_cast<uint8_t>(pairIndex)) ? 1 : 0;
 }
 
 }

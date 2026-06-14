@@ -14,6 +14,17 @@ void PatchCableOverlay::setConnectionChangedCallback(ConnectionChangedFn fn)
     m_onConnectionChanged = std::move(fn);
 }
 
+void PatchCableOverlay::removeCablesForModIndex(uint8_t modIndex)
+{
+    for (const InputPort& port : m_inputs)
+    {
+        if (getModSource(port.page, port.row) == modIndex)
+        {
+            removeCableHue(port.page, port.row);
+        }
+    }
+}
+
 uint8_t PatchCableOverlay::getModSource(uint8_t page, uint8_t row) const
 {
     if (page >= DelayState::kDelayPageIndex)
@@ -25,6 +36,10 @@ uint8_t PatchCableOverlay::getModSource(uint8_t page, uint8_t row) const
 
 void PatchCableOverlay::setModSource(uint8_t page, uint8_t row, uint8_t modIndex)
 {
+    if (modIndex != 255 && !m_host.IsModSourceAvailable(modIndex))
+    {
+        return;
+    }
     if (page >= DelayState::kDelayPageIndex)
     {
         m_host.EnqueueDelaySetModSource(row, modIndex);
@@ -132,6 +147,10 @@ const PatchCableOverlay::OutputPort* PatchCableOverlay::hitOutputPort(juce::Poin
 {
     for (const OutputPort& port : m_outputs)
     {
+        if (!port.patchEnabled)
+        {
+            continue;
+        }
         if (portContains(port.screenBounds, screenPos))
         {
             return &port;
@@ -186,8 +205,8 @@ void PatchCableOverlay::paint(juce::Graphics& g)
 {
     for (const OutputPort& port : m_outputs)
     {
-        juce::Colour ring = juce::Colour(0xffc8d0dc);
-        if (m_highlightOutputMod && *m_highlightOutputMod == port.modIndex)
+        juce::Colour ring = port.patchEnabled ? juce::Colour(0xffc8d0dc) : juce::Colour(0xff6a7380);
+        if (port.patchEnabled && m_highlightOutputMod && *m_highlightOutputMod == port.modIndex)
         {
             ring = juce::Colours::yellow;
         }
@@ -211,7 +230,7 @@ void PatchCableOverlay::paint(juce::Graphics& g)
         }
         for (const OutputPort& out : m_outputs)
         {
-            if (out.modIndex != mod)
+            if (out.modIndex != mod || !out.patchEnabled)
             {
                 continue;
             }

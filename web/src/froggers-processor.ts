@@ -70,8 +70,11 @@ interface WasmExports {
   froggers_delay_randomize_mod: (host: number) => void;
   froggers_copy_scope_samples: (host: number, modIndex: number, outPtr: number, maxCount: number) => number;
   froggers_push_midi_cc: (host: number, channel: number, cc: number, value: number) => void;
-  froggers_assignable_mod_count: () => number;
-  froggers_assignable_mod_index: (index: number) => number;
+  froggers_assignable_mod_count: (host: number) => number;
+  froggers_assignable_mod_index: (host: number, index: number) => number;
+  froggers_mod_source_available: (host: number, modIndex: number) => number;
+  froggers_set_cc_pair_enabled: (host: number, pairIndex: number, enabled: number) => void;
+  froggers_cc_pair_enabled: (host: number, pairIndex: number) => number;
   malloc: (size: number) => number;
   free: (ptr: number) => void;
 }
@@ -98,7 +101,8 @@ type UiMessage =
   | { type: "randomizeMorphs" }
   | { type: "external"; enabled: boolean }
   | { type: "setRunning"; running: boolean }
-  | { type: "midiCc"; channel: number; cc: number; value: number };
+  | { type: "midiCc"; channel: number; cc: number; value: number }
+  | { type: "setCcPairEnabled"; pairIndex: number; enabled: boolean };
 
 interface ProcessorCtorOptions {
   processorOptions?: { wasmModule?: WebAssembly.Module };
@@ -114,6 +118,32 @@ class FroggersProcessor extends AudioWorkletProcessor {
   private wasmReady = false;
   private processErrorPosted = false;
   private inputPeak = 0;
+
+  private postAssignableModOptions(): void {
+    if (!this.wasm || !this.host) {
+      return;
+    }
+    const assignableModOptions = [];
+    const assignableCount = this.wasm.froggers_assignable_mod_count(this.host);
+    for (let i = 0; i < assignableCount; i++) {
+      const modIndex = this.wasm.froggers_assignable_mod_index(this.host, i);
+      if (modIndex < 0) {
+        continue;
+      }
+      assignableModOptions.push({
+        index: modIndex,
+        label: this.readCString(this.wasm.froggers_mod_source_name(modIndex)),
+      });
+    }
+    const ccAvailability = [0, 1].map((modIndex) =>
+      this.wasm!.froggers_mod_source_available(this.host, modIndex) !== 0
+    );
+    this.port.postMessage({
+      type: "modAvailabilityChanged",
+      assignableModOptions,
+      ccAvailability,
+    });
+  }
 
   constructor(options?: ProcessorCtorOptions) {
     super();
@@ -135,10 +165,12 @@ class FroggersProcessor extends AudioWorkletProcessor {
       const modSourceNames = SCOPE_MOD_INDICES.map((modIndex) =>
         this.readCString(this.wasm.froggers_mod_source_name(modIndex))
       );
+      this.wasm.froggers_set_cc_pair_enabled(this.host, 0, 0);
+      this.wasm.froggers_set_cc_pair_enabled(this.host, 1, 0);
       const assignableModOptions = [];
-      const assignableCount = this.wasm.froggers_assignable_mod_count();
+      const assignableCount = this.wasm.froggers_assignable_mod_count(this.host);
       for (let i = 0; i < assignableCount; i++) {
-        const modIndex = this.wasm.froggers_assignable_mod_index(i);
+        const modIndex = this.wasm.froggers_assignable_mod_index(this.host, i);
         if (modIndex < 0) {
           continue;
         }
@@ -152,6 +184,7 @@ class FroggersProcessor extends AudioWorkletProcessor {
         numPages: this.wasm.froggers_num_pages(this.host),
         modSourceNames,
         assignableModOptions,
+        ccAvailability: [false, false],
       });
       this.setHostPage(0);
     } catch (err) {
@@ -227,6 +260,9 @@ class FroggersProcessor extends AudioWorkletProcessor {
       this.externalEnabled = msg.enabled;
     } else if (msg.type === "midiCc") {
       wasm.froggers_push_midi_cc(host, msg.channel, msg.cc, msg.value);
+    } else if (msg.type === "setCcPairEnabled") {
+      wasm.froggers_set_cc_pair_enabled(host, msg.pairIndex, msg.enabled ? 1 : 0);
+      this.postAssignableModOptions();
     } else if (msg.type === "setRunning") {
       this.audioRunning = msg.running;
       if (msg.running) {

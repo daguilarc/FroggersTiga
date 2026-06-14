@@ -74,6 +74,10 @@ struct PagedHostIO
         {
             return;
         }
+        if (modIndex != 255 && !IsSimModSourceAvailable(modIndex, m_midiBridge))
+        {
+            return;
+        }
         m_pageManager.SetPageModSource(page, position, modIndex);
     }
 
@@ -114,7 +118,7 @@ struct PagedHostIO
 
     void RandomizeAllMod()
     {
-        m_pageManager.RandomizeAllPagesModSim();
+        m_pageManager.RandomizeAllPagesModSim(m_midiBridge);
     }
 
     void RandomizePage(uint8_t page)
@@ -124,7 +128,25 @@ struct PagedHostIO
 
     void RandomizePageMod(uint8_t page)
     {
-        m_pageManager.RandomizePageModSim(page);
+        m_pageManager.RandomizePageModSim(page, m_midiBridge);
+    }
+
+    void SetMidiCcPairEnabled(uint8_t pairIndex, bool enabled)
+    {
+        if (pairIndex >= 2)
+        {
+            return;
+        }
+        m_midiBridge.setCcPairEnabled(pairIndex, enabled);
+        if (!enabled)
+        {
+            m_pageManager.ClearModRoutesForIndex(CvMidiBridge::kCcModIndices[pairIndex]);
+        }
+    }
+
+    bool IsModSourceAvailable(uint8_t modIndex) const
+    {
+        return IsSimModSourceAvailable(modIndex, m_midiBridge);
     }
 
     void NudgeVco3Morph()
@@ -154,11 +176,11 @@ struct PagedHostIO
 
     void SetRowModSource(size_t row, uint8_t modIndex)
     {
-        if (modIndex == 0)
+        if (!IsValidSimModAssignment(modIndex))
         {
             return;
         }
-        if (!IsValidSimModAssignment(modIndex))
+        if (modIndex != 255 && !IsSimModSourceAvailable(modIndex, m_midiBridge))
         {
             return;
         }

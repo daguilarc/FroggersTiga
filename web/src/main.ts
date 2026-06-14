@@ -59,6 +59,8 @@ const playBtn = document.getElementById("play-btn") as HTMLButtonElement;
 const stopBtn = document.getElementById("stop-btn") as HTMLButtonElement;
 const externalBtn = document.getElementById("external-btn") as HTMLButtonElement;
 const externalMidiBtn = document.getElementById("external-midi-btn") as HTMLButtonElement;
+const cc1EnableBtn = document.getElementById("cc1-enable-btn") as HTMLButtonElement;
+const cc2EnableBtn = document.getElementById("cc2-enable-btn") as HTMLButtonElement;
 const statusEl = document.getElementById("status") as HTMLSpanElement;
 const knobsEl = document.getElementById("knobs") as HTMLDivElement;
 const modBayEl = document.getElementById("mod-bay") as HTMLDivElement;
@@ -96,6 +98,8 @@ const midiInputHandlers = new Map<MIDIInput, (event: MIDIMessageEvent) => void>(
 let audioContext: AudioContext | null = null;
 let externalEnabled = false;
 let externalMidiEnabled = false;
+let cc1Enabled = false;
+let cc2Enabled = false;
 let audioRunning = false;
 let transportIntentPlaying = false;
 let engineReady = false;
@@ -140,7 +144,10 @@ function modSelectIndex(modSource: number): number {
 
 function populateModSelects(options: AssignableModOption[]): void {
   assignableModOptions = options;
-  for (const select of modSelects) {
+  for (let i = 0; i < modSelects.length; i++) {
+    const select = modSelects[i];
+    const row = lastScreenRows[i];
+    const currentMod = row?.modSource ?? 255;
     select.innerHTML = '<option value="255">None</option>';
     for (const option of options) {
       const el = document.createElement("option");
@@ -148,7 +155,40 @@ function populateModSelects(options: AssignableModOption[]): void {
       el.textContent = option.label;
       select.appendChild(el);
     }
+    select.selectedIndex = modSelectIndex(currentMod);
   }
+}
+
+function applyModBayAvailability(ccAvailability: boolean[]): void {
+  for (const indicator of modBayIndicators) {
+    if (indicator.modIndex !== 0 && indicator.modIndex !== 1) {
+      continue;
+    }
+    const enabled = ccAvailability[indicator.modIndex] ?? false;
+    const el = indicator.kind === "scope" ? indicator.scope.element : indicator.led.element;
+    el.classList.toggle("mod-disabled", !enabled);
+  }
+}
+
+function applyCcEnableUi(): void {
+  const masterOn = externalMidiEnabled;
+  cc1EnableBtn.disabled = !masterOn;
+  cc2EnableBtn.disabled = !masterOn;
+  cc1EnableBtn.textContent = cc1Enabled ? "CC 1: On" : "CC 1: Off";
+  cc2EnableBtn.textContent = cc2Enabled ? "CC 2: On" : "CC 2: Off";
+  cc1EnableBtn.classList.toggle("active", cc1Enabled);
+  cc2EnableBtn.classList.toggle("active", cc2Enabled);
+  applyModBayAvailability([cc1Enabled, cc2Enabled]);
+}
+
+function setCcPairEnabled(pairIndex: number, enabled: boolean): void {
+  if (pairIndex === 0) {
+    cc1Enabled = enabled;
+  } else if (pairIndex === 1) {
+    cc2Enabled = enabled;
+  }
+  send({ type: "setCcPairEnabled", pairIndex, enabled });
+  applyCcEnableUi();
 }
 
 function evalWaveMorph(phase: number, morph: number): number {
@@ -832,7 +872,10 @@ externalBtn.addEventListener("click", () => {
 async function setExternalMidiEnabled(enabled: boolean): Promise<void> {
   if (!enabled) {
     disconnectExternalMidi();
+    setCcPairEnabled(0, false);
+    setCcPairEnabled(1, false);
     applyExternalMidiUi(false);
+    applyCcEnableUi();
     if (audioRunning) {
       applyPlayingStatus();
     }
@@ -855,7 +898,10 @@ async function setExternalMidiEnabled(enabled: boolean): Promise<void> {
   try {
     midiAccess = await navigator.requestMIDIAccess({ sysex: false });
     attachWebMidiInputs(midiAccess);
+    setCcPairEnabled(0, true);
+    setCcPairEnabled(1, true);
     applyExternalMidiUi(true);
+    applyCcEnableUi();
     if (audioRunning) {
       applyPlayingStatus();
     }
@@ -868,6 +914,20 @@ async function setExternalMidiEnabled(enabled: boolean): Promise<void> {
 
 externalMidiBtn.addEventListener("click", () => {
   void setExternalMidiEnabled(!externalMidiEnabled);
+});
+
+cc1EnableBtn.addEventListener("click", () => {
+  if (!externalMidiEnabled) {
+    return;
+  }
+  setCcPairEnabled(0, !cc1Enabled);
+});
+
+cc2EnableBtn.addEventListener("click", () => {
+  if (!externalMidiEnabled) {
+    return;
+  }
+  setCcPairEnabled(1, !cc2Enabled);
 });
 
 function handleWorkletMessage(event: MessageEvent): void {
@@ -885,6 +945,19 @@ function handleWorkletMessage(event: MessageEvent): void {
     syncTransportUi();
     return;
   }
+  if (data.type === "modAvailabilityChanged") {
+    const options = data.assignableModOptions as AssignableModOption[] | undefined;
+    if (options) {
+      populateModSelects(options);
+    }
+    const ccAvailability = data.ccAvailability as boolean[] | undefined;
+    if (ccAvailability && ccAvailability.length >= 2) {
+      cc1Enabled = ccAvailability[0];
+      cc2Enabled = ccAvailability[1];
+      applyCcEnableUi();
+    }
+    return;
+  }
   if (data.type === "ready") {
     engineReady = true;
     updateEngineDependentUi();
@@ -896,6 +969,9 @@ function handleWorkletMessage(event: MessageEvent): void {
     if (options && options.length > 0) {
       populateModSelects(options);
     }
+    cc1Enabled = false;
+    cc2Enabled = false;
+    applyCcEnableUi();
     if (audioContext) {
       send({ type: "setSampleRate", sampleRate: audioContext.sampleRate });
     }

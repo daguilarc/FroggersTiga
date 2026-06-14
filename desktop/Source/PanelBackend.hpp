@@ -143,7 +143,7 @@ struct DelayHostBackend : IPanelBackend
 
     void setModSource(uint8_t row, uint8_t modIndex) override
     {
-        m_state.setModSource(row, modIndex);
+        m_host.EnqueueDelaySetModSource(row, modIndex);
     }
 
     void setModDepth(uint8_t row, float depth) override

@@ -163,6 +163,10 @@ void MainComponent::initFromEngine()
         }
     });
 
+    audioEngine().getHost().m_onBeforeClearModRoutes = [this](uint8_t modIndex) {
+        m_cableOverlay.removeCablesForModIndex(modIndex);
+    };
+
     setWantsKeyboardFocus(true);
 
     setSize(DesktopChromeLayout::kDefaultWidth, DesktopChromeLayout::kDefaultHeight);

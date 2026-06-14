@@ -59,6 +59,8 @@ struct DesktopHostIO
     std::atomic<int> m_mutationWrite{0};
     std::atomic<int> m_mutationRead{0};
 
+    std::function<void(uint8_t)> m_onBeforeClearModRoutes;
+
     struct MarblesScopeAccum
     {
         float min = 0.0f;
@@ -110,7 +112,7 @@ struct DesktopHostIO
                 m_pageManager.RandomizePage(mutation.page);
                 break;
             case HostMutationType::RandomizePageMod:
-                m_pageManager.RandomizePageModSim(mutation.page);
+                m_pageManager.RandomizePageModSim(mutation.page, m_midiBridge);
                 break;
             case HostMutationType::RandomizeAllPages:
                 m_pageManager.RandomizeAllPagesIndependent();
@@ -120,20 +122,24 @@ struct DesktopHostIO
                 }
                 break;
             case HostMutationType::RandomizeAllMod:
-                m_pageManager.RandomizeAllPagesModSim();
+                m_pageManager.RandomizeAllPagesModSim(m_midiBridge);
                 if (m_delay)
                 {
-                    m_delay->randomizeMod();
+                    m_delay->randomizeMod(m_midiBridge);
                 }
                 break;
             case HostMutationType::SetPageModSource:
-                if (IsValidSimModAssignment(mutation.modIndex))
+                if (IsValidSimModAssignment(mutation.modIndex)
+                    && (mutation.modIndex == 255
+                        || IsSimModSourceAvailable(mutation.modIndex, m_midiBridge)))
                 {
                     m_pageManager.SetPageModSource(mutation.page, mutation.row, mutation.modIndex);
                 }
                 break;
             case HostMutationType::DelaySetModSource:
-                if (m_delay)
+                if (m_delay && IsValidSimModAssignment(mutation.modIndex)
+                    && (mutation.modIndex == 255
+                        || IsSimModSourceAvailable(mutation.modIndex, m_midiBridge)))
                 {
                     m_delay->setModSource(mutation.row, mutation.modIndex);
                 }
@@ -147,7 +153,7 @@ struct DesktopHostIO
             case HostMutationType::DelayRandomizeMod:
                 if (m_delay)
                 {
-                    m_delay->randomizeMod();
+                    m_delay->randomizeMod(m_midiBridge);
                 }
                 break;
             case HostMutationType::CycleMorph:
@@ -383,6 +389,33 @@ struct DesktopHostIO
     void SetPageModDepth(uint8_t page, uint8_t position, float depth)
     {
         m_pageManager.SetPageModDepth(page, position, depth);
+    }
+
+    void SetMidiCcPairEnabled(uint8_t pairIndex, bool enabled)
+    {
+        if (pairIndex >= 2)
+        {
+            return;
+        }
+        m_midiBridge.setCcPairEnabled(pairIndex, enabled);
+        if (!enabled)
+        {
+            const uint8_t modIndex = CvMidiBridge::kCcModIndices[pairIndex];
+            if (m_onBeforeClearModRoutes)
+            {
+                m_onBeforeClearModRoutes(modIndex);
+            }
+            m_pageManager.ClearModRoutesForIndex(modIndex);
+            if (m_delay)
+            {
+                m_delay->clearModRoutesForIndex(modIndex);
+            }
+        }
+    }
+
+    bool IsModSourceAvailable(uint8_t modIndex) const
+    {
+        return IsSimModSourceAvailable(modIndex, m_midiBridge);
     }
 
     void PressButton(int button)

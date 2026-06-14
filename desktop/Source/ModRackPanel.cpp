@@ -29,6 +29,15 @@ void ModRackPanel::refresh(bool audioRunning)
     ModModuleBox* boxes[] = {&m_midiCc1, &m_midiCc2, &m_vcoFeat, &m_marbles1, &m_marbles2};
     for (ModModuleBox* box : boxes)
     {
+        const uint8_t modIndex = box->getModIndex();
+        if (modIndex == 0 || modIndex == 1)
+        {
+            box->setPatchEnabled(m_host.IsModSourceAvailable(modIndex));
+        }
+        else
+        {
+            box->setPatchEnabled(true);
+        }
         box->refresh(audioRunning);
     }
 }
@@ -40,6 +49,8 @@ void ModRackPanel::collectOutputPorts(std::vector<PatchCableOverlay::OutputPort>
     {
         PatchCableOverlay::OutputPort port;
         port.modIndex = box->getModIndex();
+        port.patchEnabled = (port.modIndex != 0 && port.modIndex != 1)
+                                || m_host.IsModSourceAvailable(port.modIndex);
         port.screenBounds = box->getOutputJackScreenBounds();
         ports.push_back(port);
     }

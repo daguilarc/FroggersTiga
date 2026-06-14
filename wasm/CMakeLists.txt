@@ -39,6 +39,9 @@ set(EXPORTED_FUNCS
     _froggers_push_midi_cc
     _froggers_assignable_mod_count
     _froggers_assignable_mod_index
+    _froggers_mod_source_available
+    _froggers_set_cc_pair_enabled
+    _froggers_cc_pair_enabled
     _froggers_row_value
     _froggers_row_badge
     _froggers_current_page

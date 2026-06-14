@@ -14,6 +14,7 @@ public:
     uint8_t getModIndex() const;
     juce::Rectangle<float> getOutputJackScreenBounds() const;
     void refresh(bool audioRunning);
+    void setPatchEnabled(bool enabled);
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -26,4 +27,5 @@ private:
     juce::Rectangle<int> m_jackBounds;
     float m_lastLevel = 0.0f;
     bool m_audioRunning = false;
+    bool m_patchEnabled = true;
 };

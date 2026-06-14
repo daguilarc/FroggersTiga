@@ -32,11 +32,13 @@ private:
     juce::Slider m_inChannel1;
     juce::Label m_inCc1Label;
     juce::Slider m_inCc1;
+    juce::ToggleButton m_inCc1Enable{"On"};
     juce::Label m_inCc2GroupLabel;
     juce::Label m_inCh2Label;
     juce::Slider m_inChannel2;
     juce::Label m_inCc2Label;
     juce::Slider m_inCc2;
+    juce::ToggleButton m_inCc2Enable{"On"};
     juce::Label m_inStatus;
 
     juce::Label m_outSectionLabel;

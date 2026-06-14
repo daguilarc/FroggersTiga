@@ -75,7 +75,27 @@ struct WasmSimHost
     void randomizeAllModIncludingDelay()
     {
         io.RandomizeAllMod();
-        delay.randomizeMod();
+        delay.randomizeMod(io.m_midiBridge);
+    }
+
+    void setMidiCcPairEnabled(uint8_t pairIndex, bool enabled)
+    {
+        if (pairIndex >= 2)
+        {
+            return;
+        }
+        io.m_midiBridge.setCcPairEnabled(pairIndex, enabled);
+        if (!enabled)
+        {
+            const uint8_t modIndex = CvMidiBridge::kCcModIndices[pairIndex];
+            io.m_pageManager.ClearModRoutesForIndex(modIndex);
+            delay.clearModRoutesForIndex(modIndex);
+        }
+    }
+
+    bool isModSourceAvailable(uint8_t modIndex) const
+    {
+        return IsSimModSourceAvailable(modIndex, io.m_midiBridge);
     }
 
 private:

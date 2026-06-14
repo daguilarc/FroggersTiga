@@ -30,8 +30,10 @@ Operator guide for the **desktop** and **web browser** simulators. Knob names ma
 
 Five mod sources drive per-knob modulation:
 
-- **MIDI CC 1** — latched CV from matching hardware or Web MIDI CC (default channel 1, CC 1)
-- **MIDI CC 2** — latched CV from matching hardware or Web MIDI CC (default channel 1, CC 2)
+- **MIDI CC 1** — latched CV from matching hardware or Web MIDI CC (default channel 1, CC 1). Can be disabled via **Enable** toggle (desktop MIDI Settings) or **CC 1** button (web, when External MIDI is on).
+- **MIDI CC 2** — latched CV from matching hardware or Web MIDI CC (default channel 1, CC 2). Same enable/disable controls as MIDI CC 1.
+
+When a CC source is disabled, its mod rack / mod bay column greys out, patch cables and dropdown assignments to that source are blocked, existing routes are cleared, and random mod excludes it. **QWERTY keyboard** (desktop) drives MIDI CC 1 only and respects the CC 1 enable flag.
 - **VCO Envelope** — slow level from the VCO mix (continuous CV scope trace)
 - **Random 1 S&H** — sample-and-hold random CV on mod channel 1 (see **Random outputs** below)
 - **Random 2 S&H** — sample-and-hold random CV on mod channel 2
@@ -134,7 +136,7 @@ Random is a dual **sample-and-hold** random CV source. Knobs configure two indep
 
 - Five adjacent submodule panels (no page switching) plus a **Delay** overlay page.
 - **Mod rack** with patch cables — drag from a mod source to a knob to assign modulation. **MIDI CC 1**, **MIDI CC 2**, and **VCO Envelope** show CV scopes; **Random 1 S&H** / **Random 2 S&H** show a green LED (on when held mod CV > **55%** while playing).
-- **MIDI Settings** — two CC→CV inputs (MIDI CC 1 and MIDI CC 2, each Channel + CC) plus hardware MIDI Out for VCO envelope export.
+- **MIDI Settings** — two CC→CV inputs (MIDI CC 1 and MIDI CC 2, each Channel + CC + **On** enable toggle) plus hardware MIDI Out for VCO envelope export. VST/AU inherits the same core gating (defaults both CC on).
 - **Ext. In.** — requires **Ext. In. on + Play**; routes mic, line-in, or USB interface input to the engine. macOS may prompt for audio input access on first capture.
 - **Audio Settings** — choose output and input devices.
 
@@ -142,7 +144,7 @@ Random is a dual **sample-and-hold** random CV source. Knobs configure two indep
 
 - Paged Field-style UI — one page at a time, swipe or use pills to navigate.
 - Mod assignment via dropdowns below each knob (no patch cables).
-- **External MIDI** — Web MIDI access is requested when you turn **External MIDI** on (under **External** audio). Default is **Off**; Play alone does not prompt for MIDI. Matching CC messages update **MIDI CC 1** and **MIDI CC 2** scopes in the mod bay (defaults: channel 1, CC 1 and CC 2).
+- **External MIDI** — Web MIDI access is requested when you turn **External MIDI** on (under **External** audio). Default is **Off**; Play alone does not prompt for MIDI. When External MIDI is off, **CC 1** and **CC 2** are disabled and greyed in the mod bay. Turning External MIDI on enables both CC inputs by default; use **CC 1** / **CC 2** buttons to disable either independently. Matching CC messages update enabled scopes (defaults: channel 1, CC 1 and CC 2).
 - **External** — microphone permission is requested when you turn **External** on. Default is **Off**; Play alone does not prompt for mic access. A peak meter beside **External** shows input level when External is on and audio is playing. If the meter stays empty for about a second, check mic permission and input level in the status line. If permission is denied, allow microphone in browser site settings and click **External** again.
 
 ### VST3 / AU plugin

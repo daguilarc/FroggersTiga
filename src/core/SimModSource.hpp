@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CvMidiBridge.hpp"
 #include "RGen.hpp"
 
 #include <cstdint>
@@ -22,6 +23,15 @@ inline bool IsSimAssignableModIndex(uint8_t modIndex)
 inline bool IsValidSimModAssignment(uint8_t modIndex)
 {
     return modIndex == 255 || IsSimAssignableModIndex(modIndex);
+}
+
+inline bool IsSimModSourceAvailable(uint8_t modIndex, const CvMidiBridge& bridge)
+{
+    if (modIndex == 0 || modIndex == 1)
+    {
+        return bridge.isCcModIndexEnabled(modIndex);
+    }
+    return IsSimAssignableModIndex(modIndex);
 }
 
 inline SimModSource CoreIndexToSimModSource(uint8_t modIndex)
@@ -48,12 +58,25 @@ inline uint8_t SimModSourceToCoreIndex(SimModSource source)
     return static_cast<uint8_t>(source);
 }
 
-inline uint8_t PickSimRandomModIndex(RGen& rgen)
+inline uint8_t PickSimRandomModIndex(RGen& rgen, const CvMidiBridge& bridge)
 {
     if (rgen.UniGen() < 0.5f)
     {
         return 255;
     }
     static constexpr uint8_t kPool[] = {0, 1, 4, 5, 6};
-    return kPool[rgen.RangeGen(5)];
+    uint8_t available[5];
+    uint8_t count = 0;
+    for (uint8_t idx : kPool)
+    {
+        if (IsSimModSourceAvailable(idx, bridge))
+        {
+            available[count++] = idx;
+        }
+    }
+    if (count == 0)
+    {
+        return 255;
+    }
+    return available[rgen.RangeGen(count)];
 }

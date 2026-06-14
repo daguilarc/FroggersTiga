@@ -15,6 +15,7 @@ struct MidiCcEvent
 struct CvMidiBridge
 {
     static constexpr int kMidiCcQueueSize = 64;
+    static constexpr uint8_t kCcModIndices[2] = {0, 1};
 
     uint8_t m_outChannel = 0;
     uint8_t m_outCc = 74;
@@ -24,6 +25,7 @@ struct CvMidiBridge
     uint8_t m_inCc2 = 2;
     float m_inCcLevel1 = 0.0f;
     float m_inCcLevel2 = 0.0f;
+    bool m_inCcEnabled[2] = {true, true};
     std::array<MidiCcEvent, kMidiCcQueueSize> m_ccQueue{};
     std::atomic<int> m_ccWrite{0};
     std::atomic<int> m_ccRead{0};
@@ -65,16 +67,59 @@ struct CvMidiBridge
         }
     }
 
+    bool isCcPairEnabled(uint8_t pairIndex) const
+    {
+        return pairIndex < 2 && m_inCcEnabled[pairIndex];
+    }
+
+    bool isCcModIndexEnabled(uint8_t modIndex) const
+    {
+        for (uint8_t i = 0; i < 2; ++i)
+        {
+            if (kCcModIndices[i] == modIndex)
+            {
+                return m_inCcEnabled[i];
+            }
+        }
+        return false;
+    }
+
+    void setCcPairEnabled(uint8_t pairIndex, bool enabled)
+    {
+        if (pairIndex >= 2)
+        {
+            return;
+        }
+        m_inCcEnabled[pairIndex] = enabled;
+        if (!enabled)
+        {
+            if (pairIndex == 0)
+            {
+                m_inCcLevel1 = 0.0f;
+            }
+            else
+            {
+                m_inCcLevel2 = 0.0f;
+            }
+        }
+    }
+
     void PushMidiCc(uint8_t channel, uint8_t cc, uint8_t value)
     {
         if (channel == m_inChannel1 && cc == m_inCc1)
         {
-            enqueueMidiCc(1, value);
+            if (isCcPairEnabled(0))
+            {
+                enqueueMidiCc(1, value);
+            }
             return;
         }
         if (channel == m_inChannel2 && cc == m_inCc2)
         {
-            enqueueMidiCc(2, value);
+            if (isCcPairEnabled(1))
+            {
+                enqueueMidiCc(2, value);
+            }
         }
     }
 
@@ -83,11 +128,11 @@ struct CvMidiBridge
         drainCcQueue();
         if (modCount > 0)
         {
-            mods[0] = m_inCcLevel1;
+            mods[0] = isCcPairEnabled(0) ? m_inCcLevel1 : 0.0f;
         }
         if (modCount > 1)
         {
-            mods[1] = m_inCcLevel2;
+            mods[1] = isCcPairEnabled(1) ? m_inCcLevel2 : 0.0f;
         }
     }
 

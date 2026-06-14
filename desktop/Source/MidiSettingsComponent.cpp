@@ -69,6 +69,15 @@ MidiSettingsComponent::MidiSettingsComponent(AudioEngine& engine, std::function<
     configureCcSlider(m_inCc1);
     configureCcSlider(m_inCc2);
 
+    m_inCc1Enable.setToggleState(bridge.isCcPairEnabled(0), juce::dontSendNotification);
+    m_inCc1Enable.onClick = [this]() {
+        m_engine.getHost().SetMidiCcPairEnabled(0, m_inCc1Enable.getToggleState());
+    };
+    m_inCc2Enable.setToggleState(bridge.isCcPairEnabled(1), juce::dontSendNotification);
+    m_inCc2Enable.onClick = [this]() {
+        m_engine.getHost().SetMidiCcPairEnabled(1, m_inCc2Enable.getToggleState());
+    };
+
     m_outCc.setRange(0, 127, 1);
     m_outCc.setValue(bridge.m_outCc, juce::dontSendNotification);
     m_outCc.onValueChange = [this]() {
@@ -102,11 +111,13 @@ MidiSettingsComponent::MidiSettingsComponent(AudioEngine& engine, std::function<
                                static_cast<juce::Component*>(&m_inChannel1),
                                static_cast<juce::Component*>(&m_inCc1Label),
                                static_cast<juce::Component*>(&m_inCc1),
+                               static_cast<juce::Component*>(&m_inCc1Enable),
                                static_cast<juce::Component*>(&m_inCc2GroupLabel),
                                static_cast<juce::Component*>(&m_inCh2Label),
                                static_cast<juce::Component*>(&m_inChannel2),
                                static_cast<juce::Component*>(&m_inCc2Label),
                                static_cast<juce::Component*>(&m_inCc2),
+                               static_cast<juce::Component*>(&m_inCc2Enable),
                                static_cast<juce::Component*>(&m_inStatus),
                                static_cast<juce::Component*>(&m_outSectionLabel),
                                static_cast<juce::Component*>(&m_outLabel),
@@ -124,7 +135,7 @@ MidiSettingsComponent::MidiSettingsComponent(AudioEngine& engine, std::function<
     refreshDeviceLists();
     updateStatus();
     startTimerHz(4);
-    setSize(520, 380);
+    setSize(520, 420);
 }
 
 void MidiSettingsComponent::configureCcSlider(juce::Slider& slider)
@@ -301,6 +312,8 @@ void MidiSettingsComponent::resized()
     cc1Row.removeFromLeft(8);
     m_inCc1Label.setBounds(cc1Row.removeFromLeft(24));
     m_inCc1.setBounds(cc1Row.removeFromLeft(kCcControlWidth));
+    cc1Row.removeFromLeft(8);
+    m_inCc1Enable.setBounds(cc1Row.removeFromLeft(48));
     area.removeFromTop(4);
 
     auto cc2Row = area.removeFromTop(24);
@@ -310,6 +323,8 @@ void MidiSettingsComponent::resized()
     cc2Row.removeFromLeft(8);
     m_inCc2Label.setBounds(cc2Row.removeFromLeft(24));
     m_inCc2.setBounds(cc2Row.removeFromLeft(kCcControlWidth));
+    cc2Row.removeFromLeft(8);
+    m_inCc2Enable.setBounds(cc2Row.removeFromLeft(48));
 
     area.removeFromTop(6);
     m_inStatus.setBounds(area.removeFromTop(18));

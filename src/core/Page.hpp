@@ -199,20 +199,36 @@ struct PageManager
         }
     }
 
-    void RandomizePageModSim(uint8_t page)
+    void RandomizePageModSim(uint8_t page, const CvMidiBridge& bridge)
     {
         for (size_t j = 0; j < Parameter::x_numParameters; j++)
         {
             float knobPos = m_pages[page].m_parameters[j].m_knobValue;
-            m_pages[page].m_parameters[j].RandomizeModSim(knobPos);
+            m_pages[page].m_parameters[j].RandomizeModSim(knobPos, bridge);
         }
     }
 
-    void RandomizeAllPagesModSim()
+    void RandomizeAllPagesModSim(const CvMidiBridge& bridge)
     {
         for (uint8_t i = 0; i < m_numPages; i++)
         {
-            RandomizePageModSim(i);
+            RandomizePageModSim(i, bridge);
+        }
+    }
+
+    void ClearModRoutesForIndex(uint8_t modIndex)
+    {
+        for (uint8_t p = 0; p < m_numPages; p++)
+        {
+            for (size_t i = 0; i < Parameter::x_numParameters; i++)
+            {
+                Parameter& param = m_pages[p].m_parameters[i];
+                if (param.m_modIndex == modIndex)
+                {
+                    param.m_modIndex = 255;
+                    param.m_modAmount = 0.0f;
+                }
+            }
         }
     }
 

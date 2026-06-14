@@ -386,6 +386,10 @@ void AudioEngine::feedComputerKeyboardCc1(uint8_t ccValue)
         return;
     }
     auto& bridge = m_host.m_midiBridge;
+    if (!bridge.isCcPairEnabled(0))
+    {
+        return;
+    }
     bridge.PushMidiCc(bridge.m_inChannel1, bridge.m_inCc1, ccValue);
 }
 

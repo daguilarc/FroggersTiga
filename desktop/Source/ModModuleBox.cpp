@@ -46,13 +46,23 @@ void ModModuleBox::refresh(bool audioRunning)
         return;
     }
 
-    m_scope.setIdle(false);
+    m_scope.setIdle(!m_patchEnabled);
     m_scope.pushSample(m_host.GetCvOut(m_modIndex));
+}
+
+void ModModuleBox::setPatchEnabled(bool enabled)
+{
+    if (m_patchEnabled == enabled)
+    {
+        return;
+    }
+    m_patchEnabled = enabled;
+    repaint();
 }
 
 void ModModuleBox::paint(juce::Graphics& g)
 {
-    g.setColour(juce::Colours::white.withAlpha(0.9f));
+    g.setColour(juce::Colours::white.withAlpha(m_patchEnabled ? 0.9f : 0.36f));
     g.setFont(juce::Font(juce::FontOptions(11.0f, juce::Font::bold)));
     g.drawText(m_label, getLocalBounds().removeFromTop(10), juce::Justification::centred);
 
@@ -71,9 +81,9 @@ void ModModuleBox::paint(juce::Graphics& g)
         g.fillEllipse(cx - radius, cy - radius, radius * 2.0f, radius * 2.0f);
     }
 
-    g.setColour(juce::Colour(0xff3d4450));
+    g.setColour(m_patchEnabled ? juce::Colour(0xff3d4450) : juce::Colour(0xff3d4450).withAlpha(0.4f));
     g.fillEllipse(m_jackBounds.toFloat());
-    g.setColour(juce::Colour(0xffc8d0dc));
+    g.setColour(m_patchEnabled ? juce::Colour(0xffc8d0dc) : juce::Colour(0xffc8d0dc).withAlpha(0.35f));
     g.drawEllipse(m_jackBounds.toFloat(), 2.0f);
 }
 

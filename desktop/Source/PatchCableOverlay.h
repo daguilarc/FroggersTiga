@@ -23,6 +23,7 @@ public:
     struct OutputPort
     {
         uint8_t modIndex = 0;
+        bool patchEnabled = true;
         juce::Rectangle<float> screenBounds;
     };
 
@@ -38,6 +39,8 @@ public:
     void setOutputPorts(std::vector<OutputPort> ports);
     void setInputPorts(std::vector<InputPort> ports);
     void setConnectionChangedCallback(ConnectionChangedFn fn);
+
+    void removeCablesForModIndex(uint8_t modIndex);
 
     void paint(juce::Graphics& g) override;
     void mouseDown(const juce::MouseEvent& e) override;

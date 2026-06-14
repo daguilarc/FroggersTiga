@@ -195,11 +195,11 @@ struct Parameter
         }
     }
 
-    void RandomizeModSim(float currentKnobPosition)
+    void RandomizeModSim(float currentKnobPosition, const CvMidiBridge& bridge)
     {
         RGen rgen;
         m_modAmount = rgen.UniGenRange(0, 1.0f);
-        m_modIndex = PickSimRandomModIndex(rgen);
+        m_modIndex = PickSimRandomModIndex(rgen, bridge);
     }
 
     void PageDeSelect(float knobValue)
