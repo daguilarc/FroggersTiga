@@ -24,4 +24,4 @@
 
 - [x] 5.1 Bump `desktop/CMakeLists.txt` to 1.0.2
 - [x] 5.2 Release build + `package-macos.sh`
-- [ ] 5.3 Commit, push, move tag `froggerstiga-v1`, verify release assets on GitHub
+- [x] 5.3 Commit, push, move tag `froggerstiga-v1`, verify release assets on GitHub
