@@ -2,11 +2,18 @@
 wasm/build/
 desktop/build/
 desktop/dist/
-# VCV Rack — local SDK clone + build artifacts (see vcv/DEVELOPMENT.md)
+# VCV Rack plugin — local-only (GPL); not published on public main
+vcv/
 Rack-SDK/
 vcv/Rack-SDK/
 vcv/dist/
 vcv/dep/
 vcv/build/
+# JUCE VST/AU plugin — local-only; not published on public main
+desktop/Source/PluginEditor.cpp
+desktop/Source/PluginEditor.h
+desktop/Source/PluginProcessor.cpp
+desktop/Source/PluginProcessor.h
+desktop/FroggersTigaPlugin_artefacts/
 .DS_Store
 **/.DS_Store

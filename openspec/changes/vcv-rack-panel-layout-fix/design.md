@@ -18,12 +18,15 @@ Rack constraints:
 |-------|---------|----------|
 | **Design intent vs implementation** | `vcv-vst-field-parity-panel` D3 preferred 2-row layout but D3 **fallback** (3+3 split) was documented, never implemented when density failed | `design.md` D3 fallback table; code has `kNumColumns = 6` on one expander |
 | **Layout math error** | Six 12 HP columns with widgets spanning ~12 HP each (label at `colX−3.5`, jack at `colX+2.5`) → adjacent columns overlap | Column centers at 6,18,30…66 HP; label width 10 HP |
-| **Primary panel oversize** | 72 HP panel for ~22 HP of I/O → library preview scales entire module down; user sees “most isn’t visible” | Jack positions stop at 21.5 GRID (~322 px); panel is 1080 px |
+| **Primary panel oversize** | 72 HP panel for ~22 HP of I/O → library preview scales entire module down; user sees "most isn't visible" | Jack positions stop at 21.5 GRID (~322 px); panel is 1080 px |
 | **Widget count / browser stress** | Single expander: 48 params + 48 inputs + 48 labels + screws = 150+ child widgets in preview | Rack log: browser preview + Framebuffer 0×0 on lights |
 | **Incomplete refactor** | Header rewritten (`primaryPanelSize`, 3-arg `columnCenterX`) without updating `plugin.cpp` | `make` fails: missing `panelSize`, `addRowLabel`, `HostPanelLayout` in header |
 | **Expander chain bug (latent)** | `primaryModule()` only checks immediate `leftExpander` — breaks when B sits left of A | One-hop `dynamic_cast`; design requires chain walk |
+| **No compile merge gate** | Header API renamed without consumer update or CI compile check | Partial pipeline: constants exist but unused; 4 symbol mismatches |
 
 **Installed vs repo:** User runs last successful x64 build (pre-refactor). Repo HEAD does not compile.
+
+**Omni audit status (2026-06-13):** 0/22 tasks complete. Nesting compliant (max 3). Repetition violations in `plugin.cpp` (offset helpers, screw blocks, column×row loops, primary I/O jack copy-paste). `FieldParityWidget.hpp:12` references `HostPanelLayout` without include.
 
 ## Goals / Non-Goals
 
@@ -34,13 +37,18 @@ Rack constraints:
 - Clean compile on Rack SDK 2.4.1 x64 (Rosetta on Apple Silicon)
 - Layout constants in one header; bounds verified by CI script
 - Expander chain resolves primary regardless of A/B order
+- Widget-level DRY in `plugin.cpp` (table-driven I/O, shared screws, unified offsets)
+- Merge gate: `make` exit 0 required before any layout header API rename merges
+- Keep `vcv/` and VST plugin target local-only on public `main` branch
 
 **Non-Goals:**
 
 - DSP, MIDI CC gating, or host API changes
 - Multi-row height on one module (Rack forbids)
 - Re-adding 48 on-panel row text labels (tooltips suffice)
-- VST layout changes (desktop UI already correct)
+- VST layout changes (desktop UI already correct; resizable JUCE layout unaffected by HP topology)
+- VST resize-minimum fix (1024×600 vs 1440×720 spec) — defer to `vcv-vst-field-parity-panel`
+- Publishing `vcv/` or VST binaries to GitHub `main` — local-only until explicit release
 
 ## Decisions
 
@@ -72,6 +80,8 @@ No `addRowLabel` — param name from `ParamDisplayNames::forHostPageRow` in `con
 
 **Why:** Same `syncColumn` / `applyModJack` logic; only page offset differs. Satisfies repetition rule.
 
+**Acceptance:** Unify `columnParamOffset` and `columnInputOffset` into single `columnBaseOffset(column)` — identical bodies today.
+
 ### D4 — `primaryModule()` chain walk (O(depth), depth ≤ 3)
 
 ```cpp
@@ -91,7 +101,7 @@ Depth is bounded by Rack expander chain length (2 expanders + primary = 3). Not 
 | **H4: Block ProcessBlock on primary** | Currently `ProcessBlock(..., 1)` per sample | Use `processArgs.sampleRate / 60` block size with member buffers | Reduces host overhead; separate change — **defer** (not layout) |
 | **H5: Browser crash from zero-size lights** | `SmallLight` above mod outputs | Ensure light offset ≥ 0.5 GRID; omit lights in preview if needed | Stability — **test** in browser first; remove lights only if crash persists |
 
-**Verdict:** Implement H2 (cached primary). H1 for layout authority. H4 out of scope. H5 validate manually.
+**Verdict:** Implement H2 (cached primary). H1 for layout authority. H4 out of scope. H5 validate manually with decision gate in task 5.6.
 
 ### D6 — Layout bounds CI script
 
@@ -103,14 +113,65 @@ Depth is bounded by Rack expander chain length (2 expanders + primary = 3). Not 
 
 Pure bash + awk — no Rack runtime required.
 
+### D7 — Widget-level DRY beyond expander template
+
+**Choice:** Extract within `FieldParityWidget.hpp` (layout authority):
+
+| Pattern | Fix |
+|---------|-----|
+| Primary I/O jacks (9 near-identical `addInput`/`addOutput`) | `constexpr` table of `{xGrid, id, isOutput}` + single loop |
+| Corner screws (4× `addChild` duplicated in primary + expander widgets) | `addCornerScrews(ModuleWidget*, Vec panelSize)` inline helper |
+| `columnParamOffset` ≡ `columnInputOffset` | Single `columnBaseOffset(int column)` |
+
+**One-time helper review (`addCornerScrews`):**
+
+| Criterion | Met? |
+|-----------|------|
+| Trigger count ≥2 of 4 | Yes (complexity: 2 widgets; repetition: 2 passes) |
+| Domain boundary | Yes — panel chrome placement |
+| Explicit contract | Yes — inputs: widget + panel size; output: 4 screws added |
+| Side effects clear | Yes |
+| Local scope | Yes — stays in `FieldParityWidget.hpp` |
+
+### D8 — Local-only VCV and VST on public `main`
+
+**Choice:** `vcv/` stays in `.git/info/exclude` (already local-only). VST plugin target defaults `BUILD_VST=OFF` in public CI and documented developer builds on `main`. VST sources remain in repo for local dev but are **not promoted** to public release until an explicit VST release change.
+
+**Why:** User policy: Rack plugin and VST are experimental local targets; public `main` ships desktop + web only. VST does not share VCV panel layout bugs — different UI framework — but shares `HostPanelLayout` label constants.
+
+**Current state:** `PluginEditor.cpp`, `PluginProcessor.cpp`, and `BUILD_VST=ON` are on `main` today. This change sets policy and default OFF; removal from `main` is a separate git hygiene step if desired.
+
+**VST parallel analysis:**
+
+```
+VCV Rack                          JUCE VST
+────────                          ────────
+Fixed HP panels (24/36)           Resizable pixels (1440×720 default)
+Multi-module expander chain       Single AudioProcessor instance
+nanovg widgets                    MainComponent JUCE layout
+Rack browser preview stress       DAW plugin scan (different lifecycle)
+FieldParityWidget.hpp authority   HostPanelLayout.hpp + MainComponent::resized()
+```
+
+| VCV failure mode | VST risk |
+|------------------|----------|
+| HP overlap | None — `area.getWidth() / 6` panel split |
+| Browser crash (150+ widgets) | None — JUCE handles component tree differently |
+| Expander chain walk | None — no expanders |
+| Partial header refactor | None — no `FieldParityWidget` include path |
+| Label authority drift | Shared via `ParamDisplayNames` — covered by other changes |
+| Local-only policy | VST currently on `main` — policy gap to close |
+
 ## Risks / Trade-offs
 
 | Risk | Mitigation |
 |------|------------|
 | **BREAKING:** Users with old single expander patches | Document re-add A+B; patch JSON won't migrate automatically |
 | Three modules to place vs two | Primary+expander is standard Rack pattern (Marbles, etc.) |
-| Browser crash persists after split | Isolate: test expander-only model; drop lights last |
+| Browser crash persists after split | Isolate: test expander-only model; drop lights last (task 5.6) |
 | Rosetta build forgotten | `vcv/build.sh` one-liner in DEVELOPMENT.md |
+| Partial refactor recurs | Task 4.4 merge gate: `make` exit 0 before header API changes |
+| VST accidentally published on `main` | `BUILD_VST=OFF` default; document local-only in DEVELOPMENT.md |
 
 ## Migration Plan
 
@@ -118,7 +179,9 @@ Pure bash + awk — no Rack runtime required.
 2. `arch -x86_64 make dist && make install` → `~/Documents/Rack2/plugins-mac-x64/`
 3. User removes old FroggersTiga modules from patch; adds Primary + Expander A + Expander B
 4. Verify browser preview + full patch
+5. Set `BUILD_VST=OFF` default; confirm public CI does not build VST target
 
 ## Open Questions
 
-- None blocking — D3 fallback is already approved in `vcv-vst-field-parity-panel`.
+- None blocking VCV apply — D3 fallback is already approved in `vcv-vst-field-parity-panel`.
+- **Deferred:** Remove VST sources from `main` git history vs keep with `BUILD_VST=OFF` — user prefers local-only; default OFF is minimum; full git removal is separate hygiene if needed.

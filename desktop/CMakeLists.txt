@@ -100,9 +100,9 @@ set(FROGGERS_UI_SOURCES
     Source/InputEnvelopeIndicator.cpp
 )
 
-option(BUILD_VST "Build FroggersTiga VST3/AU plugin" ON)
+option(BUILD_VST "Build FroggersTiga VST3/AU plugin (local-only; sources not in public repo)" OFF)
 
-if(BUILD_VST)
+if(BUILD_VST AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Source/PluginProcessor.cpp")
     juce_add_plugin(FroggersTigaPlugin
         PRODUCT_NAME "FroggersTiga"
         COMPANY_NAME "FroggersTiga"

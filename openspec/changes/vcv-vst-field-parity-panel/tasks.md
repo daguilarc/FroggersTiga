@@ -15,7 +15,7 @@
 
 ## 2. JUCE VST plugin (Phase A)
 
-- [x] 2.1 Add `juce_add_plugin` target in `desktop/CMakeLists.txt` (VST3 + AU; `BUILD_VST` option default ON)
+- [x] 2.1 Add `juce_add_plugin` target in `desktop/CMakeLists.txt` (VST3 + AU; `BUILD_VST` option default OFF — local-only)
 - [x] 2.2 Wire `MainComponent` + `AudioEngine` as plugin editor/processor; enable resizable editor; full mod rack (scope + LEDs) matching standalone
 - [x] 2.3 Implement transport/bypass policy (document in `SIM_MANUAL.md` plugin section)
 - [x] 2.4 Verify standalone `FroggersTigaDesktop` still builds and runs
@@ -23,7 +23,7 @@
 
 ## 3. VCV widget scaffold (Phase B)
 
-- [x] 3.1 Fix primary module `box.size` to 72 HP × `RACK_GRID_HEIGHT`; add Expander module(s) for row 2 (or rows 2–3 if 3+3 split)
+- [x] 3.1 Fix primary module `box.size` to 24 HP × `RACK_GRID_HEIGHT`; Expander A/B at 36 HP (D3 fallback 3+3 split) — see `vcv-rack-panel-layout-fix`
 - [x] 3.2 Remove page knob param; delete `PAGE_PARAM` sync loop from process
 - [x] 3.3 Create `vcv/src/widgets/FieldParityWidget` with six column regions + mod rack strip
 - [x] 3.4 Implement Audio column fully: 8 knobs, 8 mod input jacks, labels from `ParamDisplayNames` (row 7 = Phase mod 3); mod rack LEDs only (no scopes)

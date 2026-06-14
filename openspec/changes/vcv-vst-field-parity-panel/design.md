@@ -76,7 +76,7 @@ Field hardware shows **one page at a time**; desktop sim shows **all six submodu
 | Row 1 (top) | **FroggersTiga** (primary) | Mod rack: MIDI, VCO Envelope, Random 1/2 **output jacks** + **LED indicators**; Random button; master audio/CV/MIDI/gate I/O |
 | Row 2 | **FroggersTiga Expander** | All six submodule columns — 8 knobs + 8 mod input jacks each |
 
-**Fallback (3 rows)** if six columns do not fit at readable density:
+**Fallback (3 rows)** if six columns do not fit at readable density — **implemented** in `vcv-rack-panel-layout-fix` (v2.3.0):
 
 | Rack row | Module | Contents |
 |----------|--------|----------|

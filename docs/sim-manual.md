@@ -181,7 +181,9 @@ Dual sample-and-hold random CV. Knobs configure two independent bags; **Random 1
 - **External MIDI** — Web MIDI access is requested when you turn **External MIDI** on (under **External** audio). Default is **Off**; Play alone does not prompt for MIDI. When External MIDI is off, **CC 1** and **CC 2** are disabled and greyed in the mod bay. Turning External MIDI on enables both CC inputs by default; use **CC 1** / **CC 2** buttons to disable either independently. Matching CC messages update enabled scopes (defaults: channel 1, CC 1 and CC 2).
 - **External** — microphone permission is requested when you turn **External** on. Default is **Off**; Play alone does not prompt for mic access. A peak meter beside **External** shows input level when External is on and audio is playing. If the meter stays empty for about a second, check mic permission and input level in the status line. If permission is denied, allow microphone in browser site settings and click **External** again.
 
-### VST3 / AU plugin
+### VST3 / AU plugin (local-only)
+
+VST/AU sources are **not published** on the public GitHub repo. Keep plugin sources locally.
 
 - Same six-panel UI and mod rack as desktop (VCO Envelope CV scope + Random LEDs).
 - **Transport:** the DAW runs audio — there is no standalone Play/Stop bar. Use **Ext. In.** to route the plugin sidechain/mono input bus when the host provides one.

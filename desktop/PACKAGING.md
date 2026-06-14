@@ -111,3 +111,23 @@ to the GitHub Release for that tag.
 | `verify-tag-version.sh` | CI gate: tag semver = CMake VERSION |
 | `package-macos.sh` | Stage `.app` + Applications link → DMG |
 | `package-windows.ps1` | Run ISCC with `/DMyAppVersion` and `/DReleaseDir` |
+
+## Local-only targets (not on public `main`)
+
+Public GitHub releases ship **desktop standalone** and **web sim** only.
+
+| Target | Policy |
+|--------|--------|
+| **VCV Rack plugin** (`vcv/`) | Local-only; directory in `.gitignore` |
+| **VST3 / AU** (`PluginEditor`, `PluginProcessor`) | Local-only; sources in `.gitignore`; `BUILD_VST=OFF` by default |
+
+To build VST locally (after restoring plugin sources on your machine):
+
+```sh
+cd desktop
+cmake -B build -DBUILD_VST=ON
+cmake --build build --config Release
+```
+
+CI (`desktop-release.yml`, `pages.yml`) never sets `BUILD_VST=ON` and never builds `vcv/`.
+
