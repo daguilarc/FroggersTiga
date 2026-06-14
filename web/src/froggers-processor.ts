@@ -16,7 +16,7 @@ const WASM_IMPORTS: WebAssembly.Imports = {
   },
 };
 
-const CORE_PAGE_NAMES = ["Audio", "Random", "Reverb", "Filter", "Drive"];
+const CORE_PAGE_NAMES = ["Audio", "Random S&H", "Reverb", "Filter", "Drive"];
 const HOST_PAGE_NAMES = [...CORE_PAGE_NAMES, "Delay"];
 const HOST_PAGE_COUNT = 6;
 const SCOPE_MOD_INDICES = [0, 1, 4, 5, 6];

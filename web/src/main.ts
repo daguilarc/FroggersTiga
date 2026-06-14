@@ -5,7 +5,7 @@ import { ModLedIndicator } from "./ModLedIndicator";
 import { RotaryKnob } from "./RotaryKnob";
 
 const HOST_PAGE_COUNT = 6;
-const PAGE_NAMES = ["Audio", "Random", "Reverb", "Filter", "Drive", "Delay"];
+const PAGE_NAMES = ["Audio", "Random S&H", "Reverb", "Filter", "Drive", "Delay"];
 
 type ModBaySpec = { modIndex: number; kind: "scope" | "led" };
 
@@ -650,21 +650,21 @@ document.addEventListener("keydown", (e) => {
 
 function applyExternalUi(enabled: boolean): void {
   externalEnabled = enabled;
-  externalBtn.textContent = enabled ? "External: On" : "External: Off";
+  externalBtn.textContent = enabled ? "External Audio: On" : "External Audio: Off";
   externalBtn.classList.toggle("active", enabled);
   send({ type: "external", enabled });
 }
 
 function externalErrorMessage(err: unknown): string {
   if (!window.isSecureContext) {
-    return "HTTPS required for external audio — allow mic over HTTPS, then click External again";
+    return "HTTPS required for external audio — allow mic over HTTPS, then click External Audio again";
   }
   if (err instanceof DOMException || err instanceof Error) {
     if (err.name === "NotAllowedError") {
-      return "Microphone blocked — allow mic for this site in browser settings, then click External again";
+      return "Microphone blocked — allow mic for this site in browser settings, then click External Audio again";
     }
     if (err.name === "NotFoundError") {
-      return "No microphone found — connect a mic and click External again";
+      return "No microphone found — connect a mic and click External Audio again";
     }
     return `External error: ${err.message}`;
   }
@@ -794,7 +794,7 @@ async function setExternalEnabled(enabled: boolean): Promise<void> {
   }
 
   if (!audioContext || !workletNode) {
-    statusEl.textContent = "Engine not ready — wait for Engine ready, then click External again";
+    statusEl.textContent = "Engine not ready — wait for Engine ready, then click External Audio again";
     return;
   }
 
@@ -1042,7 +1042,7 @@ function stopAudio(): void {
     mediaStream = null;
   }
   externalEnabled = false;
-  externalBtn.textContent = "External: Off";
+  externalBtn.textContent = "External Audio: Off";
   externalBtn.classList.remove("active");
   send({ type: "external", enabled: false });
   disconnectExternalMidi();
