@@ -10,7 +10,7 @@
 struct WasmSimHost
 {
     static constexpr size_t kScopeSize = 96;
-    static constexpr std::array<uint8_t, 3> kScopeModIndices = {4, 5, 6};
+    static constexpr std::array<uint8_t, 5> kScopeModIndices = {0, 1, 4, 5, 6};
 
     PagedHostIO io;
     DelayState delay;
@@ -79,8 +79,8 @@ struct WasmSimHost
     }
 
 private:
-    std::array<std::array<float, kScopeSize>, 3> m_scopeRing{};
-    std::array<size_t, 3> m_scopeWrite{};
+    std::array<std::array<float, kScopeSize>, 5> m_scopeRing{};
+    std::array<size_t, 5> m_scopeWrite{};
 
     int scopeSlot(uint8_t modIndex) const
     {

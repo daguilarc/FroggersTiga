@@ -72,7 +72,8 @@ std::unique_ptr<juce::AudioFormat> createFormatWriter(ExportFormat format)
 }
 } // namespace
 
-AudioEngine::AudioEngine()
+AudioEngine::AudioEngine(bool pluginHosted)
+    : m_pluginHosted(pluginHosted)
 {
     m_host.setDelayState(&m_delay);
     m_host.Init();
@@ -85,6 +86,14 @@ AudioEngine::AudioEngine()
                 static_cast<int>(channel) + 1, static_cast<int>(cc), static_cast<int>(value)));
         }
     };
+    if (m_pluginHosted)
+    {
+        m_host.SetSampleRate(kSimSampleRate);
+        m_delay.setSampleRate(kSimSampleRate);
+        m_audioRunning = true;
+        return;
+    }
+
     m_deviceManager.initialiseWithDefaultDevices(0, 2);
     juce::AudioDeviceManager::AudioDeviceSetup setup;
     m_deviceManager.getAudioDeviceSetup(setup);
@@ -119,34 +128,28 @@ AudioEngine::~AudioEngine()
 void AudioEngine::handleIncomingMidiMessage(juce::MidiInput*,
                                             const juce::MidiMessage& message)
 {
+    if (!message.isController())
+    {
+        return;
+    }
     const uint8_t channel = static_cast<uint8_t>(message.getChannel() - 1);
-    if (message.isNoteOn(true))
-    {
-        m_host.m_midiBridge.PushMidiNote(
-            channel,
-            static_cast<uint8_t>(message.getNoteNumber()),
-            static_cast<uint8_t>(message.getVelocity()),
-            true);
-        return;
-    }
-    if (message.isNoteOff(true))
-    {
-        m_host.m_midiBridge.PushMidiNote(
-            channel, static_cast<uint8_t>(message.getNoteNumber()), 0, false);
-        return;
-    }
-    if (message.isController())
-    {
-        m_host.m_midiBridge.PushMidiCc(
-            channel,
-            static_cast<uint8_t>(message.getControllerNumber()),
-            static_cast<uint8_t>(message.getControllerValue()));
-    }
+    m_host.m_midiBridge.PushMidiCc(
+        channel,
+        static_cast<uint8_t>(message.getControllerNumber()),
+        static_cast<uint8_t>(message.getControllerValue()));
 }
 
 void AudioEngine::openDefaultMidi()
 {
-    setMidiInputDevice(juce::String(kComputerKeyboardMidiId));
+    const auto devices = juce::MidiInput::getAvailableDevices();
+    if (!devices.isEmpty())
+    {
+        setMidiInputDevice(devices[0].identifier);
+    }
+    else
+    {
+        setMidiInputDevice({});
+    }
     setMidiOutputDevice(juce::String(kNoMidiOutId));
 }
 
@@ -281,6 +284,12 @@ void AudioEngine::startAudio()
     {
         return;
     }
+    if (m_pluginHosted)
+    {
+        m_audioRunning = true;
+        notifyTransportChanged();
+        return;
+    }
     m_deviceManager.addAudioCallback(this);
     m_audioRunning = true;
 }
@@ -295,7 +304,10 @@ void AudioEngine::stopAudio()
     {
         m_recorder.stop();
     }
-    m_deviceManager.removeAudioCallback(this);
+    if (!m_pluginHosted)
+    {
+        m_deviceManager.removeAudioCallback(this);
+    }
     m_audioRunning = false;
     if (m_lastBlockNonFinite)
     {
@@ -306,8 +318,17 @@ void AudioEngine::stopAudio()
     notifyTransportChanged();
 }
 
+bool AudioEngine::isPluginHosted() const
+{
+    return m_pluginHosted;
+}
+
 void AudioEngine::showAudioSettings(juce::Component* parent)
 {
+    if (m_pluginHosted)
+    {
+        return;
+    }
     juce::DialogWindow::LaunchOptions opts;
     opts.dialogTitle = "Audio Settings";
     opts.dialogBackgroundColour = juce::Colour(0xff2b3038);
@@ -320,6 +341,10 @@ void AudioEngine::showAudioSettings(juce::Component* parent)
 
 void AudioEngine::showMidiSettings(juce::Component* parent)
 {
+    if (m_pluginHosted)
+    {
+        return;
+    }
     juce::DialogWindow::LaunchOptions opts;
     opts.dialogTitle = "MIDI Settings";
     opts.dialogBackgroundColour = juce::Colour(0xff2b3038);
@@ -333,9 +358,9 @@ void AudioEngine::showMidiSettings(juce::Component* parent)
 void AudioEngine::setMidiInputDevice(const juce::String& identifier)
 {
     m_midiIn.reset();
-    if (identifier.isEmpty() || identifier == kComputerKeyboardMidiId)
+    if (identifier.isEmpty())
     {
-        m_midiInDeviceId = juce::String(kComputerKeyboardMidiId);
+        m_midiInDeviceId.clear();
         return;
     }
 
@@ -347,14 +372,9 @@ void AudioEngine::setMidiInputDevice(const juce::String& identifier)
     }
 }
 
-bool AudioEngine::isComputerKeyboardMidiEnabled() const
-{
-    return m_midiInDeviceId.isEmpty() || m_midiInDeviceId == kComputerKeyboardMidiId;
-}
-
 bool AudioEngine::isHardwareMidiInputOpenFailed() const
 {
-    return !isComputerKeyboardMidiEnabled() && m_midiIn == nullptr;
+    return m_midiInDeviceId.isNotEmpty() && m_midiIn == nullptr;
 }
 
 const juce::String& AudioEngine::getMidiInputDeviceIdentifier() const
@@ -365,15 +385,6 @@ const juce::String& AudioEngine::getMidiInputDeviceIdentifier() const
 const juce::String& AudioEngine::getMidiOutputDeviceIdentifier() const
 {
     return m_midiOutDeviceId;
-}
-
-void AudioEngine::feedMidiInNote(uint8_t channel, uint8_t note, uint8_t velocity, bool isNoteOn)
-{
-    if (!isComputerKeyboardMidiEnabled())
-    {
-        return;
-    }
-    m_host.m_midiBridge.PushMidiNote(channel, note, velocity, isNoteOn);
 }
 
 void AudioEngine::setMidiOutputDevice(const juce::String& identifier)
@@ -564,20 +575,29 @@ void AudioEngine::audioDeviceError(const juce::String& errorMessage)
     notifyTransportChanged();
 }
 
-void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
-                                                   int numInputChannels,
-                                                   float* const* outputChannelData,
-                                                   int numOutputChannels,
-                                                   int numSamples,
-                                                   const juce::AudioIODeviceCallbackContext&)
+void AudioEngine::ingestMidiMessage(const juce::MidiMessage& message)
 {
-    if (!outputChannelData || numOutputChannels < 1 || !outputChannelData[0])
+    handleIncomingMidiMessage(nullptr, message);
+}
+
+void AudioEngine::setHostSampleRate(float sampleRate)
+{
+    m_host.SetSampleRate(sampleRate);
+    m_delay.setSampleRate(sampleRate);
+}
+
+void AudioEngine::renderSimOutputBlock(const float* inputChannel0,
+                                       int numInputChannels,
+                                       float* outL,
+                                       float* outR,
+                                       int numOutputChannels,
+                                       int numSamples)
+{
+    if (!outL)
     {
         return;
     }
 
-    float* outL = outputChannelData[0];
-    float* outR = numOutputChannels >= 2 && outputChannelData[1] ? outputChannelData[1] : nullptr;
     const size_t n = static_cast<size_t>(numSamples);
     if (m_inBlock.size() < n)
     {
@@ -590,12 +610,11 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
     std::fill(m_inBlock.begin(), m_inBlock.begin() + static_cast<ptrdiff_t>(n), 0.0f);
     float inputPeak = 0.0f;
 
-    if (m_externalInputEnabled && inputChannelData && numInputChannels > 0 && inputChannelData[0])
+    if (m_externalInputEnabled && inputChannel0 && numInputChannels > 0)
     {
-        const float* extIn = inputChannelData[0];
         for (int i = 0; i < numSamples; i++)
         {
-            const float sample = extIn[i];
+            const float sample = inputChannel0[i];
             m_inBlock[static_cast<size_t>(i)] = sample;
             inputPeak = std::max(inputPeak, std::fabs(sample));
         }
@@ -649,10 +668,66 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
             break;
         }
     }
-    if (blockNonFinite)
+    m_lastBlockNonFinite = blockNonFinite;
+}
+
+void AudioEngine::processHostedBlock(const float* inputChannelData,
+                                     int numInputChannels,
+                                     float* outputChannelDataLeft,
+                                     float* outputChannelDataRight,
+                                     int numOutputChannels,
+                                     int numSamples,
+                                     const juce::MidiBuffer& midiIn)
+{
+    if (!m_audioRunning || !outputChannelDataLeft)
+    {
+        return;
+    }
+
+    for (const juce::MidiMessageMetadata metadata : midiIn)
+    {
+        ingestMidiMessage(metadata.getMessage());
+    }
+
+    const float* inputChannel0 =
+        inputChannelData && numInputChannels > 0 ? inputChannelData : nullptr;
+    renderSimOutputBlock(inputChannel0,
+                         numInputChannels,
+                         outputChannelDataLeft,
+                         outputChannelDataRight,
+                         numOutputChannels,
+                         numSamples);
+
+    if (m_lastBlockNonFinite)
     {
         m_host.m_engine.SoftResetFxState();
         m_delay.softResetFx();
+        m_lastBlockNonFinite = false;
     }
-    m_lastBlockNonFinite = blockNonFinite;
+}
+
+void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
+                                                   int numInputChannels,
+                                                   float* const* outputChannelData,
+                                                   int numOutputChannels,
+                                                   int numSamples,
+                                                   const juce::AudioIODeviceCallbackContext&)
+{
+    if (!outputChannelData || numOutputChannels < 1 || !outputChannelData[0])
+    {
+        return;
+    }
+
+    float* outL = outputChannelData[0];
+    float* outR = numOutputChannels >= 2 && outputChannelData[1] ? outputChannelData[1] : nullptr;
+    const float* inputChannel0 =
+        inputChannelData && numInputChannels > 0 ? inputChannelData[0] : nullptr;
+    renderSimOutputBlock(inputChannel0, numInputChannels, outL, outR, numOutputChannels, numSamples);
+
+    if (m_lastBlockNonFinite)
+    {
+        m_host.m_engine.SoftResetFxState();
+        m_delay.softResetFx();
+        m_lastBlockNonFinite = false;
+    }
 }

@@ -7,7 +7,8 @@
 enum class SimModSource : uint8_t
 {
     None = 255,
-    Midi = 0,
+    MidiCc1 = 0,
+    MidiCc2 = 1,
     VcoFeat = 4,
     Marbles1 = 5,
     Marbles2 = 6
@@ -15,7 +16,7 @@ enum class SimModSource : uint8_t
 
 inline bool IsSimAssignableModIndex(uint8_t modIndex)
 {
-    return modIndex == 0 || modIndex == 4 || modIndex == 5 || modIndex == 6;
+    return modIndex == 0 || modIndex == 1 || modIndex == 4 || modIndex == 5 || modIndex == 6;
 }
 
 inline bool IsValidSimModAssignment(uint8_t modIndex)
@@ -28,7 +29,9 @@ inline SimModSource CoreIndexToSimModSource(uint8_t modIndex)
     switch (modIndex)
     {
         case 0:
-            return SimModSource::Midi;
+            return SimModSource::MidiCc1;
+        case 1:
+            return SimModSource::MidiCc2;
         case 4:
             return SimModSource::VcoFeat;
         case 5:
@@ -51,6 +54,6 @@ inline uint8_t PickSimRandomModIndex(RGen& rgen)
     {
         return 255;
     }
-    static constexpr uint8_t kPool[] = {0, 4, 5, 6};
-    return kPool[rgen.RangeGen(4)];
+    static constexpr uint8_t kPool[] = {0, 1, 4, 5, 6};
+    return kPool[rgen.RangeGen(5)];
 }

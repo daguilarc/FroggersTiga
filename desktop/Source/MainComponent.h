@@ -10,40 +10,35 @@
 #include "SubModulePanel.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
-#include <juce_audio_basics/juce_audio_basics.h>
 #include <array>
 #include <memory>
+#include <optional>
 #include <vector>
 
 class MainComponent : public juce::Component,
-                      private juce::Timer,
-                      private juce::MidiKeyboardState::Listener
+                      private juce::Timer
 {
 public:
     MainComponent();
+    explicit MainComponent(AudioEngine& audioEngine);
     ~MainComponent() override = default;
 
     void resized() override;
-    bool keyPressed(const juce::KeyPress& key) override;
-    bool keyStateChanged(bool isKeyDown) override;
     void mouseDown(const juce::MouseEvent& event) override;
 
 private:
+    void initFromEngine();
     void timerCallback() override;
     void updateTransportUi();
     void syncPatchPorts();
-    bool shouldCaptureQwertyMidi() const;
     void handleRecordClick();
-    void handleNoteOn(juce::MidiKeyboardState* source,
-                      int midiChannel,
-                      int midiNoteNumber,
-                      float velocity) override;
-    void handleNoteOff(juce::MidiKeyboardState* source,
-                       int midiChannel,
-                       int midiNoteNumber,
-                       float velocity) override;
 
-    AudioEngine m_audio;
+    AudioEngine& audioEngine();
+    const AudioEngine& audioEngine() const;
+
+    std::optional<AudioEngine> m_ownedAudio;
+    AudioEngine* m_audioEngine = nullptr;
+
     ModRackPanel m_modRack;
     PatchCableOverlay m_cableOverlay;
     GlobalStrip m_strip;
@@ -58,5 +53,4 @@ private:
     std::array<std::unique_ptr<DesktopPanelBackend>, 5> m_coreBackends;
     std::unique_ptr<DelayHostBackend> m_delayBackend;
     std::array<std::unique_ptr<SubModulePanel>, 6> m_panels;
-    juce::MidiKeyboardState m_keyboardState;
 };

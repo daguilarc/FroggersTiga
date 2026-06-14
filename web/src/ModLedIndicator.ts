@@ -20,4 +20,11 @@ export class ModLedIndicator {
     const clamped = Math.min(Math.max(level, 0), 1);
     this.ledEl.dataset.on = clamped > LED_ON_THRESHOLD ? "true" : "false";
   }
+
+  setLabel(label: string): void {
+    const labelEl = this.element.querySelector(".mod-label");
+    if (labelEl) {
+      labelEl.textContent = label;
+    }
+  }
 }

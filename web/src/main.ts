@@ -7,15 +7,32 @@ import { RotaryKnob } from "./RotaryKnob";
 const HOST_PAGE_COUNT = 6;
 const PAGE_NAMES = ["Audio", "Random", "Reverb", "Filter", "Drive", "Delay"];
 
+type ModBaySpec = { modIndex: number; kind: "scope" | "led" };
+
+const MOD_BAY_SPEC: ModBaySpec[] = [
+  { modIndex: 0, kind: "scope" },
+  { modIndex: 1, kind: "scope" },
+  { modIndex: 4, kind: "scope" },
+  { modIndex: 5, kind: "led" },
+  { modIndex: 6, kind: "led" },
+];
+
 type ModBayIndicator =
   | { kind: "scope"; modIndex: number; scope: CvScopeCanvas }
   | { kind: "led"; modIndex: number; led: ModLedIndicator };
 
-const modBayIndicators: ModBayIndicator[] = [
-  { kind: "scope", modIndex: 4, scope: new CvScopeCanvas("VCO Envelope", "continuous") },
-  { kind: "led", modIndex: 5, led: new ModLedIndicator("Random 1 S&H") },
-  { kind: "led", modIndex: 6, led: new ModLedIndicator("Random 2 S&H") },
-];
+const modBayIndicators: ModBayIndicator[] = MOD_BAY_SPEC.map((spec) =>
+  spec.kind === "scope"
+    ? { kind: "scope", modIndex: spec.modIndex, scope: new CvScopeCanvas("", "continuous") }
+    : { kind: "led", modIndex: spec.modIndex, led: new ModLedIndicator("") }
+);
+
+interface AssignableModOption {
+  index: number;
+  label: string;
+}
+
+let assignableModOptions: AssignableModOption[] = [];
 
 const PAGE_BLURBS: Record<number, string> = {
   0: "Three VCOs, coupling, and output level.",
@@ -25,15 +42,6 @@ const PAGE_BLURBS: Record<number, string> = {
   4: "Drive, SRR, XOR grit, and fuzz.",
   5: "Stereo delay — send, feedback, width, detune, mod.",
 };
-
-const HOST_PAGE_LABELS: string[][] = [
-  ["VCO1", "VCO2", "VCO3", "Cross-coupler", "Phase mod 1", "Phase mod 2", "Phase mod 3", "Crispy"],
-  ["Step chance", "Deja vu 1", "Bag size 1", "Slew 1", "Deja vu 2", "Bag size 2", "Slew 2", "Crispy"],
-  ["Wet/dry", "Room size", "Decay", "Pre-delay", "Damping", "Stereo width", "Diffusion", "Crispy"],
-  ["Comb offset", "Peak freq", "Peak gain", "Peak Q", "Comb delay", "Comb feedback", "Comb LP", "Crispy"],
-  ["Drive", "Shape", "SRR 1", "SRR 2", "XOR", "Bit depth", "Fuzz", "Crispy"],
-  ["Delay time", "Send", "Feedback", "Stereo width", "Detune", "Mod depth", "Wet mix", "Crispy"],
-];
 
 const DELAY_HINTS: Record<number, string> = {
   0: "~0–2 s",
@@ -50,6 +58,7 @@ interface ScreenRow {
 const playBtn = document.getElementById("play-btn") as HTMLButtonElement;
 const stopBtn = document.getElementById("stop-btn") as HTMLButtonElement;
 const externalBtn = document.getElementById("external-btn") as HTMLButtonElement;
+const externalMidiBtn = document.getElementById("external-midi-btn") as HTMLButtonElement;
 const statusEl = document.getElementById("status") as HTMLSpanElement;
 const knobsEl = document.getElementById("knobs") as HTMLDivElement;
 const modBayEl = document.getElementById("mod-bay") as HTMLDivElement;
@@ -82,8 +91,11 @@ const HELP_DOC_PATHS: Record<string, { title: string; path: string }> = {
 let workletNode: AudioWorkletNode | null = null;
 let mediaStream: MediaStream | null = null;
 let micSource: MediaStreamAudioSourceNode | null = null;
+let midiAccess: MIDIAccess | null = null;
+const midiInputHandlers = new Map<MIDIInput, (event: MIDIMessageEvent) => void>();
 let audioContext: AudioContext | null = null;
 let externalEnabled = false;
+let externalMidiEnabled = false;
 let audioRunning = false;
 let transportIntentPlaying = false;
 let engineReady = false;
@@ -122,16 +134,21 @@ function modSelectIndex(modSource: number): number {
   if (modSource === 255) {
     return 0;
   }
-  if (modSource === 4) {
-    return 1;
+  const optionIndex = assignableModOptions.findIndex((option) => option.index === modSource);
+  return optionIndex >= 0 ? optionIndex + 1 : 0;
+}
+
+function populateModSelects(options: AssignableModOption[]): void {
+  assignableModOptions = options;
+  for (const select of modSelects) {
+    select.innerHTML = '<option value="255">None</option>';
+    for (const option of options) {
+      const el = document.createElement("option");
+      el.value = String(option.index);
+      el.textContent = option.label;
+      select.appendChild(el);
+    }
   }
-  if (modSource === 5) {
-    return 2;
-  }
-  if (modSource === 6) {
-    return 3;
-  }
-  return 0;
 }
 
 function evalWaveMorph(phase: number, morph: number): number {
@@ -213,7 +230,8 @@ function playingStatusBase(): string {
     return "";
   }
   const extLabel = externalEnabled ? "external on" : "external off";
-  return `Playing — ${extLabel} — ${audioContext.sampleRate | 0} Hz`;
+  const midiLabel = externalMidiEnabled ? "midi on" : "midi off";
+  return `Playing — ${extLabel} — ${midiLabel} — ${audioContext.sampleRate | 0} Hz`;
 }
 
 function applyPlayingStatus(): void {
@@ -254,19 +272,33 @@ function renderPageChrome(): void {
   }
 }
 
-function applyStaticKnobLabels(page: number): void {
-  const labels = HOST_PAGE_LABELS[page] ?? HOST_PAGE_LABELS[0];
+function applyKnobLabelsFromRows(rows: ScreenRow[]): void {
   for (let i = 0; i < 8; i++) {
-    knobMainLabels[i].textContent = labels[i] ?? "";
-    knobHintLabels[i].textContent = page === 5 ? (DELAY_HINTS[i] ?? "") : "";
+    const row = rows[i];
+    knobMainLabels[i].textContent = row?.name ?? "…";
+    knobHintLabels[i].textContent = hostPage === 5 ? (DELAY_HINTS[i] ?? "") : "";
     knobHintLabels[i].style.display = "block";
+  }
+}
+
+function applyModSourceLabels(names: string[]): void {
+  for (let i = 0; i < modBayIndicators.length; i++) {
+    const label = names[i] ?? "";
+    const indicator = modBayIndicators[i];
+    if (indicator.kind === "scope") {
+      indicator.scope.setLabel(label);
+    } else {
+      indicator.led.setLabel(label);
+    }
   }
 }
 
 function setHostPage(page: number): void {
   hostPage = ((page % HOST_PAGE_COUNT) + HOST_PAGE_COUNT) % HOST_PAGE_COUNT;
   renderPageChrome();
-  applyStaticKnobLabels(hostPage);
+  if (lastScreenRows.length === 8) {
+    applyKnobLabelsFromRows(lastScreenRows);
+  }
   renderVcoMorphButtons(lastWasmPage);
   if (workletNode) {
     send({ type: "hostPage", page: hostPage });
@@ -276,7 +308,9 @@ function setHostPage(page: number): void {
 function changeHostPage(delta: number): void {
   hostPage = ((hostPage + delta) % HOST_PAGE_COUNT + HOST_PAGE_COUNT) % HOST_PAGE_COUNT;
   renderPageChrome();
-  applyStaticKnobLabels(hostPage);
+  if (lastScreenRows.length === 8) {
+    applyKnobLabelsFromRows(lastScreenRows);
+  }
   renderVcoMorphButtons(lastWasmPage);
   if (workletNode) {
     send({ type: "hostPageDelta", delta });
@@ -297,6 +331,7 @@ function requireEngineForAction(): boolean {
 }
 
 function syncKnobUi(rows: ScreenRow[]): void {
+  applyKnobLabelsFromRows(rows);
   for (let i = 0; i < 8; i++) {
     const row = rows[i];
     const modIdx = modSelectIndex(row.modSource);
@@ -314,10 +349,13 @@ function onScreenUpdate(data: Record<string, unknown>): void {
   if (nextPage !== hostPage) {
     hostPage = nextPage;
     renderPageChrome();
-    applyStaticKnobLabels(hostPage);
   }
   const rows = data.rows as ScreenRow[];
   lastScreenRows = rows;
+  const modSourceNames = data.modSourceNames as string[] | undefined;
+  if (modSourceNames && modSourceNames.length >= modBayIndicators.length) {
+    applyModSourceLabels(modSourceNames);
+  }
   const morphs = data.morphs as number[] | undefined;
   if (morphs && morphs.length >= 3) {
     lastMorphs = morphs.slice(0, 3);
@@ -449,11 +487,7 @@ for (let i = 0; i < 8; i++) {
 
   const modSelect = document.createElement("select");
   modSelect.className = "mod-select";
-  modSelect.innerHTML =
-    '<option value="255">None</option>' +
-    '<option value="4">VCO Envelope</option>' +
-    '<option value="5">Random 1 S&H</option>' +
-    '<option value="6">Random 2 S&H</option>';
+  modSelect.innerHTML = '<option value="255">None</option>';
   modSelect.addEventListener("change", () => {
     const modIndex = Number(modSelect.value);
     if (isDelayPage()) {
@@ -660,6 +694,78 @@ function disconnectExternalStream(): void {
   }
 }
 
+function disconnectExternalMidi(): void {
+  for (const [input] of midiInputHandlers) {
+    input.onmidimessage = null;
+  }
+  midiInputHandlers.clear();
+  if (midiAccess) {
+    midiAccess.onstatechange = null;
+  }
+  midiAccess = null;
+}
+
+function handleWebMidiMessage(event: MIDIMessageEvent): void {
+  const data = event.data;
+  if (!data || data.length < 3) {
+    return;
+  }
+  const status = data[0];
+  if ((status & 0xf0) !== 0xb0) {
+    return;
+  }
+  send({
+    type: "midiCc",
+    channel: status & 0x0f,
+    cc: data[1],
+    value: data[2],
+  });
+}
+
+function externalMidiErrorMessage(err: unknown): string {
+  if (!window.isSecureContext) {
+    return "HTTPS required for External MIDI — use HTTPS, then click External MIDI again";
+  }
+  if (typeof navigator.requestMIDIAccess !== "function") {
+    return "Web MIDI not supported in this browser";
+  }
+  if (err instanceof DOMException || err instanceof Error) {
+    if (err.name === "NotAllowedError") {
+      return "MIDI blocked — allow MIDI for this site in browser settings, then click External MIDI again";
+    }
+    return `External MIDI error: ${err.message}`;
+  }
+  return `External MIDI error: ${String(err)}`;
+}
+
+function applyExternalMidiUi(enabled: boolean): void {
+  externalMidiEnabled = enabled;
+  externalMidiBtn.textContent = enabled ? "External MIDI: On" : "External MIDI: Off";
+  externalMidiBtn.classList.toggle("active", enabled);
+}
+
+function attachWebMidiInputs(access: MIDIAccess): void {
+  for (const input of access.inputs.values()) {
+    const handler = (event: MIDIMessageEvent) => handleWebMidiMessage(event);
+    input.onmidimessage = handler;
+    midiInputHandlers.set(input, handler);
+  }
+  access.onstatechange = () => {
+    if (!externalMidiEnabled || !midiAccess) {
+      return;
+    }
+    for (const [input] of midiInputHandlers) {
+      input.onmidimessage = null;
+    }
+    midiInputHandlers.clear();
+    for (const input of midiAccess.inputs.values()) {
+      const handler = (event: MIDIMessageEvent) => handleWebMidiMessage(event);
+      input.onmidimessage = handler;
+      midiInputHandlers.set(input, handler);
+    }
+  };
+}
+
 async function setExternalEnabled(enabled: boolean): Promise<void> {
   if (!enabled) {
     disconnectExternalStream();
@@ -723,6 +829,47 @@ externalBtn.addEventListener("click", () => {
   void setExternalEnabled(!externalEnabled);
 });
 
+async function setExternalMidiEnabled(enabled: boolean): Promise<void> {
+  if (!enabled) {
+    disconnectExternalMidi();
+    applyExternalMidiUi(false);
+    if (audioRunning) {
+      applyPlayingStatus();
+    }
+    return;
+  }
+
+  if (!window.isSecureContext || typeof navigator.requestMIDIAccess !== "function") {
+    statusEl.textContent = externalMidiErrorMessage(new Error("Web MIDI unavailable"));
+    return;
+  }
+
+  unlockAudioContext();
+  try {
+    await initWorklet();
+  } catch (err) {
+    statusEl.textContent = `Engine error: ${err instanceof Error ? err.message : String(err)}`;
+    return;
+  }
+
+  try {
+    midiAccess = await navigator.requestMIDIAccess({ sysex: false });
+    attachWebMidiInputs(midiAccess);
+    applyExternalMidiUi(true);
+    if (audioRunning) {
+      applyPlayingStatus();
+    }
+  } catch (err) {
+    disconnectExternalMidi();
+    applyExternalMidiUi(false);
+    statusEl.textContent = externalMidiErrorMessage(err);
+  }
+}
+
+externalMidiBtn.addEventListener("click", () => {
+  void setExternalMidiEnabled(!externalMidiEnabled);
+});
+
 function handleWorkletMessage(event: MessageEvent): void {
   const data = event.data;
   if (data.type === "screen") {
@@ -741,6 +888,14 @@ function handleWorkletMessage(event: MessageEvent): void {
   if (data.type === "ready") {
     engineReady = true;
     updateEngineDependentUi();
+    const modSourceNames = data.modSourceNames as string[] | undefined;
+    if (modSourceNames && modSourceNames.length >= modBayIndicators.length) {
+      applyModSourceLabels(modSourceNames);
+    }
+    const options = data.assignableModOptions as AssignableModOption[] | undefined;
+    if (options && options.length > 0) {
+      populateModSelects(options);
+    }
     if (audioContext) {
       send({ type: "setSampleRate", sampleRate: audioContext.sampleRate });
     }
@@ -863,6 +1018,9 @@ async function startAudio(): Promise<void> {
     if (externalEnabled) {
       await setExternalEnabled(true);
     }
+    if (externalMidiEnabled) {
+      await setExternalMidiEnabled(true);
+    }
   } catch (err) {
     statusEl.textContent = `Audio error: ${err instanceof Error ? err.message : String(err)} — click Play to retry`;
     transportIntentPlaying = false;
@@ -887,6 +1045,10 @@ function stopAudio(): void {
   externalBtn.textContent = "External: Off";
   externalBtn.classList.remove("active");
   send({ type: "external", enabled: false });
+  disconnectExternalMidi();
+  externalMidiEnabled = false;
+  externalMidiBtn.textContent = "External MIDI: Off";
+  externalMidiBtn.classList.remove("active");
   if (workletNode) {
     workletNode.disconnect();
   }
@@ -907,12 +1069,19 @@ stopBtn.addEventListener("click", () => {
 
 initModBay();
 renderPageChrome();
-applyStaticKnobLabels(0);
+for (let i = 0; i < 8; i++) {
+  knobMainLabels[i].textContent = "…";
+}
 renderVcoMorphButtons(0);
 renderInputMeter(0, false);
 renderModBay(undefined, [0, 0, 0, 0, 0, 0, 0], false);
 updateEngineDependentUi();
 syncTransportUi();
+
+if (typeof navigator.requestMIDIAccess !== "function") {
+  externalMidiBtn.disabled = true;
+  externalMidiBtn.title = "Web MIDI not supported in this browser";
+}
 
 document.addEventListener(
   "touchstart",

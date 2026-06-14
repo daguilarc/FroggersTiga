@@ -1,5 +1,13 @@
 #include "MidiSettingsComponent.h"
 
+namespace
+{
+constexpr int kChannelControlWidth = 50;
+constexpr int kCcControlWidth = 80;
+constexpr int kCcTextBoxWidth = 44;
+constexpr int kRowControlHeight = 24;
+} // namespace
+
 MidiSettingsComponent::MidiSettingsComponent(AudioEngine& engine, std::function<void()> onClose)
     : m_engine(engine)
     , m_onClose(std::move(onClose))
@@ -7,53 +15,66 @@ MidiSettingsComponent::MidiSettingsComponent(AudioEngine& engine, std::function<
     m_inSectionLabel.setText("MIDI In", juce::dontSendNotification);
     m_inSectionLabel.setFont(juce::Font(14.0f, juce::Font::bold));
     m_inLabel.setText("Device", juce::dontSendNotification);
-    m_inDevice.setTooltip(
-        "Computer keyboard: QWERTY piano keys drive the MIDI mod jack (patch cables). "
-        "Select a hardware device to use an external keyboard instead.");
-    m_inChLabel.setText("Channel", juce::dontSendNotification);
-    m_inCcLabel.setText("In CC", juce::dontSendNotification);
-    m_inCcLabel.setTooltip(
-        "Notes drive pitch CV x velocity on the MIDI mod jack (highest held note wins). "
-        "CC controllers on this channel override when sent.");
-    m_inLegend.setText(
-        "Piano: A W S E D F T G Y H U J K O L P  (white + black keys)\n"
-        "Each key steps pitch CV on the scope when the MIDI jack is patched (A = lowest step).",
-        juce::dontSendNotification);
-    m_inLegend.setJustificationType(juce::Justification::topLeft);
+    m_inCc1GroupLabel.setText("MIDI CC 1", juce::dontSendNotification);
+    m_inCc1GroupLabel.setFont(juce::Font(12.0f, juce::Font::bold));
+    m_inCh1Label.setText("Ch", juce::dontSendNotification);
+    m_inCc1Label.setText("CC", juce::dontSendNotification);
+    m_inCc2GroupLabel.setText("MIDI CC 2", juce::dontSendNotification);
+    m_inCc2GroupLabel.setFont(juce::Font(12.0f, juce::Font::bold));
+    m_inCh2Label.setText("Ch", juce::dontSendNotification);
+    m_inCc2Label.setText("CC", juce::dontSendNotification);
     m_inStatus.setJustificationType(juce::Justification::centredLeft);
 
     m_outSectionLabel.setText("MIDI Out (VCO Env)", juce::dontSendNotification);
     m_outSectionLabel.setFont(juce::Font(14.0f, juce::Font::bold));
     m_outLabel.setText("Device", juce::dontSendNotification);
     m_outHelp.setText(
-        "Sends VCO envelope level to a physical MIDI port when a device is selected. "
-        "Keyboard notes never leave this port.",
+        "Sends VCO envelope level to a physical MIDI port when a device is selected.",
         juce::dontSendNotification);
     m_outHelp.setJustificationType(juce::Justification::topLeft);
     m_outCcLabel.setText("CC", juce::dontSendNotification);
     m_outChLabel.setText("Channel", juce::dontSendNotification);
 
-    m_inChannel.setRange(1, 16, 1);
-    m_inChannel.setValue(m_engine.getHost().m_midiBridge.m_inChannel + 1, juce::dontSendNotification);
-    m_inChannel.onValueChange = [this]() {
-        m_engine.getHost().m_midiBridge.m_inChannel =
-            static_cast<uint8_t>(m_inChannel.getValue() - 1);
+    auto& bridge = m_engine.getHost().m_midiBridge;
+
+    m_inChannel1.setRange(1, 16, 1);
+    m_inChannel1.setValue(bridge.m_inChannel1 + 1, juce::dontSendNotification);
+    m_inChannel1.onValueChange = [this]() {
+        m_engine.getHost().m_midiBridge.m_inChannel1 =
+            static_cast<uint8_t>(m_inChannel1.getValue() - 1);
     };
 
-    m_inCc.setRange(0, 127, 1);
-    m_inCc.setValue(m_engine.getHost().m_midiBridge.m_inCc, juce::dontSendNotification);
-    m_inCc.onValueChange = [this]() {
-        m_engine.getHost().m_midiBridge.m_inCc = static_cast<uint8_t>(m_inCc.getValue());
+    m_inCc1.setRange(0, 127, 1);
+    m_inCc1.setValue(bridge.m_inCc1, juce::dontSendNotification);
+    m_inCc1.onValueChange = [this]() {
+        m_engine.getHost().m_midiBridge.m_inCc1 = static_cast<uint8_t>(m_inCc1.getValue());
     };
+
+    m_inChannel2.setRange(1, 16, 1);
+    m_inChannel2.setValue(bridge.m_inChannel2 + 1, juce::dontSendNotification);
+    m_inChannel2.onValueChange = [this]() {
+        m_engine.getHost().m_midiBridge.m_inChannel2 =
+            static_cast<uint8_t>(m_inChannel2.getValue() - 1);
+    };
+
+    m_inCc2.setRange(0, 127, 1);
+    m_inCc2.setValue(bridge.m_inCc2, juce::dontSendNotification);
+    m_inCc2.onValueChange = [this]() {
+        m_engine.getHost().m_midiBridge.m_inCc2 = static_cast<uint8_t>(m_inCc2.getValue());
+    };
+
+    configureCcSlider(m_inCc1);
+    configureCcSlider(m_inCc2);
 
     m_outCc.setRange(0, 127, 1);
-    m_outCc.setValue(m_engine.getHost().m_midiBridge.m_outCc, juce::dontSendNotification);
+    m_outCc.setValue(bridge.m_outCc, juce::dontSendNotification);
     m_outCc.onValueChange = [this]() {
         m_engine.getHost().m_midiBridge.m_outCc = static_cast<uint8_t>(m_outCc.getValue());
     };
+    configureCcSlider(m_outCc);
 
     m_outChannel.setRange(1, 16, 1);
-    m_outChannel.setValue(m_engine.getHost().m_midiBridge.m_outChannel + 1, juce::dontSendNotification);
+    m_outChannel.setValue(bridge.m_outChannel + 1, juce::dontSendNotification);
     m_outChannel.onValueChange = [this]() {
         m_engine.getHost().m_midiBridge.m_outChannel =
             static_cast<uint8_t>(m_outChannel.getValue() - 1);
@@ -73,11 +94,16 @@ MidiSettingsComponent::MidiSettingsComponent(AudioEngine& engine, std::function<
                                static_cast<juce::Component*>(&m_inLabel),
                                static_cast<juce::Component*>(&m_inDevice),
                                static_cast<juce::Component*>(&m_refresh),
-                               static_cast<juce::Component*>(&m_inChLabel),
-                               static_cast<juce::Component*>(&m_inChannel),
-                               static_cast<juce::Component*>(&m_inCcLabel),
-                               static_cast<juce::Component*>(&m_inCc),
-                               static_cast<juce::Component*>(&m_inLegend),
+                               static_cast<juce::Component*>(&m_inCc1GroupLabel),
+                               static_cast<juce::Component*>(&m_inCh1Label),
+                               static_cast<juce::Component*>(&m_inChannel1),
+                               static_cast<juce::Component*>(&m_inCc1Label),
+                               static_cast<juce::Component*>(&m_inCc1),
+                               static_cast<juce::Component*>(&m_inCc2GroupLabel),
+                               static_cast<juce::Component*>(&m_inCh2Label),
+                               static_cast<juce::Component*>(&m_inChannel2),
+                               static_cast<juce::Component*>(&m_inCc2Label),
+                               static_cast<juce::Component*>(&m_inCc2),
                                static_cast<juce::Component*>(&m_inStatus),
                                static_cast<juce::Component*>(&m_outSectionLabel),
                                static_cast<juce::Component*>(&m_outLabel),
@@ -95,7 +121,15 @@ MidiSettingsComponent::MidiSettingsComponent(AudioEngine& engine, std::function<
     refreshDeviceLists();
     updateStatus();
     startTimerHz(4);
-    setSize(480, 420);
+    setSize(520, 380);
+}
+
+void MidiSettingsComponent::configureCcSlider(juce::Slider& slider)
+{
+    slider.setSliderStyle(juce::Slider::LinearHorizontal);
+    slider.setTextBoxStyle(
+        juce::Slider::TextBoxRight, false, kCcTextBoxWidth, kRowControlHeight - 4);
+    slider.setNumDecimalPlacesToDisplay(0);
 }
 
 void MidiSettingsComponent::timerCallback()
@@ -105,22 +139,20 @@ void MidiSettingsComponent::timerCallback()
 
 void MidiSettingsComponent::updateStatus()
 {
+    if (m_engine.getMidiInputDeviceIdentifier().isEmpty())
+    {
+        m_inStatus.setText("No MIDI input device selected.", juce::dontSendNotification);
+        m_inStatus.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
+        return;
+    }
     if (m_engine.isHardwareMidiInputOpenFailed())
     {
         m_inStatus.setText("Could not open selected MIDI input device.", juce::dontSendNotification);
         m_inStatus.setColour(juce::Label::textColourId, juce::Colours::orange);
+        return;
     }
-    else if (m_engine.isComputerKeyboardMidiEnabled())
-    {
-        m_inStatus.setText("Computer keyboard → MIDI mod jack (not physical MIDI out).",
-                           juce::dontSendNotification);
-        m_inStatus.setColour(juce::Label::textColourId, juce::Colours::lightgrey);
-    }
-    else
-    {
-        m_inStatus.setText("Hardware MIDI in active.", juce::dontSendNotification);
-        m_inStatus.setColour(juce::Label::textColourId, juce::Colours::lightgreen);
-    }
+    m_inStatus.setText("Hardware MIDI in active.", juce::dontSendNotification);
+    m_inStatus.setColour(juce::Label::textColourId, juce::Colours::lightgreen);
 }
 
 void MidiSettingsComponent::refreshDeviceLists()
@@ -130,7 +162,7 @@ void MidiSettingsComponent::refreshDeviceLists()
 
     m_inDevice.clear();
     m_outDevice.clear();
-    m_inDevice.addItem("Computer keyboard", 1);
+    m_inDevice.addItem("None", 1);
     int inIdx = 2;
     for (const auto& dev : juce::MidiInput::getAvailableDevices())
     {
@@ -144,7 +176,7 @@ void MidiSettingsComponent::refreshDeviceLists()
         m_outDevice.addItem(dev.name, outIdx++);
     }
 
-    if (m_engine.isComputerKeyboardMidiEnabled())
+    if (prevIn.isEmpty())
     {
         m_inDevice.setSelectedId(1, juce::dontSendNotification);
     }
@@ -196,7 +228,7 @@ void MidiSettingsComponent::applyInputDevice()
     }
     if (id == 1)
     {
-        m_engine.setMidiInputDevice(juce::String(AudioEngine::kComputerKeyboardMidiId));
+        m_engine.setMidiInputDevice({});
         updateStatus();
         return;
     }
@@ -241,16 +273,24 @@ void MidiSettingsComponent::resized()
     m_refresh.setBounds(inDevRow);
     area.removeFromTop(6);
 
-    auto inChRow = area.removeFromTop(24);
-    m_inChLabel.setBounds(inChRow.removeFromLeft(70));
-    m_inChannel.setBounds(inChRow.removeFromLeft(50));
-    inChRow.removeFromLeft(8);
-    m_inCcLabel.setBounds(inChRow.removeFromLeft(50));
-    m_inCc.setBounds(inChRow.removeFromLeft(50));
+    auto cc1Row = area.removeFromTop(24);
+    m_inCc1GroupLabel.setBounds(cc1Row.removeFromLeft(80));
+    m_inCh1Label.setBounds(cc1Row.removeFromLeft(24));
+    m_inChannel1.setBounds(cc1Row.removeFromLeft(kChannelControlWidth));
+    cc1Row.removeFromLeft(8);
+    m_inCc1Label.setBounds(cc1Row.removeFromLeft(24));
+    m_inCc1.setBounds(cc1Row.removeFromLeft(kCcControlWidth));
+    area.removeFromTop(4);
+
+    auto cc2Row = area.removeFromTop(24);
+    m_inCc2GroupLabel.setBounds(cc2Row.removeFromLeft(80));
+    m_inCh2Label.setBounds(cc2Row.removeFromLeft(24));
+    m_inChannel2.setBounds(cc2Row.removeFromLeft(kChannelControlWidth));
+    cc2Row.removeFromLeft(8);
+    m_inCc2Label.setBounds(cc2Row.removeFromLeft(24));
+    m_inCc2.setBounds(cc2Row.removeFromLeft(kCcControlWidth));
 
     area.removeFromTop(6);
-    m_inLegend.setBounds(area.removeFromTop(36));
-    area.removeFromTop(4);
     m_inStatus.setBounds(area.removeFromTop(18));
     area.removeFromTop(10);
 
@@ -259,15 +299,15 @@ void MidiSettingsComponent::resized()
     m_outLabel.setBounds(area.removeFromTop(16));
     m_outDevice.setBounds(area.removeFromTop(24));
     area.removeFromTop(4);
-    m_outHelp.setBounds(area.removeFromTop(32));
+    m_outHelp.setBounds(area.removeFromTop(24));
     area.removeFromTop(6);
 
     auto outRow = area.removeFromTop(24);
     m_outChLabel.setBounds(outRow.removeFromLeft(60));
-    m_outChannel.setBounds(outRow.removeFromLeft(50));
+    m_outChannel.setBounds(outRow.removeFromLeft(kChannelControlWidth));
     outRow.removeFromLeft(8);
     m_outCcLabel.setBounds(outRow.removeFromLeft(30));
-    m_outCc.setBounds(outRow.removeFromLeft(50));
+    m_outCc.setBounds(outRow.removeFromLeft(kCcControlWidth));
 
     area.removeFromTop(12);
     m_close.setBounds(area.removeFromTop(28).removeFromRight(80));

@@ -23,6 +23,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Label authority checks
+        run: |
+          chmod +x sim/check_param_display_names.sh sim/check_mod_source_labels.sh
+          sim/check_param_display_names.sh
+          sim/check_mod_source_labels.sh
+
       - name: Setup emsdk
         uses: emscripten-core/setup-emsdk@v16
 

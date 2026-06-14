@@ -85,8 +85,8 @@ Signing and notarization are planned as a follow-up change.
 Push a matching tag:
 
 ```sh
-git tag desktop-v1.0.0
-git push origin desktop-v1.0.0
+git tag desktop-v1.0.2
+git push origin desktop-v1.0.2
 ```
 
 Workflow `.github/workflows/desktop-release.yml` builds on `macos-14` and `windows-latest`, then attaches:

@@ -30,10 +30,9 @@ class AudioEngine : public juce::AudioIODeviceCallback,
                     private juce::MidiInputCallback
 {
 public:
-    static constexpr const char* kComputerKeyboardMidiId = "__computer_keyboard__";
     static constexpr const char* kNoMidiOutId = "__none__";
 
-    AudioEngine();
+    AudioEngine(bool pluginHosted = false);
     ~AudioEngine() override;
 
     void audioDeviceIOCallbackWithContext(const float* const* inputChannelData,
@@ -60,14 +59,13 @@ public:
     void showMidiSettings(juce::Component* parent);
     void setMidiInputDevice(const juce::String& identifier);
     void setMidiOutputDevice(const juce::String& identifier);
-    bool isComputerKeyboardMidiEnabled() const;
     bool isHardwareMidiInputOpenFailed() const;
     const juce::String& getMidiInputDeviceIdentifier() const;
     const juce::String& getMidiOutputDeviceIdentifier() const;
-    void feedMidiInNote(uint8_t channel, uint8_t note, uint8_t velocity, bool isNoteOn);
     void setTransportChangedCallback(std::function<void()> callback);
     void setExternalInputEnabled(bool enabled);
     bool isExternalInputEnabled() const;
+    bool isPluginHosted() const;
 
     bool startRecording();
     void stopRecording();
@@ -78,7 +76,23 @@ public:
                              juce::Component* parent,
                              std::function<void(bool success, const juce::String& message)> onDone);
 
+    void processHostedBlock(const float* inputChannelData,
+                            int numInputChannels,
+                            float* outputChannelDataLeft,
+                            float* outputChannelDataRight,
+                            int numOutputChannels,
+                            int numSamples,
+                            const juce::MidiBuffer& midiIn);
+    void setHostSampleRate(float sampleRate);
+    void ingestMidiMessage(const juce::MidiMessage& message);
+
 private:
+    void renderSimOutputBlock(const float* inputChannel0,
+                              int numInputChannels,
+                              float* outL,
+                              float* outR,
+                              int numOutputChannels,
+                              int numSamples);
     void handleIncomingMidiMessage(juce::MidiInput* source,
                                    const juce::MidiMessage& message) override;
     void openDefaultMidi();
@@ -93,10 +107,11 @@ private:
     AudioRecorder m_recorder;
     std::unique_ptr<juce::MidiInput> m_midiIn;
     std::unique_ptr<juce::MidiOutput> m_midiOut;
-    juce::String m_midiInDeviceId{kComputerKeyboardMidiId};
+    juce::String m_midiInDeviceId;
     juce::String m_midiOutDeviceId{kNoMidiOutId};
     std::function<void()> m_transportChangedCallback;
     bool m_audioRunning = false;
+    bool m_pluginHosted = false;
     bool m_externalInputEnabled = false;
     float m_inputPeak = 0.0f;
     InputRouteStatus m_inputRouteStatus = InputRouteStatus::Idle;

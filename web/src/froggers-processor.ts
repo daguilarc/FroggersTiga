@@ -19,7 +19,7 @@ const WASM_IMPORTS: WebAssembly.Imports = {
 const CORE_PAGE_NAMES = ["Audio", "Random", "Reverb", "Filter", "Drive"];
 const HOST_PAGE_NAMES = [...CORE_PAGE_NAMES, "Delay"];
 const HOST_PAGE_COUNT = 6;
-const SCOPE_MOD_INDICES = [4, 5, 6];
+const SCOPE_MOD_INDICES = [0, 1, 4, 5, 6];
 const SCOPE_SIZE = 96;
 
 interface WasmExports {
@@ -54,6 +54,7 @@ interface WasmExports {
     n: number
   ) => void;
   froggers_row_name: (host: number, row: number) => number;
+  froggers_mod_source_name: (modIndex: number) => number;
   froggers_row_value: (host: number, row: number) => number;
   froggers_row_badge: (host: number, row: number) => number;
   froggers_current_page: (host: number) => number;
@@ -68,6 +69,9 @@ interface WasmExports {
   froggers_delay_randomize_knobs: (host: number) => void;
   froggers_delay_randomize_mod: (host: number) => void;
   froggers_copy_scope_samples: (host: number, modIndex: number, outPtr: number, maxCount: number) => number;
+  froggers_push_midi_cc: (host: number, channel: number, cc: number, value: number) => void;
+  froggers_assignable_mod_count: () => number;
+  froggers_assignable_mod_index: (index: number) => number;
   malloc: (size: number) => number;
   free: (ptr: number) => void;
 }
@@ -93,7 +97,8 @@ type UiMessage =
   | { type: "cycleVcoMorph"; index: number }
   | { type: "randomizeMorphs" }
   | { type: "external"; enabled: boolean }
-  | { type: "setRunning"; running: boolean };
+  | { type: "setRunning"; running: boolean }
+  | { type: "midiCc"; channel: number; cc: number; value: number };
 
 interface ProcessorCtorOptions {
   processorOptions?: { wasmModule?: WebAssembly.Module };
@@ -127,7 +132,27 @@ class FroggersProcessor extends AudioWorkletProcessor {
         this.wasm.froggers_set_knob(this.host, i, 0.5);
       }
       this.wasmReady = true;
-      this.port.postMessage({ type: "ready", numPages: this.wasm.froggers_num_pages(this.host) });
+      const modSourceNames = SCOPE_MOD_INDICES.map((modIndex) =>
+        this.readCString(this.wasm.froggers_mod_source_name(modIndex))
+      );
+      const assignableModOptions = [];
+      const assignableCount = this.wasm.froggers_assignable_mod_count();
+      for (let i = 0; i < assignableCount; i++) {
+        const modIndex = this.wasm.froggers_assignable_mod_index(i);
+        if (modIndex < 0) {
+          continue;
+        }
+        assignableModOptions.push({
+          index: modIndex,
+          label: this.readCString(this.wasm.froggers_mod_source_name(modIndex)),
+        });
+      }
+      this.port.postMessage({
+        type: "ready",
+        numPages: this.wasm.froggers_num_pages(this.host),
+        modSourceNames,
+        assignableModOptions,
+      });
       this.setHostPage(0);
     } catch (err) {
       this.port.postMessage({
@@ -200,6 +225,8 @@ class FroggersProcessor extends AudioWorkletProcessor {
       this.postScreen();
     } else if (msg.type === "external") {
       this.externalEnabled = msg.enabled;
+    } else if (msg.type === "midiCc") {
+      wasm.froggers_push_midi_cc(host, msg.channel, msg.cc, msg.value);
     } else if (msg.type === "setRunning") {
       this.audioRunning = msg.running;
       if (msg.running) {
@@ -285,6 +312,9 @@ class FroggersProcessor extends AudioWorkletProcessor {
     }
 
     const scopeSamples = SCOPE_MOD_INDICES.map((modIndex) => this.readScopeSamples(modIndex));
+    const modSourceNames = SCOPE_MOD_INDICES.map((modIndex) =>
+      this.readCString(this.wasm.froggers_mod_source_name(modIndex))
+    );
 
     this.port.postMessage({
       type: "screen",
@@ -295,6 +325,7 @@ class FroggersProcessor extends AudioWorkletProcessor {
       morphs,
       modLevels,
       scopeSamples,
+      modSourceNames,
       audioRunning: this.audioRunning,
       inputPeak: this.inputPeak,
     });

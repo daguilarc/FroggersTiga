@@ -1,7 +1,7 @@
 {
   "name": "froggers-tiga-sim",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.2",
   "type": "module",
   "scripts": {
     "predev": "npm run build:worklet && node ../scripts/check-wasm-present.mjs",

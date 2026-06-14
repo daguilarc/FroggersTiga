@@ -2,5 +2,11 @@
 wasm/build/
 desktop/build/
 desktop/dist/
+# VCV Rack — local SDK clone + build artifacts (see vcv/DEVELOPMENT.md)
+Rack-SDK/
+vcv/Rack-SDK/
+vcv/dist/
+vcv/dep/
+vcv/build/
 .DS_Store
 **/.DS_Store

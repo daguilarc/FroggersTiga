@@ -18,6 +18,7 @@ private:
     void applyInputDevice();
     void applyOutputDevice();
     void updateStatus();
+    void configureCcSlider(juce::Slider& slider);
 
     AudioEngine& m_engine;
     std::function<void()> m_onClose;
@@ -26,11 +27,16 @@ private:
     juce::Label m_inLabel;
     juce::ComboBox m_inDevice;
     juce::TextButton m_refresh{"Refresh devices"};
-    juce::Label m_inChLabel;
-    juce::Slider m_inChannel;
-    juce::Label m_inCcLabel;
-    juce::Slider m_inCc;
-    juce::Label m_inLegend;
+    juce::Label m_inCc1GroupLabel;
+    juce::Label m_inCh1Label;
+    juce::Slider m_inChannel1;
+    juce::Label m_inCc1Label;
+    juce::Slider m_inCc1;
+    juce::Label m_inCc2GroupLabel;
+    juce::Label m_inCh2Label;
+    juce::Slider m_inChannel2;
+    juce::Label m_inCc2Label;
+    juce::Slider m_inCc2;
     juce::Label m_inStatus;
 
     juce::Label m_outSectionLabel;

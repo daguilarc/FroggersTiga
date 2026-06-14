@@ -1,6 +1,8 @@
 #pragma once
 
+#include "CvMidiBridge.hpp"
 #include "CvPresence.hpp"
+#include "ParamDisplayNames.hpp"
 #include "SimModSource.hpp"
 
 #include <cmath>
@@ -16,6 +18,7 @@ struct PagedHostIO
 {
     PageManager m_pageManager;
     FroggersEngine m_engine;
+    CvMidiBridge m_midiBridge;
     std::function<void(int)> m_buttonCallback;
     SchmidtTrigger m_gateTrigger{0.2f, 0.1f};
     float m_prevCv[4]{0.0f, 0.0f, 0.0f, 0.0f};
@@ -48,6 +51,45 @@ struct PagedHostIO
         {
             m_pageManager.m_knobPositions[index] = value;
         }
+    }
+
+    void SetPageKnob(uint8_t page, uint8_t position, float value)
+    {
+        m_pageManager.KnobUpdateOnPage(page, position, value);
+    }
+
+    float GetPageParam(uint8_t page, uint8_t position)
+    {
+        float value = m_pageManager.GetParam(page, position);
+        if (!std::isfinite(value))
+        {
+            return 0.0f;
+        }
+        return value;
+    }
+
+    void SetPageModSource(uint8_t page, uint8_t position, uint8_t modIndex)
+    {
+        if (!IsValidSimModAssignment(modIndex))
+        {
+            return;
+        }
+        m_pageManager.SetPageModSource(page, position, modIndex);
+    }
+
+    void SetPageModDepth(uint8_t page, uint8_t position, float depth)
+    {
+        m_pageManager.SetPageModDepth(page, position, depth);
+    }
+
+    uint8_t GetPageModSource(uint8_t page, uint8_t position) const
+    {
+        return m_pageManager.GetPageModSource(page, position);
+    }
+
+    float GetPageModDepth(uint8_t page, uint8_t position) const
+    {
+        return m_pageManager.GetPageModDepth(page, position);
     }
 
     void SetVcoMorph(size_t index, float value)
@@ -206,6 +248,7 @@ struct PagedHostIO
             }
         }
 
+        m_midiBridge.drainMidiIn(m_pageManager.m_modMgr.m_mods, ModMgr::x_numMods);
         applyCvPresence(m_prevCv, m_cvPresence, m_pageManager.m_modMgr);
 
         for (size_t i = 0; i < Parameter::x_numParameters; i++)
@@ -222,7 +265,13 @@ struct PagedHostIO
 
     const char* GetRowName(size_t row) const
     {
-        return m_pageManager.GetNameCurrentPage(static_cast<uint8_t>(row));
+        return ParamDisplayNames::forHostPageRow(
+            m_pageManager.m_currentPage, static_cast<uint8_t>(row));
+    }
+
+    const char* GetPageRowName(uint8_t page, uint8_t row) const
+    {
+        return ParamDisplayNames::forHostPageRow(page, row);
     }
 
     float GetRowValue(size_t row) const

@@ -26,6 +26,10 @@ inline const char* forModSource(uint8_t modIndex)
 {
     switch (modIndex)
     {
+        case 0:
+            return "MIDI CC 1";
+        case 1:
+            return "MIDI CC 2";
         case 4:
             return "VCO Envelope";
         case 5:

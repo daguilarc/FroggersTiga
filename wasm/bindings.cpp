@@ -340,4 +340,36 @@ int froggers_copy_scope_samples(WasmSimHost* host, int modIndex, float* out, int
                                                    static_cast<size_t>(maxCount)));
 }
 
+const char* froggers_mod_source_name(int modIndex)
+{
+    return ParamDisplayNames::forModSource(static_cast<uint8_t>(modIndex));
+}
+
+void froggers_push_midi_cc(WasmSimHost* host, int channel, int cc, int value)
+{
+    if (!host)
+    {
+        return;
+    }
+    host->io.m_midiBridge.PushMidiCc(
+        static_cast<uint8_t>(channel),
+        static_cast<uint8_t>(cc),
+        static_cast<uint8_t>(value));
+}
+
+int froggers_assignable_mod_count()
+{
+    return 5;
+}
+
+int froggers_assignable_mod_index(int index)
+{
+    static constexpr uint8_t kIndices[] = {0, 1, 4, 5, 6};
+    if (index < 0 || index >= 5)
+    {
+        return -1;
+    }
+    return kIndices[index];
+}
+
 }

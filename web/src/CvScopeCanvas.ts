@@ -38,6 +38,13 @@ export class CvScopeCanvas {
     this.draw();
   }
 
+  setLabel(label: string): void {
+    const labelEl = this.element.querySelector(".mod-label");
+    if (labelEl) {
+      labelEl.textContent = label;
+    }
+  }
+
   pushSample(value: number): void {
     const clamped = Math.min(Math.max(value, 0), 1);
     this.samples[this.writeIndex] = clamped;

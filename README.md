@@ -231,7 +231,7 @@ With the repo-wide `BOOT_NONE` policy, larger programs may not fit in internal f
 
 ## Browser simulator (GitHub Pages)
 
-Static WASM + Web Audio sim at repo `docs/` (published from `main`).
+**Release v1.02** — static WASM + Web Audio sim at repo `docs/` (published from `main`).
 
 **Local dev (first clone):**
 
@@ -262,9 +262,13 @@ cd web && npm run build:wasm    # verifies exports after copy
 
 **Help docs:** `SIM_MANUAL.md` (sim operators — embedded in desktop/web Help → Manual) and `MANUAL.md` (Daisy Field firmware — repository only, not shipped to sim hosts). `QUICK_DICT.md` is a short parameter glossary.
 
+**Host page labels:** `sim/ParamDisplayNames.hpp` is the single authority. Web UI reads row names from wasm (`rows[].name`); run `sim/check_param_display_names.sh` and `sim/check_mod_source_labels.sh` after header changes.
+
 **Publish:** GitHub **Settings → Pages → branch `main` / `/docs`**. CI workflow `.github/workflows/pages.yml` rebuilds on push to `main`.
 
 ## Desktop simulator (JUCE)
+
+**Release v1.02** — standalone app, VST3, and AU (see `SIM_MANUAL.md`).
 
 Native app with **five adjacent sub-module panels** (Audio → Drive), **mod rack + patch cables**, and shared global strip. No page switching.
 

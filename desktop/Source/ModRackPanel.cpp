@@ -6,16 +6,14 @@
 
 ModRackPanel::ModRackPanel(DesktopHostIO& host)
     : m_host(host)
-    , m_midi("MIDI", 0, m_host)
-    , m_vcoFeat("VCO Envelope", 4, m_host)
+    , m_midiCc1(ParamDisplayNames::forModSource(0), 0, m_host)
+    , m_midiCc2(ParamDisplayNames::forModSource(1), 1, m_host)
+    , m_vcoFeat(ParamDisplayNames::forModSource(4), 4, m_host)
     , m_marbles1(ParamDisplayNames::forModSource(5), 5, m_host)
     , m_marbles2(ParamDisplayNames::forModSource(6), 6, m_host)
 {
-    for (juce::Component* box :
-         {static_cast<juce::Component*>(&m_midi),
-          static_cast<juce::Component*>(&m_vcoFeat),
-          static_cast<juce::Component*>(&m_marbles1),
-          static_cast<juce::Component*>(&m_marbles2)})
+    ModModuleBox* boxes[] = {&m_midiCc1, &m_midiCc2, &m_vcoFeat, &m_marbles1, &m_marbles2};
+    for (ModModuleBox* box : boxes)
     {
         addAndMakeVisible(box);
     }
@@ -28,15 +26,16 @@ ModRackPanel::ModRackPanel(DesktopHostIO& host)
 
 void ModRackPanel::refresh(bool audioRunning)
 {
-    m_midi.refresh(audioRunning);
-    m_vcoFeat.refresh(audioRunning);
-    m_marbles1.refresh(audioRunning);
-    m_marbles2.refresh(audioRunning);
+    ModModuleBox* boxes[] = {&m_midiCc1, &m_midiCc2, &m_vcoFeat, &m_marbles1, &m_marbles2};
+    for (ModModuleBox* box : boxes)
+    {
+        box->refresh(audioRunning);
+    }
 }
 
 void ModRackPanel::collectOutputPorts(std::vector<PatchCableOverlay::OutputPort>& ports) const
 {
-    const ModModuleBox* boxes[] = {&m_midi, &m_vcoFeat, &m_marbles1, &m_marbles2};
+    const ModModuleBox* boxes[] = {&m_midiCc1, &m_midiCc2, &m_vcoFeat, &m_marbles1, &m_marbles2};
     for (const ModModuleBox* box : boxes)
     {
         PatchCableOverlay::OutputPort port;
@@ -57,14 +56,14 @@ void ModRackPanel::resized()
     {
         const int shrinkW = juce::jmax(
             kModBoxMinWidth,
-            (area.getWidth() - kModBoxGap * 3) / 4);
+            (area.getWidth() - kModBoxGap * 4) / 5);
         boxW = shrinkW;
     }
 
-    const int groupW = 4 * boxW + 3 * kModBoxGap;
+    const int groupW = 5 * boxW + 4 * kModBoxGap;
     int x = area.getX() + (area.getWidth() - groupW) / 2;
-    ModModuleBox* boxes[] = {&m_midi, &m_vcoFeat, &m_marbles1, &m_marbles2};
-    for (int i = 0; i < 4; ++i)
+    ModModuleBox* boxes[] = {&m_midiCc1, &m_midiCc2, &m_vcoFeat, &m_marbles1, &m_marbles2};
+    for (int i = 0; i < 5; ++i)
     {
         boxes[i]->setBounds(x, area.getY(), boxW, area.getHeight());
         x += boxW + kModBoxGap;

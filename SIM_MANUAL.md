@@ -1,5 +1,7 @@
 # FroggersTiga Simulator Manual
 
+**Release v1.02** — desktop app, web sim, and VST/AU plugin share this operator guide.
+
 Operator guide for the **desktop** and **web browser** simulators. Knob names match the on-screen labels (`ParamDisplayNames`). This is not the Daisy Field hardware manual.
 
 ## Quick start
@@ -8,7 +10,7 @@ Operator guide for the **desktop** and **web browser** simulators. Knob names ma
 2. Click **Play** — VCO output is audible with **External / Ext. In.** off.
 3. Use page pills or **◀ ▶** to switch pages (Audio → Random → Reverb → Filter → Drive → Delay).
 4. Turn knobs 1–7 for parameters; knob 8 is always **Crispy** on every page.
-5. Expand **Mod sources** to assign VCO Envelope, Random 1 S&H, or Random 2 S&H to any knob via the dropdown below each slider.
+5. Expand **Mod sources** to assign MIDI CC 1, MIDI CC 2, VCO Envelope, Random 1 S&H, or Random 2 S&H to any knob via the dropdown below each slider.
 
 ## Transport
 
@@ -26,8 +28,10 @@ Operator guide for the **desktop** and **web browser** simulators. Knob names ma
 
 ## Mod bay
 
-Three internal mod sources drive per-knob modulation:
+Five mod sources drive per-knob modulation:
 
+- **MIDI CC 1** — latched CV from matching hardware or Web MIDI CC (default channel 1, CC 1)
+- **MIDI CC 2** — latched CV from matching hardware or Web MIDI CC (default channel 1, CC 2)
 - **VCO Envelope** — slow level from the VCO mix (continuous CV scope trace)
 - **Random 1 S&H** — sample-and-hold random CV on mod channel 1 (see **Random outputs** below)
 - **Random 2 S&H** — sample-and-hold random CV on mod channel 2
@@ -129,8 +133,8 @@ Random is a dual **sample-and-hold** random CV source. Knobs configure two indep
 ### Desktop
 
 - Five adjacent submodule panels (no page switching) plus a **Delay** overlay page.
-- **Mod rack** with patch cables — drag from a mod source to a knob to assign modulation. **VCO Envelope** shows a CV scope; **Random 1 S&H** / **Random 2 S&H** show a green LED (on when held mod CV > **55%** while playing).
-- **MIDI Settings** — QWERTY piano keyboard or hardware MIDI device for pitch CV.
+- **Mod rack** with patch cables — drag from a mod source to a knob to assign modulation. **MIDI CC 1**, **MIDI CC 2**, and **VCO Envelope** show CV scopes; **Random 1 S&H** / **Random 2 S&H** show a green LED (on when held mod CV > **55%** while playing).
+- **MIDI Settings** — two CC→CV inputs (MIDI CC 1 and MIDI CC 2, each Channel + CC) plus hardware MIDI Out for VCO envelope export.
 - **Ext. In.** — requires **Ext. In. on + Play**; routes mic, line-in, or USB interface input to the engine. macOS may prompt for audio input access on first capture.
 - **Audio Settings** — choose output and input devices.
 
@@ -138,9 +142,28 @@ Random is a dual **sample-and-hold** random CV source. Knobs configure two indep
 
 - Paged Field-style UI — one page at a time, swipe or use pills to navigate.
 - Mod assignment via dropdowns below each knob (no patch cables).
-- No MIDI in the browser build.
+- **External MIDI** — Web MIDI access is requested when you turn **External MIDI** on (under **External** audio). Default is **Off**; Play alone does not prompt for MIDI. Matching CC messages update **MIDI CC 1** and **MIDI CC 2** scopes in the mod bay (defaults: channel 1, CC 1 and CC 2).
 - **External** — microphone permission is requested when you turn **External** on. Default is **Off**; Play alone does not prompt for mic access. A peak meter beside **External** shows input level when External is on and audio is playing. If the meter stays empty for about a second, check mic permission and input level in the status line. If permission is denied, allow microphone in browser site settings and click **External** again.
+
+### VST3 / AU plugin
+
+- Same six-panel UI and mod rack as desktop (VCO Envelope CV scope + Random LEDs).
+- **Transport:** the DAW runs audio — there is no standalone Play/Stop bar. Use **Ext. In.** to route the plugin sidechain/mono input bus when the host provides one.
+- **Audio Settings** is hidden; pick buffer size and devices in the DAW.
+- **MIDI Settings** is hidden; route MIDI from the DAW track to the plugin input.
+- Build: `cd desktop && cmake -B build -DBUILD_VST=ON && cmake --build build --config Release`. Artifacts under `FroggersTigaPlugin_artefacts/Release/`.
 
 ---
 
 **Daisy Field hardware:** see `MANUAL.md` in the repository for firmware operation, OLED symbols, pickup badges, and flash procedure.
+
+## Version history
+
+### v1.02 (initial sim release)
+
+- Dual MIDI CC→CV mod inputs (**MIDI CC 1** / **MIDI CC 2**) on desktop mod rack and web mod bay
+- Web **External MIDI** (permission-gated Web MIDI CC ingest)
+- CC-only MIDI In — notes and QWERTY piano removed
+- Audio page row 7 labeled **Phase mod 3** (PM3 knob parity)
+- Web mod-source labels and dropdown options from wasm (`ParamDisplayNames` authority)
+- Five-column desktop mod rack; five-entry web mod bay

@@ -17,7 +17,8 @@ public:
 
 private:
     DesktopHostIO& m_host;
-    ModModuleBox m_midi;
+    ModModuleBox m_midiCc1;
+    ModModuleBox m_midiCc2;
     ModModuleBox m_vcoFeat;
     ModModuleBox m_marbles1;
     ModModuleBox m_marbles2;

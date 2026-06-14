@@ -4,7 +4,8 @@ Sim column labels → short gloss. Full sim guide → in-app **Manual**. Daisy F
 
 ## Sim mod sources
 
-MIDI : QWERTY piano or hardware notes → pitch CV × velocity
+MIDI CC 1 : Hardware/Web MIDI CC → latched CV on mod channel 1 (default ch 1, CC 1)
+MIDI CC 2 : Hardware/Web MIDI CC → latched CV on mod channel 2 (default ch 1, CC 2)
 VCO Envelope : Slow level from VCO mix
 Random 1 S&H : S&H random mod CV ch.1 — step with Random; LED green when held CV > 55%
 Random 2 S&H : S&H random mod CV ch.2 — step with Random; LED green when held CV > 55%

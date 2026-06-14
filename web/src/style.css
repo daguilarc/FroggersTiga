@@ -106,9 +106,32 @@ body {
 }
 
 .controls-top .transport,
-.controls-top #external-btn,
+.controls-top .external-controls button,
 .global-strip button {
   min-height: 44px;
+}
+
+.external-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+#external-btn,
+#external-midi-btn {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.6rem 1rem;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+#external-btn.active,
+#external-midi-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .transport {
@@ -133,21 +156,6 @@ body {
 .transport:disabled {
   opacity: 0.45;
   cursor: not-allowed;
-}
-
-#external-btn {
-  background: var(--panel);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 0.6rem 1rem;
-  font: inherit;
-  cursor: pointer;
-  border-radius: 4px;
-}
-
-#external-btn.active {
-  border-color: var(--accent);
-  color: var(--accent);
 }
 
 .mod-bay-toggle {
@@ -304,7 +312,7 @@ body {
 
 .mod-bay {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.5rem;
   margin-bottom: 1rem;
   padding: 0.5rem;

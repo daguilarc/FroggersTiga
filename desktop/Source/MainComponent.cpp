@@ -3,47 +3,36 @@
 #include "DesktopChromeLayout.hpp"
 #include "ParamDisplayNames.hpp"
 
-namespace
+AudioEngine& MainComponent::audioEngine()
 {
-struct KeyNote
-{
-    int keyCode;
-    int note;
-};
-
-constexpr KeyNote kQwertyPianoKeys[] = {
-    {'A', 60}, {'W', 61}, {'S', 62}, {'E', 63}, {'D', 64}, {'F', 65}, {'T', 66}, {'G', 67},
-    {'Y', 68}, {'H', 69}, {'U', 70}, {'J', 71}, {'K', 72}, {'O', 73}, {'L', 74}, {'P', 75},
-};
-
-int noteForKeyCode(int keyCode)
-{
-    for (const KeyNote& keyNote : kQwertyPianoKeys)
-    {
-        if (keyNote.keyCode == keyCode)
-        {
-            return keyNote.note;
-        }
-    }
-    return -1;
+    return *m_audioEngine;
 }
 
-bool isModalDialogOpen()
+const AudioEngine& MainComponent::audioEngine() const
 {
-    return juce::ModalComponentManager::getInstance()->getNumModalComponents() > 0;
+    return *m_audioEngine;
 }
-
-bool isTextEntryFocused()
-{
-    juce::Component* focused = juce::Component::getCurrentlyFocusedComponent();
-    return focused != nullptr && dynamic_cast<juce::TextEditor*>(focused) != nullptr;
-}
-} // namespace
 
 MainComponent::MainComponent()
-    : m_modRack(m_audio.getHost())
-    , m_cableOverlay(m_audio.getHost(), m_audio.getDelay())
-    , m_strip(m_audio.getHost(), m_audio.getDelay())
+    : m_ownedAudio(std::in_place)
+    , m_audioEngine(&*m_ownedAudio)
+    , m_modRack(audioEngine().getHost())
+    , m_cableOverlay(audioEngine().getHost(), audioEngine().getDelay())
+    , m_strip(audioEngine().getHost(), audioEngine().getDelay())
+{
+    initFromEngine();
+}
+
+MainComponent::MainComponent(AudioEngine& externalEngine)
+    : m_audioEngine(&externalEngine)
+    , m_modRack(audioEngine().getHost())
+    , m_cableOverlay(audioEngine().getHost(), audioEngine().getDelay())
+    , m_strip(audioEngine().getHost(), audioEngine().getDelay())
+{
+    initFromEngine();
+}
+
+void MainComponent::initFromEngine()
 {
     const char* titles[] = {
         ParamDisplayNames::forHostPage(0),
@@ -56,12 +45,12 @@ MainComponent::MainComponent()
     for (int i = 0; i < 5; i++)
     {
         m_coreBackends[static_cast<size_t>(i)] =
-            std::make_unique<DesktopPanelBackend>(static_cast<uint8_t>(i), m_audio.getHost());
+            std::make_unique<DesktopPanelBackend>(static_cast<uint8_t>(i), audioEngine().getHost());
         m_panels[static_cast<size_t>(i)] = std::make_unique<SubModulePanel>(
             static_cast<uint8_t>(i), titles[i], *m_coreBackends[static_cast<size_t>(i)]);
         addAndMakeVisible(m_panels[static_cast<size_t>(i)].get());
     }
-    m_delayBackend = std::make_unique<DelayHostBackend>(m_audio.getDelay(), m_audio.getHost());
+    m_delayBackend = std::make_unique<DelayHostBackend>(audioEngine().getDelay(), audioEngine().getHost());
     m_panels[5] = std::make_unique<SubModulePanel>(
         DelayState::kDelayPageIndex, titles[5], *m_delayBackend);
     addAndMakeVisible(m_panels[5].get());
@@ -72,15 +61,14 @@ MainComponent::MainComponent()
 
     m_play.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2ea043));
     m_play.onClick = [this]() {
-        m_audio.startAudio();
+        audioEngine().startAudio();
         updateTransportUi();
-        grabKeyboardFocus();
     };
     addAndMakeVisible(m_play);
 
     m_stop.setColour(juce::TextButton::buttonColourId, juce::Colour(0xffda3633));
     m_stop.onClick = [this]() {
-        m_audio.stopAudio();
+        audioEngine().stopAudio();
         updateTransportUi();
     };
     addAndMakeVisible(m_stop);
@@ -89,10 +77,10 @@ MainComponent::MainComponent()
     m_externalInput.setTooltip(
         "Ext. In.: route line/mic to engine (off = VCO-only). Ring mod opens above Schmidt gate.");
     m_externalInput.onClick = [this]() {
-        m_audio.setExternalInputEnabled(m_externalInput.getToggleState());
-        const bool active = m_audio.isExternalInputEnabled() && m_audio.isAudioRunning();
+        audioEngine().setExternalInputEnabled(m_externalInput.getToggleState());
+        const bool active = audioEngine().isExternalInputEnabled() && audioEngine().isAudioRunning();
         m_inputEnvelope.setActive(active);
-        m_inputEnvelope.setLevel(m_audio.getInputPeakLevel());
+        m_inputEnvelope.setLevel(audioEngine().getInputPeakLevel());
     };
     addAndMakeVisible(m_externalInput);
 
@@ -107,18 +95,25 @@ MainComponent::MainComponent()
     m_routeHint.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(m_routeHint);
 
-    m_audio.setTransportChangedCallback([this]() { updateTransportUi(); });
+    audioEngine().setTransportChangedCallback([this]() { updateTransportUi(); });
 
-    m_audioSettings.onClick = [this]() { m_audio.showAudioSettings(this); };
+    m_audioSettings.onClick = [this]() { audioEngine().showAudioSettings(this); };
     m_audioSettings.setTooltip("Audio device settings");
     addAndMakeVisible(m_audioSettings);
 
     m_recordCluster.onRecordClick = [this]() { handleRecordClick(); };
     addAndMakeVisible(m_recordCluster);
 
-    m_midiSettings.onClick = [this]() { m_audio.showMidiSettings(this); };
+    m_midiSettings.onClick = [this]() { audioEngine().showMidiSettings(this); };
     m_midiSettings.setTooltip("MIDI In → mod rack; MIDI Out (VCO Env) to hardware");
     addAndMakeVisible(m_midiSettings);
+
+    if (audioEngine().isPluginHosted())
+    {
+        m_audioSettings.setVisible(false);
+        m_play.setVisible(false);
+        m_stop.setVisible(false);
+    }
 
     m_cableOverlay.setConnectionChangedCallback([this](uint8_t page) {
         if (page < m_panels.size() && m_panels[static_cast<size_t>(page)])
@@ -127,9 +122,6 @@ MainComponent::MainComponent()
         }
     });
 
-    m_keyboardState.addListener(this);
-    setWantsKeyboardFocus(true);
-
     setSize(DesktopChromeLayout::kDefaultWidth, DesktopChromeLayout::kDefaultHeight);
     updateTransportUi();
     startTimerHz(15);
@@ -137,33 +129,16 @@ MainComponent::MainComponent()
 
 void MainComponent::updateTransportUi()
 {
-    const bool running = m_audio.isAudioRunning();
+    const bool running = audioEngine().isAudioRunning();
     m_play.setEnabled(!running);
     m_stop.setEnabled(running);
 }
 
-bool MainComponent::shouldCaptureQwertyMidi() const
-{
-    if (!m_audio.isComputerKeyboardMidiEnabled())
-    {
-        return false;
-    }
-    if (isModalDialogOpen())
-    {
-        return false;
-    }
-    if (isTextEntryFocused())
-    {
-        return false;
-    }
-    return true;
-}
-
 void MainComponent::handleRecordClick()
 {
-    if (!m_audio.isRecording())
+    if (!audioEngine().isRecording())
     {
-        if (!m_audio.startRecording())
+        if (!audioEngine().startRecording())
         {
             juce::AlertWindow::showMessageBoxAsync(
                 juce::AlertWindow::WarningIcon,
@@ -175,13 +150,13 @@ void MainComponent::handleRecordClick()
         return;
     }
 
-    m_audio.stopRecording();
+    audioEngine().stopRecording();
     m_recordCluster.setRecording(false);
-    if (!m_audio.hasCapturedAudio())
+    if (!audioEngine().hasCapturedAudio())
     {
         return;
     }
-    if (m_audio.wasLastCaptureTruncated())
+    if (audioEngine().wasLastCaptureTruncated())
     {
         juce::AlertWindow::showMessageBoxAsync(
             juce::AlertWindow::WarningIcon,
@@ -189,7 +164,7 @@ void MainComponent::handleRecordClick()
             "Recording stopped at the 30-minute limit.");
     }
     const ExportFormat format = m_recordCluster.selectedFormat();
-    m_audio.exportCapturedAudio(format, this, [](bool success, const juce::String& message) {
+    audioEngine().exportCapturedAudio(format, this, [](bool success, const juce::String& message) {
         juce::AlertWindow::showMessageBoxAsync(
             success ? juce::AlertWindow::InfoIcon : juce::AlertWindow::WarningIcon,
             "Export",
@@ -197,74 +172,9 @@ void MainComponent::handleRecordClick()
     });
 }
 
-void MainComponent::handleNoteOn(juce::MidiKeyboardState*,
-                                 int,
-                                 int midiNoteNumber,
-                                 float velocity)
-{
-    if (!shouldCaptureQwertyMidi())
-    {
-        return;
-    }
-    const uint8_t ch = m_audio.getHost().m_midiBridge.m_inChannel;
-    const uint8_t vel = static_cast<uint8_t>(juce::jlimit(1, 127, static_cast<int>(velocity * 127.0f)));
-    m_audio.feedMidiInNote(ch, static_cast<uint8_t>(midiNoteNumber), vel, true);
-}
-
-void MainComponent::handleNoteOff(juce::MidiKeyboardState*,
-                                  int,
-                                  int midiNoteNumber,
-                                  float)
-{
-    if (!shouldCaptureQwertyMidi())
-    {
-        return;
-    }
-    const uint8_t ch = m_audio.getHost().m_midiBridge.m_inChannel;
-    m_audio.feedMidiInNote(ch, static_cast<uint8_t>(midiNoteNumber), 0, false);
-}
-
-bool MainComponent::keyPressed(const juce::KeyPress& key)
-{
-    if (!shouldCaptureQwertyMidi())
-    {
-        return false;
-    }
-    const int note = noteForKeyCode(key.getKeyCode());
-    if (note < 0)
-    {
-        return false;
-    }
-    m_keyboardState.noteOn(1, note, 1.0f);
-    return true;
-}
-
-bool MainComponent::keyStateChanged(bool /*isKeyDown*/)
-{
-    if (!shouldCaptureQwertyMidi())
-    {
-        return false;
-    }
-    bool handled = false;
-    for (const KeyNote& keyNote : kQwertyPianoKeys)
-    {
-        if (juce::KeyPress::isKeyCurrentlyDown(keyNote.keyCode))
-        {
-            m_keyboardState.noteOn(1, keyNote.note, 1.0f);
-            handled = true;
-        }
-        else
-        {
-            m_keyboardState.noteOff(1, keyNote.note, 1.0f);
-        }
-    }
-    return handled;
-}
-
 void MainComponent::mouseDown(const juce::MouseEvent& event)
 {
     juce::Component::mouseDown(event);
-    grabKeyboardFocus();
 }
 
 void MainComponent::syncPatchPorts()
@@ -356,10 +266,10 @@ void MainComponent::resized()
 
 void MainComponent::timerCallback()
 {
-    const bool running = m_audio.isAudioRunning();
+    const bool running = audioEngine().isAudioRunning();
     if (!running)
     {
-        m_audio.getHost().DrainPendingMutations();
+        audioEngine().getHost().DrainPendingMutations();
     }
     m_modRack.refresh(running);
     for (auto& panel : m_panels)
@@ -367,13 +277,13 @@ void MainComponent::timerCallback()
         panel->refresh();
     }
 
-    const bool extOn = m_audio.isExternalInputEnabled();
+    const bool extOn = audioEngine().isExternalInputEnabled();
     m_inputEnvelope.setActive(extOn && running);
-    m_inputEnvelope.setLevel(extOn && running ? m_audio.getInputPeakLevel() : 0.0f);
+    m_inputEnvelope.setLevel(extOn && running ? audioEngine().getInputPeakLevel() : 0.0f);
 
-    if (extOn && running && m_audio.getInputRouteStatus() != InputRouteStatus::Ok)
+    if (extOn && running && audioEngine().getInputRouteStatus() != InputRouteStatus::Ok)
     {
-        m_routeHint.setText(m_audio.getInputRouteMessage(), juce::dontSendNotification);
+        m_routeHint.setText(audioEngine().getInputRouteMessage(), juce::dontSendNotification);
     }
     else
     {
