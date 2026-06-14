@@ -231,7 +231,7 @@ With the repo-wide `BOOT_NONE` policy, larger programs may not fit in internal f
 
 ## Browser simulator (GitHub Pages)
 
-**Release v1.02** — static WASM + Web Audio sim at repo `docs/` (published from `main`).
+**Release v1.0.1** — static WASM + Web Audio sim at repo `docs/` (published from `main`).
 
 **Local dev (first clone):**
 
@@ -268,7 +268,7 @@ cd web && npm run build:wasm    # verifies exports after copy
 
 ## Desktop simulator (JUCE)
 
-**Release v1.02** — standalone app, VST3, and AU (see `SIM_MANUAL.md`).
+**Release v1.0.1** — standalone app, VST3, and AU (see `SIM_MANUAL.md`).
 
 Native app with **five adjacent sub-module panels** (Audio → Drive), **mod rack + patch cables**, and shared global strip. No page switching.
 

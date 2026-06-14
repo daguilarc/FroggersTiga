@@ -1,6 +1,6 @@
 # FroggersTiga Simulator Manual
 
-**Release v1.02** — desktop app, web sim, and VST/AU plugin share this operator guide.
+**Release v1.0.1** — desktop app, web sim, and VST/AU plugin share this operator guide.
 
 Operator guide for the **desktop** and **web browser** simulators. Knob names match the on-screen labels (`ParamDisplayNames`). This is not the Daisy Field hardware manual.
 
@@ -159,7 +159,7 @@ Random is a dual **sample-and-hold** random CV source. Knobs configure two indep
 
 ## Version history
 
-### v1.02 (initial sim release)
+### v1.0.1 (initial sim release)
 
 - Dual MIDI CC→CV mod inputs (**MIDI CC 1** / **MIDI CC 2**) on desktop mod rack and web mod bay
 - Web **External MIDI** (permission-gated Web MIDI CC ingest)
