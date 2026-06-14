@@ -38,12 +38,6 @@ for label in hardcoded:
 if "applyModSourceLabels" not in main_ts:
     sys.exit("main.ts must apply modSourceNames from worklet")
 
-if "coreKnobLabel" not in main_ts or "paramDisplayNames" not in main_ts:
-    sys.exit("main.ts must use paramDisplayNames.ts for static knob labels")
-
-if "wasmCore" not in main_ts and "row?.name" not in main_ts and "rows[i].name" not in main_ts:
-    sys.exit("main.ts must read knob label names from wasm screen rows when present")
-
 for match in re.finditer(r'<option value="(\d+)">([^<]+)</option>', main_ts):
     if match.group(1) != "255":
         sys.exit(

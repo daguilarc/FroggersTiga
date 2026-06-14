@@ -10,10 +10,11 @@
     "verify:worklet": "node ../scripts/verify-worklet-js.mjs",
     "build:wasm": "cd ../wasm && (test -f ../.emsdk/emsdk_env.sh && . ../.emsdk/emsdk_env.sh); emcmake cmake -B build && cmake --build build && cp build/froggers.wasm ../web/public/froggers.wasm && node ../scripts/verify-wasm-exports.mjs",
     "sync:docs": "sh ../scripts/sync-help-docs.sh",
-    "build": "npm run sync:docs && npm run build:worklet && npm run verify:worklet && tsc && vite build",
+    "verify:param-display": "node ../scripts/verify-param-display-parity.mjs",
+    "build": "npm run sync:docs && npm run build:worklet && npm run verify:worklet && npm run verify:param-display && tsc && vite build",
     "build:all": "npm run build:wasm && npm run build",
     "preview": "vite preview",
-    "test:e2e": "playwright test",
+    "test:e2e": "npm run verify:param-display && playwright test",
     "test:e2e:ui": "playwright test --ui"
   },
   "devDependencies": {

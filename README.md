@@ -262,7 +262,7 @@ cd web && npm run build:wasm    # verifies exports after copy
 
 **Help docs:** `SIM_MANUAL.md` (sim operators — embedded in desktop/web Help → Manual) and `MANUAL.md` (Daisy Field firmware — repository only, not shipped to sim hosts). `QUICK_DICT.md` is a short parameter glossary.
 
-**Host page labels:** `sim/ParamDisplayNames.hpp` is the single authority. Web UI reads row names from wasm (`rows[].name`); run `sim/check_param_display_names.sh` and `sim/check_mod_source_labels.sh` after header changes.
+**Host page labels:** `sim/ParamDisplayNames.hpp` is the authority; `web/src/paramDisplayNames.ts` mirrors it for instant UI labels. `node scripts/verify-param-display-parity.mjs` runs on every web build and e2e run.
 
 **Publish:** GitHub **Settings → Pages → branch `main` / `/docs`**. CI workflow `.github/workflows/pages.yml` rebuilds on push to `main`.
 
