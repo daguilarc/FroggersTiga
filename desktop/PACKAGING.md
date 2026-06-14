@@ -10,14 +10,14 @@ Single-file distributables for macOS (DMG) and Windows (Inno Setup installer) fr
 project(FroggersTigaDesktop VERSION x.y.z)
 ```
 
-All packaging scripts read this version. GitHub Release tags **must** match:
+All packaging scripts read this version. GitHub Release tags (either form triggers CI):
 
 ```text
-desktop-vX.Y.Z   ← tag prefix
-     └── same X.Y.Z as CMake VERSION
+froggerstiga-v*     ← release tag on GitHub (e.g. froggerstiga-v1)
+desktop-vX.Y.Z      ← semver tag; X.Y.Z must match CMake VERSION
 ```
 
-CI fails if tag semver and CMake `VERSION` diverge.
+`desktop-v*` tags fail CI if tag semver and CMake `VERSION` diverge. `froggerstiga-v*` uses CMake `VERSION` for package metadata.
 
 ## Prerequisites
 
@@ -82,7 +82,14 @@ Signing and notarization are planned as a follow-up change.
 
 ## GitHub Releases (CI)
 
-Push a matching tag:
+Move the release tag to `main` and push (rebuilds DMG + EXE on CI):
+
+```sh
+git tag -f froggerstiga-v1
+git push origin froggerstiga-v1 --force
+```
+
+Or push a semver tag that must match CMake `VERSION`:
 
 ```sh
 git tag desktop-v1.0.1

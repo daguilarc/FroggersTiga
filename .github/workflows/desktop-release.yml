@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'desktop-v*'
+      - 'froggerstiga-v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
