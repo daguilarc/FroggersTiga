@@ -11,17 +11,10 @@ fi
 
 CMAKE_VERSION="$("$SCRIPT_DIR/read-version.sh")"
 
-if [[ "$TAG" == desktop-v* ]]; then
-  TAG_VERSION="${TAG#desktop-v}"
-  if [[ "$TAG_VERSION" != "$CMAKE_VERSION" ]]; then
-    echo "error: tag version ($TAG_VERSION) != CMake VERSION ($CMAKE_VERSION)" >&2
-    echo "Bump project(FroggersTigaDesktop VERSION ...) in desktop/CMakeLists.txt before tagging." >&2
-    exit 1
-  fi
-elif [[ "$TAG" == froggerstiga-v* ]]; then
+if [[ "$TAG" == froggerstiga-v* ]]; then
   echo "froggerstiga release tag: CMake VERSION $CMAKE_VERSION"
 else
-  echo "error: expected tag desktop-vX.Y.Z or froggerstiga-v*, got: $TAG" >&2
+  echo "error: expected tag froggerstiga-v*, got: $TAG" >&2
   exit 1
 fi
 

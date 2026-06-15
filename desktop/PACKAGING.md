@@ -10,14 +10,13 @@ Single-file distributables for macOS (DMG) and Windows (Inno Setup installer) fr
 project(FroggersTigaDesktop VERSION x.y.z)
 ```
 
-All packaging scripts read this version. GitHub Release tags (either form triggers CI):
+All packaging scripts read this version. GitHub Release tag:
 
 ```text
-froggerstiga-v*     ← release tag on GitHub (e.g. froggerstiga-v1)
-desktop-vX.Y.Z      ← semver tag; X.Y.Z must match CMake VERSION
+froggerstiga-v*     ← e.g. froggerstiga-v1 (only release channel; web sim download links)
 ```
 
-`desktop-v*` tags fail CI if tag semver and CMake `VERSION` diverge. `froggerstiga-v*` uses CMake `VERSION` for package metadata.
+Package metadata uses CMake `VERSION`. Move the tag on `main` and force-push to rebuild DMG + EXE on CI.
 
 ## Prerequisites
 
@@ -87,13 +86,6 @@ Move the release tag to `main` and push (rebuilds DMG + EXE on CI):
 ```sh
 git tag -f froggerstiga-v1
 git push origin froggerstiga-v1 --force
-```
-
-Or push a semver tag that must match CMake `VERSION`:
-
-```sh
-git tag desktop-v1.0.1
-git push origin desktop-v1.0.1
 ```
 
 Workflow `.github/workflows/desktop-release.yml` builds on `macos-14` and `windows-latest`, then attaches:
