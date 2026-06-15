@@ -231,7 +231,7 @@ With the repo-wide `BOOT_NONE` policy, larger programs may not fit in internal f
 
 ## Browser simulator (GitHub Pages)
 
-**Release v1.0.4** — static WASM + Web Audio sim at repo `docs/` (published from `main`).
+**Release v1.0.3** — static WASM + Web Audio sim at repo `docs/` (published from `main`).
 
 **Local dev (first clone):**
 
@@ -268,7 +268,7 @@ cd web && npm run build:wasm    # verifies exports after copy
 
 ## Desktop simulator (JUCE)
 
-**Release v1.0.4** — standalone app, VST3, and AU (see `SIM_MANUAL.md`).
+**Release v1.0.3** — standalone app, VST3, and AU (see `SIM_MANUAL.md`).
 
 Native app with **five adjacent sub-module panels** (Audio → Drive), **mod rack + patch cables**, and shared global strip. No page switching.
 
@@ -281,6 +281,6 @@ cmake --build build --config Release
 
 Links `src/core/` + `DesktopHostIO` only (no libDaisy). Transport bar: **Play/Stop**, format toggles (**WAV/MP3/FLAC/OGG**), **Record** (stereo export), **MIDI**, **Audio**. **WAV** and **OGG** export work in default JUCE builds; **MP3** needs `JUCE_USE_MP3AUDIOFORMAT` + LAME at compile time; **FLAC** needs `JUCE_USE_FLAC`. macOS menu **FroggersTiga → Manual / Quick Dict / License** (embedded docs).
 
-**Release packages:** See [`desktop/PACKAGING.md`](desktop/PACKAGING.md) for DMG / Windows installer commands. Push tag `desktop-vX.Y.Z` (must match `project(FroggersTigaDesktop VERSION ...)` in `desktop/CMakeLists.txt`) to trigger `.github/workflows/desktop-release.yml` and publish GitHub Release assets.
+**Release packages:** See [`desktop/PACKAGING.md`](desktop/PACKAGING.md) for DMG / Windows installer commands. Push tag `froggerstiga-v*` (e.g. `froggerstiga-v1`) to trigger `.github/workflows/desktop-release.yml` and publish assets on [GitHub Releases](https://github.com/daguilarc/FroggersTiga/releases).
 
 Parameter and host UX reference: [`SIM_MANUAL.md`](SIM_MANUAL.md) and [`QUICK_DICT.md`](QUICK_DICT.md).

@@ -1,6 +1,6 @@
 # FroggersTiga Simulator Manual
 
-**Release v1.0.4** — desktop app, web sim, and VST/AU plugin share this operator guide.
+**Release v1.0.3** — desktop app, web sim, and VST/AU plugin share this operator guide.
 
 This guide covers the **desktop**, **web**, and **plugin** simulators. On-screen knob names match this manual. For Daisy Field hardware, see `MANUAL.md` in the repository.
 
@@ -208,13 +208,10 @@ VST/AU sources are **not published** on the public GitHub repo. Keep plugin sour
 
 ## Version history
 
-### v1.0.4
-
-- Pair-AR Attack/Release knobs span **1 ms – 10 s** (VCV Fundamental ADSR time range); level-follower behavior unchanged
-
 ### v1.0.3
 
 - Audio page **pair-AR** controls (Attack/Release 1+2 and 2+3) with mod CV on desktop and web
+- Pair-AR knobs span **1 ms – 10 s** (VCV Fundamental ADSR time range); level-follower behavior unchanged
 - Pair-AR knobs track live modulation like other assignable knobs
 - **MIDI CC 2** defaults **Off** on desktop/VST (CC 1 on); web unchanged
 - Mobile browser audio routing hints and session handling when **External Audio** uses the mic
