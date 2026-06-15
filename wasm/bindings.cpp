@@ -272,6 +272,15 @@ float froggers_delay_get_knob(WasmSimHost* host, int row)
     return host->delay.getKnob(static_cast<uint8_t>(row));
 }
 
+float froggers_delay_get_effective_knob(WasmSimHost* host, int row)
+{
+    if (!host || row < 0 || row >= 8)
+    {
+        return 0.0f;
+    }
+    return host->delay.getEffectiveKnob(static_cast<uint8_t>(row));
+}
+
 void froggers_delay_set_row_mod_source(WasmSimHost* host, int row, int modIndex)
 {
     if (host && row >= 0 && row < 8)

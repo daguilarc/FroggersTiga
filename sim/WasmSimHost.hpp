@@ -38,7 +38,7 @@ struct WasmSimHost
 
     void processBlock(const float* in, float* outL, float* outR, size_t n, int numOutputChannels)
     {
-        delay.beginBlock(io.m_pageManager.m_modMgr.m_mods);
+        delay.beginBlock(&io.m_pageManager.m_modMgr);
         std::vector<float> mono(n);
         io.ProcessBlock(in, mono.data(), n);
         pushScopeSamples();

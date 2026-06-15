@@ -10,6 +10,8 @@ VCO Envelope — Slow level from VCO mix; scope trace
 Random 1 S&H — S&H random mod CV ch.1 — resample with Rand Resample; see Mod indicators in Manual
 Random 2 S&H — S&H random mod CV ch.2 — resample with Rand Resample; see Mod indicators in Manual
 
+Mod depth — Crossfade amount between stored knob (base) and mod source; 0 = base only, 1 = mod only
+
 ## Transport
 
 Play — Audio on/off
@@ -24,7 +26,7 @@ Rand waveforms — Randomize VCO morph (sine/saw/square blend)
 
 ## Global
 
-Crispy — Scramble knobs 1–7 on any page; on sim, also blends external ring-mod when Ext. In. is on (Field: FUEG)
+Crispy — Scramble knobs 1–7 on any page (mod applied first); moddable for scramble intensity; on sim, also blends external ring-mod when Ext. In. is on (Field: FUEG)
 
 ## Audio
 

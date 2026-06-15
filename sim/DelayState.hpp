@@ -49,9 +49,9 @@ struct DelayState
         }
     }
 
-    void beginBlock(const float* mods)
+    void beginBlock(const ModMgr* modMgr)
     {
-        m_mods = mods;
+        m_modMgr = modMgr;
     }
 
     void setKnob(uint8_t row, float value)
@@ -103,29 +103,20 @@ struct DelayState
         {
             return 0.0f;
         }
-        const float base = knobs[row];
-        if (row >= kFuegRow || modSource[row] == 255)
+        if (row == kFuegRow)
         {
-            return row < kFuegRow ? Fuegoize(base, knobs[kFuegRow], row) : base;
+            return blendKnob(kFuegRow, knobs[kFuegRow]);
         }
-        return blendRow(row, base);
+        if (modSource[row] == 255)
+        {
+            return Fuegoize(knobs[row], effectiveCrispy(), row);
+        }
+        return blendRow(row, knobs[row]);
     }
 
     float blendRow(uint8_t row, float knobSmoothed) const
     {
-        if (row >= kFuegRow)
-        {
-            return knobSmoothed;
-        }
-        const uint8_t modIndex = modSource[row];
-        const float depth = modDepth[row];
-        if (!m_mods || modIndex >= ModMgr::x_numMods || depth <= 0.0f)
-        {
-            return Fuegoize(knobSmoothed, knobs[kFuegRow], row);
-        }
-        const float blended = std::min(
-            std::max(knobSmoothed * (1.0f - depth) + m_mods[modIndex] * depth, 0.0f), 1.0f);
-        return Fuegoize(blended, knobs[kFuegRow], row);
+        return Fuegoize(blendKnob(row, knobSmoothed), effectiveCrispy(), row);
     }
 
     float processInsert(float bumpIn)
@@ -175,7 +166,7 @@ struct DelayState
     void randomizeMod(const CvMidiBridge& bridge)
     {
         RGen rgen;
-        for (uint8_t i = 0; i < kFuegRow; i++)
+        for (uint8_t i = 0; i < kNumRows; i++)
         {
             modDepth[i] = rgen.UniGenRange(0.0f, 1.0f);
             modSource[i] = PickSimRandomModIndex(rgen, bridge);
@@ -184,7 +175,7 @@ struct DelayState
 
     void clearModRoutesForIndex(uint8_t modIndex)
     {
-        for (uint8_t i = 0; i < kFuegRow; i++)
+        for (uint8_t i = 0; i < kNumRows; i++)
         {
             if (modSource[i] == modIndex)
             {
@@ -196,7 +187,7 @@ struct DelayState
 
     void sanitizeModSources()
     {
-        for (uint8_t i = 0; i < kFuegRow; i++)
+        for (uint8_t i = 0; i < kNumRows; i++)
         {
             if (!IsValidSimModAssignment(modSource[i]))
             {
@@ -220,8 +211,22 @@ struct DelayState
     StereoDelay delay;
 
 private:
+    float blendKnob(uint8_t row, float base) const
+    {
+        if (!m_modMgr || row >= kNumRows || modSource[row] == 255 || modDepth[row] <= 0.0f)
+        {
+            return base;
+        }
+        return m_modMgr->Modulate(base, static_cast<int>(modSource[row]), modDepth[row]);
+    }
+
+    float effectiveCrispy() const
+    {
+        return blendKnob(kFuegRow, knobs[kFuegRow]);
+    }
+
     float m_sampleRate = 44100.0f;
-    const float* m_mods = nullptr;
+    const ModMgr* m_modMgr = nullptr;
     WetPair m_lastWet{};
     float m_lastDmix = 0.0f;
 };

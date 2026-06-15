@@ -67,6 +67,7 @@ interface WasmExports {
   froggers_num_pages: (host: number) => number;
   froggers_delay_set_knob: (host: number, row: number, value: number) => void;
   froggers_delay_get_knob: (host: number, row: number) => number;
+  froggers_delay_get_effective_knob: (host: number, row: number) => number;
   froggers_delay_set_row_mod_source: (host: number, row: number, modIndex: number) => void;
   froggers_delay_get_row_mod_source: (host: number, row: number) => number;
   froggers_delay_set_row_mod_depth: (host: number, row: number, depth: number) => void;
@@ -345,11 +346,15 @@ class FroggersProcessor extends AudioWorkletProcessor {
     for (let row = 0; row < 8; row++) {
       if (onDelayPage) {
         const namePtr = this.wasm.froggers_delay_row_name(this.host, row);
+        const modSource = this.wasm.froggers_delay_get_row_mod_source(this.host, row);
         rows.push({
           name: this.readCString(namePtr),
-          value: this.wasm.froggers_delay_get_knob(this.host, row),
+          value:
+            modSource === 255
+              ? this.wasm.froggers_delay_get_knob(this.host, row)
+              : this.wasm.froggers_delay_get_effective_knob(this.host, row),
           badge: " ",
-          modSource: this.wasm.froggers_delay_get_row_mod_source(this.host, row),
+          modSource,
           modDepth: this.wasm.froggers_delay_get_row_mod_depth(this.host, row),
         });
       } else {

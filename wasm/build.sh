@@ -17,7 +17,7 @@ EXPORTS='[
   "_froggers_process","_froggers_process_stereo",
   "_froggers_row_name","_froggers_row_value","_froggers_row_badge",
   "_froggers_current_page","_froggers_num_pages",
-  "_froggers_delay_set_knob","_froggers_delay_get_knob",
+  "_froggers_delay_set_knob","_froggers_delay_get_knob","_froggers_delay_get_effective_knob",
   "_froggers_delay_set_row_mod_source","_froggers_delay_get_row_mod_source",
   "_froggers_delay_set_row_mod_depth","_froggers_delay_get_row_mod_depth",
   "_froggers_delay_row_name","_froggers_delay_randomize_knobs","_froggers_delay_randomize_mod",

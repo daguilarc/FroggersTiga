@@ -28,6 +28,8 @@ Six pages — **Audio**, **Random**, **Reverb**, **Filter**, **Drive**, and **De
 
 **Crispy** (knob 8 on every page) scrambles knobs 1–7 on that page. When external input is on, it also blends external ring-mod topology into the mix.
 
+Modulation is applied **first**; Crispy then scrambles the low bits of the modulated result. Crispy itself can be modulated — scramble intensity follows the **effective** Crispy level. **Pair-AR** knobs (Audio page) accept mod CV but are **not** fuegoized.
+
 ### Transport
 
 | Control | Action |
@@ -59,6 +61,20 @@ Five mod sources drive per-knob modulation.
 On **web**, pick a source with the **Mod source** dropdown under each knob. When a source is selected, the knob controls **mod depth** instead of the base parameter.
 
 On **desktop** and **plugin**, drag a patch cable from a mod rack jack to a knob input.
+
+### Mod depth & blend
+
+Mod depth is a **crossfade** between the stored knob value (base) and the mod source — not `knob × CV` (VCV attenuator style).
+
+| Depth | Result |
+|-------|--------|
+| 0 | Base only |
+| 1 | Mod source only |
+| Between | Linear mix: `base × (1 − depth) + mod × depth` |
+
+While a mod route is active, the on-screen knob shows the **live effective value** when idle. Dragging edits **mod depth**; the stored base is unchanged until you clear the route.
+
+**MIDI CC 1** and **MIDI CC 2** are ignored when that CC input is disabled (grey column). Other mod sources are always active when patched.
 
 ### MIDI CC enable
 
@@ -213,6 +229,8 @@ VST/AU sources are **not published** on the public GitHub repo. Keep plugin sour
 - Audio page **pair-AR** controls (Attack/Release 1+2 and 2+3) with mod CV on desktop and web
 - Pair-AR knobs span **1 ms – 10 s** (VCV Fundamental ADSR time range); level-follower behavior unchanged
 - Pair-AR knobs track live modulation like other assignable knobs
+- **Delay Crispy mod** routes now work (engine + web display parity with page rows)
+- **Mod depth & blend** documented — crossfade semantics, mod-then-fuego pipeline
 - **MIDI CC 2** defaults **Off** on desktop/VST (CC 1 on); web unchanged
 - Mobile browser audio routing hints and session handling when **External Audio** uses the mic
 - Global strip **Rand Resample** label (marbles step); web Playwright e2e harness

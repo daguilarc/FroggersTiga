@@ -41,7 +41,7 @@ The fuegoizer is key to how FroggersTiga feels on the Field. The FUEG parameter 
 
 Each affected parameter is a value from **0 to 1** (after CV/modulation). The firmware treats that value like an **8-bit number** (0–255). With fuegoization active:
 
-1. **Modulation is applied first** (your `M1..M7` amounts).
+1. **Modulation is applied first** (your `M1..M7` amounts) — crossfade blend, not attenuator multiply; see [Modulation](#modulation-m1m7).
 2. **FUEG** picks how many **low bits** participate in a scramble (more `FUEG` → more low bits).
 3. Those low bits are **XOR-mangled** (bit flips, shifts) in a pattern that depends on **which knob** on the page you are on.
 4. The result is what the synth actually uses.
@@ -148,6 +148,8 @@ With **fuegoization** active, “close enough” compares only the **high bits**
 4. Release the key to exit mod-assign mode.
 
 The display shows **`M#`** and per-knob tracking when assigning.
+
+Mod depth is a **crossfade** between the stored knob value and the mod source (`base × (1 − depth) + mod × depth`), not `knob × CV`. Fuegoization runs **after** modulation — see [Fuegoizer](#fuegoizer-fueg-knob-8).
 
 ### Sources
 

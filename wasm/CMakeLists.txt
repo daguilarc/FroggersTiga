@@ -56,6 +56,7 @@ set(EXPORTED_FUNCS
     _froggers_num_pages
     _froggers_delay_set_knob
     _froggers_delay_get_knob
+    _froggers_delay_get_effective_knob
     _froggers_delay_set_row_mod_source
     _froggers_delay_get_row_mod_source
     _froggers_delay_set_row_mod_depth
