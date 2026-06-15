@@ -1,6 +1,6 @@
 # FroggersTiga Simulator Manual
 
-**Release v1.0.3** — desktop app, web sim, and VST/AU plugin share this operator guide.
+**Release v1.0.4** — desktop app, web sim, and VST/AU plugin share this operator guide.
 
 This guide covers the **desktop**, **web**, and **plugin** simulators. On-screen knob names match this manual. For Daisy Field hardware, see `MANUAL.md` in the repository.
 
@@ -98,14 +98,14 @@ Three VCOs, cross-coupling, and phase modulation. Click the waveform icon beside
 | 7 | Phase mod 3 | VCO2 → VCO3 when cross-coupler is CW (2→3) |
 | 8 | Crispy | See Global controls |
 
-**Pair-sum AR (Audio only):** Four extra controls shape how the (VCO1+VCO2) and (VCO2+VCO3) sums rise and fall in the mix. On **desktop**, they appear as a horizontal band below the eight vertical rows (jack → knob → label). On **web**, they are a third row of four knobs on the Audio page only. Panel labels abbreviate **Attack** as **Att.** and **Release** as **Rel.** (**Rel.** is combined decay+release for the pair sum — not reverb row **Decay**).
+**Pair-sum AR (Audio only):** Four extra controls shape how the (VCO1+VCO2) and (VCO2+VCO3) sums rise and fall in the mix. On **desktop**, they appear as a horizontal band below the eight vertical rows (jack → knob → label). On **web**, they are a third row of four knobs on the Audio page only. Panel labels abbreviate **Attack** as **Att.** and **Release** as **Rel.** (**Rel.** is combined decay+release for the pair sum — not reverb row **Decay**). Each Att./Rel. knob spans **1 ms – 10 s** (exponential). The envelope **follows pair-sum level** (attack when the sum rises, release when it falls) — not a gate-triggered ADSR. The knob→time mapping matches VCV Fundamental ADSR Attack/Release **time range** only. Delay time (Page 6) is separate (~0–2 s).
 
-| Control | What it does |
-|---------|--------------|
-| Att. 1+2 | Attack — rise time when the VCO1+VCO2 pair level increases |
-| Rel. 1+2 | Release — fall time when the pair level decreases |
-| Att. 2+3 | Attack — rise time for the VCO2+VCO3 pair |
-| Rel. 2+3 | Release — fall time for the VCO2+VCO3 pair |
+| Control | Range | What it does |
+|---------|-------|--------------|
+| Att. 1+2 | 1 ms – 10 s (exponential) | Attack — rise time when the VCO1+VCO2 pair level increases |
+| Rel. 1+2 | 1 ms – 10 s (exponential) | Release — fall time when the pair level decreases |
+| Att. 2+3 | 1 ms – 10 s (exponential) | Attack — rise time for the VCO2+VCO3 pair |
+| Rel. 2+3 | 1 ms – 10 s (exponential) | Release — fall time for the VCO2+VCO3 pair |
 
 ### Page 2 — Random
 
@@ -207,6 +207,10 @@ VST/AU sources are **not published** on the public GitHub repo. Keep plugin sour
 **Daisy Field hardware:** see `MANUAL.md` in the repository for firmware operation, OLED symbols, pickup badges, and flash procedure.
 
 ## Version history
+
+### v1.0.4
+
+- Pair-AR Attack/Release knobs span **1 ms – 10 s** (VCV Fundamental ADSR time range); level-follower behavior unchanged
 
 ### v1.0.3
 

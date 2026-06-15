@@ -13,6 +13,9 @@ export default defineConfig({
   use: {
     baseURL: `http://${previewHost}:${previewPort}`,
     trace: "on-first-retry",
+    launchOptions: {
+      args: ["--autoplay-policy=no-user-gesture-required"],
+    },
   },
   webServer: {
     command: `npm run build && npm run preview -- --host ${previewHost} --port ${previewPort}`,

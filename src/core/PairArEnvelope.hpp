@@ -1,18 +1,21 @@
 #pragma once
 
+#include "PhaseUtils.hpp"
+
 #include <algorithm>
 #include <cmath>
 
 struct PairArEnvelope
 {
+    static constexpr float kMinTimeSec = 1e-3f;
+    static constexpr float kMaxTimeSec = 10.f;
+
     float level = 0.0f;
 
     static float KnobToOnePoleCoeff(float knob, float sampleRate)
     {
         const float clampedKnob = std::min(std::max(knob, 0.0f), 1.0f);
-        const float minSec = 0.001f;
-        const float maxSec = 2.0f;
-        const float sec = minSec * std::pow(maxSec / minSec, clampedKnob);
+        const float sec = PhaseUtils::ExpParam::Compute(kMinTimeSec, kMaxTimeSec, clampedKnob);
         const float tau = sec * sampleRate;
         return (tau > 1.0f) ? (1.0f / tau) : 1.0f;
     }

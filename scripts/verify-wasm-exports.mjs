@@ -7,8 +7,18 @@ const processorPath = join(root, "web", "src", "froggers-processor.ts");
 const wasmPath = join(root, "web", "public", "froggers.wasm");
 
 const WASM_IMPORTS = {
-  wasi_snapshot_preview1: { fd_write: () => 0 },
-  env: { emscripten_notify_memory_growth: () => {} },
+  wasi_snapshot_preview1: {
+    args_sizes_get: () => 0,
+    args_get: () => 0,
+    proc_exit: () => {},
+    fd_close: () => 0,
+    fd_write: () => 0,
+    fd_seek: () => 0,
+  },
+  env: {
+    __main_argc_argv: () => {},
+    emscripten_notify_memory_growth: () => {},
+  },
 };
 
 function requiredExportsFromProcessor() {

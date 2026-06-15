@@ -9,9 +9,15 @@ function softLimit(x: number): number {
 
 const WASM_IMPORTS: WebAssembly.Imports = {
   wasi_snapshot_preview1: {
+    args_sizes_get: () => 0,
+    args_get: () => 0,
+    proc_exit: () => {},
+    fd_close: () => 0,
     fd_write: () => 0,
+    fd_seek: () => 0,
   },
   env: {
+    __main_argc_argv: () => {},
     emscripten_notify_memory_growth: () => {},
   },
 };
