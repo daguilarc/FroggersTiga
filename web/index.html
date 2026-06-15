@@ -76,11 +76,21 @@
         </div>
       </div>
       <div class="controls-top">
-        <button id="play-btn" type="button" class="transport play">Play</button>
-        <button id="stop-btn" type="button" class="transport stop" disabled>Stop</button>
-        <div class="external-controls">
-          <button id="external-btn" type="button">External Audio: Off</button>
-          <button id="external-midi-btn" type="button">External MIDI: Off</button>
+        <div class="transport-play">
+          <button id="play-btn" type="button" class="transport play">Play</button>
+          <button id="stop-btn" type="button" class="transport stop" disabled>Stop</button>
+        </div>
+        <div class="transport-io">
+          <div class="external-controls">
+            <button id="external-btn" type="button">External Audio: Off</button>
+            <button id="external-midi-btn" type="button">External MIDI: Off</button>
+          </div>
+          <nav class="global-strip" aria-label="Global randomize">
+            <button id="rand-all" type="button">Rand All</button>
+            <button id="rand-mod" type="button">Rand Mods</button>
+            <button id="marbles-btn" type="button">Rand Resample</button>
+            <button id="rand-morphs" type="button">Rand waveforms</button>
+          </nav>
         </div>
         <div id="external-meter" class="external-meter" aria-hidden="true">
           <span id="external-meter-fill" class="external-meter-fill"></span>
@@ -109,12 +119,6 @@
         </div>
       </div>
       <nav id="page-pills" class="page-pills" aria-label="Pages"></nav>
-      <div class="global-strip">
-        <button id="rand-all" type="button">Rand All</button>
-        <button id="rand-mod" type="button">Rand Mods</button>
-        <button id="marbles-btn" type="button">Rand Resample</button>
-        <button id="rand-morphs" type="button">Rand waveforms</button>
-      </div>
       <p class="hint">Keys: <kbd>[</kbd> previous page · <kbd>]</kbd> next page · <kbd>m</kbd> Rand Resample</p>
     </div>
     <script type="module" src="/src/main.ts"></script>

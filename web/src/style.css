@@ -105,6 +105,18 @@ body {
   flex-wrap: wrap;
 }
 
+.transport-play {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.transport-io {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
 .controls-top .transport,
 .controls-top .external-controls button,
 .global-strip button {
@@ -373,7 +385,7 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-top: 1rem;
+  margin: 0;
 }
 
 .global-strip button {
@@ -649,10 +661,6 @@ body {
 
   .knobs {
     grid-column: 1;
-  }
-
-  .global-strip {
-    justify-content: center;
   }
 }
 
