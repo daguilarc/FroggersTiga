@@ -122,6 +122,15 @@ struct AudioPairArState
         }
     }
 
+    void randomizeKnobs()
+    {
+        RGen rgen;
+        for (uint8_t i = 0; i < kCount; i++)
+        {
+            setKnob(i, rgen.UniGenRange(0.0f, 1.0f));
+        }
+    }
+
     void clearModRoutesForIndex(uint8_t modIndex)
     {
         for (uint8_t i = 0; i < kCount; i++)

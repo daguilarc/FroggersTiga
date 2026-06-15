@@ -19,7 +19,7 @@ GlobalStrip::GlobalStrip(DesktopHostIO& host, DelayState& delay)
     m_randomizeVcoWaveform.onClick = [this]() { m_host.RandomizeVcoMorphs(); };
     m_marbles.onClick = [this]() { m_host.PressButton(0); };
 
-    m_randomizeAll.setTooltip("Randomize all pages + Delay knobs");
+    m_randomizeAll.setTooltip("Randomize all pages + pair-AR + Delay knobs");
     m_randomizeMod.setTooltip("Randomize mod routes on all pages");
     m_randomizeVcoWaveform.setTooltip("Randomize VCO waveform morph (sine/saw/square blend)");
     m_marbles.setTooltip("Resample both random S&H channels (draws from bags)");

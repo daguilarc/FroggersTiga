@@ -37,9 +37,9 @@ Modulation is applied **first**; Crispy then scrambles the low bits of the modul
 | **Play** | Start audio processing |
 | **Stop** | Halt audio output |
 | **External / Ext. In.** | Ring-mod external input (see Host guide) |
-| **Randomize** (page) | Randomize knobs 1–7 on the current page |
-| **Rand mod** (page) | Randomize mod sources and depths on the current page |
-| **Rand All** | Randomize all pages + Delay |
+| **Randomize** (page) | Randomize knobs 1–7 on the current page (Audio page also randomizes pair-sum A/R) |
+| **Rand mod** (page) | Randomize mod sources and depths on the current page (Audio page includes pair-sum A/R) |
+| **Rand All** | Randomize all pages + pair-sum A/R + Delay |
 | **Rand Mods** | Randomize all mod routes |
 | **Rand Resample** | Resample both random S&H channels (draws from bags) |
 | **Rand waveforms** | Randomize VCO waveform morph (Audio page) |
@@ -231,6 +231,7 @@ VST/AU sources are **not published** on the public GitHub repo. Keep plugin sour
 - Pair-AR knobs track live modulation like other assignable knobs
 - **Delay Crispy mod** routes now work (engine + web display parity with page rows)
 - **Mod depth & blend** documented — crossfade semantics, mod-then-fuego pipeline
+- Audio **Randomize / Randmod / Rand All** now include pair-sum A/R knobs (web + desktop)
 - **MIDI CC 2** defaults **Off** on desktop/VST (CC 1 on); web unchanged
 - Mobile browser audio routing hints and session handling when **External Audio** uses the mic
 - Global strip **Rand Resample** label (marbles step); web Playwright e2e harness

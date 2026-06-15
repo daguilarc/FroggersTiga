@@ -3,6 +3,7 @@
 #include "CvMidiBridge.hpp"
 #include "CvPresence.hpp"
 #include "AudioPairArState.hpp"
+#include "HostRandomize.hpp"
 #include "ParamDisplayNames.hpp"
 #include "SimModSource.hpp"
 
@@ -119,7 +120,7 @@ struct PagedHostIO
 
     void RandomizeAllPages()
     {
-        m_pageManager.RandomizeAllPages();
+        RandomizeAllPagesWithPairAr(m_pageManager, m_pairAr);
     }
 
     void RandomizeAllMod()
@@ -130,12 +131,12 @@ struct PagedHostIO
 
     void RandomizePage(uint8_t page)
     {
-        m_pageManager.RandomizePage(page);
+        RandomizePageWithExtras(m_pageManager, page, m_pairAr);
     }
 
     void RandomizePageMod(uint8_t page)
     {
-        m_pageManager.RandomizePageModSim(page, m_midiBridge);
+        RandomizePageModWithExtras(m_pageManager, page, m_pairAr, m_midiBridge);
     }
 
     void SetMidiCcPairEnabled(uint8_t pairIndex, bool enabled)

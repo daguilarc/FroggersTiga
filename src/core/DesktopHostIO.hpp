@@ -4,6 +4,7 @@
 #include "CvPresence.hpp"
 #include "DelayState.hpp"
 #include "AudioPairArState.hpp"
+#include "HostRandomize.hpp"
 #include "SimModSource.hpp"
 
 #include <cmath>
@@ -112,13 +113,14 @@ struct DesktopHostIO
                 m_engine.RandomizeVcoMorphs();
                 break;
             case HostMutationType::RandomizePage:
-                m_pageManager.RandomizePage(mutation.page);
+                RandomizePageWithExtras(m_pageManager, mutation.page, m_pairAr);
                 break;
             case HostMutationType::RandomizePageMod:
-                m_pageManager.RandomizePageModSim(mutation.page, m_midiBridge);
+                RandomizePageModWithExtras(
+                    m_pageManager, mutation.page, m_pairAr, m_midiBridge);
                 break;
             case HostMutationType::RandomizeAllPages:
-                m_pageManager.RandomizeAllPagesIndependent();
+                RandomizeAllPagesIndependentWithPairAr(m_pageManager, m_pairAr);
                 if (m_delay)
                 {
                     m_delay->randomizeKnobs();
