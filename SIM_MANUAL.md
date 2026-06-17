@@ -1,6 +1,6 @@
 # FroggersTiga Simulator Manual
 
-**Release v1.0.3** — desktop app, web sim, and VST/AU plugin share this operator guide.
+**Release v1.0.4** — desktop app, web sim, and VST/AU plugin share this operator guide.
 
 This guide covers the **desktop**, **web**, and **plugin** simulators. On-screen knob names match this manual. For Daisy Field hardware, see `MANUAL.md` in the repository.
 
@@ -223,6 +223,10 @@ VST/AU sources are **not published** on the public GitHub repo. Keep plugin sour
 **Daisy Field hardware:** see `MANUAL.md` in the repository for firmware operation, OLED symbols, pickup badges, and flash procedure.
 
 ## Version history
+
+### v1.0.4
+
+- Global **Randomize / Randmod / Rand All** strip moved below **External MIDI** on web and desktop (all viewports)
 
 ### v1.0.3
 
