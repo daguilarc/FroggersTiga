@@ -81,10 +81,17 @@ jobs:
           name: windows-setup
           path: dist
 
+      - name: Read package version
+        id: ver
+        run: echo "version=$(./desktop/scripts/read-version.sh)" >> "$GITHUB_OUTPUT"
+
+      - name: Render release notes from SIM_MANUAL.md
+        run: ./desktop/scripts/render-release-notes.sh "${{ github.ref_name }}" > release-notes.md
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Desktop ${{ github.ref_name }}
-          generate_release_notes: true
+          name: Desktop ${{ github.ref_name }} · v${{ steps.ver.outputs.version }}
+          body_path: release-notes.md
           files: dist/*

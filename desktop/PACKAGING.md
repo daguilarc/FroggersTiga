@@ -93,7 +93,7 @@ Workflow `.github/workflows/desktop-release.yml` builds on `macos-14` and `windo
 - `FroggersTiga.dmg`
 - `FroggersTiga-Setup.exe`
 
-to the GitHub Release for that tag.
+to the GitHub Release for that tag. Release notes are rendered from `SIM_MANUAL.md` **Version history** (`desktop/scripts/render-release-notes.sh`).
 
 ## Scripts
 
