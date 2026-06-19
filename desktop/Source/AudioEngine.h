@@ -8,6 +8,8 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_utils/juce_audio_utils.h>
 
+#include <atomic>
+#include <cstdint>
 #include <functional>
 #include <vector>
 
@@ -70,6 +72,9 @@ public:
     void setExternalInputEnabled(bool enabled);
     bool isExternalInputEnabled() const;
     bool isPluginHosted() const;
+    bool shouldDrainPendingUiMutations() const;
+    void notifyStateRestored();
+    uint32_t stateRestoreGeneration() const;
 
     bool startRecording();
     void stopRecording();
@@ -85,13 +90,19 @@ public:
                             float* outputChannelDataLeft,
                             float* outputChannelDataRight,
                             int numOutputChannels,
-                            int numSamples,
-                            const juce::MidiBuffer& midiIn);
+                            int numSamples);
     void setHostSampleRate(float sampleRate);
     float getHostSampleRate() const;
+    void prepareRenderBuffers(int maxExpectedBlockSize);
     void ingestMidiMessage(const juce::MidiMessage& message);
 
 private:
+    void renderSimOutputChunk(const float* inputChannel0,
+                              int numInputChannels,
+                              float* outL,
+                              float* outR,
+                              int numOutputChannels,
+                              int numSamples);
     void renderSimOutputBlock(const float* inputChannel0,
                               int numInputChannels,
                               float* outL,
@@ -117,6 +128,8 @@ private:
     std::function<void()> m_transportChangedCallback;
     bool m_audioRunning = false;
     bool m_pluginHosted = false;
+    std::atomic<int64_t> m_lastHostedBlockTimeMs{0};
+    std::atomic<uint32_t> m_stateRestoreGeneration{0};
     bool m_externalInputEnabled = false;
     float m_inputPeak = 0.0f;
     InputRouteStatus m_inputRouteStatus = InputRouteStatus::Idle;
@@ -125,4 +138,5 @@ private:
     float m_hostSampleRate = static_cast<float>(HostAudioConfig::kDefaultSampleRate);
     std::vector<float> m_inBlock;
     std::vector<float> m_monoBlock;
+    size_t m_renderBlockCapacity = 512;
 };

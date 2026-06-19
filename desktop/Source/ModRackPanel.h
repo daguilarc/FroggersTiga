@@ -6,6 +6,9 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <memory>
+#include <vector>
+
 class ModRackPanel : public juce::Component
 {
 public:
@@ -17,9 +20,5 @@ public:
 
 private:
     DesktopHostIO& m_host;
-    ModModuleBox m_midiCc1;
-    ModModuleBox m_midiCc2;
-    ModModuleBox m_vcoFeat;
-    ModModuleBox m_marbles1;
-    ModModuleBox m_marbles2;
+    std::vector<std::unique_ptr<ModModuleBox>> m_boxes;
 };

@@ -2,23 +2,20 @@ const wasmUrl = `${import.meta.env.BASE_URL}froggers.wasm`;
 const processorUrl = `${import.meta.env.BASE_URL}froggers-processor.js`;
 import { CvScopeCanvas } from "./CvScopeCanvas";
 import { ModLedIndicator } from "./ModLedIndicator";
-import { coreKnobLabel, pairArKnobLabel } from "./paramDisplayNames";
+import {
+  coreKnobLabel,
+  pairArKnobLabel,
+  HOST_PAGE_COUNT,
+  HOST_PAGE_NAMES,
+  CORE_KNOB_COUNT,
+  PAIR_AR_KNOB_COUNT,
+  TOTAL_KNOB_COUNT,
+  WEB_MOD_BAY_SPEC,
+  type ModBaySpec,
+} from "./hostDisplay.generated";
 import { RotaryKnob } from "./RotaryKnob";
 
-const HOST_PAGE_COUNT = 6;
-const CORE_KNOB_COUNT = 8;
-const PAIR_AR_KNOB_COUNT = 4;
-const TOTAL_KNOB_COUNT = CORE_KNOB_COUNT + PAIR_AR_KNOB_COUNT;
-const PAGE_NAMES = ["Audio", "Random S&H", "Reverb", "Filter", "Drive", "Delay"];
-
-type ModBaySpec = { modIndex: number; kind: "scope" | "led" };
-
-const MOD_BAY_SPEC: ModBaySpec[] = [
-  { modIndex: 0, kind: "scope" },
-  { modIndex: 4, kind: "scope" },
-  { modIndex: 5, kind: "led" },
-  { modIndex: 6, kind: "led" },
-];
+const MOD_BAY_SPEC: ModBaySpec[] = [...WEB_MOD_BAY_SPEC];
 
 type ModBayIndicator =
   | { kind: "scope"; modIndex: number; scope: CvScopeCanvas }
@@ -179,8 +176,8 @@ function applyModBayAvailability(): void {
   }
 }
 
-function setWebCcPairEnabled(pairIndex: number, enabled: boolean): void {
-  send({ type: "setCcPairEnabled", pairIndex, enabled });
+function setWebCcPairEnabled(enabled: boolean): void {
+  send({ type: "setCcPairEnabled", pairIndex: 0, enabled });
 }
 
 function evalWaveMorph(phase: number, morph: number): number {
@@ -335,7 +332,7 @@ function syncTransportUi(): void {
 }
 
 function renderPageChrome(): void {
-  pageChromeTitle.textContent = `${PAGE_NAMES[hostPage]} (${hostPage + 1}/${HOST_PAGE_COUNT})`;
+  pageChromeTitle.textContent = `${HOST_PAGE_NAMES[hostPage]} (${hostPage + 1}/${HOST_PAGE_COUNT})`;
   pageChromeBlurb.textContent = PAGE_BLURBS[hostPage] ?? "";
   for (let i = 0; i < pagePillButtons.length; i++) {
     pagePillButtons[i].classList.toggle("active", i === hostPage);
@@ -483,11 +480,11 @@ function onScreenUpdate(data: Record<string, unknown>): void {
   }
 }
 
-for (let i = 0; i < PAGE_NAMES.length; i++) {
+for (let i = 0; i < HOST_PAGE_NAMES.length; i++) {
   const pill = document.createElement("button");
   pill.type = "button";
   pill.className = "page-pill";
-  pill.textContent = PAGE_NAMES[i];
+  pill.textContent = HOST_PAGE_NAMES[i];
   pill.addEventListener("click", () => setHostPage(i));
   pagePillsEl.appendChild(pill);
   pagePillButtons.push(pill);
@@ -956,7 +953,7 @@ externalBtn.addEventListener("click", () => {
 async function setExternalMidiEnabled(enabled: boolean): Promise<void> {
   if (!enabled) {
     disconnectExternalMidi();
-    setWebCcPairEnabled(0, false);
+    setWebCcPairEnabled(false);
     applyExternalMidiUi(false);
     applyModBayAvailability();
     if (audioRunning) {
@@ -981,8 +978,7 @@ async function setExternalMidiEnabled(enabled: boolean): Promise<void> {
   try {
     midiAccess = await navigator.requestMIDIAccess({ sysex: false });
     attachWebMidiInputs(midiAccess);
-    setWebCcPairEnabled(1, false);
-    setWebCcPairEnabled(0, true);
+    setWebCcPairEnabled(true);
     applyExternalMidiUi(true);
     applyModBayAvailability();
     if (audioRunning) {
@@ -1033,7 +1029,6 @@ function handleWorkletMessage(event: MessageEvent): void {
     if (options && options.length > 0) {
       populateModSelects(options);
     }
-    setWebCcPairEnabled(1, false);
     applyModBayAvailability();
     if (audioContext) {
       send({ type: "setSampleRate", sampleRate: audioContext.sampleRate });
@@ -1181,7 +1176,7 @@ function stopAudio(): void {
   externalBtn.classList.remove("active");
   send({ type: "external", enabled: false });
   disconnectExternalMidi();
-  setWebCcPairEnabled(0, false);
+  setWebCcPairEnabled(false);
   externalMidiEnabled = false;
   externalMidiBtn.textContent = "External MIDI: Off";
   externalMidiBtn.classList.remove("active");

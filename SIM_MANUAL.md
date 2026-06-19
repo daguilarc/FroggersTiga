@@ -50,9 +50,11 @@ Five mod sources drive per-knob modulation.
 
 ### Sources
 
-- **MIDI CC 1** — Hardware or Web MIDI CC latched to CV (default: channel 1, CC 1).
-- **MIDI CC 2** — Same for channel 1, CC 2.
-- **VCO Envelope** — Slow level from the VCO mix; shown as a scope trace.
+Internal mod sources are shared; MIDI/CC availability depends on the host (see **Host input boundaries** below).
+
+- **MIDI CC 1** — Desktop standalone: hardware or QWERTY CC latched to CV (default channel 1, CC 1). Web: Web MIDI CC 1 when **External MIDI** is on (same default). VST/AU and VCV: not available — use DAW parameter mapping or Rack CV instead.
+- **MIDI CC 2** — Desktop standalone only: second hardware CC pair (default channel 1, CC 2). Not exposed on web, VST/AU, or VCV.
+- **VCO Envelope** — Slow level from the VCO mix; shown as a scope trace (desktop, web, VST/AU).
 - **Random 1 S&H** — Stepped random CV on channel 1; see Random S&H below.
 - **Random 2 S&H** — Stepped random CV on channel 2; see Random S&H below.
 
@@ -74,22 +76,26 @@ Mod depth is a **crossfade** between the stored knob value (base) and the mod so
 
 While a mod route is active, the on-screen knob shows the **live effective value** when idle. Dragging edits **mod depth**; the stored base is unchanged until you clear the route.
 
-**MIDI CC 1** and **MIDI CC 2** are ignored when that CC input is disabled (grey column). Other mod sources are always active when patched.
+**MIDI CC 1** and **MIDI CC 2** (desktop standalone only) are ignored when that CC input is disabled (grey column). Other mod sources are always active when patched.
 
 ### MIDI CC enable
 
 Disable a CC input to grey its mod column, block new routes, clear existing ones, and exclude it from random mod.
 
-- **Desktop / plugin:** MIDI Settings **On** toggle per CC pair.
-- **Web:** **External MIDI** is the sole CC gate — CC 1 only (default channel 1, CC 1). MIDI CC 2 is not available on web.
+- **Desktop standalone:** MIDI Settings **On** toggle per CC pair (MIDI CC 1 and MIDI CC 2).
+- **Web:** **External MIDI** is the sole CC gate — CC 1 only (default channel 1, CC 1). No CC 2 UI, scope, or ingestion path.
+- **VST / AU:** No fixed CC pairs, CC enable toggles, or CC mod cells — map MIDI in the DAW to the **107** exposed host parameters instead.
+- **VCV Rack:** No MIDI boundary — patch external Rack MIDI-to-CV modules into per-parameter CV jacks.
 
-**QWERTY keyboard** (desktop) drives MIDI CC 1 only and respects the CC 1 enable flag.
+**QWERTY keyboard** (desktop standalone only) drives MIDI CC 1 and respects the CC 1 enable flag.
 
 ### Mod indicators
 
-- **MIDI CC 1** and **VCO Envelope** show live CV scope traces on web and desktop.
-- **MIDI CC 2** scope appears on desktop and plugin only.
-- **Random 1 S&H** and **Random 2 S&H** show a green LED while **Play** is on: **green** when held CV is above **55%** of full scale; **dim** at or below 55%, or when audio is stopped.
+- **Web:** MIDI CC 1 and VCO Envelope scopes; Random 1/2 LEDs.
+- **Desktop standalone:** MIDI CC 1, MIDI CC 2, and VCO Envelope scopes; Random 1/2 LEDs.
+- **VST / AU:** VCO Envelope scope only (mod indices 4/5/6); Random 1/2 LEDs — no CC scopes.
+- **VCV Rack:** Random 1/2 LEDs only — no scopes or MIDI widgets.
+- **Random 1 S&H** and **Random 2 S&H** show a green LED while audio runs: **green** when held CV is above **55%** of full scale; **dim** at or below 55%, or when audio is stopped.
 
 ### Random S&H
 
@@ -190,13 +196,24 @@ Dual sample-and-hold random CV. Knobs configure two independent bags; **Random 1
 | 7 | Wet mix | Delay wet level |
 | 8 | Crispy | See Global controls |
 
+## Host input boundaries
+
+**OpenSpec master contract (per-host differences + spec index):** [`openspec/specs/froggers-host-master/spec.md`](openspec/specs/froggers-host-master/spec.md)
+
+| Host | External MIDI / CC | Mod rack | Parameter control |
+|------|-------------------|----------|-------------------|
+| **Web** | **External MIDI** → CC 1 only (no CC 2 UI) | Four entries: CC 1, VCO Env, Random 1/2 | On-screen knobs + mod dropdowns |
+| **Desktop standalone** | Two hardware CC pairs (MIDI Settings) + QWERTY → CC 1 | Five entries: CC 1, CC 2, VCO Env, Random 1/2 | Knobs + patch cables |
+| **VST / AU** | None — DAW maps any MIDI channel/CC to parameters | Three entries: VCO Env, Random 1/2 (indices 4/5/6) | **107** DAW-automatable host parameters + patch cables |
+| **VCV Rack** | None — use Rack MIDI-to-CV → parameter jacks | Three entries: VCO Env, Random 1/2 (indices 4/5/6) | Knobs + per-parameter CV inputs (voltage adds to internal route) |
+
 ## Host guide
 
-### Desktop
+### Desktop (standalone)
 
 - Five adjacent submodule panels (no page switching) plus a **Delay** overlay page.
 - **Mod rack** with patch cables — drag from a mod source to a knob to assign modulation (including the four pair-sum AR jacks on the Audio panel bottom band).
-- **MIDI Settings** — two CC→CV inputs (MIDI CC 1 and MIDI CC 2, each Channel + CC + **On** enable toggle) plus hardware MIDI Out for VCO envelope export. VST/AU inherits the same core gating (MIDI CC 1 on by default, MIDI CC 2 off).
+- **MIDI Settings** — two CC→CV inputs (MIDI CC 1 and MIDI CC 2, each Channel + CC + **On** enable toggle) plus hardware MIDI Out for VCO envelope export. CC 1 defaults **On**; CC 2 defaults **Off**.
 - **Ext. In.** — requires **Ext. In. on + Play**; routes mic, line-in, or USB interface input to the engine. macOS may prompt for audio input access on first capture.
 - **Audio Settings** — choose output and input devices.
 
@@ -212,11 +229,18 @@ Dual sample-and-hold random CV. Knobs configure two independent bags; **Random 1
 
 VST/AU sources are **not published** on the public GitHub repo. Keep plugin sources locally.
 
-- Same six-panel UI and mod rack as desktop (VCO Envelope CV scope + Random LEDs).
-- **Transport:** the DAW runs audio — there is no standalone Play/Stop bar. Use **Ext. In.** to route the plugin sidechain/mono input bus when the host provides one.
-- **Audio Settings** is hidden; pick buffer size and devices in the DAW.
-- **MIDI Settings** opens a CC-only dialog (channel, CC number, and **On** enable toggles for MIDI CC 1 and MIDI CC 2). Route MIDI from the DAW track to the plugin input; disabled CC pairs are ignored and grey out the matching mod rack columns.
+- Same six-panel UI as desktop; **mod rack** shows VCO Envelope, Random 1, and Random 2 only (no CC mod cells or scopes).
+- **107 host parameters** — every persistent page knob, Delay knob, pair-AR knob/depth, mod depth, and continuous morph control is exposed to the DAW for automation and MIDI learn. There is no hosted CC ingest, no MIDI Settings dialog, and `acceptsMidi()` is false; map any MIDI channel/CC in the DAW to these parameters without a two-pair limit inside Froggers.
+- **Transport:** the DAW runs audio — Play/Stop, Record, Audio/MIDI settings, and QWERTY capture are hidden. Use the host's sidechain/mono input bus when **Ext. In.** is available.
 - Build: `cd desktop && cmake -B build -DBUILD_VST=ON && cmake --build build --config Release`. Artifacts under `FroggersTigaPlugin_artefacts/Release/`.
+
+### VCV Rack module (local-only)
+
+The VCV plugin is **local-only** (`vcv/` in `.gitignore`; not built on CI).
+
+- **CV-only** — no MIDI In/Out widgets, no CC enable switches, and no CC mod sources. Patch a Rack MIDI-to-CV module into Froggers' per-parameter CV jacks when you need MIDI control.
+- **Mod rack** — VCO Envelope, Random 1, and Random 2 at indices 4/5/6. Random LEDs only (no scope cells).
+- **Per-parameter CV jacks** — connected voltage adds to the value from any stored internal mod route (`clamp(internal + V/10, 0, 1)`); disconnected jacks use the internal route alone.
 
 ---
 

@@ -3,7 +3,16 @@
 #include "CvMidiBridge.hpp"
 #include "RGen.hpp"
 
+#include <cstddef>
 #include <cstdint>
+
+enum class SimHostKind : uint8_t
+{
+    Desktop,
+    Web,
+    Vst,
+    Vcv
+};
 
 enum class SimModSource : uint8_t
 {
@@ -25,13 +34,23 @@ inline bool IsValidSimModAssignment(uint8_t modIndex)
     return modIndex == 255 || IsSimAssignableModIndex(modIndex);
 }
 
-inline bool IsSimModSourceAvailable(uint8_t modIndex, const CvMidiBridge& bridge)
+inline bool IsSimModSourceAvailable(uint8_t modIndex,
+                                    const CvMidiBridge& bridge,
+                                    SimHostKind hostKind)
 {
+    if (!IsSimAssignableModIndex(modIndex))
+    {
+        return false;
+    }
     if (modIndex == 0 || modIndex == 1)
     {
+        if (hostKind == SimHostKind::Vcv || hostKind == SimHostKind::Vst)
+        {
+            return false;
+        }
         return bridge.isCcModIndexEnabled(modIndex);
     }
-    return IsSimAssignableModIndex(modIndex);
+    return true;
 }
 
 inline SimModSource CoreIndexToSimModSource(uint8_t modIndex)
@@ -58,18 +77,25 @@ inline uint8_t SimModSourceToCoreIndex(SimModSource source)
     return static_cast<uint8_t>(source);
 }
 
-inline uint8_t PickSimRandomModIndex(RGen& rgen, const CvMidiBridge& bridge)
+inline uint8_t PickSimRandomModIndex(RGen& rgen,
+                                     const CvMidiBridge& bridge,
+                                     SimHostKind hostKind)
 {
     if (rgen.UniGen() < 0.5f)
     {
         return 255;
     }
-    static constexpr uint8_t kPool[] = {0, 1, 4, 5, 6};
+    static constexpr uint8_t kPoolAll[] = {0, 1, 4, 5, 6};
+    static constexpr uint8_t kPoolInternal[] = {4, 5, 6};
+    const bool excludeCc = hostKind == SimHostKind::Vcv || hostKind == SimHostKind::Vst;
+    const uint8_t* pool = excludeCc ? kPoolInternal : kPoolAll;
+    const size_t poolSize = excludeCc ? 3 : 5;
     uint8_t available[5];
     uint8_t count = 0;
-    for (uint8_t idx : kPool)
+    for (size_t i = 0; i < poolSize; i++)
     {
-        if (IsSimModSourceAvailable(idx, bridge))
+        const uint8_t idx = pool[i];
+        if (IsSimModSourceAvailable(idx, bridge, hostKind))
         {
             available[count++] = idx;
         }

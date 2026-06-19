@@ -257,12 +257,13 @@ cd web && npm run build:wasm    # verifies exports after copy
 ```
 
 - Paged Field-style UI (8 knobs, SW1/SW2, OLED mock); mod dropdown **below** each slider (`None | VCO feat | Random 1 | Random 2`)
+- **External MIDI** — CC 1 only when enabled (no CC 2 UI or ingestion); four-entry mod bay (CC 1, VCO Envelope, Random 1/2)
 - Default **44.1 kHz** (`audioContext.sampleRate`)
 - **Mic** toggle default **off** (VCO-only until enabled)
 
 **Help docs:** `SIM_MANUAL.md` (sim operators — embedded in desktop/web Help → Manual) and `MANUAL.md` (Daisy Field firmware — repository only, not shipped to sim hosts). `QUICK_DICT.md` is a short parameter glossary.
 
-**Host page labels:** `sim/ParamDisplayNames.hpp` is the authority; `web/src/paramDisplayNames.ts` mirrors it for instant UI labels. `node scripts/verify-param-display-parity.mjs` runs on every web build and e2e run.
+**Host page labels:** `sim/ParamDisplayNames.hpp` and `sim/HostPanelLayout.hpp` are the authorities; `web/src/hostDisplay.generated.ts` is generated for instant UI labels. `node scripts/generate-host-display.mjs --check` runs on every web build and e2e run.
 
 **Publish:** GitHub **Settings → Pages → branch `main` / `/docs`**. CI workflow `.github/workflows/pages.yml` rebuilds on push to `main`.
 
@@ -270,7 +271,7 @@ cd web && npm run build:wasm    # verifies exports after copy
 
 **Release v1.0.4** — standalone app, VST3, and AU (see `SIM_MANUAL.md`).
 
-Native app with **five adjacent sub-module panels** (Audio → Drive), **mod rack + patch cables**, and shared global strip. No page switching.
+Native app with **five adjacent sub-module panels** (Audio → Drive), **mod rack + patch cables**, and shared global strip. No page switching. **MIDI Settings** exposes two hardware CC→CV pairs (CC 1 on by default, CC 2 off); QWERTY drives CC 1 only.
 
 ```sh
 cd desktop
@@ -279,8 +280,14 @@ cmake --build build --config Release
 ./build/FroggersTigaDesktop_artefacts/Release/FroggersTiga.app/Contents/MacOS/FroggersTiga   # macOS
 ```
 
+**VST3 / AU (local-only):** `cmake -B build -DBUILD_VST=ON` after restoring plugin sources. The hosted plugin exposes **107** DAW-automatable parameters (page/Delay/pair-AR knobs, mod depths, morph controls) — no fixed CC ingest or MIDI Settings; mod rack is VCO Envelope + Random 1/2 only. See `SIM_MANUAL.md` → Host input boundaries.
+
+**VCV Rack (local-only):** `vcv/` is gitignored and not built on CI. CV-only — no MIDI widgets; per-parameter CV jacks add voltage to internal mod routes. See `SIM_MANUAL.md`.
+
 Links `src/core/` + `DesktopHostIO` only (no libDaisy). Transport bar: **Play/Stop**, format toggles (**WAV/MP3/FLAC/OGG**), **Record** (stereo export), **MIDI**, **Audio**. **WAV** and **OGG** export work in default JUCE builds; **MP3** needs `JUCE_USE_MP3AUDIOFORMAT` + LAME at compile time; **FLAC** needs `JUCE_USE_FLAC`. macOS menu **FroggersTiga → Manual / Quick Dict / License** (embedded docs).
 
-**Release packages:** See [`desktop/PACKAGING.md`](desktop/PACKAGING.md) for DMG / Windows installer commands. Push tag `froggerstiga-v*` (e.g. `froggerstiga-v1`) to trigger `.github/workflows/desktop-release.yml` and publish assets on [GitHub Releases](https://github.com/daguilarc/FroggersTiga/releases).
+**Clean rebuild check:** `scripts/verify_clean_rebuild.sh` — generator freshness, sim tests, web TypeScript, desktop/VST build, and git worktree hygiene.
 
-Parameter and host UX reference: [`SIM_MANUAL.md`](SIM_MANUAL.md) and [`QUICK_DICT.md`](QUICK_DICT.md).
+**Release packages:** See [`desktop/PACKAGING.md`](desktop/PACKAGING.md) for DMG / Windows installer commands. Move tag `froggerstiga-v1` on `main` (force-push) to trigger `.github/workflows/desktop-release.yml` and publish assets on [GitHub Releases](https://github.com/daguilarc/FroggersTiga/releases).
+
+Parameter and host UX reference: [`SIM_MANUAL.md`](SIM_MANUAL.md), [`openspec/specs/froggers-host-master/spec.md`](openspec/specs/froggers-host-master/spec.md) (master host contract), and [`QUICK_DICT.md`](QUICK_DICT.md).

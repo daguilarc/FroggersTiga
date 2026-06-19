@@ -154,9 +154,15 @@ void MainComponent::initFromEngine()
         m_audioSettings.setVisible(false);
         m_play.setVisible(false);
         m_stop.setVisible(false);
+        m_midiSettings.setVisible(false);
+        m_recordCluster.setVisible(false);
+        m_externalInput.setVisible(false);
+        m_inputEnvelope.setVisible(false);
+        m_routeHint.setVisible(false);
     }
 
     m_cableOverlay.setConnectionChangedCallback([this](uint8_t page) {
+        syncRoutesFromHost();
         if (page < m_panels.size() && m_panels[static_cast<size_t>(page)])
         {
             m_panels[static_cast<size_t>(page)]->refresh();
@@ -165,12 +171,14 @@ void MainComponent::initFromEngine()
 
     audioEngine().getHost().m_onBeforeClearModRoutes = [this](uint8_t modIndex) {
         m_cableOverlay.removeCablesForModIndex(modIndex);
+        syncRoutesFromHost();
     };
 
     setWantsKeyboardFocus(true);
 
     setSize(DesktopChromeLayout::kDefaultWidth, DesktopChromeLayout::kDefaultHeight);
     updateTransportUi();
+    syncRoutesFromHost();
     startTimerHz(15);
 }
 
@@ -227,6 +235,10 @@ void MainComponent::mouseDown(const juce::MouseEvent& event)
 
 bool MainComponent::shouldCaptureQwertyMidi() const
 {
+    if (audioEngine().isPluginHosted())
+    {
+        return false;
+    }
     if (!audioEngine().isComputerKeyboardMidiEnabled())
     {
         return false;
@@ -326,6 +338,13 @@ void MainComponent::syncPatchPorts()
     m_cableOverlay.setInputPorts(std::move(inputs));
 }
 
+void MainComponent::syncRoutesFromHost()
+{
+    syncPatchPorts();
+    m_cableOverlay.syncRoutesFromHost();
+    m_cableOverlay.repaint();
+}
+
 void MainComponent::resized()
 {
     using namespace DesktopChromeLayout;
@@ -338,38 +357,43 @@ void MainComponent::resized()
     auto transportGlobal =
         juce::Rectangle<int>(header.getX(), header.getY(), header.getWidth(), kTransportRowH);
     auto topBar = transportGlobal;
-    const auto recordGlobal = topBar.removeFromRight(kRecordW);
-    m_audioSettings.setBounds(topBar.removeFromRight(80));
-    topBar.removeFromRight(8);
-    m_midiSettings.setBounds(topBar.removeFromRight(80));
-    topBar.removeFromRight(12);
-    m_play.setBounds(topBar.removeFromLeft(72));
-    topBar.removeFromLeft(6);
-    m_stop.setBounds(topBar.removeFromLeft(72));
-    topBar.removeFromLeft(12);
-    m_externalInput.setBounds(topBar.removeFromLeft(72));
-    topBar.removeFromLeft(6);
-    m_inputEnvelope.setBounds(topBar.removeFromLeft(80));
-    topBar.removeFromLeft(8);
-    m_routeHint.setBounds(topBar.removeFromLeft(juce::jmin(topBar.getWidth(), 280)));
+    if (!audioEngine().isPluginHosted())
+    {
+        const auto recordGlobal = topBar.removeFromRight(kRecordW);
+        m_audioSettings.setBounds(topBar.removeFromRight(80));
+        topBar.removeFromRight(8);
+        m_midiSettings.setBounds(topBar.removeFromRight(80));
+        topBar.removeFromRight(12);
+        m_play.setBounds(topBar.removeFromLeft(72));
+        topBar.removeFromLeft(6);
+        m_stop.setBounds(topBar.removeFromLeft(72));
+        topBar.removeFromLeft(12);
+        m_externalInput.setBounds(topBar.removeFromLeft(72));
+        topBar.removeFromLeft(6);
+        m_inputEnvelope.setBounds(topBar.removeFromLeft(80));
+        topBar.removeFromLeft(8);
+        m_routeHint.setBounds(topBar.removeFromLeft(juce::jmin(topBar.getWidth(), 280)));
 
+        const auto formatGlobal = juce::Rectangle<int>(
+            header.getRight() - kRecordClusterW,
+            header.getY() + kTransportRowH,
+            kRecordClusterW,
+            kModRackRowH);
+        const auto clusterGlobal = recordGlobal.getUnion(formatGlobal);
+        m_recordCluster.setBounds(clusterGlobal);
+        const auto recordLocal = recordGlobal.translated(-clusterGlobal.getX(), -clusterGlobal.getY());
+        const auto formatLocal = formatGlobal.translated(-clusterGlobal.getX(), -clusterGlobal.getY());
+        m_recordCluster.layoutChrome(recordLocal, formatLocal);
+    }
+
+    const int rackWidth =
+        audioEngine().isPluginHosted() ? header.getWidth() : header.getWidth() - kRecordClusterW;
     const auto rackGlobal = juce::Rectangle<int>(
         header.getX(),
         header.getY() + kTransportRowH,
-        header.getWidth() - kRecordClusterW,
+        rackWidth,
         kModRackRowH);
     m_modRack.setBounds(rackGlobal);
-
-    const auto formatGlobal = juce::Rectangle<int>(
-        header.getRight() - kRecordClusterW,
-        header.getY() + kTransportRowH,
-        kRecordClusterW,
-        kModRackRowH);
-    const auto clusterGlobal = recordGlobal.getUnion(formatGlobal);
-    m_recordCluster.setBounds(clusterGlobal);
-    const auto recordLocal = recordGlobal.translated(-clusterGlobal.getX(), -clusterGlobal.getY());
-    const auto formatLocal = formatGlobal.translated(-clusterGlobal.getX(), -clusterGlobal.getY());
-    m_recordCluster.layoutChrome(recordLocal, formatLocal);
 
     area.removeFromTop(6);
 
@@ -397,13 +421,23 @@ void MainComponent::resized()
         component->toFront(false);
     }
     m_cableOverlay.toFront(false);
-    syncPatchPorts();
+    syncRoutesFromHost();
 }
 
 void MainComponent::timerCallback()
 {
     const bool running = audioEngine().isAudioRunning();
-    if (!running)
+    const uint32_t restoreGen = audioEngine().stateRestoreGeneration();
+    if (restoreGen != m_lastStateRestoreGeneration)
+    {
+        m_lastStateRestoreGeneration = restoreGen;
+        if (audioEngine().shouldDrainPendingUiMutations())
+        {
+            audioEngine().getHost().DrainPendingMutations();
+        }
+        syncRoutesFromHost();
+    }
+    else if (audioEngine().shouldDrainPendingUiMutations())
     {
         audioEngine().getHost().DrainPendingMutations();
     }
@@ -426,6 +460,5 @@ void MainComponent::timerCallback()
         m_routeHint.setText({}, juce::dontSendNotification);
     }
 
-    syncPatchPorts();
-    m_cableOverlay.repaint();
+    syncRoutesFromHost();
 }

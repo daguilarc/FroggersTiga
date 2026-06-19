@@ -41,6 +41,7 @@ public:
     void setConnectionChangedCallback(ConnectionChangedFn fn);
 
     void removeCablesForModIndex(uint8_t modIndex);
+    void syncRoutesFromHost();
 
     void paint(juce::Graphics& g) override;
     void mouseDown(const juce::MouseEvent& e) override;

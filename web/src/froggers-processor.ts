@@ -1,6 +1,10 @@
 const EXT_IN_PAD = 0.4;
 const EXT_IN_DRIVE = 2.5;
 
+/** Realtime heap policy (omni 7.2/7.3): malloc once in constructor for in/out/scope
+ *  buffers sized by froggers_max_process_chunk() and SCOPE_SIZE; process() and
+ *  readScopeSamples() reuse those pointers with no WASM malloc/free per quantum. */
+
 function softLimit(x: number): number {
   const x2 = x * x;
   const y = (x * (27 + x2)) / (27 + 9 * x2);
@@ -22,11 +26,14 @@ const WASM_IMPORTS: WebAssembly.Imports = {
   },
 };
 
-const CORE_PAGE_NAMES = ["Audio", "Random S&H", "Reverb", "Filter", "Drive"];
-const HOST_PAGE_NAMES = [...CORE_PAGE_NAMES, "Delay"];
-const HOST_PAGE_COUNT = 6;
-const SCOPE_MOD_INDICES = [0, 4, 5, 6];
-const SCOPE_SIZE = 96;
+import {
+  HOST_PAGE_COUNT,
+  HOST_PAGE_NAMES,
+  SCOPE_SIZE,
+  WEB_WEB_SCOPE_MOD_INDICES,
+  coreKnobLabel,
+  pairArKnobLabel,
+} from "./hostDisplay.generated";
 
 interface WasmExports {
   memory: WebAssembly.Memory;
@@ -59,6 +66,7 @@ interface WasmExports {
     outRPtr: number,
     n: number
   ) => void;
+  froggers_max_process_chunk: () => number;
   froggers_row_name: (host: number, row: number) => number;
   froggers_mod_source_name: (modIndex: number) => number;
   froggers_row_value: (host: number, row: number) => number;
@@ -136,6 +144,12 @@ class FroggersProcessor extends AudioWorkletProcessor {
   private wasmReady = false;
   private processErrorPosted = false;
   private inputPeak = 0;
+  private maxProcessChunk = 0;
+  private inPtr = 0;
+  private outLPtr = 0;
+  private outRPtr = 0;
+  private scopePtr = 0;
+  private heapView: Float32Array | null = null;
 
   private postAssignableModOptions(): void {
     if (!this.wasm || !this.host) {
@@ -153,13 +167,9 @@ class FroggersProcessor extends AudioWorkletProcessor {
         label: this.readCString(this.wasm.froggers_mod_source_name(modIndex)),
       });
     }
-    const ccAvailability = [0, 1].map((modIndex) =>
-      this.wasm!.froggers_mod_source_available(this.host, modIndex) !== 0
-    );
     this.port.postMessage({
       type: "modAvailabilityChanged",
       assignableModOptions,
-      ccAvailability,
     });
   }
 
@@ -176,15 +186,20 @@ class FroggersProcessor extends AudioWorkletProcessor {
       const instance = new WebAssembly.Instance(wasmModule, WASM_IMPORTS);
       this.wasm = instance.exports as unknown as WasmExports;
       this.host = this.wasm.froggers_create();
+      this.maxProcessChunk = this.wasm.froggers_max_process_chunk();
+      this.inPtr = this.wasm.malloc(this.maxProcessChunk * 4);
+      this.outLPtr = this.wasm.malloc(this.maxProcessChunk * 4);
+      this.outRPtr = this.wasm.malloc(this.maxProcessChunk * 4);
+      this.scopePtr = this.wasm.malloc(SCOPE_SIZE * 4);
+      this.refreshHeapView();
       for (let i = 0; i < 8; i++) {
         this.wasm.froggers_set_knob(this.host, i, 0.5);
       }
       this.wasmReady = true;
-      const modSourceNames = SCOPE_MOD_INDICES.map((modIndex) =>
+      const modSourceNames = WEB_SCOPE_MOD_INDICES.map((modIndex) =>
         this.readCString(this.wasm.froggers_mod_source_name(modIndex))
       );
       this.wasm.froggers_set_cc_pair_enabled(this.host, 0, 0);
-      this.wasm.froggers_set_cc_pair_enabled(this.host, 1, 0);
       const assignableModOptions = [];
       const assignableCount = this.wasm.froggers_assignable_mod_count(this.host);
       for (let i = 0; i < assignableCount; i++) {
@@ -202,7 +217,6 @@ class FroggersProcessor extends AudioWorkletProcessor {
         numPages: this.wasm.froggers_num_pages(this.host),
         modSourceNames,
         assignableModOptions,
-        ccAvailability: [false, false],
       });
       this.setHostPage(0);
     } catch (err) {
@@ -295,8 +309,16 @@ class FroggersProcessor extends AudioWorkletProcessor {
     }
   }
 
+  private refreshHeapView(): Float32Array {
+    const buffer = this.wasm!.memory.buffer;
+    if (!this.heapView || this.heapView.buffer !== buffer) {
+      this.heapView = new Float32Array(buffer);
+    }
+    return this.heapView;
+  }
+
   private heapF32(): Float32Array {
-    return new Float32Array(this.wasm!.memory.buffer);
+    return this.refreshHeapView();
   }
 
   private readCString(ptr: number): string {
@@ -322,16 +344,18 @@ class FroggersProcessor extends AudioWorkletProcessor {
   }
 
   private readScopeSamples(modIndex: number): number[] {
-    if (!this.wasm || !this.host) {
+    if (!this.wasm || !this.host || !this.scopePtr) {
       return [];
     }
-    const ptr = this.wasm.malloc(SCOPE_SIZE * 4);
-    const count = this.wasm.froggers_copy_scope_samples(this.host, modIndex, ptr, SCOPE_SIZE);
+    const count = this.wasm.froggers_copy_scope_samples(
+      this.host,
+      modIndex,
+      this.scopePtr,
+      SCOPE_SIZE
+    );
     const heap = this.heapF32();
-    const off = ptr >> 2;
-    const samples = Array.from(heap.subarray(off, off + count));
-    this.wasm.free(ptr);
-    return samples;
+    const off = this.scopePtr >> 2;
+    return Array.from(heap.subarray(off, off + count));
   }
 
   private postScreen(): void {
@@ -393,8 +417,8 @@ class FroggersProcessor extends AudioWorkletProcessor {
       modLevels.push(this.wasm.froggers_mod_level(this.host, i));
     }
 
-    const scopeSamples = SCOPE_MOD_INDICES.map((modIndex) => this.readScopeSamples(modIndex));
-    const modSourceNames = SCOPE_MOD_INDICES.map((modIndex) =>
+    const scopeSamples = WEB_SCOPE_MOD_INDICES.map((modIndex) => this.readScopeSamples(modIndex));
+    const modSourceNames = WEB_SCOPE_MOD_INDICES.map((modIndex) =>
       this.readCString(this.wasm.froggers_mod_source_name(modIndex))
     );
 
@@ -437,39 +461,49 @@ class FroggersProcessor extends AudioWorkletProcessor {
     try {
       const n = outL.length;
       const wasm = this.wasm;
-      const inPtr = wasm.malloc(n * 4);
-      const outLPtr = wasm.malloc(n * 4);
-      const outRPtr = outR ? wasm.malloc(n * 4) : 0;
+      const host = this.host;
       const heap = this.heapF32();
-      const inOff = inPtr >> 2;
-      const outLOff = outLPtr >> 2;
-      const outROff = outRPtr ? outRPtr >> 2 : 0;
+      const inOff = this.inPtr >> 2;
+      const outLOff = this.outLPtr >> 2;
+      const outROff = this.outRPtr >> 2;
+      const maxChunk = this.maxProcessChunk;
+      let offset = 0;
+      let blockPeak = 0;
+
+      while (offset < n) {
+        const chunk = Math.min(n - offset, maxChunk);
+
+        if (this.externalEnabled && input) {
+          for (let i = 0; i < chunk; i++) {
+            const limited = softLimit(EXT_IN_DRIVE * input[offset + i] * EXT_IN_PAD);
+            heap[inOff + i] = limited;
+            const sample = Math.abs(limited);
+            if (sample > blockPeak) {
+              blockPeak = sample;
+            }
+          }
+        } else {
+          heap.fill(0, inOff, inOff + chunk);
+        }
+
+        wasm.froggers_process_stereo(
+          host,
+          this.inPtr,
+          this.outLPtr,
+          outR ? this.outRPtr : 0,
+          chunk
+        );
+        outL.set(heap.subarray(outLOff, outLOff + chunk), offset);
+        if (outR) {
+          outR.set(heap.subarray(outROff, outROff + chunk), offset);
+        }
+        offset += chunk;
+      }
 
       if (this.externalEnabled && input) {
-        let blockPeak = 0;
-        for (let i = 0; i < n; i++) {
-          const limited = softLimit(EXT_IN_DRIVE * input[i] * EXT_IN_PAD);
-          heap[inOff + i] = limited;
-          const sample = Math.abs(limited);
-          if (sample > blockPeak) {
-            blockPeak = sample;
-          }
-        }
         this.inputPeak = this.inputPeak * 0.65 + blockPeak * 0.35;
       } else {
-        heap.fill(0, inOff, inOff + n);
         this.inputPeak *= 0.65;
-      }
-
-      wasm.froggers_process_stereo(this.host, inPtr, outLPtr, outRPtr, n);
-      outL.set(heap.subarray(outLOff, outLOff + n));
-      if (outR && outRPtr) {
-        outR.set(heap.subarray(outROff, outROff + n));
-      }
-      wasm.free(inPtr);
-      wasm.free(outLPtr);
-      if (outRPtr) {
-        wasm.free(outRPtr);
       }
 
       this.frameCount++;

@@ -37,16 +37,16 @@ struct AudioPairArState
         }
     }
 
-    void beginBlock(const float* mods)
+    void beginBlock(const ModMgr* modMgr)
     {
-        m_mods = mods;
+        m_modMgr = modMgr;
     }
 
     void tickSmoothers()
     {
         for (uint8_t i = 0; i < kCount; i++)
         {
-            m_effectiveSmoothed[i] = blendKnob(i, smoothed[i].Process(), m_mods);
+            m_effectiveSmoothed[i] = blendKnob(i, smoothed[i].Process());
         }
     }
 
@@ -98,27 +98,27 @@ struct AudioPairArState
         return index < kCount ? modDepth[index] : 0.0f;
     }
 
-    float getEffectiveKnob(uint8_t index, const float* mods) const
+    float getEffectiveKnob(uint8_t index, const ModMgr* modMgr) const
     {
         if (index >= kCount)
         {
             return 0.0f;
         }
-        return blendKnob(index, knobs[index], mods);
+        return blendKnob(index, knobs[index], modMgr);
     }
 
     float getEffectiveKnob(uint8_t index) const
     {
-        return getEffectiveKnob(index, m_mods);
+        return getEffectiveKnob(index, m_modMgr);
     }
 
-    void randomizeMod(const CvMidiBridge& bridge)
+    void randomizeMod(const CvMidiBridge& bridge, SimHostKind hostKind)
     {
         RGen rgen;
         for (uint8_t i = 0; i < kCount; i++)
         {
             modDepth[i] = rgen.UniGenRange(0.0f, 1.0f);
-            modSource[i] = PickSimRandomModIndex(rgen, bridge);
+            modSource[i] = PickSimRandomModIndex(rgen, bridge, hostKind);
         }
     }
 
@@ -161,19 +161,22 @@ struct AudioPairArState
     std::array<RuntimeParam, kCount> smoothed{};
 
 private:
-    float blendKnob(uint8_t index, float knobValue, const float* mods) const
+    float blendKnob(uint8_t index, float knobValue, const ModMgr* modMgr) const
     {
-        const uint8_t modIndex = modSource[index];
-        const float depth = modDepth[index];
-        if (!mods || modIndex >= ModMgr::x_numMods || modIndex == 255 || depth <= 0.0f)
+        if (!modMgr || index >= kCount || modSource[index] == 255 || modDepth[index] <= 0.0f)
         {
             return knobValue;
         }
-        return std::min(
-            std::max(knobValue * (1.0f - depth) + mods[modIndex] * depth, 0.0f), 1.0f);
+        return modMgr->Modulate(
+            knobValue, static_cast<int>(modSource[index]), modDepth[index]);
+    }
+
+    float blendKnob(uint8_t index, float knobValue) const
+    {
+        return blendKnob(index, knobValue, m_modMgr);
     }
 
     float m_sampleRate = 44100.0f;
-    const float* m_mods = nullptr;
+    const ModMgr* m_modMgr = nullptr;
     std::array<float, kCount> m_effectiveSmoothed{};
 };

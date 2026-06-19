@@ -53,6 +53,7 @@ struct DesktopHostIO
     AudioPairArState m_pairAr;
     CvMidiBridge m_midiBridge;
     DelayState* m_delay = nullptr;
+    SimHostKind m_hostKind = SimHostKind::Desktop;
     std::function<void(int)> m_buttonCallback;
     std::function<void(uint8_t, uint8_t, uint8_t)> m_midiOut;
     SchmidtTrigger m_gateTrigger{0.2f, 0.1f};
@@ -117,7 +118,7 @@ struct DesktopHostIO
                 break;
             case HostMutationType::RandomizePageMod:
                 RandomizePageModWithExtras(
-                    m_pageManager, mutation.page, m_pairAr, m_midiBridge);
+                    m_pageManager, mutation.page, m_pairAr, m_midiBridge, m_hostKind);
                 break;
             case HostMutationType::RandomizeAllPages:
                 RandomizeAllPagesIndependentWithPairAr(m_pageManager, m_pairAr);
@@ -127,17 +128,17 @@ struct DesktopHostIO
                 }
                 break;
             case HostMutationType::RandomizeAllMod:
-                m_pageManager.RandomizeAllPagesModSim(m_midiBridge);
-                m_pairAr.randomizeMod(m_midiBridge);
+                m_pageManager.RandomizeAllPagesModSim(m_midiBridge, m_hostKind);
+                m_pairAr.randomizeMod(m_midiBridge, m_hostKind);
                 if (m_delay)
                 {
-                    m_delay->randomizeMod(m_midiBridge);
+                    m_delay->randomizeMod(m_midiBridge, m_hostKind);
                 }
                 break;
             case HostMutationType::SetPageModSource:
                 if (IsValidSimModAssignment(mutation.modIndex)
                     && (mutation.modIndex == 255
-                        || IsSimModSourceAvailable(mutation.modIndex, m_midiBridge)))
+                        || IsSimModSourceAvailable(mutation.modIndex, m_midiBridge, m_hostKind)))
                 {
                     m_pageManager.SetPageModSource(mutation.page, mutation.row, mutation.modIndex);
                 }
@@ -145,7 +146,7 @@ struct DesktopHostIO
             case HostMutationType::DelaySetModSource:
                 if (m_delay && IsValidSimModAssignment(mutation.modIndex)
                     && (mutation.modIndex == 255
-                        || IsSimModSourceAvailable(mutation.modIndex, m_midiBridge)))
+                        || IsSimModSourceAvailable(mutation.modIndex, m_midiBridge, m_hostKind)))
                 {
                     m_delay->setModSource(mutation.row, mutation.modIndex);
                 }
@@ -159,7 +160,7 @@ struct DesktopHostIO
             case HostMutationType::DelayRandomizeMod:
                 if (m_delay)
                 {
-                    m_delay->randomizeMod(m_midiBridge);
+                    m_delay->randomizeMod(m_midiBridge, m_hostKind);
                 }
                 break;
             case HostMutationType::CycleMorph:
@@ -168,7 +169,7 @@ struct DesktopHostIO
             case HostMutationType::PairArSetModSource:
                 if (IsValidSimModAssignment(mutation.modIndex)
                     && (mutation.modIndex == 255
-                        || IsSimModSourceAvailable(mutation.modIndex, m_midiBridge)))
+                        || IsSimModSourceAvailable(mutation.modIndex, m_midiBridge, m_hostKind)))
                 {
                     m_pairAr.setModSource(mutation.row, mutation.modIndex);
                 }
@@ -323,7 +324,7 @@ struct DesktopHostIO
 
     float GetAudioPairArEffective(uint8_t index) const
     {
-        return m_pairAr.getEffectiveKnob(index, m_pageManager.m_modMgr.m_mods);
+        return m_pairAr.getEffectiveKnob(index, &m_pageManager.m_modMgr);
     }
 
     uint8_t GetAudioPairArModSource(uint8_t index) const
@@ -478,7 +479,7 @@ struct DesktopHostIO
 
     bool IsModSourceAvailable(uint8_t modIndex) const
     {
-        return IsSimModSourceAvailable(modIndex, m_midiBridge);
+        return IsSimModSourceAvailable(modIndex, m_midiBridge, m_hostKind);
     }
 
     void PressButton(int button)
@@ -521,7 +522,7 @@ struct DesktopHostIO
     void ProcessBlock(const float* in, float* out, size_t n)
     {
         tickControls();
-        m_pairAr.beginBlock(m_pageManager.m_modMgr.m_mods);
+        m_pairAr.beginBlock(&m_pageManager.m_modMgr);
         m_engine.ProcessBlock(in, out, n);
         updateMarblesScopeAccum();
         m_midiBridge.tickMidiOut(m_engine.GetEnvelopeLevel(), m_midiOut);

@@ -27,6 +27,49 @@ void PatchCableOverlay::removeCablesForModIndex(uint8_t modIndex)
     }
 }
 
+void PatchCableOverlay::syncRoutesFromHost()
+{
+    for (const InputPort& port : m_inputs)
+    {
+        const uint8_t mod = getModSource(port.page, port.row);
+        const int key = connectionKey(port.page, port.row);
+        if (mod == 255)
+        {
+            m_cableHues.erase(key);
+            continue;
+        }
+        if (m_cableHues.find(key) == m_cableHues.end())
+        {
+            assignCableHue(port.page, port.row);
+        }
+    }
+
+    for (auto it = m_cableHues.begin(); it != m_cableHues.end();)
+    {
+        bool routeActive = false;
+        for (const InputPort& port : m_inputs)
+        {
+            if (connectionKey(port.page, port.row) != it->first)
+            {
+                continue;
+            }
+            if (getModSource(port.page, port.row) != 255)
+            {
+                routeActive = true;
+            }
+            break;
+        }
+        if (!routeActive)
+        {
+            it = m_cableHues.erase(it);
+        }
+        else
+        {
+            ++it;
+        }
+    }
+}
+
 uint8_t PatchCableOverlay::getModSource(uint8_t page, uint8_t row) const
 {
     if (page == AudioPairArLayout::kAudioHostPage

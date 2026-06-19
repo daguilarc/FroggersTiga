@@ -9,7 +9,7 @@ class FroggersTigaApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override { return "FroggersTiga"; }
-    const juce::String getApplicationVersion() override { return "1.0.0"; }
+    const juce::String getApplicationVersion() override { return JUCE_APPLICATION_VERSION_STRING; }
     bool moreThanOneInstanceAllowed() override { return true; }
 
     void initialise(const juce::String&) override

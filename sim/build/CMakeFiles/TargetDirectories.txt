@@ -1,5 +1,0 @@
-/Users/diegoaguilar-canabal/Desktop/FroggersTiga/sim/build/CMakeFiles/Fuegoize_test.dir
-/Users/diegoaguilar-canabal/Desktop/FroggersTiga/sim/build/CMakeFiles/HookIdentity_test.dir
-/Users/diegoaguilar-canabal/Desktop/FroggersTiga/sim/build/CMakeFiles/test.dir
-/Users/diegoaguilar-canabal/Desktop/FroggersTiga/sim/build/CMakeFiles/edit_cache.dir
-/Users/diegoaguilar-canabal/Desktop/FroggersTiga/sim/build/CMakeFiles/rebuild_cache.dir

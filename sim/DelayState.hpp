@@ -163,13 +163,13 @@ struct DelayState
         setKnob(kFuegRow, 0.0f);
     }
 
-    void randomizeMod(const CvMidiBridge& bridge)
+    void randomizeMod(const CvMidiBridge& bridge, SimHostKind hostKind)
     {
         RGen rgen;
         for (uint8_t i = 0; i < kNumRows; i++)
         {
             modDepth[i] = rgen.UniGenRange(0.0f, 1.0f);
-            modSource[i] = PickSimRandomModIndex(rgen, bridge);
+            modSource[i] = PickSimRandomModIndex(rgen, bridge, hostKind);
         }
     }
 

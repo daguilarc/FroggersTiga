@@ -1,4 +1,4 @@
-import { coreKnobLabel, pairArKnobLabel } from "../src/paramDisplayNames.ts";
+import { coreKnobLabel, pairArKnobLabel } from "../src/hostDisplay.generated.ts";
 
 export const PLAY_LABEL = "Play";
 export const STOP_LABEL = "Stop";

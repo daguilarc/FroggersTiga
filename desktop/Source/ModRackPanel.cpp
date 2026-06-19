@@ -1,36 +1,67 @@
 #include "ModRackPanel.h"
 
+#include "HostPanelLayout.hpp"
 #include "ParamDisplayNames.hpp"
 
 #include "DesktopChromeLayout.hpp"
 
+namespace
+{
+constexpr const char* kMarbles1Tooltip =
+    "Random 1 S&H — held random mod CV (0–100%). Steps on Random press. Green LED when CV > 55% while playing.";
+constexpr const char* kMarbles2Tooltip =
+    "Random 2 S&H — held random mod CV (0–100%). Steps on Random press. Green LED when CV > 55% while playing.";
+
+bool isMidiCcModIndex(uint8_t modIndex)
+{
+    return modIndex == 0 || modIndex == 1;
+}
+
+bool includeModRackCell(const HostPanelLayout::ModRackCellSpec& spec)
+{
+#if defined(JucePlugin_Build_VST) || defined(JucePlugin_Build_VST3) || defined(JucePlugin_Build_AU) \
+    || defined(JucePlugin_Build_AUv3)
+    return spec.includeVst;
+#else
+    return spec.includeDesktop;
+#endif
+}
+} // namespace
+
 ModRackPanel::ModRackPanel(DesktopHostIO& host)
     : m_host(host)
-    , m_midiCc1(ParamDisplayNames::forModSource(0), 0, m_host)
-    , m_midiCc2(ParamDisplayNames::forModSource(1), 1, m_host)
-    , m_vcoFeat(ParamDisplayNames::forModSource(4), 4, m_host)
-    , m_marbles1(ParamDisplayNames::forModSource(5), 5, m_host)
-    , m_marbles2(ParamDisplayNames::forModSource(6), 6, m_host)
 {
-    ModModuleBox* boxes[] = {&m_midiCc1, &m_midiCc2, &m_vcoFeat, &m_marbles1, &m_marbles2};
-    for (ModModuleBox* box : boxes)
+    for (const HostPanelLayout::ModRackCellSpec& spec : HostPanelLayout::kModRackCatalog)
     {
-        addAndMakeVisible(box);
+        if (!includeModRackCell(spec))
+        {
+            continue;
+        }
+
+        auto box = std::make_unique<ModModuleBox>(
+            ParamDisplayNames::forModSource(spec.modIndex),
+            spec.modIndex,
+            m_host);
+        if (spec.modIndex == 5)
+        {
+            box->setTooltip(kMarbles1Tooltip);
+        }
+        else if (spec.modIndex == 6)
+        {
+            box->setTooltip(kMarbles2Tooltip);
+        }
+        addAndMakeVisible(*box);
+        m_boxes.push_back(std::move(box));
     }
-    m_marbles1.setTooltip(
-        "Random 1 S&H — held random mod CV (0–100%). Steps on Random press. Green LED when CV > 55% while playing.");
-    m_marbles2.setTooltip(
-        "Random 2 S&H — held random mod CV (0–100%). Steps on Random press. Green LED when CV > 55% while playing.");
     setSize(1200, 72);
 }
 
 void ModRackPanel::refresh(bool audioRunning)
 {
-    ModModuleBox* boxes[] = {&m_midiCc1, &m_midiCc2, &m_vcoFeat, &m_marbles1, &m_marbles2};
-    for (ModModuleBox* box : boxes)
+    for (const std::unique_ptr<ModModuleBox>& box : m_boxes)
     {
         const uint8_t modIndex = box->getModIndex();
-        if (modIndex == 0 || modIndex == 1)
+        if (isMidiCcModIndex(modIndex))
         {
             box->setPatchEnabled(m_host.IsModSourceAvailable(modIndex));
         }
@@ -44,12 +75,11 @@ void ModRackPanel::refresh(bool audioRunning)
 
 void ModRackPanel::collectOutputPorts(std::vector<PatchCableOverlay::OutputPort>& ports) const
 {
-    const ModModuleBox* boxes[] = {&m_midiCc1, &m_midiCc2, &m_vcoFeat, &m_marbles1, &m_marbles2};
-    for (const ModModuleBox* box : boxes)
+    for (const std::unique_ptr<ModModuleBox>& box : m_boxes)
     {
         PatchCableOverlay::OutputPort port;
         port.modIndex = box->getModIndex();
-        port.patchEnabled = (port.modIndex != 0 && port.modIndex != 1)
+        port.patchEnabled = !isMidiCcModIndex(port.modIndex)
                                 || m_host.IsModSourceAvailable(port.modIndex);
         port.screenBounds = box->getOutputJackScreenBounds();
         ports.push_back(port);
@@ -61,22 +91,28 @@ void ModRackPanel::resized()
     using namespace DesktopChromeLayout;
 
     auto area = getLocalBounds().reduced(4);
-    const int rackW = kModRackGroupWidth;
+    const int boxCount = static_cast<int>(m_boxes.size());
+    if (boxCount == 0)
+    {
+        return;
+    }
+
+    const int gapCount = boxCount - 1;
+    const int rackW = boxCount * kModBoxWidth + gapCount * kModBoxGap;
     int boxW = kModBoxWidth;
     if (area.getWidth() < rackW)
     {
         const int shrinkW = juce::jmax(
             kModBoxMinWidth,
-            (area.getWidth() - kModBoxGap * 4) / 5);
+            (area.getWidth() - kModBoxGap * gapCount) / boxCount);
         boxW = shrinkW;
     }
 
-    const int groupW = 5 * boxW + 4 * kModBoxGap;
+    const int groupW = boxCount * boxW + gapCount * kModBoxGap;
     int x = area.getX() + (area.getWidth() - groupW) / 2;
-    ModModuleBox* boxes[] = {&m_midiCc1, &m_midiCc2, &m_vcoFeat, &m_marbles1, &m_marbles2};
-    for (int i = 0; i < 5; ++i)
+    for (const std::unique_ptr<ModModuleBox>& box : m_boxes)
     {
-        boxes[i]->setBounds(x, area.getY(), boxW, area.getHeight());
+        box->setBounds(x, area.getY(), boxW, area.getHeight());
         x += boxW + kModBoxGap;
     }
 }

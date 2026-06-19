@@ -1,22 +1,32 @@
 #pragma once
 
 #include "DelayState.hpp"
+#include "OwnedAllocationGuard.hpp"
 #include "PagedHostIO.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
-#include <vector>
+
+#include "HostPanelLayout.hpp"
 
 struct WasmSimHost
 {
-    static constexpr size_t kScopeSize = 96;
-    static constexpr std::array<uint8_t, 5> kScopeModIndices = {0, 1, 4, 5, 6};
+    static constexpr size_t kScopeSize = HostPanelLayout::kScopeSampleCapacity;
+    static constexpr size_t kProcessChunkSize = 4096;
+    static constexpr std::array<uint8_t, 4> kScopeModIndices = {0, 4, 5, 6};
+
+    static constexpr size_t maxProcessChunk()
+    {
+        return kProcessChunkSize;
+    }
 
     PagedHostIO io;
     DelayState delay;
 
     WasmSimHost()
     {
+        io.m_hostKind = SimHostKind::Web;
         io.Init();
         delay.init(44100.0f);
         io.m_engine.SetSimFxInsert(simDelayInsertCallback, &delay);
@@ -38,16 +48,26 @@ struct WasmSimHost
 
     void processBlock(const float* in, float* outL, float* outR, size_t n, int numOutputChannels)
     {
+        FROGGERS_OWNED_ALLOCATION_GUARD();
         delay.beginBlock(&io.m_pageManager.m_modMgr);
-        std::vector<float> mono(n);
-        io.ProcessBlock(in, mono.data(), n);
+        size_t offset = 0;
+        while (offset < n)
+        {
+            const size_t chunk = std::min(n - offset, kProcessChunkSize);
+            io.ProcessBlock(in + offset, m_monoScratch.data(), chunk);
+            for (size_t i = 0; i < chunk; i++)
+            {
+                outL[offset + i] = m_monoScratch[i];
+            }
+            offset += chunk;
+        }
         pushScopeSamples();
         const StereoFxSpread spread = makeStereoFxSpread(
             delay,
             io.m_engine.getReverbStereoDeltaL(),
             io.m_engine.getReverbStereoDeltaR(),
             io.m_engine.getLastRvMix());
-        applyStereoBus(mono.data(), outL, outR, n, spread, numOutputChannels);
+        applyStereoBus(outL, outL, outR, n, spread, numOutputChannels);
     }
 
     size_t copyScopeSamples(uint8_t modIndex, float* out, size_t maxCount) const
@@ -75,7 +95,7 @@ struct WasmSimHost
     void randomizeAllModIncludingDelay()
     {
         io.RandomizeAllMod();
-        delay.randomizeMod(io.m_midiBridge);
+        delay.randomizeMod(io.m_midiBridge, SimHostKind::Web);
     }
 
     void setMidiCcPairEnabled(uint8_t pairIndex, bool enabled)
@@ -96,12 +116,13 @@ struct WasmSimHost
 
     bool isModSourceAvailable(uint8_t modIndex) const
     {
-        return IsSimModSourceAvailable(modIndex, io.m_midiBridge);
+        return IsSimModSourceAvailable(modIndex, io.m_midiBridge, SimHostKind::Web);
     }
 
 private:
-    std::array<std::array<float, kScopeSize>, 5> m_scopeRing{};
-    std::array<size_t, 5> m_scopeWrite{};
+    std::array<float, kProcessChunkSize> m_monoScratch{};
+    std::array<std::array<float, kScopeSize>, kScopeModIndices.size()> m_scopeRing{};
+    std::array<size_t, kScopeModIndices.size()> m_scopeWrite{};
 
     int scopeSlot(uint8_t modIndex) const
     {

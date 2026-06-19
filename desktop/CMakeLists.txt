@@ -81,6 +81,24 @@ target_link_libraries(FroggersTigaDesktop PRIVATE
     juce::juce_gui_extra
 )
 
+enable_testing()
+
+add_executable(AudioRecorder_test
+    tests/AudioRecorder_test.cpp
+    Source/AudioRecorder.cpp
+    ../sim/OwnedAllocationHooks.cpp
+)
+target_include_directories(AudioRecorder_test PRIVATE
+    "${CORE_DIR}"
+    "${SIM_DIR}"
+    Source
+)
+target_compile_definitions(AudioRecorder_test PRIVATE
+    FROGGERS_RECORDER_TESTING=1
+    FROGGERS_OWNED_ALLOCATION_INSTRUMENT=1
+)
+add_test(NAME AudioRecorder_test COMMAND AudioRecorder_test)
+
 set(FROGGERS_UI_SOURCES
     Source/MainComponent.cpp
     Source/SubModulePanel.cpp
@@ -103,6 +121,13 @@ set(FROGGERS_UI_SOURCES
 option(BUILD_VST "Build FroggersTiga VST3/AU plugin (local-only; sources not in public repo)" OFF)
 
 if(BUILD_VST AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Source/PluginProcessor.cpp")
+    enable_testing()
+    # Task 5.9: instrument/generator identity — IS_SYNTH must remain TRUE.
+    set(FROGGERS_PLUGIN_IS_SYNTH TRUE)
+    if(NOT FROGGERS_PLUGIN_IS_SYNTH)
+        message(FATAL_ERROR "FroggersTigaPlugin requires IS_SYNTH TRUE (task 5.9)")
+    endif()
+
     juce_add_plugin(FroggersTigaPlugin
         PRODUCT_NAME "FroggersTiga"
         COMPANY_NAME "FroggersTiga"
@@ -111,13 +136,14 @@ if(BUILD_VST AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Source/PluginProcessor.cpp"
         PLUGIN_CODE FrTg
         FORMATS VST3 AU
         IS_SYNTH TRUE
-        NEEDS_MIDI_INPUT TRUE
+        NEEDS_MIDI_INPUT FALSE
         COPY_PLUGIN_AFTER_BUILD FALSE
     )
 
     target_sources(FroggersTigaPlugin PRIVATE
         Source/PluginProcessor.cpp
         Source/PluginEditor.cpp
+        Source/HostParameterRegistry.cpp
         ${FROGGERS_UI_SOURCES}
     )
 
@@ -146,4 +172,24 @@ if(BUILD_VST AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Source/PluginProcessor.cpp"
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags
     )
+
+    add_executable(HostParameterRegistry_test tests/HostParameterRegistry_test.cpp)
+    target_include_directories(HostParameterRegistry_test PRIVATE
+        "${CORE_DIR}"
+        "${SIM_DIR}"
+        Source
+    )
+    add_test(NAME HostParameterRegistry_test COMMAND HostParameterRegistry_test)
+
+    add_executable(HostParameterProcessor_test tests/HostParameterProcessor_test.cpp)
+    target_include_directories(HostParameterProcessor_test PRIVATE
+        "${CORE_DIR}"
+        "${SIM_DIR}"
+        Source
+    )
+    target_compile_definitions(HostParameterProcessor_test PRIVATE
+        FROGGERS_VST_IS_SYNTH=1
+        FROGGERS_EXPECT_HOST_PARAM_COUNT=107
+    )
+    add_test(NAME HostParameterProcessor_test COMMAND HostParameterProcessor_test)
 endif()

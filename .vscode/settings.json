@@ -1,5 +1,12 @@
 {
-    "files.associations": {
-        "variant": "cpp"
-    }
+  "files.associations": {
+    "variant": "cpp"
+  },
+  "npm.packageManager": "npm",
+  "npm.scriptExplorerAction": "run",
+  "npm.autoDetect": "on",
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/.emsdk/**": true
+  }
 }

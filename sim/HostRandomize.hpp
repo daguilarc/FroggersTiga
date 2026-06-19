@@ -21,12 +21,13 @@ inline void RandomizePageWithExtras(PageManager& pm,
 inline void RandomizePageModWithExtras(PageManager& pm,
                                        uint8_t page,
                                        AudioPairArState& pairAr,
-                                       const CvMidiBridge& bridge)
+                                       const CvMidiBridge& bridge,
+                                       SimHostKind hostKind)
 {
-    pm.RandomizePageModSim(page, bridge);
+    pm.RandomizePageModSim(page, bridge, hostKind);
     if (page == AudioPairArLayout::kAudioHostPage)
     {
-        pairAr.randomizeMod(bridge);
+        pairAr.randomizeMod(bridge, hostKind);
     }
 }
 

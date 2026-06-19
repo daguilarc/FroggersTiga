@@ -4,19 +4,22 @@ on:
   push:
     tags:
       - 'froggerstiga-v*'
-  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   build-macos:
+    if: github.ref_name == 'froggerstiga-v1'
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify tag matches CMake VERSION
+      - name: Verify release channel tag
         run: ./desktop/scripts/verify-tag-version.sh "${{ github.ref_name }}"
+
+      - name: Verify release metadata
+        run: ./desktop/scripts/verify-release-metadata.sh
 
       - name: Configure and build Release
         run: |
@@ -35,13 +38,18 @@ jobs:
           if-no-files-found: error
 
   build-windows:
+    if: github.ref_name == 'froggerstiga-v1'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Verify tag matches CMake VERSION
+      - name: Verify release channel tag
         shell: bash
         run: ./desktop/scripts/verify-tag-version.sh "${{ github.ref_name }}"
+
+      - name: Verify release metadata
+        shell: bash
+        run: ./desktop/scripts/verify-release-metadata.sh
 
       - name: Install Inno Setup
         run: choco install innosetup -y
@@ -64,6 +72,7 @@ jobs:
           if-no-files-found: error
 
   release:
+    if: github.ref_name == 'froggerstiga-v1'
     runs-on: ubuntu-latest
     needs: [build-macos, build-windows]
     steps:

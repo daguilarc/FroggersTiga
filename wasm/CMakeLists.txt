@@ -34,6 +34,7 @@ set(EXPORTED_FUNCS
     _froggers_randomize_page_mod
     _froggers_process
     _froggers_process_stereo
+    _froggers_max_process_chunk
     _froggers_row_name
     _froggers_mod_source_name
     _froggers_push_midi_cc

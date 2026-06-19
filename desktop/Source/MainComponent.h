@@ -33,6 +33,7 @@ private:
     void timerCallback() override;
     void updateTransportUi();
     void syncPatchPorts();
+    void syncRoutesFromHost();
     void handleRecordClick();
     bool shouldCaptureQwertyMidi() const;
     void recomputeQwertyCcFromHeldKeys();
@@ -58,4 +59,5 @@ private:
     std::unique_ptr<DelayHostBackend> m_delayBackend;
     std::array<std::unique_ptr<SubModulePanel>, 6> m_panels;
     std::array<uint8_t, 128> m_qwertyHeldVelocity{};
+    uint32_t m_lastStateRestoreGeneration = 0;
 };

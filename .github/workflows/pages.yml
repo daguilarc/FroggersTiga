@@ -25,12 +25,23 @@ jobs:
 
       - name: Preflight checks
         run: |
-          chmod +x sim/check_mod_source_labels.sh sim/check_operator_docs_sync.sh sim/check_vcv_panel_bounds.sh sim/check_vcv_panel_svg.sh
-          node scripts/verify-param-display-parity.mjs
+          chmod +x desktop/scripts/verify-release-metadata.sh desktop/scripts/verify-tag-version_test.sh scripts/check_host_artifact_hygiene.sh scripts/check_openspec_hygiene.sh sim/check_host_display_projections.sh sim/check_mod_source_labels.sh sim/check_operator_docs_sync.sh sim/check_vcv_panel_bounds.sh sim/check_vcv_panel_svg.sh
+          scripts/check_host_artifact_hygiene.sh
+          if command -v openspec >/dev/null 2>&1; then
+            scripts/check_openspec_hygiene.sh
+          else
+            echo "SKIP: openspec CLI not installed; run scripts/check_openspec_hygiene.sh locally before OpenSpec closure"
+          fi
+          desktop/scripts/verify-release-metadata.sh
+          node scripts/generate-host-display.mjs --check
+          node scripts/verify-host-display-shape.mjs
+          sim/check_host_display_projections.sh
           sim/check_mod_source_labels.sh
           sim/check_operator_docs_sync.sh
           sim/check_vcv_panel_bounds.sh
           sim/check_vcv_panel_svg.sh
+          sim/check_vcv_midi_boundary.sh
+          sim/check_vcv_license_boundary.sh
 
       - name: Setup emsdk
         uses: emscripten-core/setup-emsdk@v16

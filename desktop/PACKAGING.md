@@ -13,7 +13,7 @@ project(FroggersTigaDesktop VERSION x.y.z)
 All packaging scripts read this version. GitHub Release tag:
 
 ```text
-froggerstiga-v*     ← e.g. froggerstiga-v1 (only release channel; web sim download links)
+froggerstiga-v1     ← only movable release channel (web sim download links)
 ```
 
 Package metadata uses CMake `VERSION`. Move the tag on `main` and force-push to rebuild DMG + EXE on CI.
@@ -100,7 +100,8 @@ to the GitHub Release for that tag. Release notes are rendered from `SIM_MANUAL.
 | Script | Purpose |
 |--------|---------|
 | `read-version.sh` / `read-version.ps1` | Print CMake `VERSION` |
-| `verify-tag-version.sh` | CI gate: tag semver = CMake VERSION |
+| `verify-tag-version.sh` | CI gate: exact release channel tag `froggerstiga-v1` |
+| `verify-release-metadata.sh` | CI gate: CMake, app macro, web package roots, README/SIM_MANUAL current-release headings |
 | `package-macos.sh` | Stage `.app` + Applications link → DMG |
 | `package-windows.ps1` | Run ISCC with `/DMyAppVersion` and `/DReleaseDir` |
 
@@ -110,8 +111,8 @@ Public GitHub releases ship **desktop standalone** and **web sim** only.
 
 | Target | Policy |
 |--------|--------|
-| **VCV Rack plugin** (`vcv/`) | Local-only; directory in `.gitignore` |
-| **VST3 / AU** (`PluginEditor`, `PluginProcessor`) | Local-only; sources in `.gitignore`; `BUILD_VST=OFF` by default |
+| **VCV Rack plugin** (`vcv/`) | Local-only; directory in `.gitignore`. CV-only — no MIDI widgets or CC mod sources; per-parameter CV jacks combine with internal routes. |
+| **VST3 / AU** (`PluginEditor`, `PluginProcessor`) | Local-only; sources in `.gitignore`; `BUILD_VST=OFF` by default. **107** DAW-automatable host parameters; no hosted CC ingest or MIDI Settings — map MIDI in the DAW. Mod rack: VCO Envelope + Random 1/2 only. |
 
 To build VST locally (after restoring plugin sources on your machine):
 
@@ -121,5 +122,7 @@ cmake -B build -DBUILD_VST=ON
 cmake --build build --config Release
 ```
 
-CI (`desktop-release.yml`, `pages.yml`) never sets `BUILD_VST=ON` and never builds `vcv/`.
+Hosted parameter inventory is validated by `HostParameterProcessor_test` (expects exactly 107 parameters). CI (`desktop-release.yml`, `pages.yml`) never sets `BUILD_VST=ON` and never builds `vcv/`.
+
+**Worktree hygiene:** `scripts/verify_clean_rebuild.sh` rebuilds sim, web, and desktop/VST from clean output trees and fails if tracked source drifts or generated host-display files are stale.
 

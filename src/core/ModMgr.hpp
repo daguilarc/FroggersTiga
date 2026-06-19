@@ -22,6 +22,10 @@ struct ModMgr
 
     float Modulate(float knobValue, int index, float amount) const
     {
+        if (index < 0 || index >= static_cast<int>(x_numMods) || index == 255)
+        {
+            return knobValue;
+        }
         if (index < 4 && !m_externalCvActive[index])
         {
             return knobValue;

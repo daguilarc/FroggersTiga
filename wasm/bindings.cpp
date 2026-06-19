@@ -209,6 +209,11 @@ void froggers_process_stereo(WasmSimHost* host, const float* in, float* outL, fl
     host->processBlock(in, outL, outR, static_cast<size_t>(n), outR ? 2 : 1);
 }
 
+int froggers_max_process_chunk()
+{
+    return static_cast<int>(WasmSimHost::maxProcessChunk());
+}
+
 const char* froggers_row_name(WasmSimHost* host, int row)
 {
     if (!host)
@@ -341,7 +346,7 @@ void froggers_delay_randomize_mod(WasmSimHost* host)
 {
     if (host)
     {
-        host->delay.randomizeMod(host->io.m_midiBridge);
+        host->delay.randomizeMod(host->io.m_midiBridge, SimHostKind::Web);
     }
 }
 
@@ -379,7 +384,7 @@ int froggers_assignable_mod_count(WasmSimHost* host)
         return 0;
     }
     int count = 0;
-    static constexpr uint8_t kIndices[] = {0, 1, 4, 5, 6};
+    static constexpr uint8_t kIndices[] = {0, 4, 5, 6};
     for (uint8_t idx : kIndices)
     {
         if (host->isModSourceAvailable(idx))
@@ -396,7 +401,7 @@ int froggers_assignable_mod_index(WasmSimHost* host, int index)
     {
         return -1;
     }
-    static constexpr uint8_t kIndices[] = {0, 1, 4, 5, 6};
+    static constexpr uint8_t kIndices[] = {0, 4, 5, 6};
     int slot = 0;
     for (uint8_t idx : kIndices)
     {

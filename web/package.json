@@ -1,20 +1,21 @@
 {
   "name": "froggers-tiga-sim",
   "private": true,
-  "version": "1.0.3",
+  "version": "1.0.4",
   "type": "module",
   "scripts": {
     "predev": "npm run build:worklet && node ../scripts/check-wasm-present.mjs",
     "dev": "vite",
     "build:worklet": "node ../scripts/build-worklet.mjs",
     "verify:worklet": "node ../scripts/verify-worklet-js.mjs",
-    "build:wasm": "cd ../wasm && (test -f ../.emsdk/emsdk_env.sh && . ../.emsdk/emsdk_env.sh); emcmake cmake -B build && cmake --build build && cp build/froggers.wasm ../web/public/froggers.wasm && node ../scripts/verify-wasm-exports.mjs",
+    "build:wasm": "bash ../scripts/build-wasm.sh",
     "sync:docs": "sh ../scripts/sync-help-docs.sh",
-    "verify:param-display": "node ../scripts/verify-param-display-parity.mjs",
-    "build": "npm run sync:docs && npm run build:worklet && npm run verify:worklet && npm run verify:param-display && tsc && vite build",
+    "verify:host-display": "node ../scripts/generate-host-display.mjs --check && node ../scripts/verify-host-display-shape.mjs",
+    "verify:wasm-render-allocation": "node ../scripts/verify-wasm-render-allocation.mjs",
+    "build": "npm run sync:docs && npm run build:worklet && npm run verify:worklet && npm run verify:host-display && npm run verify:wasm-render-allocation && tsc && vite build",
     "build:all": "npm run build:wasm && npm run build",
     "preview": "vite preview",
-    "test:e2e": "npm run verify:param-display && playwright test",
+    "test:e2e": "npm run verify:host-display && playwright test",
     "test:e2e:ui": "playwright test --ui"
   },
   "devDependencies": {

@@ -2,6 +2,7 @@
 #include "AudioSettingsComponent.h"
 #include "DelayState.hpp"
 #include "HostAudioConfig.hpp"
+#include "OwnedAllocationGuard.hpp"
 #include "MidiSettingsComponent.h"
 #include "TanhSaturator.hpp"
 
@@ -87,9 +88,13 @@ AudioEngine::AudioEngine(bool pluginHosted)
     };
     if (m_pluginHosted)
     {
+        m_host.m_hostKind = SimHostKind::Vst;
+        m_host.m_midiBridge.setCcPairEnabled(0, false);
+        m_host.m_midiBridge.setCcPairEnabled(1, false);
         m_host.SetSampleRate(m_hostSampleRate);
         m_delay.setSampleRate(m_hostSampleRate);
         m_audioRunning = true;
+        prepareRenderBuffers(512);
         return;
     }
 
@@ -112,6 +117,7 @@ AudioEngine::AudioEngine(bool pluginHosted)
     m_host.SetSampleRate(m_hostSampleRate);
     m_delay.setSampleRate(m_hostSampleRate);
     openDefaultMidi();
+    prepareRenderBuffers(512);
 }
 
 AudioEngine::~AudioEngine()
@@ -310,6 +316,31 @@ bool AudioEngine::isPluginHosted() const
     return m_pluginHosted;
 }
 
+bool AudioEngine::shouldDrainPendingUiMutations() const
+{
+    if (!m_pluginHosted)
+    {
+        return !m_audioRunning;
+    }
+    const int64_t lastBlockMs = m_lastHostedBlockTimeMs.load(std::memory_order_relaxed);
+    if (lastBlockMs == 0)
+    {
+        return true;
+    }
+    const int64_t nowMs = static_cast<int64_t>(juce::Time::getMillisecondCounterHiRes());
+    return nowMs - lastBlockMs > 150;
+}
+
+void AudioEngine::notifyStateRestored()
+{
+    m_stateRestoreGeneration.fetch_add(1, std::memory_order_relaxed);
+}
+
+uint32_t AudioEngine::stateRestoreGeneration() const
+{
+    return m_stateRestoreGeneration.load(std::memory_order_relaxed);
+}
+
 void AudioEngine::showAudioSettings(juce::Component* parent)
 {
     if (m_pluginHosted)
@@ -328,10 +359,14 @@ void AudioEngine::showAudioSettings(juce::Component* parent)
 
 void AudioEngine::showMidiSettings(juce::Component* parent)
 {
+    if (m_pluginHosted)
+    {
+        return;
+    }
     juce::DialogWindow::LaunchOptions opts;
-    opts.dialogTitle = m_pluginHosted ? "MIDI CC Settings" : "MIDI Settings";
+    opts.dialogTitle = "MIDI Settings";
     opts.dialogBackgroundColour = juce::Colour(0xff2b3038);
-    opts.content.setOwned(new MidiSettingsComponent(*this, []() {}, m_pluginHosted));
+    opts.content.setOwned(new MidiSettingsComponent(*this, []() {}, false));
     opts.componentToCentreAround = parent;
     opts.useNativeTitleBar = true;
     opts.resizable = true;
@@ -529,6 +564,20 @@ void AudioEngine::exportCapturedAudio(ExportFormat format,
     juce::ignoreUnused(parent);
 }
 
+void AudioEngine::prepareRenderBuffers(int maxExpectedBlockSize)
+{
+    const size_t capacity = static_cast<size_t>(std::max(1, maxExpectedBlockSize));
+    m_renderBlockCapacity = capacity;
+    if (m_inBlock.size() < capacity)
+    {
+        m_inBlock.resize(capacity, 0.0f);
+    }
+    if (m_monoBlock.size() < capacity)
+    {
+        m_monoBlock.resize(capacity, 0.0f);
+    }
+}
+
 void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 {
     syncInputChannelSetup();
@@ -544,6 +593,8 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
     }
     m_host.SetSampleRate(m_hostSampleRate);
     m_delay.setSampleRate(m_hostSampleRate);
+    const int blockSize = device != nullptr ? device->getCurrentBufferSizeSamples() : 512;
+    prepareRenderBuffers(blockSize);
 }
 
 void AudioEngine::audioDeviceStopped()
@@ -596,27 +647,15 @@ float AudioEngine::getHostSampleRate() const
     return m_hostSampleRate;
 }
 
-void AudioEngine::renderSimOutputBlock(const float* inputChannel0,
+void AudioEngine::renderSimOutputChunk(const float* inputChannel0,
                                        int numInputChannels,
                                        float* outL,
                                        float* outR,
                                        int numOutputChannels,
                                        int numSamples)
 {
-    if (!outL)
-    {
-        return;
-    }
-
+    FROGGERS_OWNED_ALLOCATION_GUARD();
     const size_t n = static_cast<size_t>(numSamples);
-    if (m_inBlock.size() < n)
-    {
-        m_inBlock.resize(n, 0.0f);
-    }
-    if (m_monoBlock.size() < n)
-    {
-        m_monoBlock.resize(n, 0.0f);
-    }
     std::fill(m_inBlock.begin(), m_inBlock.begin() + static_cast<ptrdiff_t>(n), 0.0f);
     float inputPeak = 0.0f;
 
@@ -634,7 +673,7 @@ void AudioEngine::renderSimOutputBlock(const float* inputChannel0,
 
     m_host.tickControls();
     m_delay.beginBlock(&m_host.m_pageManager.m_modMgr);
-    m_host.m_pairAr.beginBlock(m_host.m_pageManager.m_modMgr.m_mods);
+    m_host.m_pairAr.beginBlock(&m_host.m_pageManager.m_modMgr);
     m_host.m_engine.ProcessBlock(m_inBlock.data(), m_monoBlock.data(), n);
     m_host.updateMarblesScopeAccum();
     const StereoFxSpread spread = makeStereoFxSpread(
@@ -665,11 +704,6 @@ void AudioEngine::renderSimOutputBlock(const float* inputChannel0,
         }
     }
 
-    if (m_midiOut)
-    {
-        m_host.m_midiBridge.tickMidiOut(m_host.m_engine.GetEnvelopeLevel(), m_host.m_midiOut);
-    }
-
     bool blockNonFinite = false;
     for (size_t i = 0; i < n; i++)
     {
@@ -682,23 +716,59 @@ void AudioEngine::renderSimOutputBlock(const float* inputChannel0,
     m_lastBlockNonFinite = blockNonFinite;
 }
 
+void AudioEngine::renderSimOutputBlock(const float* inputChannel0,
+                                       int numInputChannels,
+                                       float* outL,
+                                       float* outR,
+                                       int numOutputChannels,
+                                       int numSamples)
+{
+    if (!outL || numSamples <= 0)
+    {
+        return;
+    }
+
+    const int capacity = static_cast<int>(m_renderBlockCapacity);
+    if (numSamples <= capacity)
+    {
+        renderSimOutputChunk(inputChannel0, numInputChannels, outL, outR, numOutputChannels, numSamples);
+    }
+    else
+    {
+        int offset = 0;
+        while (offset < numSamples)
+        {
+            const int chunk = std::min(numSamples - offset, capacity);
+            const float* inPtr =
+                inputChannel0 && numInputChannels > 0 ? inputChannel0 + offset : nullptr;
+            float* chunkOutR = outR != nullptr ? outR + offset : nullptr;
+            renderSimOutputChunk(
+                inPtr, numInputChannels, outL + offset, chunkOutR, numOutputChannels, chunk);
+            offset += chunk;
+        }
+    }
+
+    if (m_midiOut)
+    {
+        m_host.m_midiBridge.tickMidiOut(m_host.m_engine.GetEnvelopeLevel(), m_host.m_midiOut);
+    }
+}
+
 void AudioEngine::processHostedBlock(const float* inputChannelData,
                                      int numInputChannels,
                                      float* outputChannelDataLeft,
                                      float* outputChannelDataRight,
                                      int numOutputChannels,
-                                     int numSamples,
-                                     const juce::MidiBuffer& midiIn)
+                                     int numSamples)
 {
     if (!m_audioRunning || !outputChannelDataLeft)
     {
         return;
     }
 
-    for (const juce::MidiMessageMetadata metadata : midiIn)
-    {
-        ingestMidiMessage(metadata.getMessage());
-    }
+    m_lastHostedBlockTimeMs.store(
+        static_cast<int64_t>(juce::Time::getMillisecondCounterHiRes()),
+        std::memory_order_relaxed);
 
     const float* inputChannel0 =
         inputChannelData && numInputChannels > 0 ? inputChannelData : nullptr;

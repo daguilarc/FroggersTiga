@@ -22,6 +22,7 @@ struct PagedHostIO
     FroggersEngine m_engine;
     AudioPairArState m_pairAr;
     CvMidiBridge m_midiBridge;
+    SimHostKind m_hostKind = SimHostKind::Desktop;
     std::function<void(int)> m_buttonCallback;
     SchmidtTrigger m_gateTrigger{0.2f, 0.1f};
     float m_prevCv[4]{0.0f, 0.0f, 0.0f, 0.0f};
@@ -81,7 +82,7 @@ struct PagedHostIO
         {
             return;
         }
-        if (modIndex != 255 && !IsSimModSourceAvailable(modIndex, m_midiBridge))
+        if (modIndex != 255 && !IsSimModSourceAvailable(modIndex, m_midiBridge, m_hostKind))
         {
             return;
         }
@@ -125,8 +126,8 @@ struct PagedHostIO
 
     void RandomizeAllMod()
     {
-        m_pageManager.RandomizeAllPagesModSim(m_midiBridge);
-        m_pairAr.randomizeMod(m_midiBridge);
+        m_pageManager.RandomizeAllPagesModSim(m_midiBridge, m_hostKind);
+        m_pairAr.randomizeMod(m_midiBridge, m_hostKind);
     }
 
     void RandomizePage(uint8_t page)
@@ -136,7 +137,7 @@ struct PagedHostIO
 
     void RandomizePageMod(uint8_t page)
     {
-        RandomizePageModWithExtras(m_pageManager, page, m_pairAr, m_midiBridge);
+        RandomizePageModWithExtras(m_pageManager, page, m_pairAr, m_midiBridge, m_hostKind);
     }
 
     void SetMidiCcPairEnabled(uint8_t pairIndex, bool enabled)
@@ -156,7 +157,7 @@ struct PagedHostIO
 
     bool IsModSourceAvailable(uint8_t modIndex) const
     {
-        return IsSimModSourceAvailable(modIndex, m_midiBridge);
+        return IsSimModSourceAvailable(modIndex, m_midiBridge, m_hostKind);
     }
 
     void NudgeVco3Morph()
@@ -190,7 +191,7 @@ struct PagedHostIO
         {
             return;
         }
-        if (modIndex != 255 && !IsSimModSourceAvailable(modIndex, m_midiBridge))
+        if (modIndex != 255 && !IsSimModSourceAvailable(modIndex, m_midiBridge, m_hostKind))
         {
             return;
         }
@@ -214,7 +215,7 @@ struct PagedHostIO
 
     float GetAudioPairArEffective(uint8_t index) const
     {
-        return m_pairAr.getEffectiveKnob(index, m_pageManager.m_modMgr.m_mods);
+        return m_pairAr.getEffectiveKnob(index, &m_pageManager.m_modMgr);
     }
 
     uint8_t GetAudioPairArModSource(uint8_t index) const
@@ -238,7 +239,7 @@ struct PagedHostIO
         {
             return;
         }
-        if (modIndex != 255 && !IsSimModSourceAvailable(modIndex, m_midiBridge))
+        if (modIndex != 255 && !IsSimModSourceAvailable(modIndex, m_midiBridge, m_hostKind))
         {
             return;
         }
@@ -335,7 +336,7 @@ struct PagedHostIO
     void ProcessBlock(const float* in, float* out, size_t n)
     {
         tickControls();
-        m_pairAr.beginBlock(m_pageManager.m_modMgr.m_mods);
+        m_pairAr.beginBlock(&m_pageManager.m_modMgr);
         m_engine.ProcessBlock(in, out, n);
     }
 
