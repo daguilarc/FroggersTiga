@@ -5,6 +5,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+if [[ ! -f "$ROOT/vcv/LICENSE" ]]; then
+  echo "SKIP: vcv/LICENSE not present (local-only tree)"
+  exit 0
+fi
+
 fail=0
 
 if ! rg -q 'GPL-3.0' vcv/LICENSE; then
