@@ -26,20 +26,22 @@ function assertEqual(actual, expected, label) {
   }
 }
 
-const desktopModRack = readConst("DESKTOP_MOD_RACK_INDICES");
-const webScopeIndices = readConst("WEB_SCOPE_MOD_INDICES");
-const webModBaySpec = readConst("WEB_MOD_BAY_SPEC");
-const vstModRack = readConst("VST_MOD_RACK_INDICES");
-const vcvModRack = readConst("VCV_MOD_RACK_INDICES");
+const checks = [
+  ["DESKTOP_MOD_RACK_INDICES", [0, 1, 4, 5, 6], "desktop mod rack"],
+  ["WEB_SCOPE_MOD_INDICES", [0, 4, 5, 6], "web scope indices"],
+  [
+    "WEB_MOD_BAY_SPEC",
+    [0, 4, 5, 6],
+    "web mod bay",
+    (cells) => cells.map((cell) => cell.modIndex),
+  ],
+  ["VST_MOD_RACK_INDICES", [4, 5, 6], "vst mod rack"],
+  ["VCV_MOD_RACK_INDICES", [4, 5, 6], "vcv mod rack"],
+];
 
-assertEqual(desktopModRack, [0, 1, 4, 5, 6], "desktop mod rack");
-assertEqual(webScopeIndices, [0, 4, 5, 6], "web scope indices");
-assertEqual(
-  webModBaySpec.map((cell) => cell.modIndex),
-  [0, 4, 5, 6],
-  "web mod bay"
-);
-assertEqual(vstModRack, [4, 5, 6], "vst mod rack");
-assertEqual(vcvModRack, [4, 5, 6], "vcv mod rack");
+for (const [name, expected, label, project] of checks) {
+  const actual = project ? project(readConst(name)) : readConst(name);
+  assertEqual(actual, expected, label);
+}
 
 console.log("host display projection shape ok");
