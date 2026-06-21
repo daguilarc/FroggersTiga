@@ -401,11 +401,12 @@ void MainComponent::resized()
     area.removeFromBottom(6);
 
     const int panelW = area.getWidth() / 6;
-    for (int i = 0; i < 6; i++)
+    for (int col = 0; col < 5; col++)
     {
-        const int w = (i == 5) ? area.getWidth() : panelW;
-        m_panels[static_cast<size_t>(i)]->setBounds(area.removeFromLeft(w));
+        const uint8_t pageIndex = kDesktopCoreColumnPageOrder[static_cast<size_t>(col)];
+        m_panels[pageIndex]->setBounds(area.removeFromLeft(panelW));
     }
+    m_panels[5]->setBounds(area);
 
     m_cableOverlay.setBounds(getLocalBounds());
     juce::Component* transport[] = {&m_play,

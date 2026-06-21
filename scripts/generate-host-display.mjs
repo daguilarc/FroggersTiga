@@ -71,6 +71,12 @@ function scopeCapacityFromHpp(text) {
   return Number(match[1]);
 }
 
+function modLedFullBrightnessFromHpp(text) {
+  const match = text.match(/kModLedFullBrightnessCv\s*=\s*([\d.]+)f/);
+  if (!match) throw new Error("could not parse kModLedFullBrightnessCv from ModLedBrightness.hpp");
+  return Number(match[1]);
+}
+
 function projectModBay(catalog, hostKey) {
   return catalog
     .filter((row) => row[hostKey])
@@ -83,6 +89,7 @@ function emitTs({
   pairLabels,
   globalStrip,
   scopeSize,
+  modLedFullBrightnessCv,
   desktopModBay,
   webModBay,
   vstModBay,
@@ -98,6 +105,7 @@ export const HOST_PAGE_KNOB_LABELS: readonly (readonly string[])[] = ${JSON.stri
 export const PAIR_AR_KNOB_LABELS = ${JSON.stringify(pairLabels)} as const;
 export const GLOBAL_STRIP_LABELS = ${JSON.stringify(globalStrip)} as const;
 export const SCOPE_SIZE = ${scopeSize} as const;
+export const MOD_LED_FULL_BRIGHTNESS_CV = ${modLedFullBrightnessCv} as const;
 export const WEB_MOD_BAY_SPEC = ${JSON.stringify(webModBay)} as const;
 export const WEB_SCOPE_MOD_INDICES = ${JSON.stringify(webModBay.map((c) => c.modIndex))} as const;
 export const DESKTOP_MOD_RACK_INDICES = ${JSON.stringify(desktopModBay.map((c) => c.modIndex))} as const;
@@ -105,6 +113,18 @@ export const VST_MOD_RACK_INDICES = ${JSON.stringify(vstModBay.map((c) => c.modI
 export const VCV_MOD_RACK_INDICES = ${JSON.stringify(vcvModBay.map((c) => c.modIndex))} as const;
 
 export type ModBaySpec = { modIndex: number; kind: "scope" | "led" };
+
+export function modLedDisplayBrightness(cv01: number, active: boolean): number {
+  if (!active) {
+    return 0;
+  }
+  const clamped = Math.min(Math.max(cv01, 0), 1);
+  if (clamped >= MOD_LED_FULL_BRIGHTNESS_CV) {
+    return 1;
+  }
+  const normalized = clamped / MOD_LED_FULL_BRIGHTNESS_CV;
+  return normalized * normalized;
+}
 
 export function coreKnobLabel(hostPage: number, row: number): string {
   return HOST_PAGE_KNOB_LABELS[hostPage]?.[row] ?? "";
@@ -118,6 +138,7 @@ export function pairArKnobLabel(index: number): string {
 
 const paramHpp = readFileSync(join(root, "sim/ParamDisplayNames.hpp"), "utf8");
 const layoutHpp = readFileSync(join(root, "sim/HostPanelLayout.hpp"), "utf8");
+const modLedHpp = readFileSync(join(root, "sim/ModLedBrightness.hpp"), "utf8");
 const catalog = modCatalogFromHpp(layoutHpp);
 const payload = {
   pages: pagesFromHpp(paramHpp),
@@ -125,6 +146,7 @@ const payload = {
   pairLabels: pairFromHpp(paramHpp),
   globalStrip: globalStripFromHpp(paramHpp),
   scopeSize: scopeCapacityFromHpp(layoutHpp),
+  modLedFullBrightnessCv: modLedFullBrightnessFromHpp(modLedHpp),
   desktopModBay: projectModBay(catalog, "includeDesktop"),
   webModBay: projectModBay(catalog, "includeWeb"),
   vstModBay: projectModBay(catalog, "includeVst"),

@@ -8,6 +8,7 @@ export const HOST_PAGE_KNOB_LABELS: readonly (readonly string[])[] = [["VCO1","V
 export const PAIR_AR_KNOB_LABELS = ["Att. 1+2","Rel. 1+2","Att. 2+3","Rel. 2+3"] as const;
 export const GLOBAL_STRIP_LABELS = ["Rand All","Rand Mods","Rand Resample","Rand waveforms"] as const;
 export const SCOPE_SIZE = 96 as const;
+export const MOD_LED_FULL_BRIGHTNESS_CV = 0.55 as const;
 export const WEB_MOD_BAY_SPEC = [{"modIndex":0,"kind":"scope"},{"modIndex":4,"kind":"scope"},{"modIndex":5,"kind":"led"},{"modIndex":6,"kind":"led"}] as const;
 export const WEB_SCOPE_MOD_INDICES = [0,4,5,6] as const;
 export const DESKTOP_MOD_RACK_INDICES = [0,1,4,5,6] as const;
@@ -15,6 +16,18 @@ export const VST_MOD_RACK_INDICES = [4,5,6] as const;
 export const VCV_MOD_RACK_INDICES = [4,5,6] as const;
 
 export type ModBaySpec = { modIndex: number; kind: "scope" | "led" };
+
+export function modLedDisplayBrightness(cv01: number, active: boolean): number {
+  if (!active) {
+    return 0;
+  }
+  const clamped = Math.min(Math.max(cv01, 0), 1);
+  if (clamped >= MOD_LED_FULL_BRIGHTNESS_CV) {
+    return 1;
+  }
+  const normalized = clamped / MOD_LED_FULL_BRIGHTNESS_CV;
+  return normalized * normalized;
+}
 
 export function coreKnobLabel(hostPage: number, row: number): string {
   return HOST_PAGE_KNOB_LABELS[hostPage]?.[row] ?? "";

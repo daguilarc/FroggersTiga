@@ -8,18 +8,18 @@ This guide covers the **desktop**, **web**, and **plugin** simulators. On-screen
 
 1. Wait for **Engine ready — click Play** (web) or open the desktop app.
 2. Click **Play** — VCO output is audible with **External / Ext. In.** off.
-3. Use page pills or **◀ ▶** to switch pages (Audio → Random → Reverb → Filter → Drive → Delay).
+3. **Web:** use page pills or **◀ ▶** to switch pages in host page order (Audio → Random → Reverb → Filter → Drive → Delay). **Desktop:** all five core panels are visible at once — output FX columns read Drive → Filter → Reverb left-to-right (see [Desktop host guide](#desktop-standalone)).
 4. Turn knobs 1–7 for parameters; knob 8 is **Crispy** on every page (see Global controls).
 5. To modulate a knob, expand **Mod sources** (web) or use the mod rack (desktop) — covered in Mod bay below.
 
 ## Layout
 
-Six pages — **Audio**, **Random**, **Reverb**, **Filter**, **Drive**, and **Delay** — each with eight knobs. Rows 1–7 are page parameters; row 8 is always **Crispy**.
+Six host pages — **Audio**, **Random**, **Reverb**, **Filter**, **Drive**, and **Delay** — each with eight knobs. Rows 1–7 are page parameters; row 8 is always **Crispy**. Host **page index** order (web pills, Field hardware) is fixed; desktop standalone **column** order permutes pages 4/3/2 to match output FX signal flow.
 
 | Host | How you navigate |
 |------|------------------|
-| **Web** | One page at a time; swipe or use pills |
-| **Desktop** | Five adjacent panels plus a **Delay** overlay |
+| **Web** | One page at a time; swipe or use pills (page index order above) |
+| **Desktop** | Five adjacent panels (**Drive → Filter → Reverb** among output FX columns) plus a **Delay** overlay |
 | **VST / AU** | Same layout as desktop; the DAW runs transport |
 
 ## Global controls
@@ -95,7 +95,7 @@ Disable a CC input to grey its mod column, block new routes, clear existing ones
 - **Desktop standalone:** MIDI CC 1, MIDI CC 2, and VCO Envelope scopes; Random 1/2 LEDs.
 - **VST / AU:** VCO Envelope scope only (mod indices 4/5/6); Random 1/2 LEDs — no CC scopes.
 - **VCV Rack:** Random 1/2 LEDs only — no scopes or MIDI widgets.
-- **Random 1 S&H** and **Random 2 S&H** show a green LED while audio runs: **green** when held CV is above **55%** of full scale; **dim** at or below 55%, or when audio is stopped.
+- **Random 1 S&H** and **Random 2 S&H** show a green LED while audio runs: brightness tracks held CV proportionally (quadratic curve, full green at **55%** and above); dark when audio is stopped.
 
 ### Random S&H
 
@@ -211,7 +211,7 @@ Dual sample-and-hold random CV. Knobs configure two independent bags; **Random 1
 
 ### Desktop (standalone)
 
-- Five adjacent submodule panels (no page switching) plus a **Delay** overlay page.
+- Five adjacent submodule panels (no page switching) plus a **Delay** overlay page. Left-to-right columns are **Audio → Random S&H → Drive → Filter → Reverb** (host pages 0, 1, 4, 3, 2) so the output FX segment matches signal order (Drive in `FrogBlock`, then filter stages, then reverb wet/dry); host page indices and Field hardware page order are unchanged.
 - **Mod rack** with patch cables — drag from a mod source to a knob to assign modulation (including the four pair-sum AR jacks on the Audio panel bottom band).
 - **MIDI Settings** — two CC→CV inputs (MIDI CC 1 and MIDI CC 2, each Channel + CC + **On** enable toggle) plus hardware MIDI Out for VCO envelope export. CC 1 defaults **On**; CC 2 defaults **Off**.
 - **Ext. In.** — requires **Ext. In. on + Play**; routes mic, line-in, or USB interface input to the engine. macOS may prompt for audio input access on first capture.
@@ -250,6 +250,8 @@ The VCV plugin is **local-only** (`vcv/` in `.gitignore`; not built on CI).
 
 ### v1.0.4
 
+- Desktop standalone output FX columns read **Drive → Filter → Reverb** left-to-right to match signal flow (host page indices unchanged)
+- Random mod rack LEDs (indices 5/6) use level-proportional brightness on desktop, web, VST/AU, and VCV — shared curve, full green at ~55% CV
 - Global **Randomize / Randmod / Rand All** strip moved below **External MIDI** on web and desktop (all viewports)
 
 ### v1.0.3

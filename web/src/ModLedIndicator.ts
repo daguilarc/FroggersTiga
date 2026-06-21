@@ -1,4 +1,4 @@
-const LED_ON_THRESHOLD = 0.55;
+import { modLedDisplayBrightness } from "./hostDisplay.generated";
 
 export class ModLedIndicator {
   readonly element: HTMLDivElement;
@@ -14,11 +14,14 @@ export class ModLedIndicator {
     this.ledEl.className = "mod-led";
     this.element.appendChild(labelEl);
     this.element.appendChild(this.ledEl);
+    this.setLevel(0, false);
   }
 
-  setLevel(level: number): void {
-    const clamped = Math.min(Math.max(level, 0), 1);
-    this.ledEl.dataset.on = clamped > LED_ON_THRESHOLD ? "true" : "false";
+  setLevel(level: number, active: boolean): void {
+    const brightness = modLedDisplayBrightness(level, active);
+    const formatted = brightness.toFixed(3);
+    this.ledEl.dataset.brightness = formatted;
+    this.ledEl.style.setProperty("--mod-led-brightness", formatted);
   }
 
   setLabel(label: string): void {

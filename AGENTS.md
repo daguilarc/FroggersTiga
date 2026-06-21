@@ -1,5 +1,22 @@
 # Agent instructions — FroggersTiga
 
+## Superpowers skills are for execution and debugging
+
+Do not invoke or follow any `superpowers:*` skill for general exploration,
+brainstorming, planning, design, or other creative tasks. In particular,
+`superpowers:using-superpowers` and `superpowers:brainstorming` must not activate for
+those tasks.
+
+Superpowers skills may be used when the user explicitly asks to debug, diagnose, or
+audit something, including read-only debugging without an explicitly requested fix.
+They may also be used when the user explicitly asks to execute, implement, or modify
+code or project files. Use only the Superpowers skills relevant to the requested work;
+do not invoke them merely because a conversation started.
+
+When selecting settings for delegated work, choose the cheapest level of reasoning
+effort sufficient for the problem. Describe the choice in terms of effort, complexity,
+and risk—not as using a "dumber" or less capable model.
+
 ## Desktop releases (mandatory)
 
 **There is exactly one desktop release channel:** [`froggerstiga-v1`](https://github.com/daguilarc/FroggersTiga/releases/tag/froggerstiga-v1).

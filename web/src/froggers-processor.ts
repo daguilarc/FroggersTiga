@@ -30,7 +30,7 @@ import {
   HOST_PAGE_COUNT,
   HOST_PAGE_NAMES,
   SCOPE_SIZE,
-  WEB_WEB_SCOPE_MOD_INDICES,
+  WEB_SCOPE_MOD_INDICES,
   coreKnobLabel,
   pairArKnobLabel,
 } from "./hostDisplay.generated";

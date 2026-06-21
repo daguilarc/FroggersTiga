@@ -18,7 +18,7 @@ await esbuild.build({
   format: "esm",
   target: "es2020",
   platform: "browser",
-  bundle: false,
+  bundle: true,
 });
 
 console.log(`build-worklet: OK → ${outfile}`);

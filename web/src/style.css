@@ -632,6 +632,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  --mod-led-brightness: 0;
+  background: #21262d;
 }
 
 .mod-led::before {
@@ -639,11 +641,8 @@ body {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #21262d;
-}
-
-.mod-led[data-on="true"]::before {
   background: var(--accent);
+  opacity: var(--mod-led-brightness);
 }
 
 @media (min-width: 721px) {

@@ -8,9 +8,9 @@
 namespace
 {
 constexpr const char* kMarbles1Tooltip =
-    "Random 1 S&H — held random mod CV (0–100%). Steps on Random press. Green LED when CV > 55% while playing.";
+    "Random 1 S&H — held random mod CV (0–100%). Steps on Rand Resample. Green brightness tracks CV level (full at ~55%) while playing.";
 constexpr const char* kMarbles2Tooltip =
-    "Random 2 S&H — held random mod CV (0–100%). Steps on Random press. Green LED when CV > 55% while playing.";
+    "Random 2 S&H — held random mod CV (0–100%). Steps on Rand Resample. Green brightness tracks CV level (full at ~55%) while playing.";
 
 bool isMidiCcModIndex(uint8_t modIndex)
 {

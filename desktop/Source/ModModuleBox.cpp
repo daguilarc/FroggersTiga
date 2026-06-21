@@ -1,10 +1,11 @@
 #include "ModModuleBox.h"
 
+#include "ModLedBrightness.hpp"
+
 namespace
 {
 constexpr uint8_t kMarblesMod1 = 5;
 constexpr uint8_t kMarblesMod2 = 6;
-constexpr float kLedOnThreshold = 0.55f;
 
 bool isMarblesMod(uint8_t modIndex)
 {
@@ -76,9 +77,14 @@ void ModModuleBox::paint(juce::Graphics& g)
         const float cx = indicatorArea.getCentreX();
         const float cy = indicatorArea.getCentreY();
         const float radius = 8.0f;
-        const bool on = m_audioRunning && m_lastLevel > kLedOnThreshold;
-        g.setColour(on ? juce::Colour(0xff3fb950) : juce::Colour(0xff21262d));
+        const float brightness = ModLedDisplayBrightness(m_lastLevel, m_audioRunning);
+        g.setColour(juce::Colour(0xff21262d));
         g.fillEllipse(cx - radius, cy - radius, radius * 2.0f, radius * 2.0f);
+        if (brightness > 0.f)
+        {
+            g.setColour(juce::Colour(0xff3fb950).withAlpha(brightness));
+            g.fillEllipse(cx - radius, cy - radius, radius * 2.0f, radius * 2.0f);
+        }
     }
 
     g.setColour(m_patchEnabled ? juce::Colour(0xff3d4450) : juce::Colour(0xff3d4450).withAlpha(0.4f));

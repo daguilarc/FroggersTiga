@@ -229,7 +229,7 @@ function renderModBay(
       entry.scope.draw();
       continue;
     }
-    entry.led.setLevel(running ? level : 0);
+    entry.led.setLevel(level, running);
   }
   modBayEl.classList.toggle("collapsed", !modBayExpanded);
   modBayToggle.setAttribute("aria-expanded", String(modBayExpanded));
@@ -1108,7 +1108,7 @@ async function initWorklet(): Promise<void> {
       }
       return WebAssembly.compile(await response.arrayBuffer());
     }),
-    audioContext.audioWorklet.addModule(processorUrl),
+    audioContext.audioWorklet.addModule(processorUrl, { type: "module" } as WorkletOptions),
   ]);
   workletNode = new AudioWorkletNode(audioContext, "froggers-processor", {
     processorOptions: { wasmModule },
