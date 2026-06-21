@@ -25,5 +25,6 @@ openspec/.sessions/
 openspec/**/.sessions/
 # Cursor IDE agent indexing — local-only
 .cursorignore
+AGENTS.md
 .DS_Store
 **/.DS_Store
