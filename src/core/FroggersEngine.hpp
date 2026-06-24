@@ -659,8 +659,7 @@ struct FroggersEngine
         return (p12 + v2 + p23) * (1.0f / 3.0f);
     }
 
-    float MixExternalAndOsc(float input, float v1, float v2, float v3,
-                          float fueg, float olvl, bool hasExternal)
+    float MixExternalAndOsc(float input, float v1, float v2, float v3, float olvl, bool hasExternal)
     {
         float oscMix = MixOscVoices(v1, v2, v3);
         if (!hasExternal)
@@ -668,10 +667,7 @@ struct FroggersEngine
             return olvl * oscMix;
         }
 
-        float parallel = (input * v1 + input * v2 + input * v3) * (1.0f / 3.0f);
-        float product = input * v1 * v2 * v3;
-        float t = ZeroedExp(fueg);
-        return (1.0f - t) * product + t * parallel;
+        return (input * v1 + input * v2 + input * v3) * (1.0f / 3.0f);
     }
 
     float ApplyOutputFx(float output)
@@ -701,7 +697,7 @@ struct FroggersEngine
         m_envelopeLevel = m_extEnvFilter.Process(std::fabs(extIn));
         m_extGate.Process(m_envelopeLevel);
         bool hasExternal = m_extGate.m_state;
-        float chainIn = MixExternalAndOsc(extIn, v1, v2, v3, fuegKnob, olvl, hasExternal);
+        float chainIn = MixExternalAndOsc(extIn, v1, v2, v3, olvl, hasExternal);
         float output = m_frogBlock.Process(chainIn);
         return ApplyOutputFx(output);
     }

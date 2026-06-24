@@ -15,7 +15,7 @@ Firmware for **Daisy Field**: external input plus three VCOs, drive/DSP, algorit
 
 ```text
 external input + three VCOs
-  → mix (FUEG continuum when external present; VCO-only when silent)
+  → mix (parallel ring mod when external present; VCO-only at OLVL when silent)
   → Drive (polynomial drive, fuzz, digital reorganizer, SRR)
   → Pure delay
   → Comb filter
@@ -24,14 +24,7 @@ external input + three VCOs
   → output
 ```
 
-**Mix topology** (only when external audio is detected above ~−40 dBFS):
-
-| `FUEG` | Topology |
-|--------|----------|
-| Left (0) | Product ring mod: external × VCO1 × VCO2 × VCO3 |
-| Right (1) | Parallel ring mod: average of external × each VCO |
-
-Sweeping `FUEG` left → right (or back) morphs between those two ring-mod topologies. The blend uses an exponential curve (same family as PM/coupling), so the sound stays near each endpoint longer and transitions faster toward the other. When the input is silent, the firmware plays **VCO-only** (`OLVL` × oscillator mix); the continuum does not apply without external audio.
+**External input** (when audio is detected above ~−40 dBFS): each VCO ring-modulates the external signal; the firmware averages those three products — parallel ring mod. When the input is silent, you hear **VCO-only** at `OLVL` × the oscillator mix. `FUEG` does not change the external ring-mod mix.
 
 Modulation and Marbles run in parallel; they shape **parameter values**, not a separate audio bus.
 
@@ -63,7 +56,7 @@ See [Knob tracking](#knob-tracking) for what the display symbols mean and how to
 
 | Page   | Knobs 1–7 fuegoized? | Knob 8 |
 |--------|----------------------|--------|
-| Audio  | Yes                  | `FUEG` (also PM3 + mix topology — see Audio page) |
+| Audio  | Yes                  | `FUEG` (also PM3 on Audio page — see below) |
 | Marbles| Yes                  | `FUEG` |
 | Reverb | Yes                  | `FUEG` |
 | Filter | Yes                  | `FUEG` |
@@ -71,14 +64,13 @@ See [Knob tracking](#knob-tracking) for what the display symbols mean and how to
 
 `B1` randomize **does not** randomize `FUEG` itself (so you can randomize the other seven without losing your fuego setting).
 
-### Audio page exception: PM3 and mix topology
+### Audio page exception: PM3
 
-On the **Audio** page only, the **stored Audio-page `FUEG` value** (raw, not fuegoized) is read for two extra DSP roles — always from the Audio page parameter store, even when you are viewing another page:
+On the **Audio** page only, the **stored Audio-page `FUEG` value** (raw, not fuegoized) is read for one extra DSP role — always from the Audio page parameter store, even when you are viewing another page:
 
 1. **PM3 depth** — extra phase modulation from **VCO2 → VCO3** when the cross-coupler is on the 2→3 side.
-2. **Mix topology** — morph from product ring mod (left) ↔ parallel ring mod (right) when external audio is present.
 
-So on Audio, knob 8 is the page fuegoizer **and** PM3 depth **and** the external/VCO entanglement continuum.
+So on Audio, knob 8 is the page fuegoizer **and** PM3 depth.
 
 Diego designed it this way because he ran out of parameters on this page and got lazy, sorry.
 
@@ -168,7 +160,13 @@ If `M1..M4` is assigned but no active CV is detected, that mod source is **ignor
 
 ## Audio page
 
-Three oscillators mixed into the input, with cross-coupling and three PM paths.
+Three oscillators feed the mix, with cross-coupling and three phase-mod paths.
+
+**Cross-coupler (`XCPL`, knob 4):** one knob, two directions from noon. **CCW** turns on VCO1↔VCO2 coupling; **CW** turns on VCO2↔VCO3; **noon** = independent VCOs.
+
+**Phase mod:** `PM1A` = VCO2 modulates VCO1 when 1→2 coupling is active. `PM2A` = VCO1 and VCO3 modulate VCO2. `PM3A` (via stored Audio-page `FUEG`) = VCO2 modulates VCO3 when 2→3 coupling is on.
+
+**External input:** optional line/mic. When silent, output is VCO-only at `OLVL`. When loud enough (gate open), parallel ring mod — average of external × each VCO. `FUEG` does not change that mix shape.
 
 | Knob | Label | What it does |
 |------|-------|----------------|
@@ -179,7 +177,7 @@ Three oscillators mixed into the input, with cross-coupling and three PM paths.
 | 5 | `PM1A` | Phase-mod depth: **VCO2 modulates VCO1** when 1→2 coupling is active |
 | 6 | `PM2A` | Phase-mod depth: **VCO1 and VCO3 modulate VCO2** (1→2 and 2→3 paths) |
 | 7 | `OLVL` | Oscillator level for **VCO-only** output when external input is silent (no effect on external ring-mod mix) |
-| 8 | `FUEG` | Fuegoizer for knobs 1–7; **also PM3 depth** (VCO2 → VCO3 PM when 2→3 coupling is on); **also mix topology** (product ↔ parallel ring mod) |
+| 8 | `FUEG` | Fuegoizer for knobs 1–7; **also PM3 depth** (VCO2 → VCO3 PM when 2→3 coupling is on) |
 
 **Waveforms:** VCO1 (`A8`) and VCO2 (`B8`): sine → saw → square. VCO3 is always sine.
 
@@ -189,7 +187,7 @@ Three oscillators mixed into the input, with cross-coupling and three PM paths.
 
 ## Marbles page
 
-Two independent “bags” of random values, **manually** advanced with **`B5`**. Outputs feed **`M6`** and **`M7`**.
+Inspired by **Mutable Instruments Marbles**. Two independent “bags” of random values, **manually** advanced with **`B5`**. Outputs feed **`M6`** and **`M7`**.
 
 | Knob | Label | What it does |
 |------|-------|----------------|

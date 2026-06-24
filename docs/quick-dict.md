@@ -16,7 +16,7 @@ Mod depth — Crossfade amount between stored knob (base) and mod source; 0 = ba
 
 Play — Audio on/off
 Stop — Audio off
-Ext. In. — Line/mic in for ring mod (desktop)
+Ext. In. — Optional line/mic; parallel ring mod when gate open; VCO-only when off or silent
 Randomize — Knobs 1–7 on current page (not Crispy)
 Rand mod — Mod sources + depths on current page
 Rand All — All pages + Delay knobs
@@ -26,7 +26,7 @@ Rand waveforms — Randomize VCO morph (sine/saw/square blend)
 
 ## Global
 
-Crispy — Scramble knobs 1–7 on any page (mod applied first); moddable for scramble intensity; on sim, also blends external ring-mod when Ext. In. is on (Field: FUEG)
+Crispy — Scramble knobs 1–7 on any page (mod applied first); moddable for scramble intensity (Field: FUEG — same fuegoizer, not external mix)
 
 ## Audio
 
@@ -94,4 +94,5 @@ Wet mix — Delay wet level
 
 ## Field-only
 
+FUEG — Scramble knobs 1–7 (mod first); also PM3 depth on Audio page; not external ring-mod mix
 Pickup badges, M1–M7 CV assign, SW pages, OLED abbreviations → repository `MANUAL.md`.
