@@ -18,8 +18,11 @@ desktop/Source/PluginEditor.h
 desktop/Source/PluginProcessor.cpp
 desktop/Source/PluginProcessor.h
 desktop/FroggersTigaPlugin_artefacts/
-# OpenSpec — local-only planning (not published on public main)
-openspec/
+# OpenSpec ephemeral cache/session outputs (planning tree: local-only via .git/info/exclude)
+openspec/.cache/
+openspec/**/.cache/
+openspec/.sessions/
+openspec/**/.sessions/
 # Cursor IDE agent indexing — local-only
 .cursorignore
 AGENTS.md
