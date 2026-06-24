@@ -122,7 +122,7 @@ cmake -B build -DBUILD_VST=ON
 cmake --build build --config Release
 ```
 
-Hosted parameter inventory is validated by `HostParameterProcessor_test` (expects exactly 107 parameters). CI (`desktop-release.yml`, `pages.yml`) never sets `BUILD_VST=ON` and never builds `vcv/`.
+Hosted parameter inventory is validated by `HostParameterProcessor_test` (expects exactly 107 parameters). CI (`host-preflight.yml`, `desktop-release.yml`, `pages.yml`) never sets `BUILD_VST=ON` and never builds `vcv/`. See `docs/CI.md`.
 
 **Worktree hygiene:** `scripts/verify_clean_rebuild.sh` rebuilds sim, web, and desktop/VST from clean output trees and fails if tracked source drifts or generated host-display files are stale.
 

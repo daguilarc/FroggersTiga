@@ -265,7 +265,7 @@ cd web && npm run build:wasm    # verifies exports after copy
 
 **Host page labels:** `sim/ParamDisplayNames.hpp` and `sim/HostPanelLayout.hpp` are the authorities; `web/src/hostDisplay.generated.ts` is generated for instant UI labels. `node scripts/generate-host-display.mjs --check` runs on every web build and e2e run.
 
-**Publish:** GitHub **Settings → Pages → branch `main` / `/docs`**. CI workflow `.github/workflows/pages.yml` rebuilds on push to `main`.
+**Publish:** GitHub **Settings → Pages → branch `main` / `/docs`**. CI: `pages.yml` deploys the web sim; `host-preflight.yml` runs repo-wide checks (see `docs/CI.md`).
 
 ## Desktop simulator (JUCE)
 
