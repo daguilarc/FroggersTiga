@@ -1,27 +1,29 @@
 #!/usr/bin/env bash
-# Host-scoped OpenSpec hygiene for omni-repository-harmonization (task 9.1).
+# Local OpenSpec hygiene for workspace planning artifacts.
 #
 # Modes (default PRE_CLOSURE):
-#   PRE_CLOSURE  — strict validate omni + baseline specs; fail on TBD purposes and
-#                  struck-through / placeholder tasks in omni; WARN on other active
-#                  changes and unresolved duplicate capability ownership.
-#   POST_CLOSURE — same hard checks plus FAIL on any non-omni active change,
-#                  unresolved duplicate ownership, and struck-through tasks in any
-#                  in-scope active change.
+#   PRE_CLOSURE  — strict validate active changes + baseline specs; fail on TBD
+#                  purposes and struck-through / placeholder active tasks; WARN on
+#                  unresolved duplicate active capability ownership.
+#   POST_CLOSURE — same hard checks plus FAIL on any remaining active change and
+#                  unresolved duplicate ownership.
 #
 # Usage:
 #   scripts/check_openspec_hygiene.sh
 #   scripts/check_openspec_hygiene.sh --post-closure
 #   OPENSPEC_HYGIENE_MODE=POST_CLOSURE scripts/check_openspec_hygiene.sh
 #
-# Requires: openspec CLI on PATH (npm i -g @fission-ai/openspec).
-# Pages CI skips when openspec is absent; run locally before OpenSpec closure (9.2+).
+# Requires: openspec CLI on PATH.
+# OpenSpec is local-only planning state in this workspace. This script uses
+# filesystem/OpenSpec CLI checks only; it intentionally does not inspect git.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-OMNI_CHANGE="omni-repository-harmonization"
+# shellcheck source=scripts/repo_path_policy.sh
+source "$ROOT/scripts/repo_path_policy.sh"
+
 MODE="${OPENSPEC_HYGIENE_MODE:-PRE_CLOSURE}"
 
 for arg in "$@"; do
@@ -59,11 +61,6 @@ fi
 
 echo "OpenSpec hygiene ($MODE)"
 
-echo "== strict validate: $OMNI_CHANGE =="
-if ! openspec validate "$OMNI_CHANGE" --strict; then
-  note_fail "openspec validate --strict failed for $OMNI_CHANGE"
-fi
-
 echo "== strict validate: baseline specs =="
 if ! openspec validate --specs --strict; then
   note_fail "openspec validate --specs --strict failed"
@@ -93,7 +90,7 @@ check_tasks_file() {
           note_warn "struck-through task in $label: $line"
         fi
       fi
-      if [[ "$line" =~ (^|[[:space:][:punct:]])(TBD|PLACEHOLDER|FIXME)[[:space:][:punct:]|$ ]]; then
+      if [[ "$line" =~ (^|[^[:alnum:]_])(TBD|PLACEHOLDER|FIXME)([^[:alnum:]_]|$) ]]; then
         if [[ "$severity" == fail ]]; then
           note_fail "placeholder task in $label: $line"
         else
@@ -102,42 +99,6 @@ check_tasks_file() {
       fi
     fi
   done < "$tasks_file"
-}
-
-omni_tasks="openspec/changes/$OMNI_CHANGE/tasks.md"
-check_tasks_file "$omni_tasks" "$OMNI_CHANGE tasks.md" fail
-
-has_documented_handoff() {
-  local change_a="$1"
-  local change_b="$2"
-  local dir_a="openspec/changes/$change_a"
-  local dir_b="openspec/changes/$change_b"
-  local f
-
-  if [[ "$change_a" == "$OMNI_CHANGE" ]] && grep -qF "$change_b" "openspec/changes/$OMNI_CHANGE/disposition.md" 2>/dev/null; then
-    return 0
-  fi
-  if [[ "$change_b" == "$OMNI_CHANGE" ]] && grep -qF "$change_a" "openspec/changes/$OMNI_CHANGE/disposition.md" 2>/dev/null; then
-    return 0
-  fi
-
-  for f in "$dir_a"/{proposal,design,tasks,disposition}.md "$dir_b"/{proposal,design,tasks,disposition}.md; do
-    [[ -f "$f" ]] || continue
-    if grep -qiE 'handoff|supersed|reconciled \(omni|absorbed by omni' "$f" 2>/dev/null \
-      && grep -qF "$change_a" "$f" 2>/dev/null \
-      && grep -qF "$change_b" "$f" 2>/dev/null; then
-      return 0
-    fi
-  done
-
-  for f in "$dir_a"/tasks.md "$dir_b"/tasks.md; do
-    [[ -f "$f" ]] || continue
-    if head -n 3 "$f" | grep -qiE 'reconciled \(omni|handoff|supersed'; then
-      return 0
-    fi
-  done
-
-  return 1
 }
 
 echo "== active change inventory =="
@@ -156,26 +117,30 @@ for c in data.get("changes", []):
     print(c["name"])
 ')
 
-other_changes=()
+if ((${#active_changes[@]} == 0)); then
+  echo "No active OpenSpec changes"
+fi
+
 for change in "${active_changes[@]}"; do
-  [[ "$change" == "$OMNI_CHANGE" ]] && continue
-  other_changes+=("$change")
+  echo "== strict validate: $change =="
+  if ! openspec validate "$change" --strict; then
+    note_fail "openspec validate --strict failed for $change"
+  fi
+  check_tasks_file "openspec/changes/$change/tasks.md" "$change tasks.md" fail
 done
 
-if ((${#other_changes[@]} > 0)); then
-  if [[ "$MODE" == POST_CLOSURE ]]; then
-    note_fail "non-omni active changes remain (${#other_changes[@]}): ${other_changes[*]}"
-  else
-    note_warn "non-omni active changes (${#other_changes[@]}): ${other_changes[*]} (expected until task 9.2+ closure)"
+if [[ "$MODE" == POST_CLOSURE ]]; then
+  if ((${#active_changes[@]} > 0)); then
+    note_fail "active OpenSpec changes remain (${#active_changes[@]}): ${active_changes[*]}"
   fi
 fi
 
-if [[ "$MODE" == POST_CLOSURE ]]; then
-  for change in "${active_changes[@]}"; do
-    [[ "$change" == "$OMNI_CHANGE" ]] && continue
-    check_tasks_file "openspec/changes/$change/tasks.md" "$change tasks.md" fail
-  done
-fi
+echo "== OpenSpec path classes =="
+for path in openspec/.cache/state.json openspec/.sessions/current.json openspec/changes/example/.cache/state.json; do
+  if ! repo_policy_is_openspec_ephemeral "$path"; then
+    note_fail "OpenSpec ephemeral path is not classified by repo_path_policy.sh: $path"
+  fi
+done
 
 echo "== duplicate capability ownership =="
 ownership_tmp="$(mktemp)"
@@ -193,9 +158,6 @@ done
 
 while IFS=$'\t' read -r cap owner_a owner_b; do
   [[ -n "$cap" ]] || continue
-  if has_documented_handoff "$owner_a" "$owner_b"; then
-    continue
-  fi
   msg="capability '$cap' owned by both '$owner_a' and '$owner_b' without documented handoff"
   if [[ "$MODE" == POST_CLOSURE ]]; then
     note_fail "$msg"

@@ -1,13 +1,13 @@
 # FroggersTiga Simulator Manual
 
-**Release v1.0.4** — desktop app, web sim, and VST/AU plugin share this guide.
+**Release v1.0.4** — desktop app and web sim share this guide.
 
 On-screen knob names match this manual. For Daisy Field hardware, see `MANUAL.md` in the repository.
 
 ## Getting sound
 
 1. **Web:** wait for **Engine ready — click Play**, then click **Play**.
-2. **Desktop / plugin:** open the app (or load the plugin in your DAW) and click **Play**.
+2. **Desktop:** open the standalone app and click **Play**.
 3. **Stop** halts audio output.
 
 You hear the three VCOs with **External / Ext. In.** off. Turn knobs 1–7 on the visible page to shape the sound.
@@ -61,7 +61,7 @@ VCOs (+ optional external ring mod)
   → output
 ```
 
-**Delay** is a separate stereo wet effect on sim hosts (sixth column on desktop, last page on web).
+**Delay** is a separate stereo wet effect on the desktop app and web sim (sixth column on desktop, last page on web).
 
 ## Audio
 
@@ -156,7 +156,7 @@ Algorithmic reverb wet/dry.
 
 ## Delay
 
-Stereo delay effect (sim hosts only). Sixth column on desktop/VST; page 6 on web.
+Stereo delay effect for the desktop app and web sim only. Sixth column on desktop; page 6 on web.
 
 | Row | Parameter |
 |-----|-----------|
@@ -171,11 +171,11 @@ Stereo delay effect (sim hosts only). Sixth column on desktop/VST; page 6 on web
 
 ## Mod bay
 
-Five mod sources can push any knob (including pair-AR and Crispy).
+Mod sources can push any knob (including pair-AR and Crispy). Desktop shows five sources; web shows four.
 
 **Web:** pick a source in the dropdown under each knob; the knob then sets **mod depth**.
 
-**Desktop / plugin:** drag a cable from the mod rack to a knob jack.
+**Desktop:** drag a cable from the mod rack to a knob jack.
 
 **Mod depth** crossfades between the stored knob value and the mod source — not `knob × CV`. Depth 0 = base only; depth 1 = mod only.
 
@@ -189,13 +189,12 @@ Five mod sources can push any knob (including pair-AR and Crispy).
 
 **Phase mod 3** (Audio row 7) is a dedicated knob on sim hosts. **Crispy** (row 8) is the fuegoizer only — not PM3, not external mix.
 
-## Desktop, web, plugin, VCV
+## Desktop and web
 
 | Host | Layout |
 |------|--------|
-| **Desktop / VST / AU** | Six equal columns: **Audio → Random → Drive → Filter → Reverb → Delay**. Mod rack above; global randomize strip below. |
+| **Desktop** | Six equal columns: **Audio → Random → Drive → Filter → Reverb → Delay**. Mod rack above; global randomize strip below. |
 | **Web** | One page at a time — pills order: Audio → Random → Reverb → Filter → Drive → Delay. Mod sources panel expands per knob. |
-| **VCV Rack** | Local-only module; CV jacks per parameter; no MIDI widgets. |
 
 **Desktop:** **MIDI Settings** for two CC→CV pairs; **Audio Settings** for devices. **Ext. In.** needs Play + toggle on.
 
@@ -203,22 +202,18 @@ Five mod sources can push any knob (including pair-AR and Crispy).
 
 **Mobile browsers** — External + mic uses a play-and-record audio session. **Without headphones**, iPhone Safari often routes synth output to the **earpiece** (top speaker), not the bottom loudspeaker. **With headphones**, output in the headset is normal. Turn **External** off or reload the page to restore built-in speaker playback.
 
-**VST / AU:** local-only build; DAW runs transport; 107 automatable parameters; map MIDI in the DAW.
-
 ---
 
 ## Appendix
 
 ### Host input boundaries
 
-OpenSpec contract: [`openspec/specs/froggers-host-master/spec.md`](openspec/specs/froggers-host-master/spec.md)
+These boundaries apply to the launched desktop standalone app and the web sim.
 
 | Host | External MIDI / CC | Mod rack |
 |------|-------------------|----------|
 | **Web** | External MIDI → CC 1 only | CC 1, VCO Env, Random 1/2 |
 | **Desktop** | Two CC pairs + QWERTY → CC 1 | CC 1, CC 2, VCO Env, Random 1/2 |
-| **VST / AU** | DAW maps to 107 parameters | VCO Env, Random 1/2 |
-| **VCV** | Rack MIDI→CV → parameter jacks | VCO Env, Random 1/2 |
 
 ### Version history
 
@@ -228,7 +223,7 @@ OpenSpec contract: [`openspec/specs/froggers-host-master/spec.md`](openspec/spec
 - Sim manual learner-first rewrite; desktop Delay described as sixth column
 - Crispy/FUEG no longer documented as external mix control
 - Desktop output FX columns Drive → Filter → Reverb left-to-right
-- Random mod rack LEDs level-proportional on all hosts
+- Random mod rack LEDs level-proportional on desktop and web
 
 #### v1.0.3
 

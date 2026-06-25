@@ -1,8 +1,11 @@
 .emsdk/
+node-v*/
+node-v*.tar.gz
 # Host build/package outputs
 sim/build/
 wasm/build/
 desktop/build/
+desktop/build-vst-test/
 desktop/dist/
 web/dist/
 # VCV Rack plugin — local-only (GPL); not published on public main
@@ -24,6 +27,8 @@ openspec/**/.cache/
 openspec/.sessions/
 openspec/**/.sessions/
 # Cursor IDE agent indexing — local-only
+.codex/
+.vscode/
 .cursorignore
 AGENTS.md
 # Web testing notes — local-only (agent install policy, sandbox paths)

@@ -269,7 +269,7 @@ cd web && npm run build:wasm    # verifies exports after copy
 
 ## Desktop simulator (JUCE)
 
-**Release v1.0.4** — standalone app, VST3, and AU (see `SIM_MANUAL.md`).
+**Release v1.0.4** — standalone desktop app. The public simulator manual covers the launched desktop app and web sim.
 
 Native app with **five adjacent sub-module panels** (Audio → Drive), **mod rack + patch cables**, and shared global strip. No page switching. **MIDI Settings** exposes two hardware CC→CV pairs (CC 1 on by default, CC 2 off); QWERTY drives CC 1 only.
 
@@ -280,14 +280,35 @@ cmake --build build --config Release
 ./build/FroggersTigaDesktop_artefacts/Release/FroggersTiga.app/Contents/MacOS/FroggersTiga   # macOS
 ```
 
-**VST3 / AU (local-only):** `cmake -B build -DBUILD_VST=ON` after restoring plugin sources. The hosted plugin exposes **107** DAW-automatable parameters (page/Delay/pair-AR knobs, mod depths, morph controls) — no fixed CC ingest or MIDI Settings; mod rack is VCO Envelope + Random 1/2 only. See `SIM_MANUAL.md` → Host input boundaries.
+JUCE is pinned in `desktop/CMakeLists.txt` at `8.0.4`. For offline or cached desktop configuration, point CMake at an existing JUCE checkout:
 
-**VCV Rack (local-only):** `vcv/` is gitignored and not built on CI. CV-only — no MIDI widgets; per-parameter CV jacks add voltage to internal mod routes. See `SIM_MANUAL.md`.
+```sh
+cd desktop
+cmake -B build -DFROGGERS_JUCE_SOURCE_DIR=/path/to/JUCE
+```
+
+This uses CMake `FetchContent`'s local source override and avoids silently depending on a live network fetch during configure.
+
+**VST3 / AU (local-only, pre-launch):** `cmake -B build -DBUILD_VST=ON` after restoring plugin sources. This surface remains under local validation and is intentionally absent from the public SIM manual until launch.
+
+**VCV Rack (local-only, pre-launch):** `vcv/` is local-only and not built on CI. This surface remains under local validation and is intentionally absent from the public SIM manual until launch.
 
 Links `src/core/` + `DesktopHostIO` only (no libDaisy). Transport bar: **Play/Stop**, format toggles (**WAV/MP3/FLAC/OGG**), **Record** (stereo export), **MIDI**, **Audio**. **WAV** and **OGG** export work in default JUCE builds; **MP3** needs `JUCE_USE_MP3AUDIOFORMAT` + LAME at compile time; **FLAC** needs `JUCE_USE_FLAC`. macOS menu **FroggersTiga → Manual / Quick Dict / License** (embedded docs).
 
-**Clean rebuild check:** `scripts/verify_clean_rebuild.sh` — generator freshness, sim tests, web TypeScript, desktop/VST build, and git worktree hygiene.
+**Clean rebuild check:** `scripts/verify_clean_rebuild.sh` — generator freshness, sim tests, web TypeScript, desktop build, and workspace hygiene.
 
 **Release packages:** See [`desktop/PACKAGING.md`](desktop/PACKAGING.md) for DMG / Windows installer commands. Move tag `froggerstiga-v1` on `main` (force-push) to trigger `.github/workflows/desktop-release.yml` and publish assets on [GitHub Releases](https://github.com/daguilarc/FroggersTiga/releases).
 
-Parameter and host UX reference: [`SIM_MANUAL.md`](SIM_MANUAL.md), [`openspec/specs/froggers-host-master/spec.md`](openspec/specs/froggers-host-master/spec.md) (master host contract), and [`QUICK_DICT.md`](QUICK_DICT.md).
+Parameter and host UX reference: [`SIM_MANUAL.md`](SIM_MANUAL.md) and [`QUICK_DICT.md`](QUICK_DICT.md). Local OpenSpec plans under `openspec/` are workspace planning state, not public repo documentation.
+
+## Local Planning And Hygiene
+
+OpenSpec artifacts under `openspec/` are local-only planning state for this workspace. They are useful for coordinating implementation, but they are not a git-backed source of truth and OpenSpec helpers should not perform git operations.
+
+Subagents are not allowed to run git commands. Any git inspection, staging, committing, branching, worktree setup, or pushing is handled only by the primary agent when explicitly requested.
+
+Path hygiene uses `scripts/repo_path_policy.sh` to keep local caches, generated build output, local-only product surfaces, and published docs mirrors classified in one place.
+
+Shared DSP/control logic belongs in `src/core/` or `sim/` first. `src/common/` is a firmware compatibility layer; headers mirroring `src/core/<name>.hpp` stay as thin include wrappers, while firmware adapter files such as `App.hpp`, `DaisyIO.hpp`, and `Include.hpp` remain firmware-side exceptions.
+
+Existing build outputs under `src/FroggersTiga/build`, `src/TestControl/build`, and `src/Blink/build` are firmware-scoped leftovers, not host cleanup targets. A separate firmware cleanup should decide whether to keep, remove, or ignore them.

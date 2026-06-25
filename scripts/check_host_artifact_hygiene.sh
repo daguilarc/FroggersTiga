@@ -6,6 +6,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+# shellcheck source=scripts/repo_path_policy.sh
+source "$ROOT/scripts/repo_path_policy.sh"
+
 fail=0
 GITIGNORE="$ROOT/.gitignore"
 
@@ -19,17 +22,7 @@ if grep -E '^openspec/?$' "$GITIGNORE"; then
   fail=1
 fi
 
-required_ignores=(
-  sim/build/
-  desktop/build/
-  desktop/dist/
-  wasm/build/
-  web/dist/
-  vcv/build/
-  vcv/dist/
-  vcv/dep/
-)
-for pattern in "${required_ignores[@]}"; do
+for pattern in "${REPO_REQUIRED_IGNORES[@]}"; do
   if ! grep -qxF "$pattern" "$GITIGNORE"; then
     echo "FAIL: .gitignore missing required ignore: $pattern" >&2
     fail=1
@@ -37,69 +30,7 @@ for pattern in "${required_ignores[@]}"; do
 done
 
 is_excluded() {
-  case "$1" in
-    External/*|src/FroggersTiga/*|src/common/*|src/mk/*|src/Blink/*|src/TestControl/*|MANUAL.md|docs/*)
-      return 0
-      ;;
-  esac
-  return 1
-}
-
-prohibited_prefixes=(
-  sim/build/
-  desktop/build/
-  desktop/dist/
-  wasm/build/
-  web/dist/
-  vcv/build/
-  vcv/dist/
-  vcv/dep/
-  .emsdk/
-  desktop/FroggersTigaPlugin_artefacts/
-  Rack-SDK/
-  vcv/Rack-SDK/
-  openspec/.cache/
-  openspec/.sessions/
-)
-
-is_prohibited_tracked() {
-  local path="$1"
-  local prefix
-
-  for prefix in "${prohibited_prefixes[@]}"; do
-    if [[ "$path" == "$prefix"* ]]; then
-      return 0
-    fi
-  done
-
-  case "$path" in
-    sim/CMakeCache.txt|sim/CMakeFiles/*|sim/cmake_install.cmake|sim/Makefile|sim/CTestTestfile.cmake)
-      return 0
-      ;;
-    sim/*.o|sim/*.o.d|sim/*_test)
-      return 0
-      ;;
-    desktop/CMakeCache.txt|desktop/CMakeFiles/*|desktop/cmake_install.cmake|desktop/Makefile)
-      return 0
-      ;;
-    desktop/*.o|desktop/**/*.o|desktop/*.o.d)
-      return 0
-      ;;
-    wasm/CMakeCache.txt|wasm/CMakeFiles/*|wasm/cmake_install.cmake|wasm/Makefile|wasm/*.o|wasm/*.wasm)
-      return 0
-      ;;
-    web/dist/*|web/node_modules/*)
-      return 0
-      ;;
-    vcv/CMakeCache.txt|vcv/CMakeFiles/*|vcv/cmake_install.cmake|vcv/Makefile|vcv/*.o)
-      return 0
-      ;;
-    openspec/.cache/*|openspec/.sessions/*|openspec/*/.cache/*|openspec/*/.sessions/*)
-      return 0
-      ;;
-  esac
-
-  return 1
+  repo_policy_is_firmware_excluded "$1" || repo_policy_is_publication_output "$1"
 }
 
 while IFS= read -r tracked; do
@@ -107,7 +38,7 @@ while IFS= read -r tracked; do
   if is_excluded "$tracked"; then
     continue
   fi
-  if is_prohibited_tracked "$tracked"; then
+  if repo_policy_is_prohibited_public_artifact "$tracked"; then
     echo "FAIL: prohibited tracked host artifact: $tracked" >&2
     fail=1
   fi
