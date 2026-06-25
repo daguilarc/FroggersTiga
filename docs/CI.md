@@ -6,35 +6,37 @@ Workflow definitions live in `.github/workflows/`. Policy is documented here in 
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| `host-preflight.yml` | `main` push, PRs, manual | Repo hygiene, release metadata, VCV layout constants |
 | `pages.yml` | `main` push, manual | Web-only checks, WASM + Vite build, GitHub Pages deploy |
-| `web-e2e.yml` | `main` / PR (web paths), manual | Playwright e2e after WASM build |
 | `desktop-release.yml` | Tag `froggerstiga-v1` | macOS DMG + Windows EXE release assets |
 
-## host-preflight.yml
+## Local Checks
 
-Runs before or alongside deploy; failures here do **not** block Pages by design.
+These checks are intentionally local. They are useful before pushing changes, but they do not need public GitHub workflow files.
 
 | Script | What it guards |
 |--------|----------------|
 | `scripts/check_host_artifact_hygiene.sh` | No public build/cache artifacts; shared path classes from `scripts/repo_path_policy.sh` |
 | `scripts/check_openspec_hygiene.sh` | Local OpenSpec lifecycle using filesystem/OpenSpec CLI only; no git operations |
 | `desktop/scripts/verify-release-metadata.sh` | CMake, web package, README/SIM_MANUAL version alignment |
+| `sim/check_common_core_wrappers.sh` | `src/common` headers that mirror `src/core` stay thin firmware compatibility wrappers |
 | `sim/check_vcv_panel_bounds.sh` | VCV panel HP/layout constants |
 | `sim/check_vcv_panel_svg.sh` | VCV SVG panel files |
 | `sim/check_vcv_midi_boundary.sh` | No MIDI/CC leakage into `vcv/src` |
 | `sim/check_vcv_license_boundary.sh` | GPL boundary for Rack plugin tree |
+| `npm --prefix web run test:e2e` | Browser regression coverage after WASM/web changes |
 
 Run locally:
 
 ```bash
-.github/workflows/host-preflight.yml  # see steps in file, or:
 scripts/check_host_artifact_hygiene.sh
+scripts/check_openspec_hygiene.sh
 desktop/scripts/verify-release-metadata.sh
+sim/check_common_core_wrappers.sh
 sim/check_vcv_panel_bounds.sh
 sim/check_vcv_panel_svg.sh
 sim/check_vcv_midi_boundary.sh
 sim/check_vcv_license_boundary.sh
+npm --prefix web run test:e2e
 ```
 
 ## pages.yml
@@ -48,7 +50,6 @@ Web publication gate only. Fails deploy if the live sim would show wrong labels 
 | `scripts/verify-host-display-shape.mjs` | Host display projection shape |
 | `sim/check_host_display_projections.sh` | Desktop catalog + web WASM pool projections |
 | `sim/check_mod_source_labels.sh` | Mod source labels match `ParamDisplayNames` |
-| `sim/check_common_core_wrappers.sh` | `src/common` headers that mirror `src/core` stay thin firmware compatibility wrappers |
 
 Run locally:
 
@@ -58,7 +59,6 @@ node scripts/generate-host-display.mjs --check
 node scripts/verify-host-display-shape.mjs
 sim/check_host_display_projections.sh
 sim/check_mod_source_labels.sh
-sim/check_common_core_wrappers.sh
 ```
 
 ## Local full sweep

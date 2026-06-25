@@ -3,18 +3,12 @@
 # This file intentionally does not run git commands.
 
 REPO_REQUIRED_IGNORES=(
-  .emsdk/
-  'node-v*/'
-  'node-v*.tar.gz'
   sim/build/
   desktop/build/
   desktop/build-vst-test/
   desktop/dist/
   wasm/build/
   web/dist/
-  vcv/build/
-  vcv/dist/
-  vcv/dep/
 )
 
 repo_policy_is_firmware_excluded() {

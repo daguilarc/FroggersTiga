@@ -1,6 +1,3 @@
-.emsdk/
-node-v*/
-node-v*.tar.gz
 # Host build/package outputs
 sim/build/
 wasm/build/
@@ -8,30 +5,5 @@ desktop/build/
 desktop/build-vst-test/
 desktop/dist/
 web/dist/
-# VCV Rack plugin — local-only (GPL); not published on public main
-vcv/
-Rack-SDK/
-vcv/Rack-SDK/
-vcv/dist/
-vcv/dep/
-vcv/build/
-# JUCE VST/AU plugin — local-only; not published on public main
-desktop/Source/PluginEditor.cpp
-desktop/Source/PluginEditor.h
-desktop/Source/PluginProcessor.cpp
-desktop/Source/PluginProcessor.h
-desktop/FroggersTigaPlugin_artefacts/
-# OpenSpec ephemeral cache/session outputs (planning tree: local-only via .git/info/exclude)
-openspec/.cache/
-openspec/**/.cache/
-openspec/.sessions/
-openspec/**/.sessions/
-# Cursor IDE agent indexing — local-only
-.codex/
-.vscode/
-.cursorignore
-AGENTS.md
-# Web testing notes — local-only (agent install policy, sandbox paths)
-web/TESTING.md
 .DS_Store
 **/.DS_Store
