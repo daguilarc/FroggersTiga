@@ -95,7 +95,13 @@
         <div id="external-meter" class="external-meter" aria-hidden="true">
           <span id="external-meter-fill" class="external-meter-fill"></span>
         </div>
-        <span id="status" class="status">Click Play to start</span>
+        <div class="transport-status">
+          <span id="status" class="status">Click Play to start</span>
+          <p id="ios-external-hint" class="ios-external-hint" hidden>
+            iOS: External uses mic + playback; audio may route to the earpiece (like a call). Headphones
+            recommended.
+          </p>
+        </div>
       </div>
       <button id="mod-bay-toggle" type="button" class="mod-bay-toggle" aria-expanded="true">
         Mod sources ▾

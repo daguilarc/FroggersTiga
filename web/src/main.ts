@@ -60,6 +60,7 @@ const stopBtn = document.getElementById("stop-btn") as HTMLButtonElement;
 const externalBtn = document.getElementById("external-btn") as HTMLButtonElement;
 const externalMidiBtn = document.getElementById("external-midi-btn") as HTMLButtonElement;
 const statusEl = document.getElementById("status") as HTMLSpanElement;
+const iosExternalHintEl = document.getElementById("ios-external-hint") as HTMLParagraphElement;
 const knobsEl = document.getElementById("knobs") as HTMLDivElement;
 const modBayEl = document.getElementById("mod-bay") as HTMLDivElement;
 const modBayToggle = document.getElementById("mod-bay-toggle") as HTMLButtonElement;
@@ -105,16 +106,11 @@ let modBayExpanded = sessionStorage.getItem("modBayExpanded") !== "false";
 let swipeStartX = 0;
 let swipeStartY = 0;
 
-const INPUT_PEAK_SILENT = 1e-4;
-const SILENT_SCREEN_TICKS = 17;
-
 const knobDragging = new Array<boolean>(TOTAL_KNOB_COUNT).fill(false);
 let lastScreenRows: ScreenRow[] = [];
 let lastPairArRows: ScreenRow[] = [];
 let lastMorphs = [0, 0, 0];
 let lastWasmPage = 0;
-let silentScreenTicks = 0;
-let inputSilentHint = false;
 const rotaryKnobs: RotaryKnob[] = [];
 const modSelects: HTMLSelectElement[] = [];
 const knobMainLabels: HTMLLabelElement[] = [];
@@ -263,6 +259,15 @@ function isMobileWeb(): boolean {
   );
 }
 
+function isIosWeb(): boolean {
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+function syncIosExternalHint(): void {
+  const show = isIosWeb() && externalEnabled;
+  iosExternalHintEl.hidden = !show;
+}
+
 function applyMobileAudioSession(mode: MobileAudioSessionMode): void {
   if (!isMobileWeb() || !("audioSession" in navigator)) {
     return;
@@ -294,20 +299,12 @@ function playingStatusBase(): string {
   return `Playing — ${extLabel} — ${midiLabel} — ${audioContext.sampleRate | 0} Hz`;
 }
 
-function mobileExternalRoutingHint(): string {
-  if (!isMobileWeb() || !externalEnabled || !audioRunning) {
-    return "";
-  }
-  return " — without headphones, iOS may use the earpiece; plug in headphones or turn External off for speaker";
-}
-
 function applyPlayingStatus(): void {
   const base = playingStatusBase();
   if (!base) {
     return;
   }
-  const silentSuffix = inputSilentHint ? " — input silent (check mic permission / level)" : "";
-  statusEl.textContent = `${base}${silentSuffix}${mobileExternalRoutingHint()}`;
+  statusEl.textContent = base;
 }
 
 function layoutKnobCols(): void {
@@ -326,8 +323,6 @@ function syncTransportUi(): void {
   }
   if (!audioRunning || !externalEnabled) {
     renderInputMeter(0, false);
-    silentScreenTicks = 0;
-    inputSilentHint = false;
   }
 }
 
@@ -466,18 +461,6 @@ function onScreenUpdate(data: Record<string, unknown>): void {
   const meterActive = externalEnabled && audioRunning;
   const inputPeak = meterActive ? Math.max(0, Number(data.inputPeak ?? 0)) : 0;
   renderInputMeter(inputPeak, meterActive);
-  if (meterActive) {
-    if (inputPeak < INPUT_PEAK_SILENT) {
-      silentScreenTicks++;
-    } else {
-      silentScreenTicks = 0;
-    }
-    const nextHint = silentScreenTicks >= SILENT_SCREEN_TICKS;
-    if (nextHint !== inputSilentHint) {
-      inputSilentHint = nextHint;
-      applyPlayingStatus();
-    }
-  }
 }
 
 for (let i = 0; i < HOST_PAGE_NAMES.length; i++) {
@@ -770,6 +753,7 @@ function applyExternalUi(enabled: boolean): void {
   externalEnabled = enabled;
   externalBtn.textContent = enabled ? "External Audio: On" : "External Audio: Off";
   externalBtn.classList.toggle("active", enabled);
+  syncIosExternalHint();
   send({ type: "external", enabled });
 }
 
@@ -889,8 +873,6 @@ async function setExternalEnabled(enabled: boolean): Promise<void> {
   if (!enabled) {
     disconnectExternalStream();
     applyExternalUi(false);
-    silentScreenTicks = 0;
-    inputSilentHint = false;
     renderInputMeter(0, false);
     if (audioRunning) {
       applyPlayingStatus();
@@ -1184,8 +1166,7 @@ function stopAudio(): void {
     workletNode.disconnect();
   }
   syncTransportUi();
-  silentScreenTicks = 0;
-  inputSilentHint = false;
+  syncIosExternalHint();
   renderInputMeter(0, false);
   statusEl.textContent = engineReady ? "Stopped — click Play" : "Click Play to start";
   renderModBay(undefined, [0, 0, 0, 0, 0, 0, 0], false);

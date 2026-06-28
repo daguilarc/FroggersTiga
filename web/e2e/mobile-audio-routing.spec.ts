@@ -2,7 +2,9 @@ import { expect, test } from "@playwright/test";
 import {
   EXTERNAL_OFF_LABEL,
   EXTERNAL_ON_LABEL,
-  STATUS_HINT_EARPIECE,
+  IOS_EXTERNAL_HINT_EARPIECE,
+  IOS_EXTERNAL_HINT_HEADPHONES,
+  IOS_EXTERNAL_HINT_SELECTOR,
   STATUS_HINT_EXTERNAL_ON,
   STATUS_SELECTOR,
   STOP_LABEL,
@@ -54,11 +56,29 @@ test.describe("mobile audio routing UX", () => {
     expect(log.slice(-2)).toEqual(["playback", "auto"]);
   });
 
-  test("mobile status shows earpiece hint when External is on and playing", async ({ page }) => {
+  test("iOS static hint visible when External is on", async ({ page }) => {
+    await page.getByRole("button", { name: EXTERNAL_OFF_LABEL }).click();
+    await expect(page.getByRole("button", { name: EXTERNAL_ON_LABEL })).toBeVisible();
+    const hint = page.locator(IOS_EXTERNAL_HINT_SELECTOR);
+    await expect(hint).toBeVisible();
+    await expect(hint).toContainText(IOS_EXTERNAL_HINT_EARPIECE);
+    await expect(hint).toContainText(IOS_EXTERNAL_HINT_HEADPHONES);
+    await expect(page.locator(STATUS_SELECTOR)).not.toContainText(IOS_EXTERNAL_HINT_EARPIECE);
+  });
+
+  test("iOS static hint hidden when External is off", async ({ page }) => {
+    await page.getByRole("button", { name: EXTERNAL_OFF_LABEL }).click();
+    await page.getByRole("button", { name: EXTERNAL_ON_LABEL }).click();
+    await expect(page.locator(IOS_EXTERNAL_HINT_SELECTOR)).toBeVisible();
+    await page.getByRole("button", { name: EXTERNAL_ON_LABEL }).click();
+    await expect(page.locator(IOS_EXTERNAL_HINT_SELECTOR)).toBeHidden();
+  });
+
+  test("mobile Play with External on keeps transport status separate from iOS hint", async ({ page }) => {
     await startSimAudio(page);
     await page.getByRole("button", { name: EXTERNAL_OFF_LABEL }).click();
     await expect(page.locator(STATUS_SELECTOR)).toContainText(STATUS_HINT_EXTERNAL_ON);
-    await expect(page.locator(STATUS_SELECTOR)).toContainText(STATUS_HINT_EARPIECE);
+    await expect(page.locator(IOS_EXTERNAL_HINT_SELECTOR)).toBeVisible();
   });
 
   test("Stop after External clears session via externalOff sequence", async ({ page }) => {

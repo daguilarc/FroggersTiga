@@ -6,6 +6,7 @@ export const EXTERNAL_OFF_LABEL = "External Audio: Off";
 export const EXTERNAL_ON_LABEL = "External Audio: On";
 
 export const STATUS_SELECTOR = "#status";
+export const IOS_EXTERNAL_HINT_SELECTOR = "#ios-external-hint";
 export const SUBTITLE_SELECTOR = ".subtitle";
 export const PLAY_BTN_SELECTOR = "#play-btn";
 export const EXTERNAL_BTN_SELECTOR = "#external-btn";
@@ -14,7 +15,8 @@ export const SUBTITLE_TEXT =
   "Browser simulator — press Play for sound; External adds mic ring-mod input";
 
 export const STATUS_HINT_EXTERNAL_ON = "external on";
-export const STATUS_HINT_EARPIECE = "without headphones, iOS may use the earpiece";
+export const IOS_EXTERNAL_HINT_EARPIECE = "route to the earpiece";
+export const IOS_EXTERNAL_HINT_HEADPHONES = "Headphones recommended";
 
 export const PLAYING_STATUS_TEXT = "Playing";
 

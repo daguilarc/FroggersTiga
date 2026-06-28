@@ -408,9 +408,29 @@ body {
   accent-color: var(--knob);
 }
 
+.transport-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1 1 100%;
+  min-width: min(100%, 18rem);
+}
+
 .status {
   font-size: 0.8rem;
   opacity: 0.8;
+}
+
+.ios-external-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: #e3b341;
+  opacity: 0.95;
+}
+
+.ios-external-hint[hidden] {
+  display: none;
 }
 
 .page-label {
