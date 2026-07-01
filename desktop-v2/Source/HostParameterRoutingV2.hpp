@@ -1,0 +1,255 @@
+#pragma once
+
+#include "control/FroggersV2ControlCore.hpp"
+#include "DelayState.hpp"
+#include "DesktopHostIO.hpp"
+#include "HostParameterInventoryV2.hpp"
+#include "HostParameterPendingStoreV2.hpp"
+#include "OwnedAllocationGuard.hpp"
+#include "SequencerState.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+
+namespace HostParameterRoutingV2
+{
+inline float clamp01(float value)
+{
+    return std::min(std::max(value, 0.0f), 1.0f);
+}
+
+inline float sequencerNormToBpm(float norm)
+{
+    return 20.0f + clamp01(norm) * (300.0f - 20.0f);
+}
+
+inline float sequencerBpmToNorm(float bpm)
+{
+    return clamp01((bpm - 20.0f) / (300.0f - 20.0f));
+}
+
+inline float sequencerNormToLength(float norm)
+{
+    const float length = 4.0f + clamp01(norm) * (64.0f - 4.0f);
+    return std::round(length);
+}
+
+inline float sequencerLengthToNorm(uint8_t length)
+{
+    return clamp01((static_cast<float>(length) - 4.0f) / (64.0f - 4.0f));
+}
+
+inline float sequencerNormToPlayhead(float norm)
+{
+    return clamp01(norm) * static_cast<float>(SequencerState::kMaxLength - 1);
+}
+
+inline float sequencerPlayheadToNorm(uint8_t playhead)
+{
+    if (SequencerState::kMaxLength <= 1)
+    {
+        return 0.0f;
+    }
+    return clamp01(static_cast<float>(playhead) / static_cast<float>(SequencerState::kMaxLength - 1));
+}
+
+inline bool isDelayUiPage(uint8_t page)
+{
+    return page == HostParameterInventoryV2::kDelayUiPage;
+}
+
+inline bool isAdsrUiPage(uint8_t page)
+{
+    return page == HostParameterInventoryV2::kAdsrUiPage;
+}
+
+inline uint8_t pmPageForUiPage(uint8_t page)
+{
+    if (isAdsrUiPage(page))
+    {
+        return HostParameterInventoryV2::kPmAdsrPage;
+    }
+    return page;
+}
+
+inline float readPageKnob(uint8_t uiPage, uint8_t row, DesktopHostIO& host, DelayState& delay)
+{
+    if (isDelayUiPage(uiPage))
+    {
+        return delay.getKnob(row);
+    }
+    return host.GetPageParam(pmPageForUiPage(uiPage), row);
+}
+
+inline void applyPageKnob(uint8_t uiPage, uint8_t row, float value, DesktopHostIO& host, DelayState& delay)
+{
+    if (isDelayUiPage(uiPage))
+    {
+        delay.setKnob(row, value);
+        return;
+    }
+    host.SetPageKnob(pmPageForUiPage(uiPage), row, value);
+}
+
+inline float readPageModDepth(uint8_t uiPage, uint8_t row, DesktopHostIO& host, DelayState& delay)
+{
+    if (isDelayUiPage(uiPage))
+    {
+        return delay.getModDepth(row);
+    }
+    return host.GetPageModDepth(pmPageForUiPage(uiPage), row);
+}
+
+inline uint8_t readPageModSource(uint8_t uiPage, uint8_t row, DesktopHostIO& host, DelayState* delay)
+{
+    if (isDelayUiPage(uiPage))
+    {
+        return delay != nullptr ? delay->getModSource(row) : static_cast<uint8_t>(255);
+    }
+    return host.GetPageModSource(pmPageForUiPage(uiPage), row);
+}
+
+inline void applyPageModSource(uint8_t uiPage,
+                               uint8_t row,
+                               uint8_t modIndex,
+                               DesktopHostIO& host,
+                               DelayState* delay)
+{
+    if (isDelayUiPage(uiPage))
+    {
+        if (delay != nullptr)
+        {
+            host.EnqueueDelaySetModSource(row, modIndex);
+        }
+        return;
+    }
+    host.SetPageModSource(pmPageForUiPage(uiPage), row, modIndex);
+}
+
+inline void applyPageModDepth(uint8_t uiPage, uint8_t row, float value, DesktopHostIO& host, DelayState& delay)
+{
+    if (isDelayUiPage(uiPage))
+    {
+        delay.setModDepth(row, value);
+        return;
+    }
+    host.SetPageModDepth(pmPageForUiPage(uiPage), row, value);
+}
+
+inline float readValue(const HostParameterInventoryV2::RuntimeDescriptor& entry,
+                       DesktopHostIO& host,
+                       DelayState& delay,
+                       SequencerState& sequencer,
+                       froggers_v2::FroggersV2ControlCore& core)
+{
+    using Axis = HostParameterInventoryV2::Axis;
+    switch (entry.axis)
+    {
+        case Axis::PageKnob:
+            return readPageKnob(entry.page, entry.row, host, delay);
+        case Axis::PageModDepth:
+            return readPageModDepth(entry.page, entry.row, host, delay);
+        case Axis::GlobalCrunchy:
+            return host.GetGlobalCrunchy();
+        case Axis::VcoMorph:
+            return host.GetVcoMorph(entry.index);
+        case Axis::Sequencer:
+            switch (entry.index)
+            {
+                case 0:
+                    return sequencerBpmToNorm(sequencer.m_bpm);
+                case 1:
+                    return sequencerLengthToNorm(sequencer.m_patternLength);
+                case 2:
+                    return sequencer.m_playing ? 1.0f : 0.0f;
+                case 3:
+                    return sequencer.m_recordArm ? 1.0f : 0.0f;
+                default:
+                    return sequencerPlayheadToNorm(sequencer.m_playhead);
+            }
+        case Axis::SceneBlend:
+            return core.sceneBlend();
+        case Axis::GestureWeight:
+            return core.gestureWeight(entry.index);
+    }
+    return entry.defaultNorm;
+}
+
+inline void applyValue(const HostParameterInventoryV2::RuntimeDescriptor& entry,
+                       float normalizedValue,
+                       DesktopHostIO& host,
+                       DelayState& delay,
+                       SequencerState& sequencer,
+                       froggers_v2::FroggersV2ControlCore& core)
+{
+    const float value = clamp01(normalizedValue);
+    using Axis = HostParameterInventoryV2::Axis;
+    switch (entry.axis)
+    {
+        case Axis::PageKnob:
+            applyPageKnob(entry.page, entry.row, value, host, delay);
+            break;
+        case Axis::PageModDepth:
+            applyPageModDepth(entry.page, entry.row, value, host, delay);
+            break;
+        case Axis::GlobalCrunchy:
+            host.SetGlobalCrunchy(value);
+            core.setGlobalCrunchy(value);
+            break;
+        case Axis::VcoMorph:
+            host.SetVcoMorph(entry.index, value);
+            break;
+        case Axis::Sequencer:
+            switch (entry.index)
+            {
+                case 0:
+                    sequencer.setBpm(sequencerNormToBpm(value));
+                    break;
+                case 1:
+                    sequencer.setPatternLength(static_cast<uint8_t>(sequencerNormToLength(value)));
+                    break;
+                case 2:
+                    sequencer.m_playing = value >= 0.5f;
+                    break;
+                case 3:
+                    sequencer.m_recordArm = value >= 0.5f;
+                    break;
+                default:
+                    sequencer.m_playhead = static_cast<uint8_t>(sequencerNormToPlayhead(value));
+                    break;
+            }
+            break;
+        case Axis::SceneBlend:
+            core.setSceneBlend(value);
+            break;
+        case Axis::GestureWeight:
+            core.setGestureWeight(entry.index, value);
+            break;
+    }
+}
+
+inline void applyPending(DesktopHostIO& host,
+                         DelayState& delay,
+                         SequencerState& sequencer,
+                         froggers_v2::FroggersV2ControlCore& core,
+                         HostParameterPendingStoreV2& pendingStore)
+{
+    FROGGERS_OWNED_ALLOCATION_GUARD();
+    for (size_t i = 0; i < HostParameterInventoryV2::kCount; ++i)
+    {
+        if (pendingStore.dirty[i].exchange(0, std::memory_order_acq_rel) == 0)
+        {
+            continue;
+        }
+        const float value = pendingStore.values[i].load(std::memory_order_relaxed);
+        const HostParameterInventoryV2::RuntimeDescriptor entry = HostParameterInventoryV2::buildDescriptorAt(i);
+        applyValue(entry, value, host, delay, sequencer, core);
+    }
+}
+
+inline bool inventoryMatchesRegistryTable()
+{
+    return HostParameterInventoryV2::validateInventory();
+}
+} // namespace HostParameterRoutingV2

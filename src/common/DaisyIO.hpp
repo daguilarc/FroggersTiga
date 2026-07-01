@@ -1,32 +1,50 @@
 #pragma once
 
+#include "FieldMutationQueue.hpp"
+#include "FieldSwitchGuard.hpp"
 #include "Page.hpp"
 #include "SchmidtTrigger.hpp"
 #include "daisy_field.h"
 #include <cmath>
+#include <cstdio>
 #include <functional>
 
 struct DaisyIO
 {
+    static constexpr uint32_t kScreenThrottleMs = 33;
+
     PageManager m_pageManager;
     daisy::DaisyField m_field;
     std::function<void(int)> m_buttonCallback;
     SchmidtTrigger m_gateTrigger{0.2f, 0.1f};
     float m_prevCv[4]{0.0f, 0.0f, 0.0f, 0.0f};
     float m_cvPresence[4]{0.0f, 0.0f, 0.0f, 0.0f};
+    FieldSwitchGuard m_switchGuard;
+    FieldMutationQueue m_mutationQueue;
+    bool m_screenDirty = true;
+    uint32_t m_lastScreenMs = 0;
+
+    void MarkScreenDirty()
+    {
+        m_screenDirty = true;
+    }
 
     void ProcessControls()
     {
         m_field.ProcessAllControls();
 
-        if (m_field.sw[0].RisingEdge())
+        m_switchGuard.UpdateSuppression(0, m_field.sw[0]);
+        if (m_field.sw[0].RisingEdge() && m_switchGuard.AllowPageSwitch(0))
         {
             m_pageManager.PagePrevious();
+            MarkScreenDirty();
         }
 
-        if (m_field.sw[1].RisingEdge())
+        m_switchGuard.UpdateSuppression(1, m_field.sw[1]);
+        if (m_field.sw[1].RisingEdge() && m_switchGuard.AllowPageSwitch(1))
         {
             m_pageManager.PageNext();
+            MarkScreenDirty();
         }
 
         if (m_pageManager.m_modIndex == 255)
@@ -34,21 +52,25 @@ struct DaisyIO
             if (m_field.KeyboardRisingEdge(0))
             {
                 m_pageManager.RandomizeCurrentPage();
+                MarkScreenDirty();
             }
 
             if (m_field.KeyboardRisingEdge(1))
             {
-                m_pageManager.RandomizeAllPages();
+                m_mutationQueue.Enqueue(FieldMutationType::RandAll);
+                MarkScreenDirty();
             }
 
             if (m_field.KeyboardRisingEdge(2))
             {
                 m_pageManager.RandomizeCurrentPageMod();
+                MarkScreenDirty();
             }
 
             if (m_field.KeyboardRisingEdge(3))
             {
-                m_pageManager.RandomizeAllPagesMod();
+                m_mutationQueue.Enqueue(FieldMutationType::RandAllMod);
+                MarkScreenDirty();
             }
         }
 
@@ -59,15 +81,11 @@ struct DaisyIO
                 m_buttonCallback(i);
             }
         }
-        // Physical mapping target (verified from device behavior):
-        // A1..A7 -> indices 8..14, A8 -> index 15.
         if (m_field.KeyboardRisingEdge(15))
         {
             m_buttonCallback(4);
         }
 
-        // Check analog gate input for rising edge
-        //
         if (m_gateTrigger.Process(m_field.gate_in.State()))
         {
             m_buttonCallback(0);
@@ -89,7 +107,6 @@ struct DaisyIO
             m_pageManager.m_modMgr.m_mods[i] = cv;
         }
 
-        // Physical A1..A7 map to M1..M7.
         static constexpr uint8_t x_aAssignKeys[ModMgr::x_numMods] = {8, 9, 10, 11, 12, 13, 14};
         for (size_t i = 0; i < ModMgr::x_numMods; i++)
         {
@@ -118,12 +135,17 @@ struct DaisyIO
         m_field.led_driver.SetLed(daisy::DaisyField::LED_SW_2, m_field.sw[1].Pressed() ? 1.0f : 0.0f);
 
         m_field.led_driver.SwapBuffersAndTransmit();
+
+        if (m_mutationQueue.DrainOne(m_pageManager))
+        {
+            MarkScreenDirty();
+        }
     }
 
     void UpdateScreen()
     {
         m_field.display.Fill(0);
-        
+
         for (size_t row = 0; row < 8; row++)
         {
             const char* name = m_pageManager.GetNameCurrentPage(row);
@@ -138,7 +160,7 @@ struct DaisyIO
 
             m_field.display.DrawRect(xValue, yPos, xValueEnd, yValueEnd, true, true);
 
-            m_field.display.SetCursor(xValue + 74, yPos);                
+            m_field.display.SetCursor(xValue + 74, yPos);
             char buf[5];
             memset(buf, ' ', 5);
             if (m_pageManager.GetModIndex(row) != 255)
@@ -158,17 +180,19 @@ struct DaisyIO
     void Init(daisy::AudioHandle::AudioCallback process)
     {
         m_field.Init();
-        
+
         daisy::System::Delay(100);
-        
+
         m_field.display.Fill(0);
         m_field.display.Update();
-        
+
         daisy::System::Delay(100);
-        
-        m_field.StartAdc();        
+
+        m_switchGuard.RunBootAudit(m_field);
+
+        m_field.StartAdc();
         m_field.StartAudio(process);
-        
+
         daisy::System::Delay(100);
 
         m_field.ProcessAllControls();
@@ -180,6 +204,8 @@ struct DaisyIO
         m_gateTrigger.Reset(m_field.gate_in.State());
 
         m_pageManager.Finalize();
+        m_screenDirty = true;
+        m_lastScreenMs = daisy::System::GetNow();
     }
 
     void MainLoop()
@@ -187,7 +213,14 @@ struct DaisyIO
         while (true)
         {
             ProcessControls();
-            UpdateScreen();
+
+            const uint32_t now = daisy::System::GetNow();
+            if (m_screenDirty || kScreenThrottleMs <= (now - m_lastScreenMs))
+            {
+                UpdateScreen();
+                m_lastScreenMs = now;
+                m_screenDirty = false;
+            }
         }
     }
 };

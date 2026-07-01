@@ -1,5 +1,7 @@
 #include "ParamDisplayNames.hpp"
+#include "Parameter.hpp"
 #include "AudioPairArState.hpp"
+#include "V2ParamDisplayNames.hpp"
 #include "WasmSimHost.hpp"
 
 #include <cstdlib>
@@ -28,7 +30,7 @@ void froggers_set_sample_rate(WasmSimHost* host, float sampleRate)
 
 void froggers_set_knob(WasmSimHost* host, int index, float value)
 {
-    if (host && index >= 0 && index < 8)
+    if (host && index >= 0 && index < static_cast<int>(Parameter::x_numParameters))
     {
         host->io.SetKnob(static_cast<size_t>(index), value);
     }
@@ -220,7 +222,7 @@ const char* froggers_row_name(WasmSimHost* host, int row)
     {
         return "";
     }
-    return ParamDisplayNames::forHostPageRow(
+    return V2ParamDisplayNames::forHostPageRow(
         static_cast<uint8_t>(host->io.GetCurrentPage()), static_cast<uint8_t>(row));
 }
 
@@ -262,7 +264,7 @@ int froggers_num_pages(WasmSimHost* host)
 
 void froggers_delay_set_knob(WasmSimHost* host, int row, float value)
 {
-    if (host && row >= 0 && row < 8)
+    if (host && row >= 0 && row < DelayState::kNumRows)
     {
         host->delay.setKnob(static_cast<uint8_t>(row), value);
     }
@@ -270,7 +272,7 @@ void froggers_delay_set_knob(WasmSimHost* host, int row, float value)
 
 float froggers_delay_get_knob(WasmSimHost* host, int row)
 {
-    if (!host || row < 0 || row >= 8)
+    if (!host || row < 0 || row >= DelayState::kNumRows)
     {
         return 0.0f;
     }
@@ -279,7 +281,7 @@ float froggers_delay_get_knob(WasmSimHost* host, int row)
 
 float froggers_delay_get_effective_knob(WasmSimHost* host, int row)
 {
-    if (!host || row < 0 || row >= 8)
+    if (!host || row < 0 || row >= DelayState::kNumRows)
     {
         return 0.0f;
     }
@@ -288,7 +290,7 @@ float froggers_delay_get_effective_knob(WasmSimHost* host, int row)
 
 void froggers_delay_set_row_mod_source(WasmSimHost* host, int row, int modIndex)
 {
-    if (host && row >= 0 && row < 8)
+    if (host && row >= 0 && row < DelayState::kNumRows)
     {
         const uint8_t idx = static_cast<uint8_t>(modIndex);
         if (IsValidSimModAssignment(idx)
@@ -301,7 +303,7 @@ void froggers_delay_set_row_mod_source(WasmSimHost* host, int row, int modIndex)
 
 int froggers_delay_get_row_mod_source(WasmSimHost* host, int row)
 {
-    if (!host || row < 0 || row >= 8)
+    if (!host || row < 0 || row >= DelayState::kNumRows)
     {
         return 255;
     }
@@ -310,7 +312,7 @@ int froggers_delay_get_row_mod_source(WasmSimHost* host, int row)
 
 void froggers_delay_set_row_mod_depth(WasmSimHost* host, int row, float depth)
 {
-    if (host && row >= 0 && row < 8)
+    if (host && row >= 0 && row < DelayState::kNumRows)
     {
         host->delay.setModDepth(static_cast<uint8_t>(row), depth);
     }
@@ -318,7 +320,7 @@ void froggers_delay_set_row_mod_depth(WasmSimHost* host, int row, float depth)
 
 float froggers_delay_get_row_mod_depth(WasmSimHost* host, int row)
 {
-    if (!host || row < 0 || row >= 8)
+    if (!host || row < 0 || row >= DelayState::kNumRows)
     {
         return 0.0f;
     }
@@ -327,11 +329,11 @@ float froggers_delay_get_row_mod_depth(WasmSimHost* host, int row)
 
 const char* froggers_delay_row_name(WasmSimHost* host, int row)
 {
-    if (!host || row < 0 || row >= 8)
+    if (!host || row < 0 || row >= DelayState::kNumRows)
     {
         return "";
     }
-    return ParamDisplayNames::forHostPageRow(ParamDisplayNames::kDelayHostPage, static_cast<uint8_t>(row));
+    return DelayState::rowName(static_cast<uint8_t>(row));
 }
 
 void froggers_delay_randomize_knobs(WasmSimHost* host)
@@ -502,6 +504,23 @@ float froggers_get_audio_pair_ar_mod_depth(WasmSimHost* host, int index)
         return 0.0f;
     }
     return host->io.GetAudioPairArModDepth(static_cast<uint8_t>(index));
+}
+
+void froggers_set_global_crunchy(WasmSimHost* host, float value)
+{
+    if (host)
+    {
+        host->io.SetGlobalCrunchy(value);
+    }
+}
+
+float froggers_get_global_crunchy(WasmSimHost* host)
+{
+    if (!host)
+    {
+        return 0.0f;
+    }
+    return host->io.GetGlobalCrunchy();
 }
 
 const char* froggers_audio_pair_ar_name(int index)

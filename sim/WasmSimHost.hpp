@@ -29,6 +29,8 @@ struct WasmSimHost
         io.m_hostKind = SimHostKind::Web;
         io.Init();
         delay.init(44100.0f);
+        delay.setUseV2Layout(true);
+        delay.setGlobalCrunchyPtr(&io.m_globalCrunchy);
         io.m_engine.SetSimFxInsert(simDelayInsertCallback, &delay);
     }
 

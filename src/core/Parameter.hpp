@@ -34,7 +34,7 @@ struct ParameterName
 
 struct Parameter
 {
-    static constexpr size_t x_numParameters = 8;
+    static constexpr size_t x_numParameters = 10;
     static constexpr float x_knobEpsilon = 0.001f;
 
     enum class TrackingState : uint8_t

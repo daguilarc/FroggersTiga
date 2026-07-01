@@ -191,8 +191,11 @@ body {
 
 .external-meter {
   position: relative;
-  min-width: 64px;
-  width: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 88px;
+  width: 96px;
   height: 44px;
   background: #21262d;
   border: 1px solid var(--border);
@@ -200,20 +203,18 @@ body {
   overflow: hidden;
 }
 
-.external-meter::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: color-mix(in srgb, var(--text) 25%, transparent);
-  pointer-events: none;
+.external-meter-label {
+  font-size: 0.65rem;
+  line-height: 1.1;
+  padding: 2px 4px 0;
+  color: color-mix(in srgb, var(--text) 80%, transparent);
+  white-space: nowrap;
 }
 
 .external-meter-fill {
   display: block;
-  height: 100%;
+  flex: 1;
+  min-height: 12px;
   width: 0%;
   background: var(--knob);
   opacity: 0.85;
@@ -396,6 +397,28 @@ body {
   font: inherit;
   cursor: pointer;
   border-radius: 4px;
+}
+
+.global-crunchy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.global-crunchy-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+#global-crunchy-slot .rotary-knob {
+  width: 44px;
+  height: 44px;
 }
 
 .wave-icon {

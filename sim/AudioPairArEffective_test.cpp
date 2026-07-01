@@ -1,5 +1,7 @@
 #include "AudioPairArState.hpp"
 #include "ModMgr.hpp"
+#include "Page.hpp"
+#include "V2ModTapBank.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -125,6 +127,48 @@ int main()
     }
 
     if (!expectNear(state.getEffectiveKnob(0, nullptr), base, "null ModMgr"))
+    {
+        return 1;
+    }
+
+    float globalCrunchy = 0.0f;
+    V2ModTapBank v2Taps{};
+    Page audioPage;
+    audioPage.m_pageId = 0;
+    audioPage.m_modMgr = &modMgr;
+    for (uint8_t i = 0; i < 8; ++i)
+    {
+        audioPage.InitParam("x", i, 0.0f);
+    }
+    audioPage.ConfigureV2Fuego(&globalCrunchy, 7, &v2Taps);
+    state.setV2FuegoConfig(&audioPage, SimHostKind::Web);
+    state.setModSource(0, 255);
+    globalCrunchy = 0.0f;
+    if (!expectNear(state.getEffectiveKnob(0, &modMgr), base, "Web Crunchy zero"))
+    {
+        return 1;
+    }
+    globalCrunchy = 1.0f;
+    const float crunchyHigh = state.getEffectiveKnob(0, &modMgr);
+    if (std::fabs(crunchyHigh - base) <= 0.001f)
+    {
+        std::printf("FAIL: Web Crunchy max expected difference from raw 0.5 got %f\n", crunchyHigh);
+        return 1;
+    }
+
+    globalCrunchy = 0.0f;
+    audioPage.m_parameters[7].m_knobValue = 1.0f;
+    const float crispyHigh = state.getEffectiveKnob(0, &modMgr);
+    if (std::fabs(crispyHigh - base) <= 0.001f)
+    {
+        std::printf("FAIL: Web Crispy max expected difference from raw 0.5 got %f\n", crispyHigh);
+        return 1;
+    }
+
+    state.setV2FuegoConfig(&audioPage, SimHostKind::Desktop);
+    globalCrunchy = 1.0f;
+    audioPage.KnobUpdate(7, 1.0f, 255);
+    if (!expectNear(state.getEffectiveKnob(0, &modMgr), base, "Desktop v1 no fuego on pair-AR"))
     {
         return 1;
     }

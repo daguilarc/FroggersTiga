@@ -7,6 +7,8 @@
 #include "SimModSource.hpp"
 #include "ParamDisplayNames.hpp"
 #include "StereoDelay.hpp"
+#include "V2FuegoStack.hpp"
+#include "V2ParamDisplayNames.hpp"
 
 #include <algorithm>
 #include <array>
@@ -16,12 +18,13 @@
 struct DelayState
 {
     static constexpr uint8_t kDelayPageIndex = 5;
-    static constexpr uint8_t kNumRows = 8;
-    static constexpr uint8_t kFuegRow = 7;
+    static constexpr uint8_t kNumRows = 10;
+    static constexpr uint8_t kLegacyRows = 8;
+    static constexpr uint8_t kExpandedRows = 10;
 
     static const char* rowName(uint8_t row)
     {
-        return ParamDisplayNames::forHostPageRow(kDelayPageIndex, row);
+        return V2ParamDisplayNames::forHostPageRow(kDelayPageIndex, row);
     }
 
     void init(float sampleRate)
@@ -34,8 +37,8 @@ struct DelayState
             modDepth[i] = 0.5f;
             smoothed[i].SetTarget(knobs[i]);
         }
-        knobs[kFuegRow] = 0.0f;
-        smoothed[kFuegRow].SetTarget(0.0f);
+        knobs[crispyRow()] = 0.0f;
+        smoothed[crispyRow()].SetTarget(0.0f);
     }
 
     void setSampleRate(float sampleRate)
@@ -99,15 +102,20 @@ struct DelayState
 
     float getEffectiveKnob(uint8_t row) const
     {
-        if (row >= kNumRows)
+        if (row >= activeRowCount())
         {
             return 0.0f;
         }
-        if (row == kFuegRow)
+        if (row == crispyRow())
         {
-            return blendKnob(kFuegRow, knobs[kFuegRow]);
+            const float crispyPre = blendKnob(row, knobs[row]);
+            if (m_useV2Layout)
+            {
+                return V2FuegoStack::ApplyGlobal(crispyPre, effectiveGlobalCrunchy(), row);
+            }
+            return crispyPre;
         }
-        if (modSource[row] == 255)
+        if (modSource[row] == 255 && !m_useV2Layout)
         {
             return Fuegoize(knobs[row], effectiveCrispy(), row);
         }
@@ -116,17 +124,27 @@ struct DelayState
 
     float blendRow(uint8_t row, float knobSmoothed) const
     {
+        if (m_useV2Layout)
+        {
+            return V2FuegoStack::ApplyMusicalRow(
+                blendKnob(row, knobSmoothed), effectiveGlobalCrunchy(), effectiveCrispy(), row, crispyRow());
+        }
         return Fuegoize(blendKnob(row, knobSmoothed), effectiveCrispy(), row);
     }
 
     float processInsert(float bumpIn)
     {
-        float knobSmoothed[kFuegRow];
-        for (uint8_t i = 0; i < kFuegRow; i++)
+        float knobSmoothed[9];
+        for (uint8_t i = 0; i < 7; i++)
         {
             knobSmoothed[i] = smoothed[i].Process();
         }
-        smoothed[kFuegRow].Process();
+        if (m_useV2Layout)
+        {
+            knobSmoothed[7] = smoothed[7].Process();
+            knobSmoothed[8] = smoothed[8].Process();
+        }
+        smoothed[crispyRow()].Process();
 
         DelayParams params;
         params.dtim = blendRow(0, knobSmoothed[0]);
@@ -136,6 +154,13 @@ struct DelayState
         params.ddet = blendRow(4, knobSmoothed[4]);
         params.dmod = blendRow(5, knobSmoothed[5]);
         params.dmix = blendRow(6, knobSmoothed[6]);
+        if (m_useV2Layout)
+        {
+            const float color = blendRow(7, knobSmoothed[7]);
+            const float halo = blendRow(8, knobSmoothed[8]);
+            params.ddet = std::min(std::max(0.5f * (params.ddet + color), 0.0f), 1.0f);
+            params.dmod = std::min(std::max(0.5f * (params.dmod + halo), 0.0f), 1.0f);
+        }
 
         m_lastDmix = params.dmix;
         const WetPair wet = delay.process(bumpIn, params);
@@ -156,17 +181,21 @@ struct DelayState
     void randomizeKnobs()
     {
         RGen rgen;
-        for (uint8_t i = 0; i < kFuegRow; i++)
+        for (uint8_t i = 0; i < activeRowCount(); i++)
         {
+            if (i == crispyRow())
+            {
+                continue;
+            }
             setKnob(i, rgen.UniGenRange(0.0f, 1.0f));
         }
-        setKnob(kFuegRow, 0.0f);
+        setKnob(crispyRow(), 0.0f);
     }
 
     void randomizeMod(const CvMidiBridge& bridge, SimHostKind hostKind)
     {
         RGen rgen;
-        for (uint8_t i = 0; i < kNumRows; i++)
+        for (uint8_t i = 0; i < activeRowCount(); i++)
         {
             modDepth[i] = rgen.UniGenRange(0.0f, 1.0f);
             modSource[i] = PickSimRandomModIndex(rgen, bridge, hostKind);
@@ -175,7 +204,7 @@ struct DelayState
 
     void clearModRoutesForIndex(uint8_t modIndex)
     {
-        for (uint8_t i = 0; i < kNumRows; i++)
+        for (uint8_t i = 0; i < activeRowCount(); i++)
         {
             if (modSource[i] == modIndex)
             {
@@ -187,7 +216,7 @@ struct DelayState
 
     void sanitizeModSources()
     {
-        for (uint8_t i = 0; i < kNumRows; i++)
+        for (uint8_t i = 0; i < activeRowCount(); i++)
         {
             if (!IsValidSimModAssignment(modSource[i]))
             {
@@ -210,7 +239,38 @@ struct DelayState
     std::array<RuntimeParam, kNumRows> smoothed{};
     StereoDelay delay;
 
+    void setGlobalCrunchyPtr(const float* globalCrunchy)
+    {
+        m_globalCrunchy = globalCrunchy;
+    }
+
+    void setUseV2Layout(bool enabled)
+    {
+        m_useV2Layout = enabled;
+        knobs[crispyRow()] = 0.0f;
+        smoothed[crispyRow()].SetTarget(0.0f);
+    }
+
 private:
+    uint8_t activeRowCount() const
+    {
+        return m_useV2Layout ? kExpandedRows : kLegacyRows;
+    }
+
+    uint8_t crispyRow() const
+    {
+        return m_useV2Layout ? V2ParamDisplayNames::CrispyRowForPage(kDelayPageIndex) : 7;
+    }
+
+    float effectiveGlobalCrunchy() const
+    {
+        if (!m_globalCrunchy)
+        {
+            return 0.0f;
+        }
+        return std::min(std::max(*m_globalCrunchy, 0.0f), 1.0f);
+    }
+
     float blendKnob(uint8_t row, float base) const
     {
         if (!m_modMgr || row >= kNumRows || modSource[row] == 255 || modDepth[row] <= 0.0f)
@@ -222,13 +282,15 @@ private:
 
     float effectiveCrispy() const
     {
-        return blendKnob(kFuegRow, knobs[kFuegRow]);
+        return blendKnob(crispyRow(), knobs[crispyRow()]);
     }
 
     float m_sampleRate = 44100.0f;
     const ModMgr* m_modMgr = nullptr;
     WetPair m_lastWet{};
     float m_lastDmix = 0.0f;
+    bool m_useV2Layout = false;
+    const float* m_globalCrunchy = nullptr;
 };
 
 inline float simDelayInsertCallback(float bumpIn, void* ctx)

@@ -27,6 +27,7 @@ EXPORTS='[
   "_froggers_set_audio_pair_ar_mod_source","_froggers_get_audio_pair_ar_mod_source",
   "_froggers_set_audio_pair_ar_mod_depth","_froggers_get_audio_pair_ar_mod_depth",
   "_froggers_audio_pair_ar_name",
+  "_froggers_set_global_crunchy","_froggers_get_global_crunchy",
   "_froggers_assignable_mod_count","_froggers_assignable_mod_index",
   "_froggers_mod_source_available","_froggers_mod_source_name",
   "_froggers_push_midi_cc",

@@ -8,6 +8,8 @@ import {
   HOST_PAGE_COUNT,
   HOST_PAGE_NAMES,
   CORE_KNOB_COUNT,
+  EXPANDED_CORE_KNOB_COUNT,
+  coreKnobCountForPage,
   PAIR_AR_KNOB_COUNT,
   TOTAL_KNOB_COUNT,
   WEB_MOD_BAY_SPEC,
@@ -36,11 +38,11 @@ let assignableModOptions: AssignableModOption[] = [];
 
 const PAGE_BLURBS: Record<number, string> = {
   0: "Three VCOs, cross-coupling, phase modulation, and pair-sum AR.",
-  1: "Random CV — press Rand Resample to step.",
-  2: "Reverb mix, size, decay, stereo width, and diffusion.",
-  3: "Comb offset, peak EQ, comb filter, and Crispy.",
-  4: "Drive, SRR, XOR grit, and fuzz.",
-  5: "Stereo delay — send, feedback, width, detune, mod.",
+  1: "Random CV — press Rand Resample to step. Rows 8–9: Spread and Bias.",
+  2: "Reverb mix, size, decay, stereo width, and diffusion. Rows 8–9: Mod depth and Hold.",
+  3: "Comb offset, peak EQ, comb filter, parallel Comb/Peak + Scoop (rows 8–9).",
+  4: "Drive, SRR, XOR grit, and fuzz. Rows 8–9: Blend and Phase.",
+  5: "Stereo delay — send, feedback, width, detune, mod. Rows 8–9: Color and Halo.",
 };
 
 const DELAY_HINTS: Record<number, string> = {
@@ -66,6 +68,7 @@ const modBayEl = document.getElementById("mod-bay") as HTMLDivElement;
 const modBayToggle = document.getElementById("mod-bay-toggle") as HTMLButtonElement;
 const externalMeterEl = document.getElementById("external-meter") as HTMLDivElement;
 const externalMeterFillEl = document.getElementById("external-meter-fill") as HTMLSpanElement;
+const externalMeterLabelEl = document.getElementById("external-meter-label") as HTMLSpanElement;
 const pageChromeEl = document.getElementById("page-chrome") as HTMLElement;
 const pageChromeTitle = document.getElementById("page-chrome-title") as HTMLHeadingElement;
 const pageChromeBlurb = document.getElementById("page-chrome-blurb") as HTMLParagraphElement;
@@ -118,6 +121,20 @@ const knobHintLabels: HTMLSpanElement[] = [];
 const knobCols: HTMLDivElement[] = [];
 const vcoMorphBtns: HTMLButtonElement[] = [];
 const pagePillButtons: HTMLButtonElement[] = [];
+const globalCrunchySlot = document.getElementById("global-crunchy-slot") as HTMLDivElement;
+let crunchyDragging = false;
+let lastGlobalCrunchy = 0;
+const globalCrunchyKnob = new RotaryKnob(
+  (value) => {
+    lastGlobalCrunchy = value;
+    send({ type: "globalCrunchy", value });
+  },
+  (dragging) => {
+    crunchyDragging = dragging;
+  }
+);
+globalCrunchyKnob.setValue(0);
+globalCrunchySlot.appendChild(globalCrunchyKnob.element);
 
 function send(msg: object): void {
   workletNode?.port.postMessage(msg);
@@ -127,12 +144,33 @@ function isDelayPage(): boolean {
   return hostPage === 5;
 }
 
+const PAIR_AR_COL_START = EXPANDED_CORE_KNOB_COUNT;
+
 function isPairArKnob(index: number): boolean {
-  return index >= CORE_KNOB_COUNT;
+  return hostPage === 0 && index >= PAIR_AR_COL_START && index < PAIR_AR_COL_START + PAIR_AR_KNOB_COUNT;
+}
+
+function visibleKnobColIndices(): number[] {
+  if (hostPage === 0) {
+    const indices: number[] = [];
+    for (let i = 0; i < CORE_KNOB_COUNT; i++) {
+      indices.push(i);
+    }
+    for (let i = 0; i < PAIR_AR_KNOB_COUNT; i++) {
+      indices.push(PAIR_AR_COL_START + i);
+    }
+    return indices;
+  }
+  const coreCount = coreKnobCountForPage(hostPage);
+  const indices: number[] = [];
+  for (let i = 0; i < coreCount; i++) {
+    indices.push(i);
+  }
+  return indices;
 }
 
 function pairArCellIndex(index: number): number {
-  return index - CORE_KNOB_COUNT;
+  return index - PAIR_AR_COL_START;
 }
 
 function modSelectIndex(modSource: number): number {
@@ -238,9 +276,7 @@ function renderVcoMorphButtons(wasmPage: number): void {
   for (let i = 0; i < vcoMorphBtns.length; i++) {
     const btn = vcoMorphBtns[i];
     btn.hidden = !show;
-    if (show) {
-      btn.innerHTML = waveSvg(lastMorphs[i] ?? 0);
-    }
+    btn.innerHTML = waveSvg(lastMorphs[i] ?? 0);
   }
 }
 
@@ -248,6 +284,13 @@ function renderInputMeter(peak: number, active: boolean): void {
   externalMeterEl.dataset.active = active ? "true" : "false";
   const width = active ? Math.min(100, Math.max(0, peak * 100)) : 0;
   externalMeterFillEl.style.width = `${width}%`;
+  if (!externalEnabled) {
+    externalMeterLabelEl.textContent = "Off";
+  } else if (!active) {
+    externalMeterLabelEl.textContent = "Waiting for Play";
+  } else {
+    externalMeterLabelEl.textContent = "Ext. In";
+  }
 }
 
 type MobileAudioSessionMode = "playback" | "reset" | "externalOn" | "externalOff";
@@ -309,9 +352,8 @@ function applyPlayingStatus(): void {
 
 function layoutKnobCols(): void {
   knobsEl.innerHTML = "";
-  const visibleCount = hostPage === 0 ? TOTAL_KNOB_COUNT : CORE_KNOB_COUNT;
-  for (let i = 0; i < visibleCount; i++) {
-    knobsEl.appendChild(knobCols[i]);
+  for (const colIndex of visibleKnobColIndices()) {
+    knobsEl.appendChild(knobCols[colIndex]);
   }
 }
 
@@ -335,16 +377,17 @@ function renderPageChrome(): void {
 }
 
 function applyKnobLabelsFromRows(rows: ScreenRow[], pairArRows: ScreenRow[]): void {
-  const wasmCore = rows.length === CORE_KNOB_COUNT ? rows : null;
+  const coreCount = coreKnobCountForPage(hostPage);
+  const wasmCore = rows.length === coreCount ? rows : null;
   const wasmPairAr = pairArRows.length === PAIR_AR_KNOB_COUNT ? pairArRows : null;
-  for (let i = 0; i < CORE_KNOB_COUNT; i++) {
+  for (let i = 0; i < coreCount; i++) {
     const wasmName = wasmCore?.[i]?.name;
     knobMainLabels[i].textContent = wasmName || coreKnobLabel(hostPage, i);
     knobHintLabels[i].textContent = hostPage === 5 ? (DELAY_HINTS[i] ?? "") : "";
     knobHintLabels[i].style.display = "block";
   }
   for (let i = 0; i < PAIR_AR_KNOB_COUNT; i++) {
-    const colIndex = CORE_KNOB_COUNT + i;
+    const colIndex = PAIR_AR_COL_START + i;
     const wasmName = wasmPairAr?.[i]?.name;
     knobMainLabels[colIndex].textContent = wasmName || pairArKnobLabel(i);
     knobHintLabels[colIndex].textContent = "";
@@ -386,22 +429,32 @@ function changeHostPage(delta: number): void {
   }
 }
 
+function engineActionReady(): boolean {
+  return engineReady || (workletNode !== null && (audioRunning || transportIntentPlaying));
+}
+
 function updateEngineDependentUi(): void {
-  pageRandKnobsBtn.disabled = !engineReady;
-  pageRandModBtn.disabled = !engineReady;
+  const ready = engineActionReady();
+  pageRandKnobsBtn.disabled = !ready;
+  pageRandModBtn.disabled = !ready;
 }
 
 function requireEngineForAction(): boolean {
-  if (engineReady) {
+  if (engineActionReady()) {
     return true;
   }
-  statusEl.textContent = "Click Play first";
+  if (audioRunning) {
+    applyPlayingStatus();
+  } else {
+    statusEl.textContent = "Click Play first";
+  }
   return false;
 }
 
 function syncKnobUi(rows: ScreenRow[], pairArRows: ScreenRow[]): void {
   applyKnobLabelsFromRows(rows, pairArRows);
-  for (let i = 0; i < CORE_KNOB_COUNT; i++) {
+  const coreCount = coreKnobCountForPage(hostPage);
+  for (let i = 0; i < coreCount; i++) {
     const row = rows[i];
     const modIdx = modSelectIndex(row.modSource);
     if (modSelects[i] && modSelects[i].selectedIndex !== modIdx) {
@@ -415,7 +468,7 @@ function syncKnobUi(rows: ScreenRow[], pairArRows: ScreenRow[]): void {
     return;
   }
   for (let i = 0; i < PAIR_AR_KNOB_COUNT; i++) {
-    const colIndex = CORE_KNOB_COUNT + i;
+    const colIndex = PAIR_AR_COL_START + i;
     const row = pairArRows[i];
     if (!row) {
       continue;
@@ -449,16 +502,24 @@ function onScreenUpdate(data: Record<string, unknown>): void {
     lastMorphs = morphs.slice(0, 3);
   }
   const wasmPage = data.wasmPage as number;
+  const processorRunning =
+    typeof data.audioRunning === "boolean" ? data.audioRunning : audioRunning;
   renderModBay(
     data.scopeSamples as number[][] | undefined,
     data.modLevels as number[],
-    audioRunning
+    processorRunning
   );
   syncKnobUi(rows, pairArRows);
   renderVcoMorphButtons(wasmPage);
   layoutKnobCols();
 
-  const meterActive = externalEnabled && audioRunning;
+  const globalCrunchy = Number(data.globalCrunchy ?? lastGlobalCrunchy);
+  if (!crunchyDragging) {
+    lastGlobalCrunchy = globalCrunchy;
+    globalCrunchyKnob.setValue(globalCrunchy);
+  }
+
+  const meterActive = externalEnabled && processorRunning;
   const inputPeak = meterActive ? Math.max(0, Number(data.inputPeak ?? 0)) : 0;
   renderInputMeter(inputPeak, meterActive);
 }
@@ -640,9 +701,6 @@ pageRandModBtn.addEventListener("click", () => {
 });
 
 document.getElementById("rand-morphs")?.addEventListener("click", () => {
-  if (!requireEngineForAction()) {
-    return;
-  }
   send({ type: "randomizeMorphs" });
 });
 document.getElementById("rand-all")?.addEventListener("click", () => {
@@ -918,6 +976,10 @@ async function setExternalEnabled(enabled: boolean): Promise<void> {
     micSource.connect(workletNode);
     applyMobileAudioSession("externalOn");
     applyExternalUi(true);
+    if (audioRunning && workletNode && outputGain) {
+      connectWorkletOutput();
+      send({ type: "setRunning", running: true });
+    }
     if (audioRunning) {
       applyPlayingStatus();
     }
@@ -1015,8 +1077,15 @@ function handleWorkletMessage(event: MessageEvent): void {
     if (audioContext) {
       send({ type: "setSampleRate", sampleRate: audioContext.sampleRate });
     }
+    if (transportIntentPlaying && workletNode && outputGain) {
+      connectWorkletOutput();
+      send({ type: "setRunning", running: true });
+      audioRunning = true;
+    }
     syncTransportUi();
-    if (!audioRunning) {
+    if (audioRunning) {
+      applyPlayingStatus();
+    } else {
       statusEl.textContent = "Stopped — click Play";
     }
   }
@@ -1039,6 +1108,7 @@ function setupAudioContextStateChange(): void {
       return;
     }
     if (audioContext.state === "suspended" && transportIntentPlaying) {
+      send({ type: "setRunning", running: false });
       audioRunning = false;
       statusEl.textContent = "Audio suspended — click Play";
       syncTransportUi();
@@ -1105,7 +1175,13 @@ async function initWorklet(): Promise<void> {
 }
 
 async function startAudio(): Promise<void> {
-  if (audioRunning && audioContext?.state === "running") {
+  if (audioRunning && audioContext?.state === "running" && workletNode) {
+    connectWorkletOutput();
+    send({ type: "setRunning", running: true });
+    if (audioContext) {
+      send({ type: "setSampleRate", sampleRate: audioContext.sampleRate });
+    }
+    applyPlayingStatus();
     return;
   }
   playBtn.disabled = true;
@@ -1121,12 +1197,14 @@ async function startAudio(): Promise<void> {
       return;
     }
     if (!(await ensureAudioContextRunning())) {
+      send({ type: "setRunning", running: false });
       audioRunning = false;
       syncTransportUi();
       statusEl.textContent = "Audio suspended — click Play";
       return;
     }
     connectWorkletOutput();
+    send({ type: "setSampleRate", sampleRate: audioContext.sampleRate });
     send({ type: "setRunning", running: true });
     send({ type: "external", enabled: externalEnabled });
     audioRunning = true;

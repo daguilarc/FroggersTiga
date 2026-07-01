@@ -11,6 +11,7 @@
 #include "SchmidtTrigger.hpp"
 #include "SDDSine.hpp"
 #include "TanhSaturator.hpp"
+#include "VcoAdsrState.hpp"
 #include "VcoWaveEval.hpp"
 #include "VcoWaveMorph.hpp"
 
@@ -74,6 +75,8 @@ struct FroggersEngine
     RuntimeParam m_comf;
     RuntimeParam m_comq;
     RuntimeParam m_cmlp;
+    RuntimeParam m_filterCombPeak;
+    RuntimeParam m_filterScoop;
 
     RuntimeParam m_srr1;
     RuntimeParam m_srr2;
@@ -82,6 +85,7 @@ struct FroggersEngine
     RuntimeParam m_hash;
 
     ResonantBump m_resonantBump;
+    ResonantBump m_scoopNotch;
     Comb m_comFilter;
     PureDelay m_pureDelay;
 
@@ -102,8 +106,21 @@ struct FroggersEngine
     SimFxInsertFn m_simFxInsert = nullptr;
     void* m_simFxInsertCtx = nullptr;
     AudioPairArState* m_pairAr = nullptr;
+    VcoAdsrState* m_vcoAdsr = nullptr;
+    Page* m_adsrParams = nullptr;
     PairArEnvelope m_pair12;
     PairArEnvelope m_pair23;
+    bool m_useV2FilterParallel = false;
+
+    struct V2ModTapHooks
+    {
+        void (*processOsc)(float v1, float v2, float v3, void* ctx) = nullptr;
+        void (*syncMarbles)(float marbles1, float marbles2, void* ctx) = nullptr;
+        void* ctx = nullptr;
+    };
+
+    V2ModTapHooks m_v2ModTapHooks{};
+    bool m_v2ModTapLayout = false;
 
     static float WrapPhase(float p)
     {
@@ -134,7 +151,7 @@ struct FroggersEngine
             &m_v1vo, &m_v2vo, &m_v3vo, &m_xcpl, &m_pm1, &m_pm2, &m_pm3, &m_oscLvl,
             &m_rvMix, &m_rvSize, &m_rvDecay, &m_rvPre, &m_rvDamp, &m_rvWidth, &m_rvDiffusion,
             &m_pureDelaySeconds, &m_bumpFreq, &m_bumpResonance, &m_bumpWidth,
-            &m_comf, &m_comq, &m_cmlp,
+            &m_comf, &m_comq, &m_cmlp, &m_filterCombPeak, &m_filterScoop,
             &m_srr1, &m_srr2, &m_fuzz, &m_digr, &m_hash,
         };
         for (RuntimeParam* param : params)
@@ -173,6 +190,23 @@ struct FroggersEngine
         m_pairAr = state;
         m_pair12.Reset();
         m_pair23.Reset();
+    }
+
+    void SetVcoAdsrState(VcoAdsrState* state, Page* adsrPage)
+    {
+        m_vcoAdsr = state;
+        m_adsrParams = adsrPage;
+    }
+
+    void SetUseV2FilterParallel(bool enabled)
+    {
+        m_useV2FilterParallel = enabled;
+    }
+
+    void SetV2ModTapLayout(bool enabled, V2ModTapHooks hooks)
+    {
+        m_v2ModTapLayout = enabled;
+        m_v2ModTapHooks = hooks;
     }
 
     float GetEnvelopeLevel() const
@@ -376,6 +410,8 @@ struct FroggersEngine
         m_comq.SetTarget(Comb::GetFeedback(m_filterParams->GetParam(5)));
         float cmlp = PhaseUtils::ExpParam::Compute(4.0f * comf, 20000.0f / sr, m_filterParams->GetParam(6));
         m_cmlp.SetTarget(Alpha(cmlp));
+        m_filterCombPeak.SetTarget(m_filterParams->GetParam(7));
+        m_filterScoop.SetTarget(m_filterParams->GetParam(8));
 
         m_srr1.SetTarget(1e-2f + PhaseUtils::ZeroedExpParam::Compute(10.0f, 1 - m_driveParams->GetParam(2)));
         m_srr2.SetTarget(1e-2f + PhaseUtils::ZeroedExpParam::Compute(10.0f, 1 - m_driveParams->GetParam(3)));
@@ -455,6 +491,10 @@ struct FroggersEngine
         m_resonantBump.SetFreq(m_bumpFreq.Process());
         m_resonantBump.SetHeight(m_bumpResonance.Process());
         m_resonantBump.SetWidth(m_bumpWidth.Process());
+        m_scoopNotch.SetFreq(m_bumpFreq.Process());
+        m_scoopNotch.SetWidth(m_bumpWidth.Process());
+        const float scoop = m_filterScoop.Process();
+        m_scoopNotch.SetHeight(std::max(0.05f, 1.0f - 0.95f * scoop));
         m_comFilter.m_delaySamples = Comb::GetDelaySamples(m_comf.Process());
         m_comFilter.m_feedback = m_comq.Process();
         m_comFilter.SetCutoffAlpha(m_cmlp.Process());
@@ -634,6 +674,12 @@ struct FroggersEngine
 
     float MixOscVoices(float v1, float v2, float v3)
     {
+        if (m_vcoAdsr && m_adsrParams)
+        {
+            v1 = m_vcoAdsr->apply(0, v1, m_adsrParams->GetParam(0), m_adsrParams->GetParam(1));
+            v2 = m_vcoAdsr->apply(1, v2, m_adsrParams->GetParam(2), m_adsrParams->GetParam(3));
+            v3 = m_vcoAdsr->apply(2, v3, m_adsrParams->GetParam(4), m_adsrParams->GetParam(5));
+        }
         if (!m_pairAr)
         {
             return (v1 + v2 + v3) * (1.0f / 3.0f);
@@ -672,9 +718,22 @@ struct FroggersEngine
 
     float ApplyOutputFx(float output)
     {
-        output = m_pureDelay.Process(output);
-        output = m_comFilter.Process(output);
-        output = m_resonantBump.Process(output);
+        if (m_useV2FilterParallel)
+        {
+            const float combPath = m_comFilter.Process(m_pureDelay.Process(output));
+            const float peakPath = m_resonantBump.Process(output);
+            const float blend = m_filterCombPeak.Process();
+            const float mixed = peakPath * (1.0f - blend) + combPath * blend;
+            const float scoopMix = m_filterScoop.Process();
+            const float scooped = m_scoopNotch.Process(mixed);
+            output = mixed * (1.0f - scoopMix) + scooped * scoopMix;
+        }
+        else
+        {
+            output = m_pureDelay.Process(output);
+            output = m_comFilter.Process(output);
+            output = m_resonantBump.Process(output);
+        }
         if (m_simFxInsert)
         {
             output = m_simFxInsert(output, m_simFxInsertCtx);
@@ -689,10 +748,19 @@ struct FroggersEngine
     {
         UpdateParams();
         m_marbles.Process();
+        if (m_v2ModTapLayout && m_v2ModTapHooks.syncMarbles && m_modMgr)
+        {
+            m_v2ModTapHooks.syncMarbles(
+                m_modMgr->m_mods[5], m_modMgr->m_mods[6], m_v2ModTapHooks.ctx);
+        }
 
         float extIn = m_extInputLimiter.Process(input);
         float fuegKnob = m_audioGenParams->GetParam(7);
         auto [v1, v2, v3] = StepOscillators(fuegKnob);
+        if (m_v2ModTapLayout && m_v2ModTapHooks.processOsc)
+        {
+            m_v2ModTapHooks.processOsc(v1, v2, v3, m_v2ModTapHooks.ctx);
+        }
         float olvl = m_oscLvl.Process();
         m_envelopeLevel = m_extEnvFilter.Process(std::fabs(extIn));
         m_extGate.Process(m_envelopeLevel);

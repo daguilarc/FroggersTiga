@@ -11,7 +11,9 @@ enum class SimHostKind : uint8_t
     Desktop,
     Web,
     Vst,
-    Vcv
+    Vcv,
+    DesktopV2,
+    VstV2
 };
 
 enum class SimModSource : uint8_t
@@ -24,21 +26,54 @@ enum class SimModSource : uint8_t
     Marbles2 = 6
 };
 
+inline bool IsV2SimHostKind(SimHostKind hostKind)
+{
+    return hostKind == SimHostKind::DesktopV2 || hostKind == SimHostKind::VstV2;
+}
+
+inline bool UsesV2Fuego(SimHostKind hostKind)
+{
+    return IsV2SimHostKind(hostKind) || hostKind == SimHostKind::Web;
+}
+
+inline bool IsV2ModSourceIndex(uint8_t modIndex)
+{
+    return modIndex >= 7 && modIndex <= 14;
+}
+
+inline bool IsSimAssignableModIndex(uint8_t modIndex, SimHostKind hostKind)
+{
+    if (IsV2SimHostKind(hostKind))
+    {
+        return IsV2ModSourceIndex(modIndex);
+    }
+    return modIndex == 0 || modIndex == 1 || modIndex == 4 || modIndex == 5 || modIndex == 6;
+}
+
 inline bool IsSimAssignableModIndex(uint8_t modIndex)
 {
-    return modIndex == 0 || modIndex == 1 || modIndex == 4 || modIndex == 5 || modIndex == 6;
+    return IsSimAssignableModIndex(modIndex, SimHostKind::Desktop);
+}
+
+inline bool IsValidSimModAssignment(uint8_t modIndex, SimHostKind hostKind)
+{
+    return modIndex == 255 || IsSimAssignableModIndex(modIndex, hostKind);
 }
 
 inline bool IsValidSimModAssignment(uint8_t modIndex)
 {
-    return modIndex == 255 || IsSimAssignableModIndex(modIndex);
+    return IsValidSimModAssignment(modIndex, SimHostKind::Desktop);
 }
 
 inline bool IsSimModSourceAvailable(uint8_t modIndex,
                                     const CvMidiBridge& bridge,
                                     SimHostKind hostKind)
 {
-    if (!IsSimAssignableModIndex(modIndex))
+    if (IsV2SimHostKind(hostKind))
+    {
+        return IsV2ModSourceIndex(modIndex);
+    }
+    if (!IsSimAssignableModIndex(modIndex, hostKind))
     {
         return false;
     }
@@ -85,12 +120,25 @@ inline uint8_t PickSimRandomModIndex(RGen& rgen,
     {
         return 255;
     }
+
     static constexpr uint8_t kPoolAll[] = {0, 1, 4, 5, 6};
     static constexpr uint8_t kPoolInternal[] = {4, 5, 6};
-    const bool excludeCc = hostKind == SimHostKind::Vcv || hostKind == SimHostKind::Vst;
-    const uint8_t* pool = excludeCc ? kPoolInternal : kPoolAll;
-    const size_t poolSize = excludeCc ? 3 : 5;
-    uint8_t available[5];
+    static constexpr uint8_t kPoolV2[] = {7, 8, 9, 10, 11, 12, 13, 14};
+
+    const uint8_t* pool = kPoolAll;
+    size_t poolSize = 5;
+    if (IsV2SimHostKind(hostKind))
+    {
+        pool = kPoolV2;
+        poolSize = 8;
+    }
+    else if (hostKind == SimHostKind::Vcv || hostKind == SimHostKind::Vst)
+    {
+        pool = kPoolInternal;
+        poolSize = 3;
+    }
+
+    uint8_t available[8];
     uint8_t count = 0;
     for (size_t i = 0; i < poolSize; i++)
     {

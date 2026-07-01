@@ -51,6 +51,8 @@ set(EXPORTED_FUNCS
     _froggers_set_audio_pair_ar_mod_depth
     _froggers_get_audio_pair_ar_mod_depth
     _froggers_audio_pair_ar_name
+    _froggers_set_global_crunchy
+    _froggers_get_global_crunchy
     _froggers_row_value
     _froggers_row_badge
     _froggers_current_page

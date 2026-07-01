@@ -6,12 +6,17 @@
 #include "HostRandomize.hpp"
 #include "ParamDisplayNames.hpp"
 #include "SimModSource.hpp"
+#include "V2EngineSetup.hpp"
+#include "V2ModTapBank.hpp"
+#include "V2ParamDisplayNames.hpp"
+#include "VcoAdsrState.hpp"
 
 #include <cmath>
 #include "FroggersEngine.hpp"
 #include "Page.hpp"
 #include "SchmidtTrigger.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -33,17 +38,37 @@ struct PagedHostIO
     bool m_sw1Pulse{false};
     bool m_sw2Pulse{false};
     bool m_marblesPulse{false};
+    V2ModTapBank m_v2ModTaps;
+    VcoAdsrState m_vcoAdsr;
+    float m_globalCrunchy = 0.0f;
 
     void Init()
     {
         m_engine.Config(&m_pageManager);
-        m_pageManager.Finalize();
-        m_pageManager.SanitizeSimModAssignments();
+        if (UsesV2Fuego(m_hostKind))
+        {
+            V2EngineSetup::configure(m_pageManager, IsV2SimHostKind(m_hostKind));
+            configureV2FuegoPages();
+        }
         m_pairAr.init(44100.0f);
         m_pairAr.sanitizeModSources();
-        m_engine.SetAudioPairArState(&m_pairAr);
+        m_pairAr.setV2FuegoConfig(&m_pageManager.m_pages[0], m_hostKind);
+        if (IsV2SimHostKind(m_hostKind))
+        {
+            m_vcoAdsr.init(44100.0f);
+            m_engine.SetAudioPairArState(nullptr);
+            m_engine.SetVcoAdsrState(&m_vcoAdsr, &m_pageManager.m_pages[6]);
+        }
+        else
+        {
+            m_engine.SetAudioPairArState(&m_pairAr);
+            m_engine.SetVcoAdsrState(nullptr, nullptr);
+        }
+        m_engine.SetUseV2FilterParallel(UsesV2Fuego(m_hostKind));
         m_engine.SetSimWaveMorph(true);
         m_engine.SetSimDedicatedPm3Knob(true);
+        m_pageManager.Finalize();
+        m_pageManager.SanitizeSimModAssignments();
         m_gateTrigger.Reset(m_gateHigh);
     }
 
@@ -51,6 +76,7 @@ struct PagedHostIO
     {
         m_engine.SetSampleRate(sampleRate);
         m_pairAr.setSampleRate(sampleRate);
+        m_vcoAdsr.setSampleRate(sampleRate);
     }
 
     void SetKnob(size_t index, float value)
@@ -63,7 +89,12 @@ struct PagedHostIO
 
     void SetPageKnob(uint8_t page, uint8_t position, float value)
     {
-        m_pageManager.KnobUpdateOnPage(page, position, value);
+        if (page >= m_pageManager.m_numPages || position >= Parameter::x_numParameters)
+        {
+            return;
+        }
+        m_pageManager.m_knobPositions[position] = value;
+        m_pageManager.m_pages[page].m_parameters[position].KnobUpdate(value);
     }
 
     float GetPageParam(uint8_t page, uint8_t position)
@@ -76,9 +107,19 @@ struct PagedHostIO
         return value;
     }
 
+    void SetGlobalCrunchy(float value)
+    {
+        m_globalCrunchy = std::min(std::max(value, 0.0f), 1.0f);
+    }
+
+    float GetGlobalCrunchy() const
+    {
+        return m_globalCrunchy;
+    }
+
     void SetPageModSource(uint8_t page, uint8_t position, uint8_t modIndex)
     {
-        if (!IsValidSimModAssignment(modIndex))
+        if (!IsValidSimModAssignment(modIndex, m_hostKind))
         {
             return;
         }
@@ -187,7 +228,7 @@ struct PagedHostIO
 
     void SetRowModSource(size_t row, uint8_t modIndex)
     {
-        if (!IsValidSimModAssignment(modIndex))
+        if (!IsValidSimModAssignment(modIndex, m_hostKind))
         {
             return;
         }
@@ -235,7 +276,7 @@ struct PagedHostIO
 
     void SetAudioPairArModSource(uint8_t index, uint8_t modIndex)
     {
-        if (!IsValidSimModAssignment(modIndex))
+        if (!IsValidSimModAssignment(modIndex, m_hostKind))
         {
             return;
         }
@@ -326,6 +367,10 @@ struct PagedHostIO
 
         m_midiBridge.drainMidiIn(m_pageManager.m_modMgr.m_mods, ModMgr::x_numMods);
         applyCvPresence(m_prevCv, m_cvPresence, m_pageManager.m_modMgr);
+        if (IsV2SimHostKind(m_hostKind))
+        {
+            m_vcoAdsr.setGate(m_gateHigh);
+        }
 
         for (size_t i = 0; i < Parameter::x_numParameters; i++)
         {
@@ -342,12 +387,21 @@ struct PagedHostIO
 
     const char* GetRowName(size_t row) const
     {
+        if (UsesV2Fuego(m_hostKind))
+        {
+            return V2ParamDisplayNames::forHostPageRow(
+                m_pageManager.m_currentPage, static_cast<uint8_t>(row));
+        }
         return ParamDisplayNames::forHostPageRow(
             m_pageManager.m_currentPage, static_cast<uint8_t>(row));
     }
 
     const char* GetPageRowName(uint8_t page, uint8_t row) const
     {
+        if (UsesV2Fuego(m_hostKind))
+        {
+            return V2ParamDisplayNames::forHostPageRow(page, row);
+        }
         return ParamDisplayNames::forHostPageRow(page, row);
     }
 
@@ -378,10 +432,16 @@ struct PagedHostIO
 
     float GetCvOut(size_t modIndex) const
     {
-        if (modIndex < ModMgr::x_numMods)
+        return GetSimCvOut(m_hostKind, m_pageManager.m_modMgr, m_v2ModTaps, modIndex);
+    }
+
+private:
+    void configureV2FuegoPages()
+    {
+        for (uint8_t page = 0; page < m_pageManager.m_numPages; ++page)
         {
-            return m_pageManager.m_modMgr.m_mods[modIndex];
+            const uint8_t crispyRow = V2ParamDisplayNames::CrispyRowForPage(page);
+            m_pageManager.m_pages[page].ConfigureV2Fuego(&m_globalCrunchy, crispyRow, &m_v2ModTaps);
         }
-        return 0.0f;
     }
 };

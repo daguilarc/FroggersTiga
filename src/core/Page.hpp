@@ -2,6 +2,10 @@
 
 #include "Parameter.hpp"
 #include "ModMgr.hpp"
+#include "SimModSource.hpp"
+#include "V2ModTapBank.hpp"
+#include "V2FuegoStack.hpp"
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 
@@ -9,10 +13,14 @@ struct PageManager;
 
 struct Page
 {
-    static constexpr size_t x_numParameters = 8;
+    static constexpr size_t x_numParameters = Parameter::x_numParameters;
     uint8_t m_pageId;
     Parameter m_parameters[x_numParameters];
     ModMgr* m_modMgr;
+    bool m_useV2Fuego = false;
+    float* m_globalCrunchy = nullptr;
+    const V2ModTapBank* m_v2ModTaps = nullptr;
+    uint8_t m_v2CrispyRow = static_cast<uint8_t>(Parameter::x_numParameters - 1);
 
     void InitParam(const char* name, uint8_t position, float defaultValue)
     {
@@ -21,6 +29,10 @@ struct Page
 
     float GetParam(uint8_t position) const
     {
+        if (m_useV2Fuego)
+        {
+            return GetParamV2(position);
+        }
         return m_parameters[position].Get(m_modMgr);
     }
 
@@ -44,13 +56,41 @@ struct Page
         m_parameters[position].PageSelect(knobPosition);
     }
 
-    void SetFuegoization()
+    void SetFuegoization(uint8_t crispyRow = 7)
     {
-        m_parameters[Parameter::x_numParameters - 1].Init("FUEG", m_pageId, Parameter::x_numParameters - 1, 0.0f);
-        for (size_t i = 0; i < Parameter::x_numParameters - 1; i++)
+        if (crispyRow >= Parameter::x_numParameters)
         {
-            m_parameters[i].m_fuegoizationKnob = &m_parameters[Parameter::x_numParameters - 1];
+            return;
         }
+        m_parameters[crispyRow].Init("FUEG", m_pageId, crispyRow, 0.0f);
+        for (size_t i = 0; i < Parameter::x_numParameters; i++)
+        {
+            if (i == crispyRow)
+            {
+                continue;
+            }
+            m_parameters[i].m_fuegoizationKnob = &m_parameters[crispyRow];
+        }
+    }
+
+    void ConfigureV2Fuego(float* globalCrunchy, uint8_t crispyRow, const V2ModTapBank* v2ModTaps)
+    {
+        m_useV2Fuego = true;
+        m_globalCrunchy = globalCrunchy;
+        m_v2CrispyRow = crispyRow;
+        m_v2ModTaps = v2ModTaps;
+    }
+
+    float ApplyV2MusicalFuego(float preFuegoValue, uint8_t row) const
+    {
+        if (!m_useV2Fuego)
+        {
+            return preFuegoValue;
+        }
+        const float globalCrunchy = m_globalCrunchy ? *m_globalCrunchy : 0.0f;
+        const float crispyKnobPre = GetPreFuegoValue(m_v2CrispyRow);
+        return V2FuegoStack::ApplyMusicalRow(
+            preFuegoValue, globalCrunchy, crispyKnobPre, row, m_v2CrispyRow);
     }
 
     void KnobUpdate(uint8_t position, float knobPosition, uint8_t modIndex)
@@ -63,6 +103,43 @@ struct Page
         {
             m_parameters[position].ModUpdate(modIndex, knobPosition);
         }
+    }
+
+private:
+    float GetPreFuegoValue(uint8_t position) const
+    {
+        if (position >= x_numParameters)
+        {
+            return 0.0f;
+        }
+        const Parameter& param = m_parameters[position];
+        if (!m_modMgr || param.m_modIndex == 255)
+        {
+            return param.m_knobValue;
+        }
+        if (param.m_modIndex <= 6)
+        {
+            return m_modMgr->Modulate(param.m_knobValue, param.m_modIndex, param.m_modAmount);
+        }
+        if (m_v2ModTaps && param.m_modIndex >= V2ModTapBank::kFirstIndex
+            && param.m_modIndex <= V2ModTapBank::kLastIndex)
+        {
+            const float tap = m_v2ModTaps->GetTap(param.m_modIndex);
+            return std::min(
+                std::max(param.m_knobValue * (1.0f - param.m_modAmount) + tap * param.m_modAmount, 0.0f), 1.0f);
+        }
+        return param.m_knobValue;
+    }
+
+    float GetParamV2(uint8_t position) const
+    {
+        const float value = GetPreFuegoValue(position);
+        if (position == m_v2CrispyRow || position >= x_numParameters)
+        {
+            const float globalCrunchy = m_globalCrunchy ? *m_globalCrunchy : 0.0f;
+            return V2FuegoStack::ApplyGlobal(value, globalCrunchy, position);
+        }
+        return ApplyV2MusicalFuego(value, position);
     }
 };
 
@@ -277,7 +354,10 @@ struct PageManager
     void SetPageModSource(uint8_t page, uint8_t position, uint8_t modIndex)
     {
         Parameter& param = m_pages[page].m_parameters[position];
-        if (modIndex > 6)
+        const bool valid = modIndex == 255
+            || IsSimAssignableModIndex(modIndex, SimHostKind::Desktop)
+            || IsV2ModSourceIndex(modIndex);
+        if (!valid)
         {
             param.m_modIndex = 255;
             param.m_modAmount = 0.0f;

@@ -33,9 +33,9 @@ inline const char* forModSource(uint8_t modIndex)
         case 4:
             return "VCO Envelope";
         case 5:
-            return "Random 1 S&H";
+            return "Random S&H 1";
         case 6:
-            return "Random 2 S&H";
+            return "Random S&H 2";
         default:
             return "";
     }
@@ -61,7 +61,7 @@ inline const char* forHostPageRow(uint8_t hostPage, uint8_t row)
 inline const char* forAudioPairAr(uint8_t index)
 {
     static const char* kLabels[4] = {
-        "Att. 1+2", "Rel. 1+2", "Att. 2+3", "Rel. 2+3",
+        "Attack 1+2", "Release 1+2", "Attack 2+3", "Release 2+3",
     };
     if (index >= 4)
     {

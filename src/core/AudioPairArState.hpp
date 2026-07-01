@@ -2,6 +2,7 @@
 
 #include "CvMidiBridge.hpp"
 #include "ModMgr.hpp"
+#include "Page.hpp"
 #include "RGen.hpp"
 #include "RuntimeParam.hpp"
 #include "SimModSource.hpp"
@@ -155,6 +156,12 @@ struct AudioPairArState
         }
     }
 
+    void setV2FuegoConfig(const Page* audioPage, SimHostKind hostKind)
+    {
+        m_audioPageForFuego = audioPage;
+        m_hostKind = hostKind;
+    }
+
     std::array<float, kCount> knobs{};
     std::array<uint8_t, kCount> modSource{};
     std::array<float, kCount> modDepth{};
@@ -163,12 +170,17 @@ struct AudioPairArState
 private:
     float blendKnob(uint8_t index, float knobValue, const ModMgr* modMgr) const
     {
-        if (!modMgr || index >= kCount || modSource[index] == 255 || modDepth[index] <= 0.0f)
+        float value = knobValue;
+        if (modMgr && index < kCount && modSource[index] != 255 && modDepth[index] > 0.0f)
         {
-            return knobValue;
+            value = modMgr->Modulate(
+                knobValue, static_cast<int>(modSource[index]), modDepth[index]);
         }
-        return modMgr->Modulate(
-            knobValue, static_cast<int>(modSource[index]), modDepth[index]);
+        if (m_audioPageForFuego && UsesV2Fuego(m_hostKind))
+        {
+            value = m_audioPageForFuego->ApplyV2MusicalFuego(value, index);
+        }
+        return value;
     }
 
     float blendKnob(uint8_t index, float knobValue) const
@@ -178,5 +190,7 @@ private:
 
     float m_sampleRate = 44100.0f;
     const ModMgr* m_modMgr = nullptr;
+    const Page* m_audioPageForFuego = nullptr;
+    SimHostKind m_hostKind = SimHostKind::Desktop;
     std::array<float, kCount> m_effectiveSmoothed{};
 };

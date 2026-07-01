@@ -31,6 +31,8 @@ import {
   HOST_PAGE_NAMES,
   SCOPE_SIZE,
   WEB_SCOPE_MOD_INDICES,
+  coreKnobCountForPage,
+  EXPANDED_CORE_KNOB_COUNT,
   coreKnobLabel,
   pairArKnobLabel,
 } from "./hostDisplay.generated";
@@ -98,6 +100,8 @@ interface WasmExports {
   froggers_set_audio_pair_ar_mod_depth: (host: number, index: number, depth: number) => void;
   froggers_get_audio_pair_ar_mod_depth: (host: number, index: number) => number;
   froggers_audio_pair_ar_name: (index: number) => number;
+  froggers_set_global_crunchy: (host: number, value: number) => void;
+  froggers_get_global_crunchy: (host: number) => number;
   malloc: (size: number) => number;
   free: (ptr: number) => void;
 }
@@ -128,7 +132,8 @@ type UiMessage =
   | { type: "setCcPairEnabled"; pairIndex: number; enabled: boolean }
   | { type: "pairArKnob"; index: number; value: number }
   | { type: "pairArModSource"; index: number; modIndex: number }
-  | { type: "pairArModDepth"; index: number; depth: number };
+  | { type: "pairArModDepth"; index: number; depth: number }
+  | { type: "globalCrunchy"; value: number };
 
 interface ProcessorCtorOptions {
   processorOptions?: { wasmModule?: WebAssembly.Module };
@@ -192,7 +197,7 @@ class FroggersProcessor extends AudioWorkletProcessor {
       this.outRPtr = this.wasm.malloc(this.maxProcessChunk * 4);
       this.scopePtr = this.wasm.malloc(SCOPE_SIZE * 4);
       this.refreshHeapView();
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < EXPANDED_CORE_KNOB_COUNT; i++) {
         this.wasm.froggers_set_knob(this.host, i, 0.5);
       }
       this.wasmReady = true;
@@ -243,16 +248,22 @@ class FroggersProcessor extends AudioWorkletProcessor {
     const host = this.host;
     if (msg.type === "knob") {
       wasm.froggers_set_knob(host, msg.index, msg.value);
+      this.postScreen();
     } else if (msg.type === "delayKnob") {
       wasm.froggers_delay_set_knob(host, msg.row, msg.value);
+      this.postScreen();
     } else if (msg.type === "modSource") {
       wasm.froggers_set_row_mod_source(host, msg.row, msg.modIndex);
+      this.postScreen();
     } else if (msg.type === "delayModSource") {
       wasm.froggers_delay_set_row_mod_source(host, msg.row, msg.modIndex);
+      this.postScreen();
     } else if (msg.type === "modDepth") {
       wasm.froggers_set_row_mod_depth(host, msg.row, msg.depth);
+      this.postScreen();
     } else if (msg.type === "delayModDepth") {
       wasm.froggers_delay_set_row_mod_depth(host, msg.row, msg.depth);
+      this.postScreen();
     } else if (msg.type === "hostPage") {
       this.setHostPage(msg.page);
     } else if (msg.type === "hostPageDelta") {
@@ -282,6 +293,7 @@ class FroggersProcessor extends AudioWorkletProcessor {
       wasm.froggers_set_sample_rate(host, msg.sampleRate);
     } else if (msg.type === "vcoMorph") {
       wasm.froggers_set_vco_morph(host, msg.index, msg.value);
+      this.postScreen();
     } else if (msg.type === "cycleVcoMorph") {
       wasm.froggers_cycle_vco_morph(host, msg.index);
       this.postScreen();
@@ -297,15 +309,19 @@ class FroggersProcessor extends AudioWorkletProcessor {
       this.postAssignableModOptions();
     } else if (msg.type === "pairArKnob") {
       wasm.froggers_set_audio_pair_ar_knob(host, msg.index, msg.value);
+      this.postScreen();
     } else if (msg.type === "pairArModSource") {
       wasm.froggers_set_audio_pair_ar_mod_source(host, msg.index, msg.modIndex);
+      this.postScreen();
     } else if (msg.type === "pairArModDepth") {
       wasm.froggers_set_audio_pair_ar_mod_depth(host, msg.index, msg.depth);
+      this.postScreen();
+    } else if (msg.type === "globalCrunchy") {
+      wasm.froggers_set_global_crunchy(host, msg.value);
+      this.postScreen();
     } else if (msg.type === "setRunning") {
       this.audioRunning = msg.running;
-      if (msg.running) {
-        this.postScreen();
-      }
+      this.postScreen();
     }
   }
 
@@ -366,8 +382,9 @@ class FroggersProcessor extends AudioWorkletProcessor {
     const morphs = [];
     const modLevels = [];
     const onDelayPage = this.hostPage === 5;
+    const rowCount = onDelayPage ? EXPANDED_CORE_KNOB_COUNT : coreKnobCountForPage(this.hostPage);
 
-    for (let row = 0; row < 8; row++) {
+    for (let row = 0; row < rowCount; row++) {
       if (onDelayPage) {
         const namePtr = this.wasm.froggers_delay_row_name(this.host, row);
         const modSource = this.wasm.froggers_delay_get_row_mod_source(this.host, row);
@@ -402,10 +419,7 @@ class FroggersProcessor extends AudioWorkletProcessor {
         const modSource = this.wasm.froggers_get_audio_pair_ar_mod_source(this.host, i);
         pairArRows.push({
           name: this.readCString(this.wasm.froggers_audio_pair_ar_name(i)),
-          value:
-            modSource === 255
-              ? this.wasm.froggers_get_audio_pair_ar_knob(this.host, i)
-              : this.wasm.froggers_get_audio_pair_ar_effective(this.host, i),
+          value: this.wasm.froggers_get_audio_pair_ar_effective(this.host, i),
           badge: " ",
           modSource,
           modDepth: this.wasm.froggers_get_audio_pair_ar_mod_depth(this.host, i),
@@ -433,6 +447,7 @@ class FroggersProcessor extends AudioWorkletProcessor {
       modLevels,
       scopeSamples,
       modSourceNames,
+      globalCrunchy: this.wasm.froggers_get_global_crunchy(this.host),
       audioRunning: this.audioRunning,
       inputPeak: this.inputPeak,
     });

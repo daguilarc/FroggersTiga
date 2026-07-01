@@ -3,6 +3,8 @@ sim/build/
 wasm/build/
 desktop/build/
 desktop/build-vst-test/
+desktop/build-v2-vst/
+desktop-v2/build/
 desktop/dist/
 web/dist/
 .DS_Store

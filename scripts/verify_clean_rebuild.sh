@@ -16,6 +16,8 @@ IGNORE_PREFIXES=(
   sim/build/
   desktop/build/
   desktop/build-vst-test/
+  desktop/build-v2-vst/
+  desktop-v2/build/
   desktop/dist/
   wasm/build/
   web/dist/
@@ -25,6 +27,7 @@ IGNORE_PREFIXES=(
   vcv/dep/
   .emsdk/
   desktop/FroggersTigaPlugin_artefacts/
+  desktop/FroggersTigaPluginV2_artefacts/
   Rack-SDK/
   vcv/Rack-SDK/
   openspec/.cache/
@@ -49,6 +52,12 @@ is_ignored_status_path() {
       return 0
       ;;
     desktop/CMakeCache.txt|desktop/CMakeFiles/*|desktop/cmake_install.cmake|desktop/Makefile)
+      return 0
+      ;;
+    desktop-v2/CMakeCache.txt|desktop-v2/CMakeFiles/*|desktop-v2/cmake_install.cmake|desktop-v2/Makefile|desktop-v2/CTestTestfile.cmake)
+      return 0
+      ;;
+    desktop-v2/*.o|desktop-v2/**/*.o|desktop-v2/*.o.d|desktop-v2/*_test)
       return 0
       ;;
     desktop/*.o|desktop/**/*.o|desktop/*.o.d)
@@ -134,6 +143,32 @@ elif [[ -f desktop/build/Release/HostParameterProcessor_test.exe ]]; then
   fi
 fi
 
+if [[ "${VERIFY_V2:-}" == "1" ]]; then
+  echo "== desktop-v2 cmake build (BUILD_DESKTOP_V2=ON) =="
+  cmake -S desktop-v2 -B desktop-v2/build -DBUILD_DESKTOP_V2=ON
+  if ! cmake --build desktop-v2/build --config Release; then
+    note_fail "desktop-v2 build failed"
+  fi
+  if ! ctest --test-dir desktop-v2/build --output-on-failure -R 'ControlCoreBridge'; then
+    note_fail "desktop-v2 ControlCoreBridge_test failed"
+  fi
+
+  echo "== desktop cmake build (BUILD_VST_V2=ON) =="
+  if cmake -S desktop -B desktop/build-v2-vst -DBUILD_VST_V2=ON -LAH 2>/dev/null | grep -q '^BUILD_VST_V2:BOOL'; then
+  if ! cmake -S desktop -B desktop/build-v2-vst -DBUILD_VST_V2=ON; then
+    note_fail "desktop BUILD_VST_V2 configure failed"
+  elif ! cmake --build desktop/build-v2-vst --config Release; then
+    note_fail "desktop BUILD_VST_V2 build failed"
+  elif [[ -f desktop/build-v2-vst/HostParameterProcessorV2_test ]] || [[ -f desktop/build-v2-vst/Release/HostParameterProcessorV2_test.exe ]]; then
+    if ! ctest --test-dir desktop/build-v2-vst --output-on-failure -R 'HostParameterProcessorV2'; then
+      note_fail "desktop HostParameterProcessorV2 tests failed"
+    fi
+  fi
+  else
+    echo "SKIP: BUILD_VST_V2 option not present yet (OpenSpec §6)"
+  fi
+fi
+
 echo "== git worktree cleanliness =="
 collect_unexpected_porcelain | sort -u > "$after_porcelain"
 new_drift="$(comm -13 "$baseline_porcelain" "$after_porcelain" || true)"
@@ -147,4 +182,4 @@ if [[ "$fail" -ne 0 ]]; then
   exit 1
 fi
 
-echo "OK: verify_clean_rebuild (generator fresh, sim/web/desktop builds clean, worktree unchanged)"
+echo "OK: verify_clean_rebuild (generator fresh, sim/web/desktop builds clean, worktree unchanged${VERIFY_V2:+; v2 targets verified})"

@@ -6,6 +6,12 @@
 #include "AudioPairArState.hpp"
 #include "HostRandomize.hpp"
 #include "SimModSource.hpp"
+#include "V2EngineSetup.hpp"
+#include "V2EnvelopeFollowerBank.hpp"
+#include "V2ModTapBank.hpp"
+#include "V2ParamDisplayNames.hpp"
+#include "VcoAdsrState.hpp"
+#include "SequencerState.hpp"
 
 #include <cmath>
 #include "FroggersEngine.hpp"
@@ -63,8 +69,10 @@ struct DesktopHostIO
     std::array<HostMutation, kMutationQueueSize> m_mutationQueue{};
     std::atomic<int> m_mutationWrite{0};
     std::atomic<int> m_mutationRead{0};
+    std::atomic<uint32_t> m_modRoutesVersion{0};
 
     std::function<void(uint8_t)> m_onBeforeClearModRoutes;
+    std::function<void()> m_onSequencerStepAdvance;
 
     struct MarblesScopeAccum
     {
@@ -75,6 +83,36 @@ struct DesktopHostIO
 
     MarblesScopeAccum m_marblesScopeAccum[2]{};
     bool m_marblesScopeBlockReady = false;
+    V2EnvelopeFollowerBank m_v2EfBank;
+    V2ModTapBank m_v2ModTaps;
+    SequencerState m_sequencer;
+    VcoAdsrState m_vcoAdsr;
+    float m_globalCrunchy = 0.0f;
+    float m_sampleRate = 44100.0f;
+
+    static void v2OscHook(float v1, float v2, float v3, void* ctx)
+    {
+        auto* self = static_cast<DesktopHostIO*>(ctx);
+        self->m_v2EfBank.Process(v1, v2, v3, self->m_v2ModTaps);
+    }
+
+    static void v2MarblesHook(float marbles1, float marbles2, void* ctx)
+    {
+        (void)marbles1;
+        (void)marbles2;
+        auto* self = static_cast<DesktopHostIO*>(ctx);
+        self->m_v2ModTaps.SyncMarblesFromModMgr(self->m_pageManager.m_modMgr);
+    }
+
+    void configureV2ModTaps()
+    {
+        m_v2EfBank.setSampleRate(m_sampleRate);
+        FroggersEngine::V2ModTapHooks hooks{};
+        hooks.processOsc = v2OscHook;
+        hooks.syncMarbles = v2MarblesHook;
+        hooks.ctx = this;
+        m_engine.SetV2ModTapLayout(true, hooks);
+    }
 
     void setDelayState(DelayState* delay)
     {
@@ -103,6 +141,27 @@ struct DesktopHostIO
         m_mutationWrite.store(w + 1, std::memory_order_release);
     }
 
+    static bool isModRouteMutation(HostMutationType type)
+    {
+        switch (type)
+        {
+            case HostMutationType::RandomizePageMod:
+            case HostMutationType::RandomizeAllMod:
+            case HostMutationType::SetPageModSource:
+            case HostMutationType::DelaySetModSource:
+            case HostMutationType::DelayRandomizeMod:
+            case HostMutationType::PairArSetModSource:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    uint32_t modRoutesVersion() const
+    {
+        return m_modRoutesVersion.load(std::memory_order_acquire);
+    }
+
     void applyMutation(const HostMutation& mutation)
     {
         switch (mutation.type)
@@ -114,14 +173,35 @@ struct DesktopHostIO
                 m_engine.RandomizeVcoMorphs();
                 break;
             case HostMutationType::RandomizePage:
-                RandomizePageWithExtras(m_pageManager, mutation.page, m_pairAr);
+                if (IsV2SimHostKind(m_hostKind))
+                {
+                    m_pageManager.RandomizePage(mutation.page);
+                }
+                else
+                {
+                    RandomizePageWithExtras(m_pageManager, mutation.page, m_pairAr);
+                }
                 break;
             case HostMutationType::RandomizePageMod:
-                RandomizePageModWithExtras(
-                    m_pageManager, mutation.page, m_pairAr, m_midiBridge, m_hostKind);
+                if (IsV2SimHostKind(m_hostKind))
+                {
+                    m_pageManager.RandomizePageModSim(mutation.page, m_midiBridge, m_hostKind);
+                }
+                else
+                {
+                    RandomizePageModWithExtras(
+                        m_pageManager, mutation.page, m_pairAr, m_midiBridge, m_hostKind);
+                }
                 break;
             case HostMutationType::RandomizeAllPages:
-                RandomizeAllPagesIndependentWithPairAr(m_pageManager, m_pairAr);
+                if (IsV2SimHostKind(m_hostKind))
+                {
+                    m_pageManager.RandomizeAllPagesIndependent();
+                }
+                else
+                {
+                    RandomizeAllPagesIndependentWithPairAr(m_pageManager, m_pairAr);
+                }
                 if (m_delay)
                 {
                     m_delay->randomizeKnobs();
@@ -129,14 +209,17 @@ struct DesktopHostIO
                 break;
             case HostMutationType::RandomizeAllMod:
                 m_pageManager.RandomizeAllPagesModSim(m_midiBridge, m_hostKind);
-                m_pairAr.randomizeMod(m_midiBridge, m_hostKind);
+                if (!IsV2SimHostKind(m_hostKind))
+                {
+                    m_pairAr.randomizeMod(m_midiBridge, m_hostKind);
+                }
                 if (m_delay)
                 {
                     m_delay->randomizeMod(m_midiBridge, m_hostKind);
                 }
                 break;
             case HostMutationType::SetPageModSource:
-                if (IsValidSimModAssignment(mutation.modIndex)
+                if (IsValidSimModAssignment(mutation.modIndex, m_hostKind)
                     && (mutation.modIndex == 255
                         || IsSimModSourceAvailable(mutation.modIndex, m_midiBridge, m_hostKind)))
                 {
@@ -144,7 +227,7 @@ struct DesktopHostIO
                 }
                 break;
             case HostMutationType::DelaySetModSource:
-                if (m_delay && IsValidSimModAssignment(mutation.modIndex)
+                if (m_delay && IsValidSimModAssignment(mutation.modIndex, m_hostKind)
                     && (mutation.modIndex == 255
                         || IsSimModSourceAvailable(mutation.modIndex, m_midiBridge, m_hostKind)))
                 {
@@ -167,13 +250,18 @@ struct DesktopHostIO
                 m_engine.CycleVcoMorph(mutation.morphIndex);
                 break;
             case HostMutationType::PairArSetModSource:
-                if (IsValidSimModAssignment(mutation.modIndex)
+                if (!IsV2SimHostKind(m_hostKind)
+                    && IsValidSimModAssignment(mutation.modIndex, m_hostKind)
                     && (mutation.modIndex == 255
                         || IsSimModSourceAvailable(mutation.modIndex, m_midiBridge, m_hostKind)))
                 {
                     m_pairAr.setModSource(mutation.row, mutation.modIndex);
                 }
                 break;
+        }
+        if (isModRouteMutation(mutation.type))
+        {
+            m_modRoutesVersion.fetch_add(1, std::memory_order_release);
         }
     }
 
@@ -200,29 +288,63 @@ struct DesktopHostIO
     void Init()
     {
         m_engine.Config(&m_pageManager);
-        m_pageManager.SetAllParamsTracking();
-        m_pageManager.SanitizeSimModAssignments();
+        if (UsesV2Fuego(m_hostKind))
+        {
+            V2EngineSetup::configure(m_pageManager, IsV2SimHostKind(m_hostKind));
+            configureV2FuegoPages();
+        }
         m_pairAr.init(44100.0f);
         m_pairAr.sanitizeModSources();
-        m_engine.SetAudioPairArState(&m_pairAr);
+        m_pairAr.setV2FuegoConfig(&m_pageManager.m_pages[0], m_hostKind);
+        if (IsV2SimHostKind(m_hostKind))
+        {
+            m_vcoAdsr.init(44100.0f);
+            m_engine.SetAudioPairArState(nullptr);
+            m_engine.SetVcoAdsrState(&m_vcoAdsr, &m_pageManager.m_pages[6]);
+        }
+        else
+        {
+            m_engine.SetAudioPairArState(&m_pairAr);
+            m_engine.SetVcoAdsrState(nullptr, nullptr);
+        }
+        m_engine.SetUseV2FilterParallel(UsesV2Fuego(m_hostKind));
         if (m_delay)
         {
+            m_delay->setUseV2Layout(UsesV2Fuego(m_hostKind));
+            m_delay->setGlobalCrunchyPtr(&m_globalCrunchy);
             m_delay->sanitizeModSources();
         }
         m_engine.SetSimWaveMorph(true);
         m_engine.SetSimDedicatedPm3Knob(true);
+        m_pageManager.SetAllParamsTracking();
+        m_pageManager.SanitizeSimModAssignments();
         m_gateTrigger.Reset(m_gateHigh);
+        if (IsV2SimHostKind(m_hostKind))
+        {
+            configureV2ModTaps();
+        }
     }
 
     void SetSampleRate(float sampleRate)
     {
+        m_sampleRate = sampleRate;
         m_engine.SetSampleRate(sampleRate);
         m_pairAr.setSampleRate(sampleRate);
+        m_vcoAdsr.setSampleRate(sampleRate);
+        if (IsV2SimHostKind(m_hostKind))
+        {
+            m_v2EfBank.setSampleRate(sampleRate);
+        }
     }
 
     void SetPageKnob(uint8_t page, uint8_t position, float value)
     {
-        m_pageManager.KnobUpdateOnPage(page, position, value);
+        if (page >= m_pageManager.m_numPages || position >= Parameter::x_numParameters)
+        {
+            return;
+        }
+        m_pageManager.m_knobPositions[position] = value;
+        m_pageManager.m_pages[page].m_parameters[position].KnobUpdate(value);
     }
 
     float GetPageParam(uint8_t page, uint8_t position)
@@ -233,6 +355,16 @@ struct DesktopHostIO
             return 0.0f;
         }
         return value;
+    }
+
+    void SetGlobalCrunchy(float value)
+    {
+        m_globalCrunchy = std::min(std::max(value, 0.0f), 1.0f);
+    }
+
+    float GetGlobalCrunchy() const
+    {
+        return m_globalCrunchy;
     }
 
     const char* GetPageParamName(uint8_t page, uint8_t position)
@@ -314,36 +446,64 @@ struct DesktopHostIO
 
     void SetAudioPairArKnob(uint8_t index, float value)
     {
+        if (IsV2SimHostKind(m_hostKind))
+        {
+            return;
+        }
         m_pairAr.setKnob(index, value);
     }
 
     float GetAudioPairArKnob(uint8_t index) const
     {
+        if (IsV2SimHostKind(m_hostKind))
+        {
+            return 0.0f;
+        }
         return m_pairAr.getKnob(index);
     }
 
     float GetAudioPairArEffective(uint8_t index) const
     {
+        if (IsV2SimHostKind(m_hostKind))
+        {
+            return 0.0f;
+        }
         return m_pairAr.getEffectiveKnob(index, &m_pageManager.m_modMgr);
     }
 
     uint8_t GetAudioPairArModSource(uint8_t index) const
     {
+        if (IsV2SimHostKind(m_hostKind))
+        {
+            return 255;
+        }
         return m_pairAr.getModSource(index);
     }
 
     float GetAudioPairArModDepth(uint8_t index) const
     {
+        if (IsV2SimHostKind(m_hostKind))
+        {
+            return 0.0f;
+        }
         return m_pairAr.getModDepth(index);
     }
 
     void SetAudioPairArModDepth(uint8_t index, float depth)
     {
+        if (IsV2SimHostKind(m_hostKind))
+        {
+            return;
+        }
         m_pairAr.setModDepth(index, depth);
     }
 
     void SetAudioPairArModSource(uint8_t index, uint8_t modIndex)
     {
+        if (IsV2SimHostKind(m_hostKind))
+        {
+            return;
+        }
         EnqueuePairArSetModSource(index, modIndex);
     }
 
@@ -505,6 +665,10 @@ struct DesktopHostIO
         drainMutationQueue();
         m_midiBridge.drainMidiIn(m_pageManager.m_modMgr.m_mods, ModMgr::x_numMods);
         applyCvPresence(m_prevCv, m_cvPresence, m_pageManager.m_modMgr);
+        if (IsV2SimHostKind(m_hostKind))
+        {
+            m_vcoAdsr.setGate(resolveVcoGate());
+        }
 
         if (m_gateTrigger.Process(m_gateHigh ? 1.0f : 0.0f))
         {
@@ -522,7 +686,18 @@ struct DesktopHostIO
     void ProcessBlock(const float* in, float* out, size_t n)
     {
         tickControls();
-        m_pairAr.beginBlock(&m_pageManager.m_modMgr);
+        if (IsV2SimHostKind(m_hostKind) && m_sequencer.advanceOnSamples(n, m_sampleRate))
+        {
+            m_vcoAdsr.setGate(resolveVcoGate());
+            if (m_onSequencerStepAdvance)
+            {
+                m_onSequencerStepAdvance();
+            }
+        }
+        if (!IsV2SimHostKind(m_hostKind))
+        {
+            m_pairAr.beginBlock(&m_pageManager.m_modMgr);
+        }
         m_engine.ProcessBlock(in, out, n);
         updateMarblesScopeAccum();
         m_midiBridge.tickMidiOut(m_engine.GetEnvelopeLevel(), m_midiOut);
@@ -530,10 +705,23 @@ struct DesktopHostIO
 
     float GetCvOut(size_t modIndex) const
     {
-        if (modIndex < ModMgr::x_numMods)
+        return GetSimCvOut(m_hostKind, m_pageManager.m_modMgr, m_v2ModTaps, modIndex);
+    }
+
+private:
+    bool resolveVcoGate() const
+    {
+        return m_sequencer.m_playing
+            ? (m_gateHigh || m_sequencer.activeStepGate())
+            : true;
+    }
+
+    void configureV2FuegoPages()
+    {
+        for (uint8_t page = 0; page < m_pageManager.m_numPages; ++page)
         {
-            return m_pageManager.m_modMgr.m_mods[modIndex];
+            const uint8_t crispyRow = V2ParamDisplayNames::CrispyRowForPage(page);
+            m_pageManager.m_pages[page].ConfigureV2Fuego(&m_globalCrunchy, crispyRow, &m_v2ModTaps);
         }
-        return 0.0f;
     }
 };
