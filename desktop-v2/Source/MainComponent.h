@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AudioEngine.h"
+#include "DesktopV2HostCallbacks.hpp"
 #include "control/FroggersV2ControlCore.hpp"
 #include "control/FroggersV2HostBridge.hpp"
 #include "ui/GlobalStripV2.hpp"
@@ -56,5 +57,6 @@ private:
     bool m_sequencerVisible = true;
     uint32_t m_lastUiVersion = 0;
     uint32_t m_lastModRoutesVersion = 0;
+    desktop_v2::HostCallbackContext m_hostCallbacks;
     std::array<uint8_t, 128> m_qwertyHeldVelocity{};
 };

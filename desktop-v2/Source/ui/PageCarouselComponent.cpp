@@ -57,7 +57,7 @@ void PageCarouselComponent::setActivePage(uint8_t page)
     selectPage(page);
 }
 
-void PageCarouselComponent::selectPage(uint8_t page)
+void PageCarouselComponent::selectPage(uint8_t page, bool fireCallback)
 {
     m_page = static_cast<uint8_t>(page % froggers_v2::kNumHostPages);
     updateTitle();
@@ -70,7 +70,7 @@ void PageCarouselComponent::selectPage(uint8_t page)
         m_submodulePanel.setPage(m_page);
     }
 
-    if (onPageChanged)
+    if (fireCallback && onPageChanged)
     {
         onPageChanged(m_page);
     }

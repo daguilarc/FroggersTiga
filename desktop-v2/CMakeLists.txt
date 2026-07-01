@@ -148,3 +148,31 @@ target_include_directories(ExternalMidiMod_test PRIVATE
     "${SIM_DIR}"
 )
 add_test(NAME ExternalMidiMod_test COMMAND ExternalMidiMod_test)
+
+set(DESKTOP_V2_CAROUSEL_TEST_SOURCES
+    Source/DesktopV2HostCallbacks.cpp
+    Source/control/FroggersV2ControlCore.cpp
+    Source/control/FroggersV2HostBridge.cpp
+    Source/ui/PageCarouselComponent.cpp
+    Source/ui/SubmodulePagePanel.cpp
+    Source/ui/AdsrPagePanel.cpp
+    Source/ui/EncoderRingComponent.cpp
+    Source/ui/ModSourceCell.cpp
+    Source/ui/DesktopV2LookAndFeel.cpp
+)
+
+add_executable(CallbackLifetime_test
+    tests/CallbackLifetime_test.cpp
+    ${DESKTOP_V2_CAROUSEL_TEST_SOURCES}
+)
+target_include_directories(CallbackLifetime_test PRIVATE
+    Source
+    Source/ui
+    "${CORE_DIR}"
+    "${SIM_DIR}"
+)
+target_link_libraries(CallbackLifetime_test PRIVATE juce::juce_gui_basics)
+add_test(NAME CallbackLifetime_test COMMAND CallbackLifetime_test)
+
+add_executable(BootSmoke_test tests/BootSmoke_test.cpp)
+add_test(NAME BootSmoke_test COMMAND BootSmoke_test)

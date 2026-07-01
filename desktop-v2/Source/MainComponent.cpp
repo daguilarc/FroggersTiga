@@ -34,6 +34,7 @@ bool isTextEntryFocused()
 MainComponent::MainComponent()
     : m_audio(std::in_place)
     , m_bridge(m_core, m_audio->getHost())
+    , m_hostCallbacks(m_core, m_bridge, m_audio->getHost(), m_carousel, m_lastModRoutesVersion)
 {
     m_vcoEfScope.bindHost(&m_audio->getHost());
     m_carousel.bindCore(&m_core);
@@ -74,7 +75,7 @@ MainComponent::MainComponent()
     wireCallbacks();
     wireMidiCvCallbacks();
     pushSelectPage(0);
-    m_carousel.setActivePage(0);
+    m_carousel.selectPage(0, false);
 
     setWantsKeyboardFocus(true);
     setSize(DesktopV2ChromeLayout::kDefaultWidth, DesktopV2ChromeLayout::kDefaultHeight);
@@ -84,12 +85,13 @@ MainComponent::MainComponent()
 
 void MainComponent::wireCallbacks()
 {
-    desktop_v2::wireCallbacks({m_core, m_bridge, m_audio->getHost(), m_carousel, m_lastModRoutesVersion});
+    desktop_v2::refreshAndWireHostCallbacks(
+        m_hostCallbacks, m_core, m_bridge, m_audio->getHost(), m_carousel, m_lastModRoutesVersion);
 }
 
 void MainComponent::pushRandomizeMod(uint8_t page)
 {
-    desktop_v2::pushRandomizeMod({m_core, m_bridge, m_audio->getHost(), m_carousel, m_lastModRoutesVersion}, page);
+    desktop_v2::pushRandomizeMod(m_hostCallbacks, page);
 }
 
 void MainComponent::syncHostModRoutesIfNeeded()
@@ -107,7 +109,7 @@ void MainComponent::syncHostModRoutesIfNeeded()
 
 void MainComponent::pushSelectPage(uint8_t page)
 {
-    desktop_v2::pushSelectPage({m_core, m_bridge, m_audio->getHost(), m_carousel, m_lastModRoutesVersion}, page);
+    desktop_v2::pushSelectPage(m_hostCallbacks, page);
 }
 
 void MainComponent::wireMidiCvCallbacks()

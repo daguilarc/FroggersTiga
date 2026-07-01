@@ -10,6 +10,7 @@ HostedMainComponentV2::HostedMainComponentV2(AudioEngine& audio,
     : m_audio(audio)
     , m_core(core)
     , m_bridge(bridge)
+    , m_hostCallbacks(m_core, m_bridge, m_audio.getHost(), m_carousel, m_lastModRoutesVersion)
 {
     m_vcoEfScope.bindHost(&m_audio.getHost());
     m_carousel.bindCore(&m_core);
@@ -26,7 +27,7 @@ HostedMainComponentV2::HostedMainComponentV2(AudioEngine& audio,
 
     wireCallbacks();
     pushSelectPage(0);
-    m_carousel.setActivePage(0);
+    m_carousel.selectPage(0, false);
 
     setWantsKeyboardFocus(true);
     setSize(DesktopV2ChromeLayout::kDefaultWidth, DesktopV2ChromeLayout::kDefaultHeight);
@@ -35,12 +36,13 @@ HostedMainComponentV2::HostedMainComponentV2(AudioEngine& audio,
 
 void HostedMainComponentV2::wireCallbacks()
 {
-    desktop_v2::wireCallbacks({m_core, m_bridge, m_audio.getHost(), m_carousel, m_lastModRoutesVersion});
+    desktop_v2::refreshAndWireHostCallbacks(
+        m_hostCallbacks, m_core, m_bridge, m_audio.getHost(), m_carousel, m_lastModRoutesVersion);
 }
 
 void HostedMainComponentV2::pushRandomizeMod(uint8_t page)
 {
-    desktop_v2::pushRandomizeMod({m_core, m_bridge, m_audio.getHost(), m_carousel, m_lastModRoutesVersion}, page);
+    desktop_v2::pushRandomizeMod(m_hostCallbacks, page);
 }
 
 void HostedMainComponentV2::syncHostModRoutesIfNeeded()
@@ -58,7 +60,7 @@ void HostedMainComponentV2::syncHostModRoutesIfNeeded()
 
 void HostedMainComponentV2::pushSelectPage(uint8_t page)
 {
-    desktop_v2::pushSelectPage({m_core, m_bridge, m_audio.getHost(), m_carousel, m_lastModRoutesVersion}, page);
+    desktop_v2::pushSelectPage(m_hostCallbacks, page);
 }
 
 void HostedMainComponentV2::pushModSourceSamples()

@@ -14,6 +14,7 @@ Mod depth — Crossfade amount between stored knob (base) and mod source; 0 = ba
 
 ## Transport
 
+Boot (desktop v2 standalone) — Main window staying open after launch is the healthy boot outcome; instant exit indicates a build or runtime fault. Click **Engine** to start audio; **Stop** stops it.
 Engine — Top row: start/stop audio processing; with Engine on, internal VCOs drive sound by default (no MIDI or running sequencer required)
 Stop — Top row: stop audio processing
 Start Sequence — Performance band: toggles **Start Sequence** / **Stop Sequence** for pattern playback (not the same as Engine); step gates shape envelopes only while it runs
@@ -29,6 +30,10 @@ Rand Mods — All mod routes
 Rand Resample — Resample both S&H channels (draws from bags)
 Rand waveforms — Randomize VCO morph (sine/saw/square blend)
 Crunchy — Global fuego on all pages and all Crispy instances (web global strip)
+
+## Page carousel (desktop v2)
+
+Module page — Left/right arrow buttons on the carousel header change the active module page. **Rand** / **Rand mod** on the carousel header randomize the current page (see §Transport).
 
 ## Scenes (desktop v2 performance band)
 

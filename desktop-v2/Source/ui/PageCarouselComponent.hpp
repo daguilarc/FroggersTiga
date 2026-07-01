@@ -15,6 +15,7 @@ public:
 
     void bindCore(froggers_v2::FroggersV2ControlCore* core);
     void setActivePage(uint8_t page);
+    void selectPage(uint8_t page, bool fireCallback = true);
     void refresh();
 
     std::function<void(uint8_t page)> onPageChanged;
@@ -25,7 +26,6 @@ public:
 
 private:
     void updateTitle();
-    void selectPage(uint8_t page);
     void advancePage(int delta);
 
     froggers_v2::FroggersV2ControlCore* m_core = nullptr;
