@@ -106,6 +106,7 @@ CXXFLAGS := \
 	$(LTO_FLAGS) \
 	-g \
 	-ggdb \
+	-MMD -MP \
 	-std=gnu++17 \
 	-fno-exceptions \
 	-fno-rtti \
@@ -133,6 +134,7 @@ LDFLAGS := \
 SRCS ?= main.cpp
 
 OBJS := $(SRCS:%.cpp=$(BUILD_DIR)/%.o)
+DEPS := $(OBJS:.o=.d)
 VENDORED_LIBS := $(LIBDAISY_LIB)
 
 ifeq ($(USE_DAISYSP_ANY),1)
@@ -177,5 +179,7 @@ program-boot:
 
 clean:
 	rm -rf $(BUILD_DIR)
+
+-include $(DEPS)
 
 .PHONY: all clean bin vendor-libs program-dfu program-boot
