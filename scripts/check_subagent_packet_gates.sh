@@ -26,6 +26,10 @@ if [[ -x scripts/check_desktop_v2_layout_authority.sh ]]; then
   run_gate "layout-authority" bash scripts/check_desktop_v2_layout_authority.sh
 fi
 
+if [[ -x scripts/check_desktop_v2_operator_truth.sh ]]; then
+  run_gate "operator-truth" bash scripts/check_desktop_v2_operator_truth.sh
+fi
+
 if [[ -x desktop-v2/build/FroggersV2ProjectionValidators_test ]]; then
   run_gate "projection-validators" desktop-v2/build/FroggersV2ProjectionValidators_test
 else
