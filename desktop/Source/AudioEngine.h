@@ -3,6 +3,7 @@
 #include "AudioRecorder.h"
 #include "DelayState.hpp"
 #include "DesktopHostIO.hpp"
+#include "ExportFormat.hpp"
 #include "HostAudioConfig.hpp"
 
 #include <juce_audio_devices/juce_audio_devices.h>
@@ -12,14 +13,6 @@
 #include <cstdint>
 #include <functional>
 #include <vector>
-
-enum class ExportFormat
-{
-    Wav,
-    Mp3,
-    Flac,
-    Ogg
-};
 
 enum class InputRouteStatus
 {

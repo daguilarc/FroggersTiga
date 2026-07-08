@@ -12,14 +12,14 @@ constexpr uint8_t kRandomHostPage = 1;
 
 inline const char* forHostPage(uint8_t hostPage)
 {
-    static const char* kPages[kNumHostPages] = {
+    static const char* kHostPageLabels[kNumHostPages] = {
         "Audio", "Random S&H", "Reverb", "Filter", "Drive", "Delay",
     };
     if (hostPage >= kNumHostPages)
     {
         return "";
     }
-    return kPages[hostPage];
+    return kHostPageLabels[hostPage];
 }
 
 inline const char* forModSource(uint8_t modIndex)
@@ -43,7 +43,7 @@ inline const char* forModSource(uint8_t modIndex)
 
 inline const char* forHostPageRow(uint8_t hostPage, uint8_t row)
 {
-    static const char* kTable[kNumHostPages][kNumRows] = {
+    static const char* kRowLabelGrid[kNumHostPages][kNumRows] = {
         {"VCO1", "VCO2", "VCO3", "Cross-coupler", "Phase mod 1", "Phase mod 2", "Phase mod 3", "Crispy"},
         {"Step chance", "Deja vu 1", "Bag size 1", "Slew 1", "Deja vu 2", "Bag size 2", "Slew 2", "Crispy"},
         {"Wet/dry", "Room size", "Decay", "Pre-delay", "Damping", "Stereo width", "Diffusion", "Crispy"},
@@ -55,7 +55,7 @@ inline const char* forHostPageRow(uint8_t hostPage, uint8_t row)
     {
         return "";
     }
-    return kTable[hostPage][row];
+    return kRowLabelGrid[hostPage][row];
 }
 
 inline const char* forAudioPairAr(uint8_t index)
@@ -68,6 +68,35 @@ inline const char* forAudioPairAr(uint8_t index)
         return "";
     }
     return kLabels[index];
+}
+
+inline const char* forVcvGlobalCrunchy()
+{
+    return "Global Crunchy";
+}
+
+inline const char* forVcvGlobalCrunchyCv()
+{
+    return "Crunchy CV";
+}
+
+inline const char* forVcvSection(uint8_t section)
+{
+    static const char* kSections[] = {
+        "Audio",
+        "Random",
+        "Filter",
+        "Drive",
+        "Reverb",
+        "Delay",
+        "Global",
+        "VCO AR",
+    };
+    if (section >= sizeof(kSections) / sizeof(kSections[0]))
+    {
+        return "";
+    }
+    return kSections[section];
 }
 
 enum class GlobalStripAction : uint8_t

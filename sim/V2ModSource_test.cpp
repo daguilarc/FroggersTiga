@@ -12,33 +12,33 @@ int main()
     CvMidiBridge bridge;
     bridge.setCcPairEnabled(0, true);
 
-    if (!IsSimModSourceAvailable(7, bridge, SimHostKind::DesktopV2))
+    if (!IsSimModSourceAvailable(3, bridge, SimHostKind::DesktopV2))
     {
-        std::printf("FAIL: DesktopV2 mod index 7 should be available\n");
+        std::printf("FAIL: DesktopV2 mod index 3 (VCO 1 EF) should be available\n");
         return 1;
     }
 
-    if (IsSimModSourceAvailable(0, bridge, SimHostKind::DesktopV2))
+    if (!IsSimModSourceAvailable(0, bridge, SimHostKind::DesktopV2))
     {
-        std::printf("FAIL: DesktopV2 mod index 0 should be unavailable\n");
+        std::printf("FAIL: DesktopV2 mod index 0 (VCO 1+2) should be available\n");
         return 1;
     }
 
-    if (!IsSimModSourceAvailable(13, bridge, SimHostKind::VstV2))
+    if (!IsSimModSourceAvailable(11, bridge, SimHostKind::VstV2))
     {
-        std::printf("FAIL: VstV2 mod index 13 should be available\n");
+        std::printf("FAIL: VstV2 mod index 11 (Random/Marbles 1) should be available\n");
         return 1;
     }
 
-    if (!IsSimModSourceAvailable(14, bridge, SimHostKind::VstV2))
+    if (!IsSimModSourceAvailable(12, bridge, SimHostKind::VstV2))
     {
-        std::printf("FAIL: VstV2 mod index 14 should be available\n");
+        std::printf("FAIL: VstV2 mod index 12 (Random/Marbles 2) should be available\n");
         return 1;
     }
 
-    if (IsSimModSourceAvailable(7, bridge, SimHostKind::Desktop))
+    if (IsSimModSourceAvailable(3, bridge, SimHostKind::Desktop))
     {
-        std::printf("FAIL: v1 Desktop mod index 7 should be unavailable\n");
+        std::printf("FAIL: v1 Desktop mod index 3 should be unavailable\n");
         return 1;
     }
 
@@ -67,9 +67,9 @@ int main()
         return 1;
     }
 
-    if (std::strcmp(V2ModSourceLabel(7), "VCO1 EF") != 0)
+    if (std::strcmp(permanentModSourceDisplayName(3), "VCO 1 EF") != 0)
     {
-        std::printf("FAIL: V2ModSourceLabel(7) mismatch\n");
+        std::printf("FAIL: permanentModSourceDisplayName(3) mismatch\n");
         return 1;
     }
 
@@ -85,18 +85,18 @@ int main()
         return 1;
     }
 
-    if (std::strcmp(V2ModSourceLabel(13), "Random S&H 1") != 0
-        || std::strcmp(V2ModSourceLabel(14), "Random S&H 2") != 0)
+    if (std::strcmp(permanentModSourceDisplayName(11), "Random/Marbles 1") != 0
+        || std::strcmp(permanentModSourceDisplayName(12), "Random/Marbles 2") != 0)
     {
-        std::printf("FAIL: V2ModSourceLabel Random S&H mismatch\n");
+        std::printf("FAIL: permanentModSourceDisplayName Random/Marbles mismatch\n");
         return 1;
     }
 
     PageManager pageManager;
-    pageManager.SetPageModSource(1, 0, 13);
-    if (pageManager.GetPageModSource(1, 0) != 13)
+    pageManager.SetPageModSource(1, 0, 11);
+    if (pageManager.GetPageModSource(1, 0) != 11)
     {
-        std::printf("FAIL: SetPageModSource should persist mod index 13\n");
+        std::printf("FAIL: SetPageModSource should persist mod index 11\n");
         return 1;
     }
 

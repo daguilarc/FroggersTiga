@@ -3,7 +3,7 @@
 #include "control/FroggersV2ControlCore.hpp"
 #include "ui/DesktopV2ChromeLayout.hpp"
 #include "ui/EncoderRingComponent.hpp"
-#include "ui/ModSourceCell.hpp"
+#include "ui/ModLanePicker.hpp"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -26,6 +26,9 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
 
+    bool encoderViewportShowsVerticalScrollbar() const;
+    juce::Rectangle<int> modCellBoundsInPanel(int rowIndex) const;
+
 private:
     int documentRowCount() const;
     void layoutRows();
@@ -34,11 +37,14 @@ private:
     void pushModAssign(uint8_t row, uint8_t internalSource);
 
     froggers_v2::FroggersV2ControlCore* m_core = nullptr;
+    bool m_scrollBarsVisible = false;
     juce::TextButton m_randomize{"Randomize"};
     juce::TextButton m_randomizeMod{"Randmod"};
     juce::Viewport m_encoderViewport;
     juce::Component m_encoderContent;
+    juce::Viewport m_modColumnViewport;
+    juce::Component m_modColumnContent;
     std::array<juce::Label, DesktopV2ChromeLayout::kVisibleEncoderSlots> m_rowLabels{};
     std::array<EncoderRingComponent, DesktopV2ChromeLayout::kVisibleEncoderSlots> m_rings{};
-    std::array<ModSourceCell, DesktopV2ChromeLayout::kVisibleEncoderSlots> m_modCells{};
+    std::array<ModLanePicker, DesktopV2ChromeLayout::kVisibleEncoderSlots> m_modCells{};
 };

@@ -22,9 +22,10 @@ kColumnHp="$(read_const kColumnHp)"
 kVoicingColumns="$(read_const kVoicingColumns)"
 kFxColumns="$(read_const kFxColumns)"
 kRows="$(grep -E 'constexpr uint8_t kNumRows = [0-9]+' "$ROOT/sim/ParamDisplayNames.hpp" | sed -E 's/.*= *([0-9]+);.*/\1/')"
-primaryCcYGrid="$(read_const kPrimaryCcEnableYGrid)"
 primaryGateGridX="$(read_const kPrimaryGateGridX)"
-primaryCcGridX0="$(grep 'kPrimaryCcEnableGridX' "$HEADER" | sed -E 's/.*\{ *([0-9.]+)f,.*/\1/')"
+globalCrunchyGridX="$(read_const kPrimaryGlobalCrunchyGridX)"
+globalCrunchyCvGridX="$(read_const kPrimaryGlobalCrunchyCvGridX)"
+globalCrunchyGridY="$(read_const kPrimaryGlobalCrunchyGridY)"
 
 GRID=15
 RACK_HEIGHT=380
@@ -51,12 +52,19 @@ else
     exit 1
 fi
 
-# CC switches must be >= 2 GRID from gate jack on X; CC row is well above bottom I/O row.
-ccGateXDelta="$(awk "BEGIN { print ${primaryCcGridX0} - ${primaryGateGridX} }")"
-if awk "BEGIN { exit !(${ccGateXDelta} >= 2) }"; then
+# Global Crunchy knob/CV must stay inside the primary panel and clear the gate jack horizontally.
+globalGateXDelta="$(awk "BEGIN { print ${globalCrunchyGridX} - ${primaryGateGridX} }")"
+if awk "BEGIN { exit !(${globalGateXDelta} >= 2) }"; then
     :
 else
-    echo "check_vcv_panel_bounds: CC enable too close to gate on X (dx=${ccGateXDelta} GRID)" >&2
+    echo "check_vcv_panel_bounds: global Crunchy too close to gate on X (dx=${globalGateXDelta} GRID)" >&2
+    exit 1
+fi
+
+if awk "BEGIN { exit !(${globalCrunchyGridX} > 0 && ${globalCrunchyCvGridX} > 0 && ${globalCrunchyCvGridX} <= ${kPrimaryHp} && ${globalCrunchyGridY} > 0) }"; then
+    :
+else
+    echo "check_vcv_panel_bounds: global Crunchy placement falls outside primary bounds" >&2
     exit 1
 fi
 

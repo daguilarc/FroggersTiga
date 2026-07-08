@@ -6,14 +6,16 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <string>
+#include <vector>
 
-enum class MidiCvButtonTarget : uint8_t
+enum class MidiCvBindingRole : uint8_t
 {
     None = 0,
-    Shift,
-    Scene1,
-    Scene2,
-    Scene3
+    HeldModifier,
+    SceneOrdinal0,
+    SceneOrdinal1,
+    SceneOrdinal2
 };
 
 enum class MidiCvTriggerKind : uint8_t
@@ -35,13 +37,65 @@ struct MidiCvButtonBinding
     MidiCvTriggerKind kind = MidiCvTriggerKind::Note;
     uint8_t channel = 0;
     uint8_t number = 60;
-    MidiCvButtonTarget target = MidiCvButtonTarget::None;
+    MidiCvBindingRole target = MidiCvBindingRole::None;
 };
 
 struct MidiCvPitchTarget
 {
     uint8_t page = 0;
     uint8_t row = 0;
+};
+
+struct MidiCvControllerTargetIds
+{
+    const char* pitch;
+    const char* gate;
+    const char* externalModA;
+    const char* externalModB;
+    const char* shiftButton;
+    const char* scene1;
+    const char* scene2;
+    const char* scene3;
+    const char* qwertyVirtual;
+    const char* externalClock;
+};
+
+const MidiCvControllerTargetIds& midiCvControllerTargetIds();
+
+const char* manifestTargetIdForBindingRole(MidiCvBindingRole role);
+
+enum class ControllerConnectionState : uint8_t
+{
+    Disconnected = 0,
+    Connected,
+    Receiving,
+    Error
+};
+
+enum class ControllerPersistenceState : uint8_t
+{
+    Saved = 0,
+    Dirty,
+    Error
+};
+
+struct ControllerMappingEvent
+{
+    MidiCvTriggerKind kind = MidiCvTriggerKind::Note;
+    uint8_t channel = 0;
+    uint8_t number = 0;
+    uint8_t valueMin = 0;
+    uint8_t valueMax = 127;
+};
+
+struct ControllerTargetMappingRow
+{
+    const char* targetId = nullptr;
+    const char* displayName = nullptr;
+    bool enabled = false;
+    ControllerMappingEvent event{};
+    std::string targetReadback;
+    size_t fanOutCount = 1;
 };
 
 struct MidiCvAssignmentTable
@@ -120,6 +174,16 @@ struct MidiCvAssignmentTable
     bool consumeShiftPending(bool& held);
     bool consumeScenePending(uint8_t& ordinal);
 
+    void setSelectedInputLabel(std::string label);
+    const std::string& selectedInputLabel() const;
+    ControllerConnectionState inputConnectionState() const;
+    ControllerPersistenceState mappingPersistenceState() const;
+    const std::string& mappingPersistenceMessage() const;
+    void markMappingsDirty();
+    void markMappingsSaved(const std::string& message);
+    std::vector<ControllerTargetMappingRow> buildTargetMappingRows() const;
+    size_t fanOutCountForEvent(const ControllerMappingEvent& event, const char* excludeTargetId) const;
+
 private:
     bool channelMatches(uint8_t channel1Based, bool fromQwerty) const;
     float noteToNormalizedPitch(uint8_t note, uint8_t velocity) const;
@@ -147,4 +211,9 @@ private:
     HostGateFn m_hostGate;
     UiShiftFn m_uiShift;
     UiSceneFn m_uiScene;
+
+    std::string m_selectedInputLabel{"Computer keyboard"};
+    ControllerPersistenceState m_persistenceState = ControllerPersistenceState::Saved;
+    std::string m_persistenceMessage{"Saved"};
+    std::atomic<bool> m_receivingInput{false};
 };

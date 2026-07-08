@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 
 // Desktop v2 chrome — fixed 10px grid unit (u). Spec: desktop-v2-grid-layout.
@@ -27,38 +28,63 @@ constexpr int kDefaultHeight = gridPx(92);
 constexpr int kHostedEditorMinWidth = gridPx(128);
 constexpr int kHostedEditorMinHeight = gridPx(72);
 
-constexpr int kTransportRowH = gridPx(7);  // standalone: transport + VCO EF scope
-constexpr int kVstScopeStripH = gridPx(5); // VST: full-width VCO EF scope strip
-constexpr int kGlobalStripH = gridPx(4);
+constexpr int kTransportRowH = gridPx(7);
+constexpr int kVstScopeStripH = gridPx(5);
+constexpr int kGlobalCommandBandH = gridPx(6);
+constexpr int kGlobalStripH = kGlobalCommandBandH;
 constexpr int kPerformanceBandH = gridPx(7);
 constexpr int kCarouselHeaderH = gridPx(3);
-constexpr int kSequencerH = gridPx(13);
+constexpr int kSequencerH = gridPx(18);
 constexpr int kTextButtonH = gridPx(3);
 constexpr int kArrowButtonSize = gridPx(2);
-constexpr int kRandomizeButtonW = gridPx(11); // "Randomize" textU 9 + 2
-constexpr int kRandModButtonW = gridPx(9);    // "Randmod" textU 7 + 2
+constexpr int kRandomizeButtonW = gridPx(11);
+constexpr int kRandModButtonW = gridPx(9);
 constexpr int kChromePad = gridPx(1);
 constexpr int kSectionGap = gridPx(1);
 
 constexpr int kEncoderRowH = gridPx(5);
 constexpr int kEncoderRingSize = gridPx(5);
-constexpr int kModCellW = gridPx(7);
+constexpr int kModCellW = gridPx(18);
+constexpr int kModCellHeight = 48;
 constexpr int kRowLabelW = gridPx(9);
 
+constexpr int kModuleRowLabelOffset = 0;
+constexpr int kModuleRowEncoderOffset = kRowLabelW;
+constexpr int kModuleRowModGap = kSectionGap;
 constexpr int kVisibleEncoderSlots = 10;
 
+constexpr int kTransportScopeMaxWidth = 320;
+constexpr int kRecordButtonMinWidth = gridPx(12);
+constexpr int kTransportPlayStopW = 64;
+constexpr int kTransportSettingsW = 72;
+constexpr int kRuntimePageRailW = gridPx(6);
+constexpr int kRuntimePageButtonH = gridPx(3);
+constexpr int kTransportGapSm = 6;
+constexpr int kTransportGapMd = 8;
+constexpr int kModLabelStripH = 14;
+
+constexpr int kSceneButtonMinWidth = 44;
+constexpr int kBlendLabelMinWidth = 16;
+
 constexpr int kPerfSceneLabelW = gridPx(4);
-constexpr int kPerfSceneButtonSize = gridPx(3);
-constexpr int kPerfMarblesLabelH = gridPx(1);
+constexpr int kPerfSceneButtonSize = kSceneButtonMinWidth;
+constexpr int kPerfMarblesLabelH = gridPx(2);
 constexpr int kGlobalStripRandAllW = gridPx(8);
 constexpr int kGlobalStripRandModsW = gridPx(9);
 constexpr int kGlobalStripRandWaveformsW = gridPx(13);
 constexpr int kGlobalStripRandResampleW = gridPx(12);
 constexpr int kGlobalStripCrunchyLabelW = gridPx(6);
 constexpr int kGlobalStripShiftW = gridPx(7);
+constexpr int kGlobalScopeSceneAllW = gridPx(9);
+constexpr int kGlobalScopeSceneCurrentW = gridPx(11);
+constexpr int kGlobalScopeStepAllW = gridPx(8);
+constexpr int kGlobalScopeStepCurrentW = gridPx(11);
 constexpr int kSequencerToolbarH = gridPx(3);
-constexpr int kSequencerStepCellSize = gridPx(2);
-constexpr int kPerfBlendEndpointLabelW = gridPx(1);
+constexpr int kSequencerRandSeqLabelW = gridPx(7);
+constexpr int kSequencerScopeAllStepsW = gridPx(14);
+constexpr int kSequencerStepCellSize = gridPx(3);
+constexpr int kSequencerDirectionSpeedStripH = gridPx(6);
+constexpr int kPerfBlendEndpointLabelW = kBlendLabelMinWidth;
 constexpr int kPerfSceneBlendW = gridPx(8);
 constexpr int kPerfGestureToggleW = gridPx(4);
 constexpr int kPerfGestureWeightW = gridPx(7);
@@ -68,10 +94,37 @@ constexpr int kPerfBpmLabelW = gridPx(3);
 constexpr int kPerfBpmSliderW = gridPx(10);
 constexpr int kPerfStepsLabelW = gridPx(4);
 constexpr int kPerfStepsSliderW = gridPx(8);
-constexpr int kPerfMarblesColW = gridPx(3);
+constexpr int kPerfMarblesColW = gridPx(6);
+
+struct ModuleRowColumnLayout
+{
+    int labelW;
+    int encoderW;
+    int gapW;
+    int labelEncoderW;
+    int modX;
+    int modW;
+    int contentW;
+};
+
+inline ModuleRowColumnLayout moduleRowColumns(int rowWidth) noexcept
+{
+    const int labelW = kRowLabelW;
+    const int encoderW = kEncoderRingSize;
+    const int gapW = kModuleRowModGap;
+    const int labelEncoderW = labelW + encoderW;
+    const int modX = labelEncoderW + gapW;
+    const int modW = std::max(kModCellW, rowWidth - modX);
+    return {labelW, encoderW, gapW, labelEncoderW, modX, modW, rowWidth};
+}
 
 constexpr int encoderDocumentHeight(int rowCount) noexcept
 {
     return rowCount * kEncoderRowH;
+}
+
+constexpr int topChromeStackHeight() noexcept
+{
+    return kTransportRowH + kSectionGap + kGlobalCommandBandH;
 }
 } // namespace DesktopV2ChromeLayout

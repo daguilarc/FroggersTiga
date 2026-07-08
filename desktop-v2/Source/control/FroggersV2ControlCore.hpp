@@ -1,5 +1,6 @@
 #pragma once
 
+#include "manifest/FroggersV2AppManifest.hpp"
 #include "SequencerState.hpp"
 
 #include <array>
@@ -13,17 +14,19 @@ constexpr uint8_t kNumHostPages = 7;
 constexpr uint8_t kNumRows = 10;
 constexpr uint8_t kNumScenes = 3;
 constexpr uint8_t kNumGestures = 2;
-constexpr uint8_t kNumModSources = 10;
-constexpr uint8_t kModSourceMidiCcA = 8;
-constexpr uint8_t kModSourceMidiCcB = 9;
+constexpr uint8_t kNumModSources =
+    static_cast<uint8_t>(manifest::kPermanentModulationSources.size());
 constexpr int kMenuModMidiCcA = 15;
 constexpr int kMenuModMidiCcB = 16;
 constexpr uint8_t kNoSelection = 255;
-constexpr uint8_t kUiSlots = 10;
 
 constexpr uint8_t kRandSeqScopeStep = 0;
 constexpr uint8_t kRandSeqScopePattern = 1;
 constexpr uint8_t kRandSeqScopeFullStep = 2;
+constexpr uint8_t kRandSceneScopeCurrent = 0;
+constexpr uint8_t kRandSceneScopeAll = 1;
+constexpr uint8_t kModDetailCellCount = manifest::kModDetailCellCount;
+constexpr uint8_t kUiSlots = kModDetailCellCount;
 
 struct MessageIn
 {
@@ -42,6 +45,7 @@ struct MessageIn
         RandPage,
         ResetSequencerStep,
         RandSequencerStep,
+        RandSequencerMods,
         Clock,
     };
 
@@ -147,6 +151,10 @@ public:
     }
 
     uint8_t visibleRowForSlot(uint8_t slot) const;
+    uint8_t visibleModIndexForSlot(uint8_t slot) const;
+    bool visibleSlotIsTarget(uint8_t slot) const;
+    void setExternalAudioAvailable(bool available);
+    bool externalAudioAvailable() const;
     float globalCrunchy() const;
     void setGlobalCrunchy(float value);
     float sceneBlend() const;
@@ -160,11 +168,11 @@ public:
     void compute();
     void populateUiState();
     void setSequencerState(SequencerState* sequencer);
-    void applySequencerStepSnapshot(const SequencerStepSnapshot& snapshot);
-    void captureSequencerStepSnapshot(SequencerStepSnapshot& out) const;
-    void captureFactoryStepSnapshot(SequencerStepSnapshot& out) const;
-    void randomizeFullStepSnapshot(SequencerStepSnapshot& out);
-    void randomizeSceneSlotsInto(SequencerStepSnapshot& snapshot);
+    void applySequencerSlotPayload(const SequencerSlotPayload& snapshot);
+    void captureSequencerSlotPayload(SequencerSlotPayload& out) const;
+    void captureFactorySlotPayload(SequencerSlotPayload& out) const;
+    void randomizeFullSlotPayload(SequencerSlotPayload& out);
+    void randomizeSceneSlotsInto(SequencerSlotPayload& snapshot);
     void setExternalMidiMod(uint8_t slot, float value);
     float externalMidiMod(uint8_t slot) const;
     EffectiveRow effectiveRow(uint8_t page, uint8_t row) const;
@@ -175,16 +183,9 @@ private:
         float sceneCenter[kNumScenes]{0.0f, 0.0f, 0.0f};
         float modDepth[kNumModSources]{0.0f};
         uint8_t modSource[kNumModSources]{
-            kNoSelection,
-            kNoSelection,
-            kNoSelection,
-            kNoSelection,
-            kNoSelection,
-            kNoSelection,
-            kNoSelection,
-            kNoSelection,
-            kNoSelection,
-            kNoSelection,
+            kNoSelection, kNoSelection, kNoSelection, kNoSelection, kNoSelection,
+            kNoSelection, kNoSelection, kNoSelection, kNoSelection, kNoSelection,
+            kNoSelection, kNoSelection, kNoSelection, kNoSelection, kNoSelection,
         };
         float gestureDepth[kNumGestures]{0.0f, 0.0f};
     };
@@ -216,12 +217,14 @@ private:
     void onRandPage(uint8_t page);
     void onResetSequencerStep(uint8_t step);
     void onRandSequencerStep(uint8_t step, uint8_t scope);
+    void onRandSequencerMods(uint8_t scope);
+    void randomizeModIntoSnapshot(SequencerSlotPayload& snapshot);
     void randomizeSceneSlotValues(float (&scenes)[kNumScenes]);
     void randomizeSceneSlotValues(std::array<float, kNumScenes>& scenes);
     void randomizeSceneSlotValues(ParamState& param);
     void randomizeSceneSlotsInto(uint8_t page);
     void randomizeSceneEndpointsAndBlend();
-    void zeroStepGestures(SequencerStepSnapshot& snapshot);
+    void zeroStepGestures(SequencerSlotPayload& snapshot);
     void resetCrunchy();
     uint8_t activeSceneOrdinal() const;
     void advanceRandState();
@@ -249,7 +252,6 @@ private:
     uint8_t m_sceneRightOrdinal = 1;
     uint8_t m_sceneSelectFlip = 0;
     uint8_t m_activeGestureLane = kNoSelection;
-    bool m_shiftHeld = false;
     float m_sceneBlend = 0.5f;
     ParamState m_crunchy{};
     uint32_t m_randState = 0x12345678u;

@@ -16,4 +16,11 @@ if rg -n "$PATTERN" "$VCV_SRC" >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "check_vcv_midi_boundary: OK (no MIDI/CC boundary in vcv/src)"
+LATCH_PATTERN='SetPageKnob|KnobUpdateOnPage|m_currentPage|applyPageModJack|kVoicingPages|kHostPages'
+if rg -n "$LATCH_PATTERN" "$VCV_SRC" >/dev/null 2>&1; then
+  echo "error: VCV Rack wrapper still references page/latch control APIs:" >&2
+  rg -n "$LATCH_PATTERN" "$VCV_SRC" >&2
+  exit 1
+fi
+
+echo "check_vcv_midi_boundary: OK (no MIDI/CC boundary or page/latch control path in vcv/src)"

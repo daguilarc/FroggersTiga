@@ -55,6 +55,8 @@ struct Parameter
     float m_modAmount;
     bool m_modTrackingArmed;
     Parameter* m_fuegoizationKnob;
+    bool m_effectiveOverrideActive;
+    float m_effectiveOverrideValue;
 
     Parameter()
      : m_knobValue(0)
@@ -66,6 +68,8 @@ struct Parameter
      , m_modAmount(0.0f)
      , m_modTrackingArmed(false)
      , m_fuegoizationKnob(nullptr)
+     , m_effectiveOverrideActive(false)
+     , m_effectiveOverrideValue(0.0f)
     {
     }
 
@@ -81,6 +85,7 @@ struct Parameter
         m_page = pageId;
         m_trackingState = TrackingState::Idle;
         m_knobValue = defaultValue;
+        ClearEffectiveOverride();
     }
 
     void ForceTracking()
@@ -95,6 +100,10 @@ struct Parameter
 
     float GetPreFuegoization(const ModMgr* modMgr) const
     {
+        if (m_effectiveOverrideActive)
+        {
+            return m_effectiveOverrideValue;
+        }
         if (m_modIndex != 255)
         {
             return modMgr->Modulate(m_knobValue, m_modIndex, m_modAmount);
@@ -103,6 +112,18 @@ struct Parameter
         {
             return m_knobValue;
         }
+    }
+
+    void SetEffectiveOverride(float value)
+    {
+        m_effectiveOverrideValue = std::min(std::max(value, 0.0f), 1.0f);
+        m_effectiveOverrideActive = true;
+    }
+
+    void ClearEffectiveOverride()
+    {
+        m_effectiveOverrideActive = false;
+        m_effectiveOverrideValue = 0.0f;
     }
 
     float Get(const ModMgr* modMgr) const
@@ -201,7 +222,7 @@ struct Parameter
     {
         RGen rgen;
         m_modAmount = rgen.UniGenRange(0, 1.0f);
-        m_modIndex = PickSimRandomModIndex(rgen, bridge, hostKind);
+        m_modIndex = DrawAssignableModLane(rgen, bridge, hostKind);
     }
 
     void PageDeSelect(float knobValue)

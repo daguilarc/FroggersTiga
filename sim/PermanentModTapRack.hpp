@@ -6,11 +6,14 @@
 #include <algorithm>
 #include <cstdint>
 
-struct V2ModTapBank
+// Manifest permanent rack: VCO 1+2, VCO 2+3, VCO 1+3, VCO 1 EF, VCO 2 EF, VCO 3 EF,
+// VCO 1+2 EF, VCO 2+3 EF, LFO 1, LFO 2, LFO 3, Random/Marbles 1, Random/Marbles 2,
+// External Audio (audio rate), External Audio (envelope follower).
+struct PermanentModTapRack
 {
-    static constexpr uint8_t kFirstIndex = 7;
+    static constexpr uint8_t kFirstIndex = 0;
     static constexpr uint8_t kLastIndex = 14;
-    static constexpr size_t kNumTaps = 8;
+    static constexpr size_t kNumTaps = 15;
 
     float m_taps[kNumTaps]{};
 
@@ -34,23 +37,27 @@ struct V2ModTapBank
 
     void SyncMarblesFromModMgr(const ModMgr& modMgr)
     {
-        SetTap(13, modMgr.m_mods[5]);
-        SetTap(14, modMgr.m_mods[6]);
+        SetTap(11, modMgr.m_mods[5]);
+        SetTap(12, modMgr.m_mods[6]);
     }
 };
 
 inline float GetSimCvOut(SimHostKind hostKind,
                          const ModMgr& modMgr,
-                         const V2ModTapBank& taps,
+                         const PermanentModTapRack& taps,
                          size_t modIndex)
 {
+    if (IsV2SimHostKind(hostKind))
+    {
+        if (modIndex <= PermanentModTapRack::kLastIndex)
+        {
+            return taps.GetTap(static_cast<uint8_t>(modIndex));
+        }
+        return 0.0f;
+    }
     if (modIndex < ModMgr::x_numMods)
     {
         return modMgr.m_mods[modIndex];
-    }
-    if (IsV2SimHostKind(hostKind))
-    {
-        return taps.GetTap(static_cast<uint8_t>(modIndex));
     }
     return 0.0f;
 }

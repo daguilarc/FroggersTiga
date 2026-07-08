@@ -8,7 +8,7 @@
 #include "SimModSource.hpp"
 #include "V2EngineSetup.hpp"
 #include "V2EnvelopeFollowerBank.hpp"
-#include "V2ModTapBank.hpp"
+#include "PermanentModTapRack.hpp"
 #include "V2ParamDisplayNames.hpp"
 #include "VcoAdsrState.hpp"
 #include "SequencerState.hpp"
@@ -84,7 +84,7 @@ struct DesktopHostIO
     MarblesScopeAccum m_marblesScopeAccum[2]{};
     bool m_marblesScopeBlockReady = false;
     V2EnvelopeFollowerBank m_v2EfBank;
-    V2ModTapBank m_v2ModTaps;
+    PermanentModTapRack m_v2ModTaps;
     SequencerState m_sequencer;
     VcoAdsrState m_vcoAdsr;
     float m_globalCrunchy = 0.0f;

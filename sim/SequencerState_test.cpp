@@ -7,10 +7,9 @@ int main()
 {
     SequencerState seq;
     seq.setBpm(120.0f);
-    seq.setPatternLength(4);
     seq.m_playing = true;
 
-    SequencerStepSnapshot snap{};
+    SequencerSlotPayload snap{};
     snap.gate = true;
     snap.sceneCenter[0][0][0] = 0.25f;
     seq.captureStep(0, snap);
@@ -34,7 +33,6 @@ int main()
         return 1;
     }
 
-    seq.setPatternLength(16);
     seq.m_editStep = 0;
     seq.prevEditStep();
     if (seq.m_editStep != 15)
@@ -52,14 +50,14 @@ int main()
 
     if (!seq.activeStepGate())
     {
-        std::printf("FAIL: activeStepGate expected true when playing with lit step\n");
+        std::printf("FAIL: activeStepGate expected true when playing with lit written step\n");
         return 1;
     }
 
     seq.m_playing = false;
     if (seq.activeStepGate())
     {
-        std::printf("FAIL: activeStepGate expected false when stopped (lit step ignored)\n");
+        std::printf("FAIL: activeStepGate expected false when stopped\n");
         return 1;
     }
 
@@ -72,10 +70,9 @@ int main()
         return 1;
     }
 
-    seq.setPatternLength(64);
-    if (seq.m_patternLength != 64)
+    if (SequencerState::kSlotCount != 16)
     {
-        std::printf("FAIL: pattern length clamp\n");
+        std::printf("FAIL: fixed slot count expected 16\n");
         return 1;
     }
 

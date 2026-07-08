@@ -20,13 +20,13 @@ int main()
     modMgr.m_mods[4] = 0.8f;
 
     const float disconnected =
-        applyVcvPageModJack(0.5f, 4, 1.0f, modMgr, false, 0.f);
+        applyVcvSectionCv(0.5f, 4, 1.0f, modMgr, false, 0.f);
     if (!expectNear(disconnected, 0.8f, "disconnected internal route"))
     {
         return 1;
     }
 
-    const float positiveNoRoute = applyVcvPageModJack(0.25f, 255, 0.f, modMgr, true, 5.f);
+    const float positiveNoRoute = applyVcvSectionCv(0.25f, 255, 0.f, modMgr, true, 5.f);
     if (!expectNear(positiveNoRoute, 0.75f, "+5V base 0.25 no route"))
     {
         return 1;
@@ -34,21 +34,21 @@ int main()
 
     modMgr.m_mods[5] = 0.4f;
     const float internalPlusExternal =
-        applyVcvPageModJack(0.0f, 5, 1.0f, modMgr, true, 5.f);
+        applyVcvSectionCv(0.0f, 5, 1.0f, modMgr, true, 5.f);
     if (!expectNear(internalPlusExternal, 0.9f, "internal 0.4 + 5V"))
     {
         return 1;
     }
 
     modMgr.m_mods[4] = 1.0f;
-    const float clampHigh = applyVcvPageModJack(0.5f, 4, 1.0f, modMgr, true, 5.f);
+    const float clampHigh = applyVcvSectionCv(0.5f, 4, 1.0f, modMgr, true, 5.f);
     if (!expectNear(clampHigh, 1.0f, "clamp high"))
     {
         return 1;
     }
 
     modMgr.m_mods[4] = 0.0f;
-    const float clampLow = applyVcvPageModJack(0.1f, 255, 0.f, modMgr, true, -2.f);
+    const float clampLow = applyVcvSectionCv(0.1f, 255, 0.f, modMgr, true, -2.f);
     if (!expectNear(clampLow, 0.0f, "clamp low"))
     {
         return 1;

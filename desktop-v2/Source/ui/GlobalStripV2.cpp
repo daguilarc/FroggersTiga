@@ -3,6 +3,30 @@
 #include "ParamDisplayNames.hpp"
 #include "ui/DesktopV2ChromeLayout.hpp"
 
+namespace
+{
+void wireScopePair(juce::ToggleButton& allChoice,
+                   juce::ToggleButton& currentChoice,
+                   int radioGroupId,
+                   bool& allScopeFlag)
+{
+    allChoice.setRadioGroupId(radioGroupId);
+    currentChoice.setRadioGroupId(radioGroupId);
+    allChoice.setClickingTogglesState(false);
+    currentChoice.setClickingTogglesState(false);
+    allChoice.onClick = [&allChoice, &currentChoice, &allScopeFlag]() {
+        allScopeFlag = true;
+        allChoice.setToggleState(true, juce::dontSendNotification);
+        currentChoice.setToggleState(false, juce::dontSendNotification);
+    };
+    currentChoice.onClick = [&allChoice, &currentChoice, &allScopeFlag]() {
+        allScopeFlag = false;
+        allChoice.setToggleState(false, juce::dontSendNotification);
+        currentChoice.setToggleState(true, juce::dontSendNotification);
+    };
+}
+} // namespace
+
 GlobalStripV2::GlobalStripV2()
     : m_randAll(ParamDisplayNames::forGlobalStrip(ParamDisplayNames::GlobalStripAction::RandAll))
     , m_randMods(ParamDisplayNames::forGlobalStrip(ParamDisplayNames::GlobalStripAction::RandMods))
@@ -37,14 +61,8 @@ GlobalStripV2::GlobalStripV2()
     };
 
     m_shift.onClick = [this]() { pushShift(m_shift.getToggleState()); };
-
     m_randAll.onClick = [this]() { pushRandAll(); };
-    m_randMods.onClick = [this]() {
-        if (m_host)
-        {
-            m_host->EnqueueRandomizeAllMod();
-        }
-    };
+    m_randMods.onClick = [this]() { pushRandMods(); };
     m_randWaveforms.onClick = [this]() {
         if (m_host)
         {
@@ -58,8 +76,13 @@ GlobalStripV2::GlobalStripV2()
         }
     };
 
-    m_lfo.setVisible(false);
-    m_vco.setVisible(false);
+    wireScopePair(m_scopeAllScenes, m_scopeCurrentScene, 9101, m_allScenesScope);
+    wireScopePair(m_scopeAllSteps, m_scopeCurrentStep, 9102, m_allStepsScope);
+
+    m_scopeAllScenes.setToggleState(true, juce::dontSendNotification);
+    m_scopeCurrentScene.setToggleState(false, juce::dontSendNotification);
+    m_scopeAllSteps.setToggleState(false, juce::dontSendNotification);
+    m_scopeCurrentStep.setToggleState(true, juce::dontSendNotification);
 
     for (juce::Component* c : {static_cast<juce::Component*>(&m_randAll),
                                static_cast<juce::Component*>(&m_randMods),
@@ -68,8 +91,10 @@ GlobalStripV2::GlobalStripV2()
                                static_cast<juce::Component*>(&m_crunchyLabel),
                                static_cast<juce::Component*>(&m_crunchyRing),
                                static_cast<juce::Component*>(&m_shift),
-                               static_cast<juce::Component*>(&m_lfo),
-                               static_cast<juce::Component*>(&m_vco)})
+                               static_cast<juce::Component*>(&m_scopeAllScenes),
+                               static_cast<juce::Component*>(&m_scopeCurrentScene),
+                               static_cast<juce::Component*>(&m_scopeAllSteps),
+                               static_cast<juce::Component*>(&m_scopeCurrentStep)})
     {
         addAndMakeVisible(c);
     }
@@ -107,8 +132,33 @@ void GlobalStripV2::pushRandAll()
     {
         return;
     }
+    juce::ignoreUnused(m_allScenesScope);
     froggers_v2::MessageIn message;
     message.type = froggers_v2::MessageIn::Type::RandAll;
+    m_core->bus().push(message);
+    m_core->processBus();
+}
+
+void GlobalStripV2::pushRandMods()
+{
+    if (!m_core)
+    {
+        return;
+    }
+    froggers_v2::MessageIn message;
+    message.type = froggers_v2::MessageIn::Type::RandSequencerMods;
+    if (m_allStepsScope)
+    {
+        message.page = froggers_v2::kRandSeqScopePattern;
+    }
+    else if (resolveRandSeqScope != nullptr)
+    {
+        message.page = resolveRandSeqScope();
+    }
+    else
+    {
+        message.page = froggers_v2::kRandSeqScopeStep;
+    }
     m_core->bus().push(message);
     m_core->processBus();
 }
@@ -127,13 +177,18 @@ void GlobalStripV2::resized()
     using namespace DesktopV2ChromeLayout;
 
     auto area = getLocalBounds();
+    const int gap = kSectionGap;
     const int btnH = kTextButtonH;
-    const int btnY = area.getCentreY() - btnH / 2;
-    int x = area.getX();
+    const int scopeH = kTextButtonH;
+    auto commandRow = area.removeFromTop(btnH);
+    auto scopeRow = area.removeFromTop(scopeH);
+
+    int x = commandRow.getX();
+    const int btnY = commandRow.getY();
 
     struct StripButton
     {
-        juce::TextButton* button;
+        juce::Component* component;
         int width;
     };
     const StripButton leftButtons[] = {
@@ -144,17 +199,26 @@ void GlobalStripV2::resized()
     };
     for (const StripButton& entry : leftButtons)
     {
-        entry.button->setBounds(x, btnY, entry.width, btnH);
-        x += entry.width + kSectionGap;
+        entry.component->setBounds(x, btnY, entry.width, btnH);
+        x += entry.width + gap;
     }
 
     m_crunchyLabel.setBounds(x, btnY, kGlobalStripCrunchyLabelW, btnH);
-    x += kGlobalStripCrunchyLabelW + kSectionGap;
+    x += kGlobalStripCrunchyLabelW + gap;
 
     const int ringSide = kEncoderRingSize;
-    const int ringY = area.getCentreY() - ringSide / 2;
+    const int ringY = commandRow.getCentreY() - ringSide / 2;
     m_crunchyRing.setBounds(x, ringY, ringSide, ringSide);
-    x += ringSide + kSectionGap;
-
+    x += ringSide + gap;
     m_shift.setBounds(x, btnY, kGlobalStripShiftW, btnH);
+
+    int sceneX = commandRow.getX();
+    m_scopeAllScenes.setBounds(sceneX, scopeRow.getY(), kGlobalScopeSceneAllW, scopeH);
+    sceneX += kGlobalScopeSceneAllW + gap;
+    m_scopeCurrentScene.setBounds(sceneX, scopeRow.getY(), kGlobalScopeSceneCurrentW, scopeH);
+
+    int stepX = commandRow.getX() + kGlobalStripRandAllW + gap;
+    m_scopeAllSteps.setBounds(stepX, scopeRow.getY(), kGlobalScopeStepAllW, scopeH);
+    stepX += kGlobalScopeStepAllW + gap;
+    m_scopeCurrentStep.setBounds(stepX, scopeRow.getY(), kGlobalScopeStepCurrentW, scopeH);
 }

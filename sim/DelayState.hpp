@@ -35,6 +35,8 @@ struct DelayState
             knobs[i] = 0.5f;
             modSource[i] = 255;
             modDepth[i] = 0.5f;
+            effectiveOverrideActive[i] = false;
+            effectiveOverrideValue[i] = 0.0f;
             smoothed[i].SetTarget(knobs[i]);
         }
         knobs[crispyRow()] = 0.0f;
@@ -122,6 +124,34 @@ struct DelayState
         return blendRow(row, knobs[row]);
     }
 
+    void setEffectiveOverride(uint8_t row, float value)
+    {
+        if (row >= kNumRows)
+        {
+            return;
+        }
+        effectiveOverrideValue[row] = std::min(std::max(value, 0.0f), 1.0f);
+        effectiveOverrideActive[row] = true;
+    }
+
+    void clearEffectiveOverride(uint8_t row)
+    {
+        if (row >= kNumRows)
+        {
+            return;
+        }
+        effectiveOverrideActive[row] = false;
+        effectiveOverrideValue[row] = 0.0f;
+    }
+
+    void clearEffectiveOverrides()
+    {
+        for (uint8_t i = 0; i < kNumRows; i++)
+        {
+            clearEffectiveOverride(i);
+        }
+    }
+
     float blendRow(uint8_t row, float knobSmoothed) const
     {
         if (m_useV2Layout)
@@ -198,7 +228,7 @@ struct DelayState
         for (uint8_t i = 0; i < activeRowCount(); i++)
         {
             modDepth[i] = rgen.UniGenRange(0.0f, 1.0f);
-            modSource[i] = PickSimRandomModIndex(rgen, bridge, hostKind);
+            modSource[i] = DrawAssignableModLane(rgen, bridge, hostKind);
         }
     }
 
@@ -236,6 +266,8 @@ struct DelayState
     std::array<float, kNumRows> knobs{};
     std::array<uint8_t, kNumRows> modSource{};
     std::array<float, kNumRows> modDepth{};
+    std::array<bool, kNumRows> effectiveOverrideActive{};
+    std::array<float, kNumRows> effectiveOverrideValue{};
     std::array<RuntimeParam, kNumRows> smoothed{};
     StereoDelay delay;
 
@@ -273,6 +305,10 @@ private:
 
     float blendKnob(uint8_t row, float base) const
     {
+        if (row < kNumRows && effectiveOverrideActive[row])
+        {
+            return effectiveOverrideValue[row];
+        }
         if (!m_modMgr || row >= kNumRows || modSource[row] == 255 || modDepth[row] <= 0.0f)
         {
             return base;

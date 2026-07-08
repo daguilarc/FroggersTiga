@@ -1,7 +1,7 @@
 #include "AudioPairArState.hpp"
 #include "ModMgr.hpp"
 #include "Page.hpp"
-#include "V2ModTapBank.hpp"
+#include "PermanentModTapRack.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -132,7 +132,7 @@ int main()
     }
 
     float globalCrunchy = 0.0f;
-    V2ModTapBank v2Taps{};
+    PermanentModTapRack v2Taps{};
     Page audioPage;
     audioPage.m_pageId = 0;
     audioPage.m_modMgr = &modMgr;

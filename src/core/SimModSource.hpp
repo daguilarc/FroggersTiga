@@ -36,16 +36,16 @@ inline bool UsesV2Fuego(SimHostKind hostKind)
     return IsV2SimHostKind(hostKind) || hostKind == SimHostKind::Web;
 }
 
-inline bool IsV2ModSourceIndex(uint8_t modIndex)
+inline bool IsPermanentModSourceIndex(uint8_t laneIndex)
 {
-    return modIndex >= 7 && modIndex <= 14;
+    return laneIndex <= 14;
 }
 
 inline bool IsSimAssignableModIndex(uint8_t modIndex, SimHostKind hostKind)
 {
     if (IsV2SimHostKind(hostKind))
     {
-        return IsV2ModSourceIndex(modIndex);
+        return IsPermanentModSourceIndex(modIndex);
     }
     return modIndex == 0 || modIndex == 1 || modIndex == 4 || modIndex == 5 || modIndex == 6;
 }
@@ -71,7 +71,7 @@ inline bool IsSimModSourceAvailable(uint8_t modIndex,
 {
     if (IsV2SimHostKind(hostKind))
     {
-        return IsV2ModSourceIndex(modIndex);
+        return IsPermanentModSourceIndex(modIndex);
     }
     if (!IsSimAssignableModIndex(modIndex, hostKind))
     {
@@ -112,7 +112,7 @@ inline uint8_t SimModSourceToCoreIndex(SimModSource source)
     return static_cast<uint8_t>(source);
 }
 
-inline uint8_t PickSimRandomModIndex(RGen& rgen,
+inline uint8_t DrawAssignableModLane(RGen& rgen,
                                      const CvMidiBridge& bridge,
                                      SimHostKind hostKind)
 {
@@ -123,14 +123,14 @@ inline uint8_t PickSimRandomModIndex(RGen& rgen,
 
     static constexpr uint8_t kPoolAll[] = {0, 1, 4, 5, 6};
     static constexpr uint8_t kPoolInternal[] = {4, 5, 6};
-    static constexpr uint8_t kPoolV2[] = {7, 8, 9, 10, 11, 12, 13, 14};
+    static constexpr uint8_t kPoolV2[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
 
     const uint8_t* pool = kPoolAll;
     size_t poolSize = 5;
     if (IsV2SimHostKind(hostKind))
     {
         pool = kPoolV2;
-        poolSize = 8;
+        poolSize = 13;
     }
     else if (hostKind == SimHostKind::Vcv || hostKind == SimHostKind::Vst)
     {
@@ -138,7 +138,7 @@ inline uint8_t PickSimRandomModIndex(RGen& rgen,
         poolSize = 3;
     }
 
-    uint8_t available[8];
+    uint8_t available[13];
     uint8_t count = 0;
     for (size_t i = 0; i < poolSize; i++)
     {

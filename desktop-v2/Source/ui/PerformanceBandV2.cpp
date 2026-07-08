@@ -42,11 +42,6 @@ PerformanceBandV2::PerformanceBandV2()
     m_blendLabelR.setJustificationType(juce::Justification::centred);
     m_blendLabelR.setColour(juce::Label::textColourId, sceneRightColour());
 
-    m_bpmLabel.setText("BPM", juce::dontSendNotification);
-    m_bpmLabel.setJustificationType(juce::Justification::centredRight);
-    m_stepsLabel.setText("Steps", juce::dontSendNotification);
-    m_stepsLabel.setJustificationType(juce::Justification::centredRight);
-
     m_sceneBlend.setSliderStyle(juce::Slider::LinearHorizontal);
     m_sceneBlend.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     m_sceneBlend.setRange(0.0, 1.0, 0.001);
@@ -79,41 +74,6 @@ PerformanceBandV2::PerformanceBandV2()
     m_scene2.onClick = [this]() { pushScene(1); };
     m_scene3.onClick = [this]() { pushScene(2); };
 
-    m_bpm.setSliderStyle(juce::Slider::LinearHorizontal);
-    m_bpm.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 48, 18);
-    m_bpm.setRange(20.0, 300.0, 0.1);
-    m_bpm.onValueChange = [this]() {
-        if (m_sequencer)
-        {
-            m_sequencer->setBpm(static_cast<float>(m_bpm.getValue()));
-        }
-    };
-
-    m_patternLength.setSliderStyle(juce::Slider::LinearHorizontal);
-    m_patternLength.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 36, 18);
-    m_patternLength.setRange(4.0, 64.0, 1.0);
-    m_patternLength.onValueChange = [this]() {
-        if (m_sequencer)
-        {
-            m_sequencer->setPatternLength(static_cast<uint8_t>(m_patternLength.getValue()));
-        }
-    };
-
-    m_seqPlay.onClick = [this]() {
-        if (!m_sequencer)
-        {
-            return;
-        }
-        m_sequencer->m_playing = !m_sequencer->m_playing;
-        m_seqPlay.setButtonText(m_sequencer->m_playing ? "Stop Sequence" : "Start Sequence");
-    };
-    m_seqRecord.onClick = [this]() {
-        if (m_sequencer)
-        {
-            m_sequencer->m_recordArm = m_seqRecord.getToggleState();
-        }
-    };
-
     for (juce::Label* label : {&m_marblesLabel1, &m_marblesLabel2})
     {
         label->setJustificationType(juce::Justification::centred);
@@ -132,12 +92,6 @@ PerformanceBandV2::PerformanceBandV2()
           static_cast<juce::Component*>(&m_gestureWeight1),
           static_cast<juce::Component*>(&m_gesture2),
           static_cast<juce::Component*>(&m_gestureWeight2),
-          static_cast<juce::Component*>(&m_seqPlay),
-          static_cast<juce::Component*>(&m_seqRecord),
-          static_cast<juce::Component*>(&m_bpmLabel),
-          static_cast<juce::Component*>(&m_bpm),
-          static_cast<juce::Component*>(&m_stepsLabel),
-          static_cast<juce::Component*>(&m_patternLength),
           static_cast<juce::Component*>(&m_marblesLabel1),
           static_cast<juce::Component*>(&m_marblesLabel2)})
     {
@@ -145,10 +99,9 @@ PerformanceBandV2::PerformanceBandV2()
     }
 }
 
-void PerformanceBandV2::bind(froggers_v2::FroggersV2ControlCore* core, SequencerState* sequencer)
+void PerformanceBandV2::bind(froggers_v2::FroggersV2ControlCore* core)
 {
     m_core = core;
-    m_sequencer = sequencer;
     refresh();
 }
 
@@ -213,8 +166,8 @@ void PerformanceBandV2::refreshMarbles(bool audioRunning)
         repaint();
         return;
     }
-    m_marblesLevel[0] = m_host->GetCvOut(13);
-    m_marblesLevel[1] = m_host->GetCvOut(14);
+    m_marblesLevel[0] = m_host->GetCvOut(11);
+    m_marblesLevel[1] = m_host->GetCvOut(12);
     repaint();
 }
 
@@ -263,13 +216,6 @@ void PerformanceBandV2::refresh()
     m_gesture2.setToggleState(activeGesture == 1, juce::dontSendNotification);
     m_gestureWeight1.setValue(m_core->gestureWeight(0), juce::dontSendNotification);
     m_gestureWeight2.setValue(m_core->gestureWeight(1), juce::dontSendNotification);
-    if (m_sequencer)
-    {
-        m_bpm.setValue(m_sequencer->m_bpm, juce::dontSendNotification);
-        m_patternLength.setValue(m_sequencer->m_patternLength, juce::dontSendNotification);
-        m_seqRecord.setToggleState(m_sequencer->m_recordArm, juce::dontSendNotification);
-        m_seqPlay.setButtonText(m_sequencer->m_playing ? "Stop Sequence" : "Start Sequence");
-    }
 }
 
 void PerformanceBandV2::resized()
@@ -283,14 +229,15 @@ void PerformanceBandV2::resized()
     m_sceneLabel.setBounds(x, y, DesktopV2ChromeLayout::kPerfSceneLabelW, h);
     x += DesktopV2ChromeLayout::kPerfSceneLabelW + gap;
 
-    const int sceneSize = DesktopV2ChromeLayout::kPerfSceneButtonSize;
-    const int sceneY = y + (h - sceneSize) / 2;
-    m_scene1.setBounds(x, sceneY, sceneSize, sceneSize);
-    x += sceneSize + gap;
-    m_scene2.setBounds(x, sceneY, sceneSize, sceneSize);
-    x += sceneSize + gap;
-    m_scene3.setBounds(x, sceneY, sceneSize, sceneSize);
-    x += sceneSize + gap;
+    const int sceneW = DesktopV2ChromeLayout::kSceneButtonMinWidth;
+    const int sceneH = DesktopV2ChromeLayout::kTextButtonH;
+    const int sceneY = y + (h - sceneH) / 2;
+    m_scene1.setBounds(x, sceneY, sceneW, sceneH);
+    x += sceneW + gap;
+    m_scene2.setBounds(x, sceneY, sceneW, sceneH);
+    x += sceneW + gap;
+    m_scene3.setBounds(x, sceneY, sceneW, sceneH);
+    x += sceneW + gap;
 
     m_blendLabelL.setBounds(x, y, DesktopV2ChromeLayout::kPerfBlendEndpointLabelW, h);
     x += DesktopV2ChromeLayout::kPerfBlendEndpointLabelW;
@@ -308,25 +255,11 @@ void PerformanceBandV2::resized()
     m_gestureWeight2.setBounds(x, y, DesktopV2ChromeLayout::kPerfGestureWeightW, h);
     x += DesktopV2ChromeLayout::kPerfGestureWeightW + gap;
 
-    m_seqPlay.setBounds(x, y, DesktopV2ChromeLayout::kPerfSeqTransportW, h);
-    x += DesktopV2ChromeLayout::kPerfSeqTransportW + gap;
-    m_seqRecord.setBounds(x, y, DesktopV2ChromeLayout::kPerfSeqRecordW, h);
-    x += DesktopV2ChromeLayout::kPerfSeqRecordW + gap;
-
-    m_bpmLabel.setBounds(x, y, DesktopV2ChromeLayout::kPerfBpmLabelW, h);
-    x += DesktopV2ChromeLayout::kPerfBpmLabelW;
-    m_bpm.setBounds(x, y, DesktopV2ChromeLayout::kPerfBpmSliderW, h);
-    x += DesktopV2ChromeLayout::kPerfBpmSliderW + gap;
-
-    m_stepsLabel.setBounds(x, y, DesktopV2ChromeLayout::kPerfStepsLabelW, h);
-    x += DesktopV2ChromeLayout::kPerfStepsLabelW;
-    m_patternLength.setBounds(x, y, DesktopV2ChromeLayout::kPerfStepsSliderW, h);
-    x += DesktopV2ChromeLayout::kPerfStepsSliderW + gap;
-
+    const int marblesLabelY = y + (h - DesktopV2ChromeLayout::kPerfMarblesLabelH) / 2;
     m_marblesLabel1.setBounds(
-        x, y, DesktopV2ChromeLayout::kPerfMarblesColW, DesktopV2ChromeLayout::kPerfMarblesLabelH);
+        x, marblesLabelY, DesktopV2ChromeLayout::kPerfMarblesColW, DesktopV2ChromeLayout::kPerfMarblesLabelH);
     m_marblesLabel2.setBounds(x + DesktopV2ChromeLayout::kPerfMarblesColW + gap,
-                              y,
+                              marblesLabelY,
                               DesktopV2ChromeLayout::kPerfMarblesColW,
                               DesktopV2ChromeLayout::kPerfMarblesLabelH);
 }

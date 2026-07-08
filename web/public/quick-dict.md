@@ -4,6 +4,8 @@ Short glosses for sim knob and mod labels. Full guide → in-app **Manual**. Dai
 
 ## Sim mod sources
 
+v1 desktop and web sim use the sources below. Desktop v2 uses the **Permanent mod sources** section (fifteen lanes; no MIDI CC lanes).
+
 MIDI CC 1 — Hardware/Web MIDI CC → latched CV (default ch 1, CC 1); disable greys column and clears routes
 MIDI CC 2 — Hardware/Web MIDI CC → latched CV (default ch 1, CC 2); disable greys column and clears routes
 VCO Envelope — Slow level from VCO mix; scope trace
@@ -14,22 +16,56 @@ Mod depth — Crossfade amount between stored knob (base) and mod source; 0 = ba
 
 ## Transport
 
-Boot (desktop v2 standalone) — Main window staying open after launch is the healthy boot outcome; instant exit indicates a build or runtime fault. Click **Engine** to start audio; **Stop** stops it.
-Engine — Top row: start/stop audio processing; with Engine on, internal VCOs drive sound by default (no MIDI or running sequencer required)
-Stop — Top row: stop audio processing
-Start Sequence — Performance band: toggles **Start Sequence** / **Stop Sequence** for pattern playback (not the same as Engine); step gates shape envelopes only while it runs
-Record — Performance band: arm sequencer step capture
-BPM — Performance band: sequencer tempo (slider beside numeric readout)
-Steps — Performance band: pattern length in steps (4–64)
+Boot (desktop v2 standalone) — Healthy boot keeps the main window open after launch; instant exit indicates a build or runtime fault. Launch the Release build with `./scripts/open-desktop-v2.sh` or open `desktop-v2/build/FroggersTigaDesktopV2_artefacts/Release/FroggersTigaV2.app` directly.
+Play — Top transport/signal band: start audio processing; with Play active, internal VCOs drive sound by default (no MIDI or running sequencer required)
+Stop — Top transport/signal band: stop audio processing
+Record audio — Top transport/signal band: round red circle + **Record audio** label; captures stereo output to file. Requires **Play** first (v1 parity). Export format (WAV / MP3 / FLAC / OGG) is set in the **Audio** menu, not in the transport row. Distinct from sequencer **Write Seq.** (step snapshot capture).
 Ext. In. — Optional line/mic; parallel ring mod when gate open; VCO-only when off or silent
 Randomize — Per module: randomize all three scene slots (S1/S2/S3 stored positions) for every musical row on that page (not Crispy); control-core authority, then syncToHost. Does not change S1/S2/S3 endpoint selection or scene blend. Use **Rand mod** for mod depths on that page.
-Rand mod — Mod sources + depths on current page
-Rand All — All modules: all three scene slots per musical row (not Crispy) + mod depths + global Crunchy scene slots; also randomizes L/R endpoint assignment and scene blend; clears gesture selection first
-Rand-seq — Sequencer toolbar dice: same scene-slot policy as Rand All (includes Crunchy slots); writes step buffer(s) per Step/Pattern scope; also randomizes live L/R endpoints and blend once per press; does not write mod depths
-Rand Mods — All mod routes
-Rand Resample — Resample both S&H channels (draws from bags)
+Rand mod — Mod depths on current page from the 15-lane catalog
+Rand All — All modules: all three scene slots per musical row (not Crispy) + mod depths + global Crunchy scene slots; also randomizes L/R endpoint assignment and scene blend; clears gesture selection first. **All Scenes** / **Current Scene** scope pair under the button selects scene write target.
+Rand-seq — Sequencer toolbar dice: same scene-slot policy as Rand All (includes Crunchy slots); writes step buffer(s) per **Step** / **All steps** scope; also randomizes live L/R endpoints and blend once per press; does not write mod depths
+Rand Mods — Global-command band: randomize mod depths per **All Steps** / **Current Step** scope pair; when writing sequencer snapshots, respects sequencer toolbar **Step** / **All steps** scope
+Rand Resample — Resample both Random/Marbles channels (draws from bags)
 Rand waveforms — Randomize VCO morph (sine/saw/square blend)
-Crunchy — Global fuego on all pages and all Crispy instances (web global strip)
+Crunchy — Global fuego on all pages and all Crispy instances (web global strip; desktop v2 global-command band scene encoder ring)
+
+## Top chrome (desktop v2)
+
+Transport / signal band — **Play**, **Stop**, **Record audio**, and the **global oscilloscope** (persistent across carousel and runtime pages)
+Global-command band — **Rand All**, **Rand Mods**, **Rand waveforms**, **Rand Resample**, **Crunchy** label + ring, **Shift**; scene/step scope radio pairs directly below **Rand All** and **Rand Mods**
+Global oscilloscope — Shell-level signal monitor in the transport band; default three color-coded VCO traces; source-group switching for LFO, pair buses, EFs, Random/Marbles, External Audio when inspected; separate from per-row CV LEDs and mod-column indicators
+All Scenes / Current Scene — Randomization scope under **Rand All**: write all three scene slots per row vs only the active scene edit target; preserves L/R endpoint picks and blend slider
+All Steps / Current Step — Randomization scope under **Rand Mods**: all 16 sequencer indices vs playhead (playing) or edit step (stopped)
+
+## Runtime pages (desktop v2)
+
+File — Right rail: patch identity, dirty state, save/load/revert, controller-mapping persistence results
+Audio — Right rail: hardware I/O, channels, sample rate, block size, external-input state, meters; no duplicate oscilloscope
+MIDI — Right rail: selected input, connection/receiving/error state, explicit mapping rows, multi-target fan-out summary, persistence status, target readback
+
+## Permanent mod sources (desktop v2)
+
+Fifteen lanes in parameter detail and mod-column dropdowns (depth 0 = off). MIDI CC A/B are **not** lanes — they are controller targets.
+
+VCO 1+2 — Audio-rate VCO pair bus (lane 1)
+VCO 2+3 — Audio-rate VCO pair bus (lane 2)
+VCO 1+3 — Audio-rate VCO pair bus (lane 3)
+VCO 1 EF — VCO 1 envelope follower
+VCO 2 EF — VCO 2 envelope follower
+VCO 3 EF — VCO 3 envelope follower
+VCO 1+2 EF — Adjacent-pair envelope follower
+VCO 2+3 EF — Adjacent-pair envelope follower
+LFO 1 — LFO module output 1
+LFO 2 — LFO module output 2
+LFO 3 — LFO module output 3
+Random/Marbles 1 — Random stepped source 1 (resample with **Rand Resample**)
+Random/Marbles 2 — Random stepped source 2 (resample with **Rand Resample**)
+External Audio (audio rate) — External input audio-rate lane; visible but unavailable when input off
+External Audio (envelope follower) — External input EF lane; visible but unavailable when input off
+
+MOD — Clickable label on module encoder rings; opens 4×4 parameter-detail grid (15 depth encoders + Crispy/target cell)
+Parameter detail — 4×4 modulation grid for one row; press Crispy/target cell to return to module page
 
 ## Page carousel (desktop v2)
 
@@ -53,56 +89,46 @@ Gesture 2 (G2) — Select gesture lane 2, then turn an encoder ring to write off
 Gesture weight — Horizontal slider (0–1) per lane scales how much the lane affects rings
 Rand All — Clears gesture selection before randomizing
 
-## Shift (desktop v2)
+## Sequencer (desktop v2)
 
-Shift — Performance modifier from the global strip toggle, computer keyboard, or MIDI **Shift button** row (standalone)
-Shift held — Blocks encoder ring drags; does not erase stored scenes by itself
-Shift + press (module ring) — Factory reset **that row only**: all three scene slots (S1/S2/S3) to inventory default, mod depths to default, gesture depths to 0; scene L/R endpoints and blend unchanged; other rows untouched
-Shift + press (Crunchy) — All three Crunchy scene slots to **0** — not the same as turning Crunchy down (a turn edits only the **active** scene slot selected by blend)
-Shift + press (Crispy row) — Full row reset like any module knob (Crispy factory default is 0)
-Mod-depth view — Shift held blocks drags (same as normal view); Shift + press resets the **underlying parameter** (all three scene slots + mods/gestures), not a single depth slider
-
-## Sequencer (desktop v2 performance band)
-
-BPM — Pattern tempo (performance band slider labeled BPM)
-Pattern length / Steps — Steps per pattern (4–64)
-Start Sequence — Begin sequencer pattern playback (performance band; button reads **Stop Sequence** while playing)
-Record arm — Capture per-step scene/gesture snapshots while advancing steps
-Edit step — Selected step for authoring (toolbar arrows, dice, context menu); distinct from playback **playhead**
+Fixed 16 steps — Exactly sixteen slots (indices 0..15); no pattern-length or **Steps** control
+Written / unwritten — Each slot stores whether a step snapshot exists; unwritten slots are skipped during playback
+Direction — Toolbar icon cycles `<`, `>`, `RND` (default `>`)
+Speed — Toolbar icon cycles `/2`, `/1.5`, `1`, `x1.5`, `x2` (default `1`)
+Long-press clear — Hold a written step (mouse, touch, or mapped controller) past threshold to mark it unwritten and wipe its snapshot; short release cancels; not a general held-gesture route
+BPM — Pattern tempo (toolbar slider labeled BPM)
+Start Sequence — Begin sequencer pattern playback (toolbar; button reads **Stop Sequence** while playing). Distinct from audio **Play** / **Stop**.
+Write Seq. — Arm step snapshot capture into the step buffer (toolbar toggle; not **Record** or **Record audio**). **Stopped + armed:** changing edit step captures live → previous edit step, then recalls new edit step; disarming captures live → current edit step once. **Playing + armed:** pressing **Start Sequence** immediately captures playhead step and sets a one-beat skip so the first advance does not recapture step 0; each subsequent beat advance captures the step being left, then recalls landed step; edit step follows playhead while armed. Blank steps factory-seed on first visit during playback. Capture flash highlights the captured step cell briefly after every capture while armed.
+Edit step — Always exactly one step selected (default step 1 / index 0); toolbar arrows wrap within 16 slots; distinct from playback **playhead**
 Playhead — Current playback position during **Start Sequence**; both highlights visible when edit step and playhead differ
 Step gates — **Double-click** a step cell toggles gate lit/rest. Gates drive per-VCO AR envelopes **only while Start Sequence runs**. When stopped, lit gates are stored pattern data only (cells render dimmed); internal VCOs continue at full level.
 Single-click step — Select edit step; gate unchanged
 Double-click step — Toggle step gate; edit step becomes that step
 Right-click step — Context menu **Reset** (factory cold-start snapshot into that step) or **Randomize** (full step snapshot for that step only; does not change live L/R/blend)
-← / → — Previous/next edit step within pattern length (wrap)
-Dice (Rand-seq) — Randomize scene slots into step buffer(s); **Step** scope = edit step only; **Pattern** scope = blank steps only; also randomizes live L/R endpoints and blend once per press (see Rand-seq above)
-Step / Pattern — Scope toggle beside dice: **Step** targets edit step; **Pattern** fills steps with `hasData == false` only
+← / → — Previous/next edit step within 16 slots (wrap)
+Dice (Rand-seq) — Randomize scene slots into step buffer(s); **Step** scope = edit step when stopped, playhead when playing; **All steps** scope = every index 0..15; also randomizes live L/R endpoints and blend once per press (see Rand-seq above)
+Step / All steps — Scope radio pair beside dice: **Step** targets edit step when stopped, playhead when playing; **All steps** randomizes every step index 0..15, including steps that already contain data
 
 ### VST v2 (Quick Dict only)
 
-No Engine row — DAW owns audio transport; internal VCOs drive sound when the DAW is playing audio.
+No Play/Stop row — DAW owns audio transport; internal VCOs drive sound when the DAW is playing audio.
+Write Seq. — Host parameter and sequencer toolbar toggle (no **Record audio** row).
 Start Sequence — Same step grid and edit-step UX as standalone once audio is processing.
 DAW MIDI Start/Stop — May toggle sequencer playback (**Start Sequence** / **Stop Sequence**).
 Step gates — Same policy: affect envelopes only while sequencer is playing.
 
-## MIDI CV (desktop v2 standalone)
+## MIDI / Controllers (desktop v2 standalone)
 
-Performance-first layout — One primary MIDI input (groovebox-style): dedicated Note/CC **performance triggers** for Shift and Scene S1–S3, separate from envelope **Gate** and from **Pitch** on one knob; CC A/B are live mod sources in module menus. VST uses DAW MIDI/automation instead — no MIDI CV settings dialog.
+Performance-first layout — One primary MIDI input: explicit mapping rows for **Pitch**, **Gate**, **MIDI CC A**, **MIDI CC B**, **Shift button**, **Scene S1–S3**, **QWERTY Ch**, optional **External MIDI clock**. No MIDI learn or recent-event list. Multi-target fan-out allowed. DAW-hosted build uses host parameters instead — no standalone MIDI picker.
 
 MIDI In — Pick one input stream: computer keyboard (QWERTY notes on virtual channel), none, or a hardware port
-CV Assignments — Map messages from that input to pitch, gate, CC modulators, and performance triggers
 Pitch — Page + row target (read-only parameter name); incoming notes bend that knob
 Gate — **Any** held note on/off drives Pair-AR envelope gates when enabled; OR-combines with **step gates** while **Start Sequence** runs — not assignable on the Shift row
-MIDI CC A / MIDI CC B — Incoming CC routes assignable as mod sources in module mod menus (Ch **Any** = all channels)
-Shift button — Dedicated Note or CC + Ch for the **Shift modifier** only (hold = block turns; press while held = reset targeted ring)
+MIDI CC A / MIDI CC B — Controller targets mapped to manifest parameter IDs; not permanent mod-rack lanes
+Shift button — Dedicated Note or CC + Ch for the **Shift** toggle row only (no factory-reset gesture)
 Scene S1 / S2 / S3 — MIDI triggers for scene L/R endpoint selection (Note or CC + Ch)
 QWERTY Ch — Virtual MIDI channel for computer keyboard notes (1–16)
-
-## Gates (desktop v2 — three meanings)
-
-Step gate — Per-step pattern cell (double-click in sequencer grid); shapes Pair-AR envelopes **only while Start Sequence runs**; stored pattern data when stopped (dimmed cells)
-MIDI CV Gate — Global row: any held input note drives envelope gates when enabled; combines with step gates during playback
-Ext. In. gate — Schmidt level gate (~−40 dBFS) for external ring mod — unrelated to sequencer or MIDI CV Gate
+External MIDI clock — Optional sequencer clock source (timing only; not gesture routing)
 
 ## Pair-AR (desktop v2 module)
 

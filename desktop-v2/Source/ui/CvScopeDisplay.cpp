@@ -41,6 +41,34 @@ void CvScopeDisplay::setIdle(bool idle)
     repaint();
 }
 
+void CvScopeDisplay::setTraceAudioRateModulated(size_t trace, bool modulated)
+{
+    if (trace >= kMaxTraces || m_traceAudioRateModulated[trace] == modulated)
+    {
+        return;
+    }
+    m_traceAudioRateModulated[trace] = modulated;
+    repaint();
+}
+
+bool CvScopeDisplay::hasAudioRateActivity(size_t trace, float threshold) const
+{
+    if (trace >= kMaxTraces || !m_hasSamples[trace])
+    {
+        return false;
+    }
+
+    float deltaEnergy = 0.0f;
+    for (size_t step = 1; step < 8; ++step)
+    {
+        const size_t index = (m_writeIndex[trace] + kBufferSize - step) % kBufferSize;
+        const size_t prevIndex = (index + kBufferSize - 1) % kBufferSize;
+        const float delta = m_samples[trace][index] - m_samples[trace][prevIndex];
+        deltaEnergy += delta * delta;
+    }
+    return deltaEnergy > threshold;
+}
+
 float CvScopeDisplay::clamp01(float value) const
 {
     if (value < 0.0f)
@@ -180,7 +208,14 @@ void CvScopeDisplay::paintTrace(juce::Graphics& g, juce::Rectangle<float> bounds
     }
 
     g.setColour(m_traceColours[trace]);
-    g.strokePath(path, juce::PathStrokeType(1.5f));
+    const bool modulated = m_traceAudioRateModulated[trace];
+    if (modulated)
+    {
+        g.setColour(m_traceColours[trace].withAlpha(0.35f));
+        g.strokePath(path, juce::PathStrokeType(3.5f));
+        g.setColour(m_traceColours[trace]);
+    }
+    g.strokePath(path, juce::PathStrokeType(modulated ? 2.5f : 1.5f));
 }
 
 void CvScopeDisplay::paintAllTraces(juce::Graphics& g, juce::Rectangle<float> bounds) const

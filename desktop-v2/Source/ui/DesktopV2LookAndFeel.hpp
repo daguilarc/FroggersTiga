@@ -17,6 +17,10 @@ public:
     juce::Font getPopupMenuFont() override;
     juce::Font getSliderPopupFont(juce::Slider&) override;
     juce::Typeface::Ptr getTypefaceForFont(const juce::Font& font) override;
+    void drawToggleButton(juce::Graphics& g,
+                          juce::ToggleButton& button,
+                          bool shouldDrawButtonAsHighlighted,
+                          bool shouldDrawButtonAsDown) override;
 
 private:
     juce::Font regularFont(float heightPt) const;

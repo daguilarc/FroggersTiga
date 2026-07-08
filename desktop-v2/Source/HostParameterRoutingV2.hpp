@@ -29,29 +29,42 @@ inline float sequencerBpmToNorm(float bpm)
     return clamp01((bpm - 20.0f) / (300.0f - 20.0f));
 }
 
-inline float sequencerNormToLength(float norm)
+inline uint8_t sequencerNormToDirection(float norm)
 {
-    const float length = 4.0f + clamp01(norm) * (64.0f - 4.0f);
-    return std::round(length);
+    if (SequencerState::kDirectionChoiceCount <= 1)
+    {
+        return 0;
+    }
+    const float scaled = clamp01(norm) * static_cast<float>(SequencerState::kDirectionChoiceCount - 1u);
+    return static_cast<uint8_t>(std::round(scaled));
 }
 
-inline float sequencerLengthToNorm(uint8_t length)
+inline float sequencerDirectionToNorm(uint8_t direction)
 {
-    return clamp01((static_cast<float>(length) - 4.0f) / (64.0f - 4.0f));
-}
-
-inline float sequencerNormToPlayhead(float norm)
-{
-    return clamp01(norm) * static_cast<float>(SequencerState::kMaxLength - 1);
-}
-
-inline float sequencerPlayheadToNorm(uint8_t playhead)
-{
-    if (SequencerState::kMaxLength <= 1)
+    if (SequencerState::kDirectionChoiceCount <= 1)
     {
         return 0.0f;
     }
-    return clamp01(static_cast<float>(playhead) / static_cast<float>(SequencerState::kMaxLength - 1));
+    return clamp01(static_cast<float>(direction) / static_cast<float>(SequencerState::kDirectionChoiceCount - 1u));
+}
+
+inline uint8_t sequencerNormToSpeed(float norm)
+{
+    if (SequencerState::kSpeedChoiceCount <= 1)
+    {
+        return 0;
+    }
+    const float scaled = clamp01(norm) * static_cast<float>(SequencerState::kSpeedChoiceCount - 1u);
+    return static_cast<uint8_t>(std::round(scaled));
+}
+
+inline float sequencerSpeedToNorm(uint8_t speedChoice)
+{
+    if (SequencerState::kSpeedChoiceCount <= 1)
+    {
+        return 0.0f;
+    }
+    return clamp01(static_cast<float>(speedChoice) / static_cast<float>(SequencerState::kSpeedChoiceCount - 1u));
 }
 
 inline bool isDelayUiPage(uint8_t page)
@@ -160,13 +173,13 @@ inline float readValue(const HostParameterInventoryV2::RuntimeDescriptor& entry,
                 case 0:
                     return sequencerBpmToNorm(sequencer.m_bpm);
                 case 1:
-                    return sequencerLengthToNorm(sequencer.m_patternLength);
+                    return sequencerDirectionToNorm(sequencer.m_direction);
                 case 2:
                     return sequencer.m_playing ? 1.0f : 0.0f;
                 case 3:
-                    return sequencer.m_recordArm ? 1.0f : 0.0f;
+                    return sequencer.m_writeSeqArm ? 1.0f : 0.0f;
                 default:
-                    return sequencerPlayheadToNorm(sequencer.m_playhead);
+                    return sequencerSpeedToNorm(sequencer.m_speedChoice);
             }
         case Axis::SceneBlend:
             return core.sceneBlend();
@@ -207,16 +220,16 @@ inline void applyValue(const HostParameterInventoryV2::RuntimeDescriptor& entry,
                     sequencer.setBpm(sequencerNormToBpm(value));
                     break;
                 case 1:
-                    sequencer.setPatternLength(static_cast<uint8_t>(sequencerNormToLength(value)));
+                    sequencer.setDirection(sequencerNormToDirection(value));
                     break;
                 case 2:
                     sequencer.m_playing = value >= 0.5f;
                     break;
                 case 3:
-                    sequencer.m_recordArm = value >= 0.5f;
+                    sequencer.m_writeSeqArm = value >= 0.5f;
                     break;
                 default:
-                    sequencer.m_playhead = static_cast<uint8_t>(sequencerNormToPlayhead(value));
+                    sequencer.setSpeedChoice(sequencerNormToSpeed(value));
                     break;
             }
             break;

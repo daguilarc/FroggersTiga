@@ -3,7 +3,7 @@
 #include "Parameter.hpp"
 #include "ModMgr.hpp"
 #include "SimModSource.hpp"
-#include "V2ModTapBank.hpp"
+#include "PermanentModTapRack.hpp"
 #include "V2FuegoStack.hpp"
 #include <algorithm>
 #include <cstddef>
@@ -19,7 +19,7 @@ struct Page
     ModMgr* m_modMgr;
     bool m_useV2Fuego = false;
     float* m_globalCrunchy = nullptr;
-    const V2ModTapBank* m_v2ModTaps = nullptr;
+    const PermanentModTapRack* m_v2ModTaps = nullptr;
     uint8_t m_v2CrispyRow = static_cast<uint8_t>(Parameter::x_numParameters - 1);
 
     void InitParam(const char* name, uint8_t position, float defaultValue)
@@ -34,6 +34,32 @@ struct Page
             return GetParamV2(position);
         }
         return m_parameters[position].Get(m_modMgr);
+    }
+
+    void SetEffectiveOverride(uint8_t position, float value)
+    {
+        if (position >= x_numParameters)
+        {
+            return;
+        }
+        m_parameters[position].SetEffectiveOverride(value);
+    }
+
+    void ClearEffectiveOverride(uint8_t position)
+    {
+        if (position >= x_numParameters)
+        {
+            return;
+        }
+        m_parameters[position].ClearEffectiveOverride();
+    }
+
+    void ClearEffectiveOverrides()
+    {
+        for (size_t i = 0; i < x_numParameters; i++)
+        {
+            m_parameters[i].ClearEffectiveOverride();
+        }
     }
 
     bool IsTracking(uint8_t position)
@@ -73,7 +99,7 @@ struct Page
         }
     }
 
-    void ConfigureV2Fuego(float* globalCrunchy, uint8_t crispyRow, const V2ModTapBank* v2ModTaps)
+    void ConfigureV2Fuego(float* globalCrunchy, uint8_t crispyRow, const PermanentModTapRack* v2ModTaps)
     {
         m_useV2Fuego = true;
         m_globalCrunchy = globalCrunchy;
@@ -117,16 +143,15 @@ private:
         {
             return param.m_knobValue;
         }
-        if (param.m_modIndex <= 6)
-        {
-            return m_modMgr->Modulate(param.m_knobValue, param.m_modIndex, param.m_modAmount);
-        }
-        if (m_v2ModTaps && param.m_modIndex >= V2ModTapBank::kFirstIndex
-            && param.m_modIndex <= V2ModTapBank::kLastIndex)
+        if (m_useV2Fuego && m_v2ModTaps && param.m_modIndex <= PermanentModTapRack::kLastIndex)
         {
             const float tap = m_v2ModTaps->GetTap(param.m_modIndex);
             return std::min(
                 std::max(param.m_knobValue * (1.0f - param.m_modAmount) + tap * param.m_modAmount, 0.0f), 1.0f);
+        }
+        if (param.m_modIndex <= 6)
+        {
+            return m_modMgr->Modulate(param.m_knobValue, param.m_modIndex, param.m_modAmount);
         }
         return param.m_knobValue;
     }
@@ -259,6 +284,14 @@ struct PageManager
         }
     }
 
+    void ClearEffectiveOverrides()
+    {
+        for (uint8_t p = 0; p < m_numPages; p++)
+        {
+            m_pages[p].ClearEffectiveOverrides();
+        }
+    }
+
     void RandomizePageMod(uint8_t page)
     {
         for (size_t j = 0; j < Parameter::x_numParameters; j++)
@@ -356,7 +389,7 @@ struct PageManager
         Parameter& param = m_pages[page].m_parameters[position];
         const bool valid = modIndex == 255
             || IsSimAssignableModIndex(modIndex, SimHostKind::Desktop)
-            || IsV2ModSourceIndex(modIndex);
+            || IsPermanentModSourceIndex(modIndex);
         if (!valid)
         {
             param.m_modIndex = 255;

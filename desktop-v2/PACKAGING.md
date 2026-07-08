@@ -46,7 +46,7 @@ Artefact locations:
 
 | Platform | Release output |
 |----------|----------------|
-| macOS | `desktop-v2/build/FroggersTigaDesktopV2_artefacts/FroggersTigaV2.app` |
+| macOS | `desktop-v2/build/FroggersTigaDesktopV2_artefacts/Release/FroggersTigaV2.app` |
 | Windows | `desktop-v2/build/FroggersTigaDesktopV2_artefacts/Release/FroggersTigaV2.exe` (+ DLLs in same folder) |
 
 Run tests:

@@ -3,8 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "AudioEngine.h"
-#include "control/FroggersV2ControlCore.hpp"
-#include "control/FroggersV2HostBridge.hpp"
+#include "control/FroggersV2AppCoreFacade.hpp"
 #include "HostParameterRegistryV2.hpp"
 
 class FroggersTigaAudioProcessorV2 : public juce::AudioProcessor
@@ -38,6 +37,7 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     AudioEngine& getAudioEngine();
+    froggers_v2::FroggersV2AppCoreFacade& getAppCoreFacade();
     froggers_v2::FroggersV2ControlCore& getControlCore();
     froggers_v2::FroggersV2HostBridge& getHostBridge();
 
@@ -45,8 +45,7 @@ private:
     void syncParametersFromHost();
 
     AudioEngine m_audio{true};
-    froggers_v2::FroggersV2ControlCore m_core;
-    froggers_v2::FroggersV2HostBridge m_bridge;
+    froggers_v2::FroggersV2AppCoreFacade m_facade;
     HostParameterRegistryV2 m_paramRegistry;
     HostParameterPendingStoreV2 m_pendingParams;
 

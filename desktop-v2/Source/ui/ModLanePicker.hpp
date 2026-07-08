@@ -7,13 +7,14 @@
 #include <cstdint>
 #include <functional>
 
-class ModSourceCell : public juce::Component
+class ModLanePicker : public juce::Component
 {
 public:
-    ModSourceCell();
+    ModLanePicker();
 
     void setRow(uint8_t row);
     void setAssignedSource(uint8_t internalSourceIndex);
+    void setExternalAudioAvailable(bool available);
     void refresh();
 
     std::function<void(uint8_t row, uint8_t internalSourceIndex)> onAssign;
@@ -27,5 +28,6 @@ private:
 
     uint8_t m_row = 0;
     uint8_t m_assigned = froggers_v2::kNoSelection;
+    bool m_externalAudioAvailable = false;
     juce::ComboBox m_dropdown;
 };

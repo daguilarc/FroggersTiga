@@ -17,14 +17,19 @@ public:
     void setShiftHeld(bool held);
     void refresh();
 
+    std::function<uint8_t()> resolveRandSeqScope;
+
     void resized() override;
 
 private:
     void pushShift(bool held);
     void pushRandAll();
+    void pushRandMods();
 
     DesktopHostIO* m_host = nullptr;
     froggers_v2::FroggersV2ControlCore* m_core = nullptr;
+    bool m_allScenesScope = true;
+    bool m_allStepsScope = false;
 
     juce::TextButton m_randAll;
     juce::TextButton m_randMods;
@@ -33,6 +38,8 @@ private:
     juce::Label m_crunchyLabel;
     EncoderRingComponent m_crunchyRing;
     juce::ToggleButton m_shift{"Shift"};
-    juce::TextButton m_lfo{"LFO"};
-    juce::TextButton m_vco{"VCO"};
+    juce::ToggleButton m_scopeAllScenes{"All Scenes"};
+    juce::ToggleButton m_scopeCurrentScene{"Current Scene"};
+    juce::ToggleButton m_scopeAllSteps{"All Steps"};
+    juce::ToggleButton m_scopeCurrentStep{"Current Step"};
 };

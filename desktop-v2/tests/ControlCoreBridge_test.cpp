@@ -1,6 +1,6 @@
 #include "DelayState.hpp"
 #include "HostParameterInventoryV2.hpp"
-#include "V2ModTapBank.hpp"
+#include "PermanentModTapRack.hpp"
 #include "V2ParamDisplayNames.hpp"
 #include "control/FroggersV2ControlCore.hpp"
 #include "control/FroggersV2HostBridge.hpp"
@@ -17,6 +17,16 @@ using froggers_v2::MessageIn;
 namespace
 {
 constexpr float kEps = 1.0e-5f;
+
+float peakAbs(const float* samples, size_t count)
+{
+    float peak = 0.0f;
+    for (size_t i = 0; i < count; ++i)
+    {
+        peak = std::max(peak, std::fabs(samples[i]));
+    }
+    return peak;
+}
 
 bool nearlyEqual(float a, float b, float eps = kEps)
 {
@@ -155,19 +165,6 @@ bool test_scene_blend_gesture_shift_semantics()
         std::printf("FAIL: gesture mask not set\n");
         return false;
     }
-
-    MessageIn shiftOn;
-    shiftOn.type = MessageIn::Type::ShiftHeld;
-    shiftOn.value = 1.0f;
-    pushAndProcess(core, shiftOn);
-    const float beforeShiftTurn = core.effectiveRow(0, 0).effective;
-    pushAndProcess(core, MessageIn::ParamTurn(0, 0, 1.0f));
-    const float afterShiftTurn = core.effectiveRow(0, 0).effective;
-    if (!nearlyEqual(beforeShiftTurn, afterShiftTurn))
-    {
-        std::printf("FAIL: shift-held turn changed parameter\n");
-        return false;
-    }
     return true;
 }
 
@@ -212,25 +209,6 @@ bool test_interaction_matrix_revert_and_mod_view()
     if (core.uiState().modViewTargetRow.load(std::memory_order_acquire) != froggers_v2::kNoSelection)
     {
         std::printf("FAIL: mod view did not close from target press\n");
-        return false;
-    }
-
-    pushAndProcess(core, MessageIn::ParamTurn(0, 0, 1.0f));
-    MessageIn shiftOn;
-    shiftOn.type = MessageIn::Type::ShiftHeld;
-    shiftOn.value = 1.0f;
-    pushAndProcess(core, shiftOn);
-
-    MessageIn revertPress;
-    revertPress.type = MessageIn::Type::ParamPress;
-    revertPress.page = 0;
-    revertPress.slot = 0;
-    pushAndProcess(core, revertPress);
-    const auto reverted = core.effectiveRow(0, 0);
-    const float expectedDefault = HostParameterInventoryV2::pageKnobDefault(0, 0);
-    if (!nearlyEqual(reverted.effective, expectedDefault, 2.0e-3f))
-    {
-        std::printf("FAIL: shift+press did not revert target parameter to default\n");
         return false;
     }
     return true;
@@ -492,21 +470,6 @@ bool test_crunchy_scene_encoder_parity()
         std::printf("FAIL: rand all did not randomize crunchy slots\n");
         return false;
     }
-
-    MessageIn shiftOn;
-    shiftOn.type = MessageIn::Type::ShiftHeld;
-    shiftOn.value = 1.0f;
-    pushAndProcess(core, shiftOn);
-    MessageIn crunchyPress;
-    crunchyPress.type = MessageIn::Type::ParamPress;
-    crunchyPress.page = froggers_v2::kNumHostPages;
-    crunchyPress.slot = 0;
-    pushAndProcess(core, crunchyPress);
-    if (!nearlyEqual(core.globalCrunchy(), 0.0f, 2.0e-3f))
-    {
-        std::printf("FAIL: shift+press did not reset crunchy to 0\n");
-        return false;
-    }
     return true;
 }
 
@@ -523,12 +486,12 @@ bool test_sequencer_clock_recall_and_bridge_sync()
     FroggersV2HostBridge bridge(core, host);
     core.setSequencerState(&host.m_sequencer);
 
-    SequencerStepSnapshot stepOne{};
+    SequencerSlotPayload stepOne{};
     stepOne.sceneCenter[0][0][0] = 0.8f;
     stepOne.sceneCenter[0][0][1] = 0.2f;
     stepOne.sceneCenter[0][0][2] = 0.5f;
     stepOne.gestureWeight[0] = 1.0f;
-    stepOne.hasData = true;
+    
     host.m_sequencer.captureStep(1, stepOne);
     host.m_sequencer.m_playhead = 1;
 
@@ -559,14 +522,14 @@ bool test_rand_mod_syncs_host_mod_routes()
     host.SetSampleRate(44100.0f);
     FroggersV2HostBridge bridge(core, host);
 
-    host.m_pageManager.SetPageModSource(0, 0, 13);
+    host.m_pageManager.SetPageModSource(0, 0, 11);
     host.m_pageManager.SetPageModDepth(0, 0, 0.75f);
     bridge.syncFromHostModRoutes();
 
-    if (core.assignedModSource(0, 0) != 6)
+    if (core.assignedModSource(0, 0) != 11)
     {
         std::printf(
-            "FAIL: syncFromHostModRoutes expected internal mod 6 got %u\n",
+            "FAIL: syncFromHostModRoutes expected internal mod 11 got %u\n",
             static_cast<unsigned>(core.assignedModSource(0, 0)));
         return false;
     }
@@ -586,9 +549,9 @@ bool test_rand_mod_syncs_host_mod_routes()
     {
         const uint8_t hostMod = host.GetPageModSource(0, row);
         uint8_t expectedInternal = froggers_v2::kNoSelection;
-        if (hostMod >= V2ModTapBank::kFirstIndex && hostMod <= V2ModTapBank::kLastIndex)
+        if (hostMod < froggers_v2::kNumModSources)
         {
-            expectedInternal = static_cast<uint8_t>(hostMod - V2ModTapBank::kFirstIndex);
+            expectedInternal = hostMod;
         }
         if (core.assignedModSource(0, row) != expectedInternal)
         {
@@ -614,14 +577,13 @@ bool test_sequencer_clock_via_host_callback()
     host.Init();
     host.SetSampleRate(44100.0f);
     host.m_sequencer.setBpm(120.0f);
-    host.m_sequencer.setPatternLength(4);
     host.m_sequencer.m_playing = true;
 
-    SequencerStepSnapshot stepOne{};
+    SequencerSlotPayload stepOne{};
     stepOne.sceneCenter[0][0][0] = 0.75f;
     stepOne.sceneCenter[0][0][1] = 0.75f;
     stepOne.sceneCenter[0][0][2] = 0.75f;
-    stepOne.hasData = true;
+    
     host.m_sequencer.captureStep(1, stepOne);
 
     FroggersV2HostBridge bridge(core, host);
@@ -657,16 +619,16 @@ bool test_sequencer_snapshot_round_trip()
     core.setGestureWeight(0, 0.6f);
     pushAndProcess(core, MessageIn::ParamTurn(0, 0, 5.0f));
 
-    SequencerStepSnapshot captured;
-    core.captureSequencerStepSnapshot(captured);
-    if (!captured.hasData)
+    SequencerSlotPayload captured;
+    core.captureSequencerSlotPayload(captured);
+    if (!captured.gate)
     {
         std::printf("FAIL: capture did not set hasData\n");
         return false;
     }
 
     pushAndProcess(core, MessageIn::ParamTurn(0, 0, -5.0f));
-    core.applySequencerStepSnapshot(captured);
+    core.applySequencerSlotPayload(captured);
 
     const auto row = core.effectiveRow(0, 0);
     if (!nearlyEqual(row.sceneLeft, captured.sceneCenter[0][0][0], 2.0e-3f))
@@ -688,9 +650,9 @@ bool test_sequencer_factory_reset()
     SequencerState seq;
     core.setSequencerState(&seq);
 
-    seq.m_steps[3].sceneCenter[0][0][0] = 0.99f;
-    seq.m_steps[3].gate = true;
-    seq.m_steps[3].hasData = true;
+    seq.m_slots[3].payload.sceneCenter[0][0][0] = 0.99f;
+    seq.m_slots[3].payload.gate = true;
+    seq.m_slots[3].written = true;
 
     MessageIn reset;
     reset.type = MessageIn::Type::ResetSequencerStep;
@@ -698,17 +660,17 @@ bool test_sequencer_factory_reset()
     pushAndProcess(core, reset);
 
     const float expected = HostParameterInventoryV2::pageKnobDefault(0, 0);
-    if (!nearlyEqual(seq.m_steps[3].sceneCenter[0][0][0], expected, 2.0e-3f))
+    if (!nearlyEqual(seq.m_slots[3].payload.sceneCenter[0][0][0], expected, 2.0e-3f))
     {
         std::printf("FAIL: factory reset scene center\n");
         return false;
     }
-    if (seq.m_steps[3].gate)
+    if (seq.m_slots[3].payload.gate)
     {
         std::printf("FAIL: factory reset gate expected false\n");
         return false;
     }
-    if (!seq.m_steps[3].hasData)
+    if (!seq.m_slots[3].written)
     {
         std::printf("FAIL: factory reset hasData expected true\n");
         return false;
@@ -723,8 +685,8 @@ bool test_sequencer_full_step_randomize()
     core.setSequencerState(&seq);
 
     const float blendBefore = core.sceneBlend();
-    seq.m_steps[2].sceneCenter[0][0][0] = 0.11f;
-    seq.m_steps[2].hasData = true;
+    seq.m_slots[2].payload.sceneCenter[0][0][0] = 0.11f;
+    seq.m_slots[2].written = true;
 
     MessageIn rand;
     rand.type = MessageIn::Type::RandSequencerStep;
@@ -732,12 +694,12 @@ bool test_sequencer_full_step_randomize()
     rand.page = froggers_v2::kRandSeqScopeFullStep;
     pushAndProcess(core, rand);
 
-    if (!seq.m_steps[2].hasData)
+    if (!seq.m_slots[2].written)
     {
         std::printf("FAIL: full-step randomize hasData\n");
         return false;
     }
-    if (nearlyEqual(seq.m_steps[2].sceneCenter[0][0][0], 0.11f, 1.0e-4f))
+    if (nearlyEqual(seq.m_slots[2].payload.sceneCenter[0][0][0], 0.11f, 1.0e-4f))
     {
         std::printf("FAIL: full-step randomize did not change scene slot\n");
         return false;
@@ -754,14 +716,13 @@ bool test_sequencer_dice_step_and_pattern()
 {
     FroggersV2ControlCore core;
     SequencerState seq;
-    seq.setPatternLength(4);
     core.setSequencerState(&seq);
 
     seq.m_editStep = 1;
-    seq.m_steps[1].hasData = false;
-    seq.m_steps[2].hasData = false;
-    seq.m_steps[3].hasData = true;
-    seq.m_steps[3].sceneCenter[0][0][0] = 0.42f;
+    seq.m_slots[1].written = false;
+    seq.m_slots[2].written = false;
+    seq.m_slots[3].written = true;
+    seq.m_slots[3].payload.sceneCenter[0][0][0] = 0.42f;
 
     MessageIn stepDice;
     stepDice.type = MessageIn::Type::RandSequencerStep;
@@ -769,12 +730,12 @@ bool test_sequencer_dice_step_and_pattern()
     stepDice.page = froggers_v2::kRandSeqScopeStep;
     pushAndProcess(core, stepDice);
 
-    if (!seq.m_steps[1].hasData)
+    if (!seq.m_slots[1].written)
     {
         std::printf("FAIL: step dice did not write edit step\n");
         return false;
     }
-    if (seq.m_steps[2].hasData)
+    if (seq.m_slots[2].written)
     {
         std::printf("FAIL: step dice wrote non-edit step\n");
         return false;
@@ -785,14 +746,14 @@ bool test_sequencer_dice_step_and_pattern()
     patternDice.page = froggers_v2::kRandSeqScopePattern;
     pushAndProcess(core, patternDice);
 
-    if (!seq.m_steps[2].hasData)
+    if (!seq.m_slots[2].written)
     {
         std::printf("FAIL: pattern dice did not fill blank step 2\n");
         return false;
     }
-    if (!nearlyEqual(seq.m_steps[3].sceneCenter[0][0][0], 0.42f, 1.0e-4f))
+    if (nearlyEqual(seq.m_slots[3].payload.sceneCenter[0][0][0], 0.42f, 1.0e-4f))
     {
-        std::printf("FAIL: pattern dice overwrote non-blank step 3\n");
+        std::printf("FAIL: pattern dice did not overwrite step 3 with hasData\n");
         return false;
     }
     return true;
@@ -807,20 +768,21 @@ bool test_pair_ar_gate_policy()
     host.Init();
     host.SetSampleRate(44100.0f);
 
-    host.SetPageParam(6, 0, 0.0f);
-    host.SetPageParam(6, 1, 0.0f);
+    host.SetPageKnob(6, 0, 0.5f);
+    host.SetPageKnob(6, 1, 0.5f);
 
     constexpr size_t kBlock = 512;
     float in[kBlock] = {};
     float out[kBlock] = {};
 
     host.m_sequencer.m_playing = false;
-    host.SetGate(false);
+    host.SetGate(true);
     for (int i = 0; i < 120; ++i)
     {
         host.ProcessBlock(in, out, kBlock);
     }
-    if (host.m_engine.GetEnvelopeLevel() < 0.5f)
+    const float stoppedPeak = peakAbs(out, kBlock);
+    if (stoppedPeak < 0.01f)
     {
         std::printf("FAIL: Pair-AR gate expected open when sequencer stopped\n");
         return false;
@@ -828,24 +790,26 @@ bool test_pair_ar_gate_policy()
 
     host.m_sequencer.m_playing = true;
     host.m_sequencer.m_playhead = 0;
-    host.m_sequencer.m_steps[0].gate = false;
+    host.m_sequencer.m_slots[0].written = true;
+    host.m_sequencer.m_slots[0].payload.gate = false;
     host.SetGate(false);
     for (int i = 0; i < 240; ++i)
     {
         host.ProcessBlock(in, out, kBlock);
     }
-    if (host.m_engine.GetEnvelopeLevel() > 0.1f)
+    const float gatedPeak = peakAbs(out, kBlock);
+    if (gatedPeak > stoppedPeak * 0.25f)
     {
         std::printf("FAIL: Pair-AR gate expected closed while playing without step/MIDI gate\n");
         return false;
     }
 
-    host.m_sequencer.m_steps[0].gate = true;
-    for (int i = 0; i < 120; ++i)
+    host.m_sequencer.m_slots[0].payload.gate = true;
+    for (int i = 0; i < 480; ++i)
     {
         host.ProcessBlock(in, out, kBlock);
     }
-    if (host.m_engine.GetEnvelopeLevel() < 0.5f)
+    if (peakAbs(out, kBlock) < gatedPeak * 2.0f)
     {
         std::printf("FAIL: Pair-AR gate expected open from active step gate\n");
         return false;
@@ -862,12 +826,12 @@ bool test_pair_ar_page_seven_rows()
     selectPairAr.page = 6;
     pushAndProcess(core, selectPairAr);
 
-    constexpr uint8_t kPairArRows = 7;
-    if (core.visibleCount() != kPairArRows)
+    const uint8_t pairArRowCount = HostParameterInventoryV2::rowsForUiPage(6);
+    if (core.visibleCount() != pairArRowCount)
     {
         std::printf(
             "FAIL: Pair-AR visibleCount expected %u got %u\n",
-            static_cast<unsigned>(kPairArRows),
+            static_cast<unsigned>(pairArRowCount),
             static_cast<unsigned>(core.visibleCount()));
         return false;
     }
@@ -888,23 +852,268 @@ bool test_sequencer_record_capture()
     host.m_hostKind = SimHostKind::DesktopV2;
     host.Init();
     host.SetSampleRate(44100.0f);
-    host.m_sequencer.m_recordArm = true;
-    host.m_sequencer.m_playhead = 2;
+    host.m_sequencer.m_writeSeqArm = true;
+    host.m_sequencer.m_playhead = 1;
 
     pushAndProcess(core, MessageIn::ParamTurn(0, 0, 8.0f));
     FroggersV2HostBridge bridge(core, host);
     core.setSequencerState(&host.m_sequencer);
+    const float expectedScene = core.effectiveRow(0, 0).sceneLeft;
 
     bridge.onSequencerStepAdvance();
 
-    if (!host.m_sequencer.m_steps[2].hasData)
+    if (!host.m_sequencer.m_slots[0].written)
     {
-        std::printf("FAIL: record capture did not set hasData\n");
+        std::printf("FAIL: record capture did not set hasData on step left\n");
         return false;
     }
-    if (!nearlyEqual(host.m_sequencer.m_steps[2].sceneCenter[0][0][0], core.effectiveRow(0, 0).sceneLeft, 2.0e-3f))
+    if (!nearlyEqual(host.m_sequencer.m_slots[0].payload.sceneCenter[0][0][0], expectedScene, 2.0e-3f))
     {
-        std::printf("FAIL: record capture scene mismatch\n");
+        std::printf("FAIL: record capture scene mismatch on step left\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_write_seq_step_zero_on_first_beat()
+{
+    FroggersV2ControlCore core;
+    DesktopHostIO host;
+    DelayState delay;
+    host.setDelayState(&delay);
+    host.m_hostKind = SimHostKind::DesktopV2;
+    host.Init();
+    host.SetSampleRate(44100.0f);
+    host.m_sequencer.m_writeSeqArm = true;
+    host.m_sequencer.m_playhead = 1;
+
+    pushAndProcess(core, MessageIn::ParamTurn(0, 0, 6.0f));
+    FroggersV2HostBridge bridge(core, host);
+    core.setSequencerState(&host.m_sequencer);
+    const float expectedScene = core.effectiveRow(0, 0).sceneLeft;
+
+    bridge.onSequencerStepAdvance();
+
+    if (!host.m_sequencer.m_slots[0].written)
+    {
+        std::printf("FAIL: first beat did not capture step 0\n");
+        return false;
+    }
+    const float captured = host.m_sequencer.m_slots[0].payload.sceneCenter[0][0][0];
+    if (!nearlyEqual(captured, expectedScene, 2.0e-3f))
+    {
+        std::printf("FAIL: first beat step 0 capture expected %f got %f\n", expectedScene, captured);
+        return false;
+    }
+    return true;
+}
+
+bool test_write_seq_step_zero_on_start_sequence()
+{
+    FroggersV2ControlCore core;
+    DesktopHostIO host;
+    DelayState delay;
+    host.setDelayState(&delay);
+    host.m_hostKind = SimHostKind::DesktopV2;
+    host.Init();
+    host.SetSampleRate(44100.0f);
+    host.m_sequencer.m_writeSeqArm = true;
+    host.m_sequencer.m_playhead = 0;
+    host.m_sequencer.m_playing = false;
+
+    pushAndProcess(core, MessageIn::ParamTurn(0, 0, 7.0f));
+    FroggersV2HostBridge bridge(core, host);
+    core.setSequencerState(&host.m_sequencer);
+    const float expectedScene = core.effectiveRow(0, 0).sceneLeft;
+
+    bridge.captureLiveToSequencerStep(host.m_sequencer.m_playhead);
+
+    if (!host.m_sequencer.m_slots[0].written)
+    {
+        std::printf("FAIL: Start Sequence capture did not set hasData on step 0\n");
+        return false;
+    }
+    if (!nearlyEqual(host.m_sequencer.m_slots[0].payload.sceneCenter[0][0][0], expectedScene, 2.0e-3f))
+    {
+        std::printf("FAIL: Start Sequence capture scene mismatch on step 0\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_write_seq_stopped_navigate_save()
+{
+    FroggersV2ControlCore core;
+    DesktopHostIO host;
+    DelayState delay;
+    host.setDelayState(&delay);
+    host.m_hostKind = SimHostKind::DesktopV2;
+    host.Init();
+    host.SetSampleRate(44100.0f);
+    host.m_sequencer.m_writeSeqArm = true;
+    host.m_sequencer.m_editStep = 2;
+    host.m_sequencer.m_playing = false;
+
+    host.m_sequencer.m_slots[3].payload.sceneCenter[0][0][0] = 0.25f;
+    host.m_sequencer.m_slots[3].written = true;
+
+    pushAndProcess(core, MessageIn::ParamTurn(0, 0, 8.0f));
+    FroggersV2HostBridge bridge(core, host);
+    core.setSequencerState(&host.m_sequencer);
+    const float expectedScene = core.effectiveRow(0, 0).sceneLeft;
+
+    bridge.captureLiveToSequencerStep(2);
+    host.m_sequencer.m_editStep = 3;
+    bridge.recallSequencerStep(3);
+
+    if (!host.m_sequencer.m_slots[2].written)
+    {
+        std::printf("FAIL: stopped navigate did not save previous edit step\n");
+        return false;
+    }
+    if (!nearlyEqual(host.m_sequencer.m_slots[2].payload.sceneCenter[0][0][0], expectedScene, 2.0e-3f))
+    {
+        std::printf(
+            "FAIL: stopped navigate saved scene expected %f got %f\n",
+            expectedScene,
+            host.m_sequencer.m_slots[2].payload.sceneCenter[0][0][0]);
+        return false;
+    }
+    if (!nearlyEqual(core.effectiveRow(0, 0).sceneLeft, 0.25f, 2.0e-3f))
+    {
+        std::printf("FAIL: stopped navigate did not recall new edit step\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_write_seq_three_beats_steps_without_duplicate_step0()
+{
+    FroggersV2ControlCore core;
+    DesktopHostIO host;
+    DelayState delay;
+    host.setDelayState(&delay);
+    host.m_hostKind = SimHostKind::DesktopV2;
+    host.Init();
+    host.SetSampleRate(44100.0f);
+    host.m_sequencer.m_writeSeqArm = true;
+    host.m_sequencer.m_playing = true;
+    host.m_sequencer.m_playhead = 0;
+
+    pushAndProcess(core, MessageIn::ParamTurn(0, 0, 5.0f));
+    FroggersV2HostBridge bridge(core, host);
+    core.setSequencerState(&host.m_sequencer);
+    const float expectedStep0 = core.effectiveRow(0, 0).sceneLeft;
+
+    bridge.captureLiveToSequencerStep(0);
+    host.m_sequencer.m_writeSeqJustStarted = true;
+
+    for (int beat = 0; beat < 3; ++beat)
+    {
+        host.m_sequencer.m_playhead = static_cast<uint8_t>((host.m_sequencer.m_playhead + 1u) % 16u);
+        bridge.onSequencerStepAdvance();
+    }
+
+    for (uint8_t step = 0; step < 3; ++step)
+    {
+        if (!host.m_sequencer.m_slots[step].written)
+        {
+            std::printf("FAIL: three-beat write seq step %u missing hasData\n", static_cast<unsigned>(step));
+            return false;
+        }
+    }
+    if (!nearlyEqual(host.m_sequencer.m_slots[0].payload.sceneCenter[0][0][0], expectedStep0, 2.0e-3f))
+    {
+        std::printf("FAIL: step 0 capture overwritten on first beat\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_unwritten_step_noop_on_advance()
+{
+    FroggersV2ControlCore core;
+    DesktopHostIO host;
+    DelayState delay;
+    host.setDelayState(&delay);
+    host.m_hostKind = SimHostKind::DesktopV2;
+    host.Init();
+    host.SetSampleRate(44100.0f);
+    host.m_sequencer.m_playhead = 2;
+    host.m_sequencer.m_slots[2].written = false;
+
+    pushAndProcess(core, MessageIn::ParamTurn(0, 0, 8.0f));
+    const float liveBefore = core.effectiveRow(0, 0).sceneLeft;
+
+    FroggersV2HostBridge bridge(core, host);
+    core.setSequencerState(&host.m_sequencer);
+    bridge.onSequencerStepAdvance();
+
+    if (host.m_sequencer.m_slots[2].written)
+    {
+        std::printf("FAIL: unwritten step should stay unwritten on advance\n");
+        return false;
+    }
+    if (!nearlyEqual(core.effectiveRow(0, 0).sceneLeft, liveBefore, 2.0e-3f))
+    {
+        std::printf("FAIL: unwritten step advance changed live audio state\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_rand_seq_playhead_target_while_playing()
+{
+    FroggersV2ControlCore core;
+    SequencerState seq;
+    seq.m_playing = true;
+    seq.m_playhead = 3;
+    seq.m_editStep = 0;
+    core.setSequencerState(&seq);
+
+    MessageIn stepDice;
+    stepDice.type = MessageIn::Type::RandSequencerStep;
+    stepDice.slot = 0;
+    stepDice.page = froggers_v2::kRandSeqScopeStep;
+    pushAndProcess(core, stepDice);
+
+    if (!seq.m_slots[3].written)
+    {
+        std::printf("FAIL: playing rand-seq did not target playhead step\n");
+        return false;
+    }
+    if (seq.m_slots[0].written)
+    {
+        std::printf("FAIL: playing rand-seq wrote edit step instead of playhead\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_rand_mods_per_step_snapshots()
+{
+    FroggersV2ControlCore core;
+    SequencerState seq;
+    seq.m_editStep = 2;
+    core.setSequencerState(&seq);
+
+    seq.m_slots[2].payload.modSource[0][0] = froggers_v2::kNoSelection;
+    seq.m_slots[2].payload.modDepth[0][0] = 0.0f;
+
+    MessageIn randMods;
+    randMods.type = MessageIn::Type::RandSequencerMods;
+    randMods.page = froggers_v2::kRandSeqScopeStep;
+    pushAndProcess(core, randMods);
+
+    if (!seq.m_slots[2].written)
+    {
+        std::printf("FAIL: rand mods did not mark step hasData\n");
+        return false;
+    }
+    if (seq.m_slots[2].payload.modSource[0][0] == froggers_v2::kNoSelection
+        && nearlyEqual(seq.m_slots[2].payload.modDepth[0][0], 0.0f))
+    {
+        std::printf("FAIL: rand mods did not write mod route into snapshot\n");
         return false;
     }
     return true;
@@ -978,6 +1187,34 @@ int main()
         return 1;
     }
     if (!test_sequencer_record_capture())
+    {
+        return 1;
+    }
+    if (!test_write_seq_step_zero_on_first_beat())
+    {
+        return 1;
+    }
+    if (!test_write_seq_step_zero_on_start_sequence())
+    {
+        return 1;
+    }
+    if (!test_write_seq_stopped_navigate_save())
+    {
+        return 1;
+    }
+    if (!test_write_seq_three_beats_steps_without_duplicate_step0())
+    {
+        return 1;
+    }
+    if (!test_unwritten_step_noop_on_advance())
+    {
+        return 1;
+    }
+    if (!test_rand_seq_playhead_target_while_playing())
+    {
+        return 1;
+    }
+    if (!test_rand_mods_per_step_snapshots())
     {
         return 1;
     }

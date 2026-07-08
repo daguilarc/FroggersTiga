@@ -1,7 +1,9 @@
 #include "control/MidiCvAssignmentTable.hpp"
+#include "manifest/FroggersV2AppManifest.hpp"
 
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 
 namespace
 {
@@ -13,7 +15,6 @@ bool nearlyEqual(float a, float b)
 bool test_midi_clock_advances_external_sequencer()
 {
     SequencerState sequencer;
-    sequencer.setPatternLength(4);
     sequencer.m_playing = true;
     sequencer.m_externalClock = true;
 
@@ -132,26 +133,26 @@ bool test_shift_and_scene_button_bindings()
     table.shiftButton.enabled = true;
     table.shiftButton.kind = MidiCvTriggerKind::Note;
     table.shiftButton.number = 36;
-    table.shiftButton.target = MidiCvButtonTarget::Shift;
+    table.shiftButton.target = MidiCvBindingRole::HeldModifier;
     table.sceneButtons[1].enabled = true;
     table.sceneButtons[1].kind = MidiCvTriggerKind::Cc;
     table.sceneButtons[1].number = 20;
-    table.sceneButtons[1].target = MidiCvButtonTarget::Scene2;
+    table.sceneButtons[1].target = MidiCvBindingRole::SceneOrdinal1;
 
-    bool shiftHeld = false;
+    bool modifierDown = false;
     uint8_t sceneOrdinal = 255;
-    table.setUiShiftCallback([&](bool held) { shiftHeld = held; });
+    table.setUiShiftCallback([&](bool held) { modifierDown = held; });
     table.setUiSceneCallback([&](uint8_t ordinal) { sceneOrdinal = ordinal; });
 
     table.processIncomingMessage(1, 0x90, 36, 127, false);
-    if (!shiftHeld)
+    if (!modifierDown)
     {
         std::printf("FAIL: shift note on did not fire callback\n");
         return false;
     }
 
     table.processIncomingMessage(1, 0x80, 36, 0, false);
-    if (shiftHeld)
+    if (modifierDown)
     {
         std::printf("FAIL: shift note off did not clear callback\n");
         return false;
@@ -173,7 +174,7 @@ bool test_scene_button_respects_channel_filter()
     table.sceneButtons[0].kind = MidiCvTriggerKind::Note;
     table.sceneButtons[0].number = 60;
     table.sceneButtons[0].channel = 3;
-    table.sceneButtons[0].target = MidiCvButtonTarget::Scene1;
+    table.sceneButtons[0].target = MidiCvBindingRole::SceneOrdinal0;
 
     uint8_t sceneOrdinal = 255;
     table.setUiSceneCallback([&](uint8_t ordinal) { sceneOrdinal = ordinal; });
@@ -242,18 +243,44 @@ bool test_pending_ui_action_drain()
     table.shiftButton.enabled = true;
     table.shiftButton.kind = MidiCvTriggerKind::Cc;
     table.shiftButton.number = 64;
-    table.shiftButton.target = MidiCvButtonTarget::Shift;
+    table.shiftButton.target = MidiCvBindingRole::HeldModifier;
 
     table.setUiShiftCallback(nullptr);
     table.processIncomingMessage(1, 0xB0, 64, 127, false);
 
-    bool shiftHeld = false;
-    table.setUiShiftCallback([&](bool held) { shiftHeld = held; });
+    bool modifierDown = false;
+    table.setUiShiftCallback([&](bool held) { modifierDown = held; });
     table.drainPendingUiActions();
-    if (!shiftHeld)
+    if (!modifierDown)
     {
         std::printf("FAIL: drain did not replay shift callback\n");
         return false;
+    }
+    return true;
+}
+
+bool test_controller_target_ids_match_manifest()
+{
+    const MidiCvControllerTargetIds& ids = midiCvControllerTargetIds();
+    const char* actual[] = {ids.pitch,
+                            ids.gate,
+                            ids.externalModA,
+                            ids.externalModB,
+                            ids.shiftButton,
+                            ids.scene1,
+                            ids.scene2,
+                            ids.scene3,
+                            ids.qwertyVirtual,
+                            ids.externalClock};
+    static_assert(std::size(actual) == froggers_v2::manifest::kControllerTargetDeclarations.size());
+    for (size_t i = 0; i < froggers_v2::manifest::kControllerTargetDeclarations.size(); ++i)
+    {
+        const char* expected = froggers_v2::manifest::kControllerTargetDeclarations[i].stableId;
+        if (std::strcmp(actual[i], expected) != 0)
+        {
+            std::printf("FAIL: controller target ID %zu mismatch\n", i);
+            return false;
+        }
     }
     return true;
 }
@@ -294,6 +321,10 @@ int main()
         return 1;
     }
     if (!test_pending_ui_action_drain())
+    {
+        return 1;
+    }
+    if (!test_controller_target_ids_match_manifest())
     {
         return 1;
     }

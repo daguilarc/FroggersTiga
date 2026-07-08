@@ -7,7 +7,7 @@
 #include "ParamDisplayNames.hpp"
 #include "SimModSource.hpp"
 #include "V2EngineSetup.hpp"
-#include "V2ModTapBank.hpp"
+#include "PermanentModTapRack.hpp"
 #include "V2ParamDisplayNames.hpp"
 #include "VcoAdsrState.hpp"
 
@@ -38,9 +38,10 @@ struct PagedHostIO
     bool m_sw1Pulse{false};
     bool m_sw2Pulse{false};
     bool m_marblesPulse{false};
-    V2ModTapBank m_v2ModTaps;
+    PermanentModTapRack m_v2ModTaps;
     VcoAdsrState m_vcoAdsr;
     float m_globalCrunchy = 0.0f;
+    bool m_enableCurrentPageKnobReplay = true;
 
     void Init()
     {
@@ -50,6 +51,7 @@ struct PagedHostIO
             V2EngineSetup::configure(m_pageManager, IsV2SimHostKind(m_hostKind));
             configureV2FuegoPages();
         }
+        m_enableCurrentPageKnobReplay = m_hostKind != SimHostKind::Vcv;
         m_pairAr.init(44100.0f);
         m_pairAr.sanitizeModSources();
         m_pairAr.setV2FuegoConfig(&m_pageManager.m_pages[0], m_hostKind);
@@ -372,9 +374,12 @@ struct PagedHostIO
             m_vcoAdsr.setGate(m_gateHigh);
         }
 
-        for (size_t i = 0; i < Parameter::x_numParameters; i++)
+        if (m_enableCurrentPageKnobReplay)
         {
-            m_pageManager.KnobUpdate(i, m_pageManager.m_knobPositions[i]);
+            for (size_t i = 0; i < Parameter::x_numParameters; i++)
+            {
+                m_pageManager.KnobUpdate(i, m_pageManager.m_knobPositions[i]);
+            }
         }
     }
 

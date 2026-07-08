@@ -46,7 +46,7 @@ int main()
     for (int i = 0; i < 500; i++)
     {
         RGen rgen;
-        const uint8_t idx = PickSimRandomModIndex(rgen, bridge, SimHostKind::Vcv);
+        const uint8_t idx = DrawAssignableModLane(rgen, bridge, SimHostKind::Vcv);
         if (idx == 0 || idx == 1)
         {
             std::printf("FAIL: VCV random pool must exclude mod indices 0 and 1, got %u\n", idx);

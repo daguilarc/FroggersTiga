@@ -19,8 +19,13 @@ FroggersTigaAudioProcessorV2::FroggersTigaAudioProcessorV2()
                          .withInput("Input", juce::AudioChannelSet::mono(), true)
                          .withOutput("Output", juce::AudioChannelSet::stereo(), true))
 #endif
-    , m_bridge(m_core, m_audio.getHost())
+    , m_facade(m_audio, [] {
+          froggers_v2::FroggersV2AppCoreConfig config;
+          config.pluginHosted = true;
+          return config;
+      }())
 {
+    m_facade.initialize();
     m_paramRegistry.registerParameters(*this, m_pendingParams);
     syncParametersFromHost();
 }
@@ -30,7 +35,7 @@ void FroggersTigaAudioProcessorV2::syncParametersFromHost()
     m_paramRegistry.syncFromHost(m_audio.getHost(),
                                  m_audio.getDelay(),
                                  m_audio.getSequencer(),
-                                 m_core,
+                                 m_facade.controlCore(),
                                  m_pendingParams);
 }
 
@@ -95,8 +100,7 @@ void FroggersTigaAudioProcessorV2::changeProgramName(int, const juce::String&)
 
 void FroggersTigaAudioProcessorV2::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
-    m_audio.setHostSampleRate(static_cast<float>(sampleRate));
-    m_audio.prepareRenderBuffers(samplesPerBlock);
+    m_facade.prepare(static_cast<float>(sampleRate), samplesPerBlock);
 }
 
 void FroggersTigaAudioProcessorV2::releaseResources()
@@ -124,7 +128,7 @@ void FroggersTigaAudioProcessorV2::processBlock(juce::AudioBuffer<float>& buffer
     m_paramRegistry.applyPending(m_audio.getHost(),
                                  m_audio.getDelay(),
                                  m_audio.getSequencer(),
-                                 m_core,
+                                 m_facade.controlCore(),
                                  m_pendingParams);
 
     const int numSamples = buffer.getNumSamples();
@@ -134,12 +138,12 @@ void FroggersTigaAudioProcessorV2::processBlock(juce::AudioBuffer<float>& buffer
     float* outL = buffer.getWritePointer(0);
     float* outR = numOutputChannels > 1 ? buffer.getWritePointer(1) : nullptr;
 
-    m_audio.processHostedBlock(inputData,
-                               numInputChannels,
-                               outL,
-                               outR,
-                               numOutputChannels,
-                               numSamples);
+    m_facade.processHostedBlock(inputData,
+                                numInputChannels,
+                                outL,
+                                outR,
+                                numOutputChannels,
+                                numSamples);
 }
 
 bool FroggersTigaAudioProcessorV2::hasEditor() const
@@ -218,14 +222,19 @@ AudioEngine& FroggersTigaAudioProcessorV2::getAudioEngine()
     return m_audio;
 }
 
+froggers_v2::FroggersV2AppCoreFacade& FroggersTigaAudioProcessorV2::getAppCoreFacade()
+{
+    return m_facade;
+}
+
 froggers_v2::FroggersV2ControlCore& FroggersTigaAudioProcessorV2::getControlCore()
 {
-    return m_core;
+    return m_facade.controlCore();
 }
 
 froggers_v2::FroggersV2HostBridge& FroggersTigaAudioProcessorV2::getHostBridge()
 {
-    return m_bridge;
+    return m_facade.hostBridge();
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

@@ -4,37 +4,52 @@
 
 #include <cstdint>
 
-inline const char* V2ModSourceLabel(uint8_t modIndex)
+// Permanent modulation rack lanes 0-14 align with froggers_v2::manifest::kPermanentModulationSources.
+inline const char* permanentModSourceDisplayName(uint8_t laneIndex)
 {
-    switch (modIndex)
+    switch (laneIndex)
     {
+        case 0:
+            return "VCO 1+2";
+        case 1:
+            return "VCO 2+3";
+        case 2:
+            return "VCO 1+3";
+        case 3:
+            return "VCO 1 EF";
+        case 4:
+            return "VCO 2 EF";
+        case 5:
+            return "VCO 3 EF";
+        case 6:
+            return "VCO 1+2 EF";
         case 7:
-            return "VCO1 EF";
+            return "VCO 2+3 EF";
         case 8:
-            return "VCO2 EF";
+            return "LFO 1";
         case 9:
-            return "VCO3 EF";
+            return "LFO 2";
         case 10:
-            return "VCO1+VCO2 EF";
+            return "LFO 3";
         case 11:
-            return "VCO2+VCO3 EF";
+            return "Random/Marbles 1";
         case 12:
-            return "VCO1+VCO2+VCO3 EF";
+            return "Random/Marbles 2";
         case 13:
-            return "Random S&H 1";
+            return "External Audio (audio rate)";
         case 14:
-            return "Random S&H 2";
+            return "External Audio (envelope follower)";
         default:
             return "";
     }
 }
 
-inline bool IsV2ModSourceAvailable(uint8_t modIndex)
+inline bool IsV2ModSourceAvailable(uint8_t laneIndex)
 {
-    return IsV2ModSourceIndex(modIndex);
+    return IsPermanentModSourceIndex(laneIndex);
 }
 
-inline bool IsV2SimAssignableModIndex(uint8_t modIndex)
+inline bool IsV2SimAssignableModIndex(uint8_t laneIndex)
 {
-    return IsV2ModSourceIndex(modIndex);
+    return IsPermanentModSourceIndex(laneIndex);
 }

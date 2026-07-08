@@ -3,6 +3,8 @@
 #include "DesktopHostIO.hpp"
 #include "FroggersV2ControlCore.hpp"
 
+#include <functional>
+
 namespace froggers_v2
 {
 class FroggersV2HostBridge
@@ -14,8 +16,12 @@ public:
     void syncToHost();
     void syncFromHostModRoutes();
     void onSequencerStepAdvance();
+    void captureLiveToSequencerStep(uint8_t step);
+    void recallSequencerStep(uint8_t step);
+    void setOnStepCaptured(std::function<void(uint8_t step)> callback);
 
 private:
+    void syncAllModRoutesToHost();
     enum class ModRouteDirection : uint8_t
     {
         FromHost,
@@ -26,6 +32,7 @@ private:
 
     FroggersV2ControlCore& m_core;
     DesktopHostIO& m_host;
+    std::function<void(uint8_t step)> m_onStepCaptured;
     bool m_vcoMorphDefaultsApplied = false;
 };
 } // namespace froggers_v2

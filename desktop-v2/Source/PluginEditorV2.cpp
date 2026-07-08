@@ -11,11 +11,12 @@ DesktopV2LookAndFeel g_desktopV2LookAndFeel;
 FroggersTigaAudioProcessorEditorV2::FroggersTigaAudioProcessorEditorV2(
     FroggersTigaAudioProcessorV2& processor)
     : AudioProcessorEditor(&processor)
-    , m_main(processor.getAudioEngine(), processor.getControlCore(), processor.getHostBridge())
+    , m_main(processor.getAppCoreFacade())
     , m_processor(processor)
 {
     juce::LookAndFeel::setDefaultLookAndFeel(&g_desktopV2LookAndFeel);
     addAndMakeVisible(m_main);
+    m_main.setHostedProcessor(&processor);
     setResizable(true, true);
     setResizeLimits(DesktopV2ChromeLayout::kHostedEditorMinWidth,
                     DesktopV2ChromeLayout::kHostedEditorMinHeight,

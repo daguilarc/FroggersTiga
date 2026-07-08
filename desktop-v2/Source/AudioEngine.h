@@ -5,7 +5,11 @@
 #include "DelayState.hpp"
 #include "DesktopHostIO.hpp"
 #include "HostAudioConfig.hpp"
+#include "ExportFormat.hpp"
 #include "SimModSource.hpp"
+#include "runtime/DesktopV2AudioStateProjection.hpp"
+#include "runtime/FilePatchRuntimeState.hpp"
+#include "runtime/DesktopV2AudioStateProjection.hpp"
 
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -14,14 +18,6 @@
 #include <cstdint>
 #include <functional>
 #include <vector>
-
-enum class ExportFormat
-{
-    Wav,
-    Mp3,
-    Flac,
-    Ogg
-};
 
 enum class InputRouteStatus
 {
@@ -57,6 +53,7 @@ public:
     MidiCvAssignmentTable& getMidiCvTable();
     const MidiCvAssignmentTable& getMidiCvTable() const;
     juce::AudioDeviceManager& getDeviceManager();
+    const juce::AudioDeviceManager& getDeviceManager() const;
     bool isAudioRunning() const;
     float getInputPeakLevel() const;
     InputRouteStatus getInputRouteStatus() const;
@@ -80,6 +77,27 @@ public:
     bool shouldDrainPendingUiMutations() const;
     void notifyStateRestored();
     uint32_t stateRestoreGeneration() const;
+
+    bool startRecording();
+    void stopRecording();
+    bool isRecording() const;
+    bool hasCapturedAudio() const;
+    bool wasLastCaptureTruncated() const;
+    void exportCapturedAudio(ExportFormat format,
+                             juce::Component* parent,
+                             std::function<void(bool success, const juce::String& message)> onDone);
+    void exportCapturedAudio(juce::Component* parent,
+                             std::function<void(bool success, const juce::String& message)> onDone);
+
+    ExportFormat exportFormat() const;
+    void setExportFormat(ExportFormat format);
+
+    FilePatchRuntimeState& filePatchState();
+    const FilePatchRuntimeState& filePatchState() const;
+    bool savePatchToFile(const juce::File& file, juce::String& errorOut);
+    bool loadPatchFromFile(const juce::File& file, juce::String& errorOut);
+    void revertPatch(juce::String& messageOut);
+    DesktopV2AudioStateProjection buildAudioStateProjection() const;
 
     void setHostSampleRate(float sampleRate);
     float getHostSampleRate() const;
@@ -111,6 +129,7 @@ private:
     void notifyTransportChanged();
     void syncInputChannelSetup();
     void updateInputRouteStatus(int numInputChannels, float inputPeak, int numSamples);
+    bool writeCaptureToFile(const juce::File& file, ExportFormat format, juce::String& errorOut);
     void applyMidiCvToHost();
     void routeMidiMessage(const juce::MidiMessage& message, bool fromQwerty);
 
@@ -135,5 +154,8 @@ private:
     std::vector<float> m_inBlock;
     std::vector<float> m_monoBlock;
     MidiCvAssignmentTable m_midiCvTable;
+    FilePatchRuntimeState m_filePatchState;
+    std::vector<uint8_t> m_revertSnapshot;
     size_t m_renderBlockCapacity = 512;
+    ExportFormat m_exportFormat = ExportFormat::Wav;
 };

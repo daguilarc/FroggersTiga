@@ -45,7 +45,7 @@ void RecordButton::paint(juce::Graphics& g)
     g.setFont(juce::Font(juce::FontOptions(12.0f, juce::Font::bold)));
     const float textX = circle.getRight() + kTextGap;
     g.drawText(
-        "RECORD",
+        "Record audio",
         juce::Rectangle<float>(textX, bounds.getY(), bounds.getRight() - textX, bounds.getHeight()),
         juce::Justification::centredLeft);
 }

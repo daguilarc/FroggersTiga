@@ -21,15 +21,19 @@ AdsrPagePanel::AdsrPagePanel()
     addAndMakeVisible(m_randomizeMod);
 
     m_encoderViewport.setViewedComponent(&m_encoderContent, false);
-    m_encoderViewport.setScrollBarsShown(true, false);
+    m_encoderViewport.setScrollBarsShown(false, false);
     addAndMakeVisible(m_encoderViewport);
+
+    m_modColumnViewport.setViewedComponent(&m_modColumnContent, false);
+    m_modColumnViewport.setScrollBarsShown(false, false);
+    addAndMakeVisible(m_modColumnViewport);
 
     for (int i = 0; i < DesktopV2ChromeLayout::kVisibleEncoderSlots; ++i)
     {
         m_rowLabels[static_cast<size_t>(i)].setJustificationType(juce::Justification::centredLeft);
         m_encoderContent.addAndMakeVisible(m_rowLabels[static_cast<size_t>(i)]);
         m_encoderContent.addAndMakeVisible(m_rings[static_cast<size_t>(i)]);
-        m_encoderContent.addAndMakeVisible(m_modCells[static_cast<size_t>(i)]);
+        m_modColumnContent.addAndMakeVisible(m_modCells[static_cast<size_t>(i)]);
 
         const uint8_t slot = static_cast<uint8_t>(i);
         m_rings[static_cast<size_t>(i)].setSlot(slot);
@@ -139,29 +143,69 @@ void AdsrPagePanel::resized()
 
 void AdsrPagePanel::layoutRows()
 {
-    auto area = getLocalBounds().reduced(DesktopV2ChromeLayout::kChromePad);
+    auto area = getLocalBounds();
+    area.removeFromLeft(DesktopV2ChromeLayout::kChromePad);
+    area.removeFromRight(DesktopV2ChromeLayout::kChromePad);
+    const auto columns = DesktopV2ChromeLayout::moduleRowColumns(area.getWidth());
+
     auto btnRow = area.removeFromTop(DesktopV2ChromeLayout::kTextButtonH);
     m_randomize.setBounds(btnRow.removeFromLeft(DesktopV2ChromeLayout::kRandomizeButtonW));
     btnRow.removeFromLeft(DesktopV2ChromeLayout::kSectionGap);
     m_randomizeMod.setBounds(btnRow.removeFromLeft(DesktopV2ChromeLayout::kRandModButtonW));
     area.removeFromTop(DesktopV2ChromeLayout::kSectionGap);
 
-    m_encoderViewport.setBounds(area);
+    auto modColumnArea = area.removeFromRight(columns.modW);
+    m_encoderViewport.setBounds(area.withWidth(columns.labelEncoderW));
+    m_modColumnViewport.setBounds(modColumnArea);
 
     const int rows = documentRowCount();
-    const int contentW = m_encoderViewport.getWidth();
-    const int contentH = DesktopV2ChromeLayout::encoderDocumentHeight(rows);
-    m_encoderContent.setSize(contentW, contentH);
+    const int docH = DesktopV2ChromeLayout::encoderDocumentHeight(rows);
+    m_encoderContent.setSize(columns.labelEncoderW, docH);
+    m_modColumnContent.setSize(columns.modW, docH);
 
-    auto rowArea = m_encoderContent.getLocalBounds();
+    const bool needsScroll = docH > m_encoderViewport.getHeight();
+    m_scrollBarsVisible = needsScroll;
+    m_encoderViewport.setScrollBarsShown(needsScroll, false);
+    m_modColumnViewport.setScrollBarsShown(needsScroll, false);
+    if (!needsScroll)
+    {
+        m_encoderViewport.setViewPosition(0, 0);
+        m_modColumnViewport.setViewPosition(0, 0);
+    }
+
+    int rowY = 0;
     for (int i = 0; i < rows && i < DesktopV2ChromeLayout::kVisibleEncoderSlots; ++i)
     {
-        auto rowBounds = rowArea.removeFromTop(DesktopV2ChromeLayout::kEncoderRowH);
+        const int rowH = DesktopV2ChromeLayout::kEncoderRowH;
+        const int ringY = rowY + (rowH - DesktopV2ChromeLayout::kEncoderRingSize) / 2;
+        const int modY = rowY + (rowH - DesktopV2ChromeLayout::kModCellHeight) / 2;
+
         m_rowLabels[static_cast<size_t>(i)].setBounds(
-            rowBounds.removeFromLeft(DesktopV2ChromeLayout::kRowLabelW));
-        m_modCells[static_cast<size_t>(i)].setBounds(rowBounds.removeFromRight(DesktopV2ChromeLayout::kModCellW));
-        rowBounds.removeFromRight(DesktopV2ChromeLayout::kSectionGap);
-        const int ringSide = juce::jmin(DesktopV2ChromeLayout::kEncoderRingSize, rowBounds.getWidth());
-        m_rings[static_cast<size_t>(i)].setBounds(rowBounds.withSizeKeepingCentre(ringSide, ringSide));
+            DesktopV2ChromeLayout::kModuleRowLabelOffset, rowY, columns.labelW, rowH);
+        m_rings[static_cast<size_t>(i)].setBounds(
+            DesktopV2ChromeLayout::kModuleRowEncoderOffset,
+            ringY,
+            columns.encoderW,
+            DesktopV2ChromeLayout::kEncoderRingSize);
+        m_modCells[static_cast<size_t>(i)].setBounds(0, modY, columns.modW, DesktopV2ChromeLayout::kModCellHeight);
+
+        rowY += rowH;
     }
+}
+
+bool AdsrPagePanel::encoderViewportShowsVerticalScrollbar() const
+{
+    return m_scrollBarsVisible;
+}
+
+juce::Rectangle<int> AdsrPagePanel::modCellBoundsInPanel(int rowIndex) const
+{
+    if (rowIndex < 0 || rowIndex >= DesktopV2ChromeLayout::kVisibleEncoderSlots)
+    {
+        return {};
+    }
+    auto bounds = m_modCells[static_cast<size_t>(rowIndex)].getBounds();
+    bounds = bounds.translated(m_modColumnContent.getX(), m_modColumnContent.getY());
+    bounds = m_modColumnViewport.getLocalArea(&m_modColumnContent, bounds);
+    return getLocalArea(&m_modColumnViewport, bounds);
 }

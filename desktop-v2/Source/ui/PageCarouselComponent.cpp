@@ -16,6 +16,8 @@ PageCarouselComponent::PageCarouselComponent()
 
     addChildComponent(m_submodulePanel);
     addChildComponent(m_adsrPanel);
+    addChildComponent(m_centerCluster);
+    m_centerCluster.setVisible(false);
 
     m_submodulePanel.onRandomize = [this](uint8_t page) {
         if (onRandomize)
@@ -50,6 +52,12 @@ void PageCarouselComponent::bindCore(froggers_v2::FroggersV2ControlCore* core)
     m_submodulePanel.bindCore(core);
     m_adsrPanel.bindCore(core);
     refresh();
+}
+
+void PageCarouselComponent::bindHost(DesktopHostIO* host, froggers_v2::FroggersV2ControlCore* core)
+{
+    bindCore(core);
+    m_centerCluster.bind(host, core);
 }
 
 void PageCarouselComponent::setActivePage(uint8_t page)
@@ -102,6 +110,21 @@ void PageCarouselComponent::refresh()
     }
 }
 
+void PageCarouselComponent::setShiftHeld(bool held)
+{
+    juce::ignoreUnused(held);
+}
+
+SubmodulePagePanel& PageCarouselComponent::submodulePanel()
+{
+    return m_submodulePanel;
+}
+
+AdsrPagePanel& PageCarouselComponent::adsrPanel()
+{
+    return m_adsrPanel;
+}
+
 void PageCarouselComponent::resized()
 {
     auto area = getLocalBounds();
@@ -125,4 +148,23 @@ void PageCarouselComponent::resized()
 
     m_submodulePanel.setBounds(area);
     m_adsrPanel.setBounds(area);
+    m_centerCluster.setBounds(0, 0, 0, 0);
+}
+
+bool PageCarouselComponent::activePanelShowsVerticalScrollbar() const
+{
+    if (m_page == AdsrPagePanel::kAdsrPage)
+    {
+        return m_adsrPanel.encoderViewportShowsVerticalScrollbar();
+    }
+    return m_submodulePanel.encoderViewportShowsVerticalScrollbar();
+}
+
+juce::Rectangle<int> PageCarouselComponent::modCellBoundsInCarousel(int rowIndex) const
+{
+    if (m_page == AdsrPagePanel::kAdsrPage)
+    {
+        return getLocalArea(&m_adsrPanel, m_adsrPanel.modCellBoundsInPanel(rowIndex));
+    }
+    return getLocalArea(&m_submodulePanel, m_submodulePanel.modCellBoundsInPanel(rowIndex));
 }

@@ -2,7 +2,7 @@
 
 #include "HostParameterInventoryV2.hpp"
 #include "HostParameterRoutingV2.hpp"
-#include "V2ModTapBank.hpp"
+#include "PermanentModTapRack.hpp"
 
 #include <algorithm>
 
@@ -12,11 +12,11 @@ namespace
 {
 uint8_t engineModFromInternal(uint8_t internal)
 {
-    if (internal == kNoSelection || internal >= kModSourceMidiCcA)
+    if (internal == kNoSelection || internal >= kNumModSources)
     {
         return 255;
     }
-    return static_cast<uint8_t>(internal + V2ModTapBank::kFirstIndex);
+    return internal;
 }
 } // namespace
 
@@ -32,21 +32,73 @@ FroggersV2HostBridge::~FroggersV2HostBridge()
     m_host.m_onSequencerStepAdvance = nullptr;
 }
 
+void FroggersV2HostBridge::setOnStepCaptured(std::function<void(uint8_t step)> callback)
+{
+    m_onStepCaptured = std::move(callback);
+}
+
+void FroggersV2HostBridge::captureLiveToSequencerStep(uint8_t step)
+{
+    SequencerSlotPayload captured;
+    m_core.captureSequencerSlotPayload(captured);
+    m_host.m_sequencer.captureStep(step, captured);
+    if (m_onStepCaptured)
+    {
+        m_onStepCaptured(step);
+    }
+}
+
+void FroggersV2HostBridge::recallSequencerStep(uint8_t step)
+{
+    if (step >= SequencerState::kSlotCount || !m_host.m_sequencer.slotWritten(step))
+    {
+        return;
+    }
+    m_core.applySequencerSlotPayload(m_host.m_sequencer.m_slots[step].payload);
+    syncAllModRoutesToHost();
+    syncToHost();
+}
+
 void FroggersV2HostBridge::onSequencerStepAdvance()
 {
-    if (m_host.m_sequencer.m_recordArm)
+    SequencerState& seq = m_host.m_sequencer;
+    if (seq.m_writeSeqArm)
     {
-        SequencerStepSnapshot captured;
-        m_core.captureSequencerStepSnapshot(captured);
-        m_host.m_sequencer.captureStep(m_host.m_sequencer.m_playhead, captured);
+        if (seq.m_writeSeqJustStarted)
+        {
+            seq.m_writeSeqJustStarted = false;
+        }
+        else
+        {
+            const uint8_t playhead = seq.m_playhead;
+            const uint8_t stepLeft =
+                static_cast<uint8_t>((playhead + SequencerState::kSlotCount - 1u) % SequencerState::kSlotCount);
+            captureLiveToSequencerStep(stepLeft);
+        }
+        seq.m_editStep = seq.m_playhead;
     }
 
-    const SequencerStepSnapshot& snapshot = m_host.m_sequencer.currentStep();
-    m_core.applySequencerStepSnapshot(snapshot);
+    if (seq.slotWritten(seq.m_playhead) && !(seq.slotLocked(seq.m_playhead)))
+    {
+        m_core.applySequencerSlotPayload(seq.currentStep());
+        syncAllModRoutesToHost();
+    }
 
-    m_core.bus().push(MessageIn::SequencerStepClock(m_host.m_sequencer.m_playhead));
+    m_core.bus().push(MessageIn::SequencerStepClock(seq.m_playhead));
     m_core.processBus();
     syncToHost();
+}
+
+void FroggersV2HostBridge::syncAllModRoutesToHost()
+{
+    for (uint8_t page = 0; page < kNumHostPages; ++page)
+    {
+        const uint8_t rowLimit = HostParameterInventoryV2::rowsForUiPage(page);
+        for (uint8_t row = 0; row < rowLimit; ++row)
+        {
+            syncModRoutes(page, row, ModRouteDirection::ToHost);
+        }
+    }
 }
 
 void FroggersV2HostBridge::syncModRoutes(uint8_t page, uint8_t row, ModRouteDirection direction)

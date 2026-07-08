@@ -1,27 +1,24 @@
 #pragma once
 
-#include "AudioEngine.h"
+#include "control/FroggersV2AppCoreFacade.hpp"
 #include "DesktopV2HostCallbacks.hpp"
-#include "control/FroggersV2ControlCore.hpp"
-#include "control/FroggersV2HostBridge.hpp"
-#include "ui/GlobalStripV2.hpp"
+#include "runtime/HostedRuntimeStatusPanel.h"
 #include "ui/PageCarouselComponent.hpp"
 #include "ui/PerformanceBandV2.hpp"
-#include "ui/VcoEfScopeDisplay.hpp"
+#include "ui/GlobalStripV2.hpp"
+#include "ui/GlobalOscilloscopeDisplay.hpp"
 #include "ui/SequencerPanelComponent.hpp"
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
-#include <optional>
-
+// VST editor: no RecordExportCluster — audio export is standalone-only.
 class HostedMainComponentV2 : public juce::Component,
                               private juce::Timer
 {
 public:
-    HostedMainComponentV2(AudioEngine& audio,
-                          froggers_v2::FroggersV2ControlCore& core,
-                          froggers_v2::FroggersV2HostBridge& bridge);
+    explicit HostedMainComponentV2(froggers_v2::FroggersV2AppCoreFacade& facade);
 
+    void setHostedProcessor(juce::AudioProcessor* processor);
     void resized() override;
     bool keyPressed(const juce::KeyPress& key) override;
     bool keyStateChanged(bool isKeyDown) override;
@@ -31,18 +28,15 @@ private:
     void wireCallbacks();
     void pushSelectPage(uint8_t page);
     void pushRandomizeMod(uint8_t page);
-    void syncHostModRoutesIfNeeded();
     void updateShiftFromKeyboard();
-    void pushModSourceSamples();
 
-    AudioEngine& m_audio;
-    froggers_v2::FroggersV2ControlCore& m_core;
-    froggers_v2::FroggersV2HostBridge& m_bridge;
-    VcoEfScopeDisplay m_vcoEfScope;
+    froggers_v2::FroggersV2AppCoreFacade& m_facade;
+    GlobalOscilloscopeDisplay m_globalOscilloscope;
+    GlobalStripV2 m_globalStrip;
     PerformanceBandV2 m_performanceBand;
     PageCarouselComponent m_carousel;
-    GlobalStripV2 m_globalStrip;
     SequencerPanelComponent m_sequencerPanel;
+    HostedRuntimeStatusPanel m_hostedStatusPanel;
     bool m_sequencerVisible = true;
     uint32_t m_lastUiVersion = 0;
     uint32_t m_lastModRoutesVersion = 0;

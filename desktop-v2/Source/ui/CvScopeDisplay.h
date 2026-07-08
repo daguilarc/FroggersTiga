@@ -26,8 +26,10 @@ public:
     void setTraceMode(CvTraceMode mode);
     void setShowGrid(bool show);
     void setIdle(bool idle);
+    void setTraceAudioRateModulated(size_t trace, bool modulated);
     void pushSample(float value01);
     void pushSample(size_t trace, float value01);
+    bool hasAudioRateActivity(size_t trace, float threshold = 0.0008f) const;
     void paint(juce::Graphics& g) override;
 
 private:
@@ -45,6 +47,7 @@ private:
     std::array<float, kMaxTraces> m_lastLevel{};
     std::array<bool, kMaxTraces> m_hasLastLevel{};
     std::array<juce::Colour, kMaxTraces> m_traceColours{};
+    std::array<bool, kMaxTraces> m_traceAudioRateModulated{};
     size_t m_traceCount = 1;
     CvTraceMode m_traceMode = CvTraceMode::Continuous;
     bool m_showGrid = false;

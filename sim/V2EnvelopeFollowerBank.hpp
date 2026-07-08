@@ -1,6 +1,6 @@
 #pragma once
 
-#include "V2ModTapBank.hpp"
+#include "PermanentModTapRack.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -9,8 +9,8 @@
 
 struct V2EnvelopeFollowerBank
 {
-    static constexpr size_t kNumTaps = 6;
-    static constexpr uint8_t kFirstModIndex = 7;
+    static constexpr size_t kNumTaps = 5;
+    static constexpr uint8_t kFirstModIndex = 3;
 
     float m_levels[kNumTaps]{};
     float m_attackCoeff = 0.05f;
@@ -25,7 +25,7 @@ struct V2EnvelopeFollowerBank
         m_releaseCoeff = 1.0f - std::exp(-1.0f / (releaseSec * sr));
     }
 
-    void Process(float v1, float v2, float v3, V2ModTapBank& taps)
+    void Process(float v1, float v2, float v3, PermanentModTapRack& taps)
     {
         const float targets[kNumTaps] = {
             std::fabs(v1),
@@ -33,7 +33,6 @@ struct V2EnvelopeFollowerBank
             std::fabs(v3),
             std::fabs(v1 + v2) * 0.5f,
             std::fabs(v2 + v3) * 0.5f,
-            std::fabs(v1 + v2 + v3) * (1.0f / 3.0f),
         };
 
         for (size_t i = 0; i < kNumTaps; ++i)

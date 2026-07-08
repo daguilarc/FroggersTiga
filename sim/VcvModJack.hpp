@@ -14,12 +14,12 @@ inline float vcvInternalEffective(float base, uint8_t modIndex, float depth, con
     return modMgr.Modulate(base, static_cast<int>(modIndex), depth);
 }
 
-inline float applyVcvPageModJack(float base,
-                                 uint8_t modIndex,
-                                 float depth,
-                                 const ModMgr& modMgr,
-                                 bool jackConnected,
-                                 float modVoltage)
+inline float applyVcvSectionCv(float base,
+                               uint8_t modIndex,
+                               float depth,
+                               const ModMgr& modMgr,
+                               bool jackConnected,
+                               float modVoltage)
 {
     const float internal = vcvInternalEffective(base, modIndex, depth, modMgr);
     if (!jackConnected)

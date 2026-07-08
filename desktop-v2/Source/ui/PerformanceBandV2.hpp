@@ -2,7 +2,6 @@
 
 #include "control/FroggersV2ControlCore.hpp"
 #include "DesktopHostIO.hpp"
-#include "SequencerState.hpp"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -14,7 +13,7 @@ class PerformanceBandV2 : public juce::Component
 public:
     PerformanceBandV2();
 
-    void bind(froggers_v2::FroggersV2ControlCore* core, SequencerState* sequencer);
+    void bind(froggers_v2::FroggersV2ControlCore* core);
     void bindHost(DesktopHostIO* host);
     void refresh();
     void refreshMarbles(bool audioRunning);
@@ -29,7 +28,6 @@ private:
     void updateSceneButtonLabels(uint8_t leftOrdinal, uint8_t rightOrdinal);
 
     froggers_v2::FroggersV2ControlCore* m_core = nullptr;
-    SequencerState* m_sequencer = nullptr;
     DesktopHostIO* m_host = nullptr;
     bool m_audioRunning = false;
     std::array<float, 2> m_marblesLevel{};
@@ -45,12 +43,6 @@ private:
     juce::Slider m_gestureWeight1;
     juce::ToggleButton m_gesture2{"G2"};
     juce::Slider m_gestureWeight2;
-    juce::TextButton m_seqPlay{"Start Sequence"};
-    juce::ToggleButton m_seqRecord{"Record"};
-    juce::Label m_bpmLabel;
-    juce::Slider m_bpm;
-    juce::Label m_stepsLabel;
-    juce::Slider m_patternLength;
     juce::Label m_marblesLabel1{"S&H 1"};
     juce::Label m_marblesLabel2{"S&H 2"};
 };

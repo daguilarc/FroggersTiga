@@ -4,14 +4,76 @@
 #include "HostAudioConfig.hpp"
 #include "MidiCvSettingsComponent.h"
 #include "OwnedAllocationGuard.hpp"
+#include "runtime/DesktopV2AudioStateProjection.hpp"
+#include "runtime/FilePatchRuntimeState.hpp"
+#include "SimPresetSnapshot.hpp"
 #include "TanhSaturator.hpp"
+
+#include <juce_audio_formats/juce_audio_formats.h>
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace
 {
 constexpr float kSilentPeakThreshold = 1.0e-4f;
+
+juce::String extensionForFormat(ExportFormat format)
+{
+    switch (format)
+    {
+        case ExportFormat::Wav:
+            return "wav";
+        case ExportFormat::Mp3:
+            return "mp3";
+        case ExportFormat::Flac:
+            return "flac";
+        case ExportFormat::Ogg:
+            return "ogg";
+    }
+    return "wav";
+}
+
+juce::String formatDisplayName(ExportFormat format)
+{
+    switch (format)
+    {
+        case ExportFormat::Wav:
+            return "WAV";
+        case ExportFormat::Mp3:
+            return "MP3";
+        case ExportFormat::Flac:
+            return "FLAC";
+        case ExportFormat::Ogg:
+            return "OGG";
+    }
+    return "WAV";
+}
+
+std::unique_ptr<juce::AudioFormat> createFormatWriter(ExportFormat format)
+{
+    switch (format)
+    {
+        case ExportFormat::Wav:
+            return std::make_unique<juce::WavAudioFormat>();
+        case ExportFormat::Mp3:
+#if JUCE_USE_MP3AUDIOFORMAT
+            return std::make_unique<juce::LameEncoderAudioFormat>();
+#else
+            return nullptr;
+#endif
+        case ExportFormat::Flac:
+#if JUCE_USE_FLAC
+            return std::make_unique<juce::FlacAudioFormat>();
+#else
+            return nullptr;
+#endif
+        case ExportFormat::Ogg:
+            return std::make_unique<juce::OggVorbisAudioFormat>();
+    }
+    return nullptr;
+}
 } // namespace
 
 AudioEngine::AudioEngine(bool pluginHosted)
@@ -167,6 +229,11 @@ juce::AudioDeviceManager& AudioEngine::getDeviceManager()
     return m_deviceManager;
 }
 
+const juce::AudioDeviceManager& AudioEngine::getDeviceManager() const
+{
+    return m_deviceManager;
+}
+
 bool AudioEngine::isAudioRunning() const
 {
     return m_audioRunning;
@@ -288,6 +355,10 @@ void AudioEngine::stopAudio()
     if (!m_audioRunning)
     {
         return;
+    }
+    if (m_recorder.isActive())
+    {
+        m_recorder.stop();
     }
     if (!m_pluginHosted)
     {
@@ -427,6 +498,145 @@ void AudioEngine::setMidiOutputDevice(const juce::String& identifier)
     m_midiOut = juce::MidiOutput::openDevice(identifier);
 }
 
+bool AudioEngine::startRecording()
+{
+    if (!m_audioRunning)
+    {
+        return false;
+    }
+    m_recorder.start();
+    return true;
+}
+
+void AudioEngine::stopRecording()
+{
+    m_recorder.stop();
+}
+
+bool AudioEngine::isRecording() const
+{
+    return m_recorder.isActive();
+}
+
+bool AudioEngine::hasCapturedAudio() const
+{
+    return m_recorder.getSampleCount() > 0;
+}
+
+bool AudioEngine::wasLastCaptureTruncated() const
+{
+    return m_recorder.wasTruncated();
+}
+
+bool AudioEngine::writeCaptureToFile(const juce::File& file,
+                                     ExportFormat format,
+                                     juce::String& errorOut)
+{
+    const size_t sampleCount = m_recorder.getSampleCount();
+    if (sampleCount == 0)
+    {
+        errorOut = "No audio captured.";
+        return false;
+    }
+
+    auto audioFormat = createFormatWriter(format);
+    if (!audioFormat)
+    {
+        errorOut = formatDisplayName(format) + " encoder is not available in this build. Try WAV.";
+        return false;
+    }
+
+    juce::AudioBuffer<float> buffer(2, static_cast<int>(sampleCount));
+    const auto& interleaved = m_recorder.getInterleaved();
+    for (size_t i = 0; i < sampleCount; ++i)
+    {
+        buffer.setSample(0, static_cast<int>(i), interleaved[i * 2]);
+        buffer.setSample(1, static_cast<int>(i), interleaved[i * 2 + 1]);
+    }
+
+    file.deleteFile();
+    std::unique_ptr<juce::FileOutputStream> stream(file.createOutputStream());
+    if (!stream)
+    {
+        errorOut = "Could not open file for writing.";
+        return false;
+    }
+
+    juce::StringPairArray metadata;
+    std::unique_ptr<juce::AudioFormatWriter> writer(audioFormat->createWriterFor(
+        stream.get(),
+        m_hostSampleRate,
+        2,
+        format == ExportFormat::Wav ? 24 : 0,
+        metadata,
+        format == ExportFormat::Ogg ? 6 : 0));
+    if (!writer)
+    {
+        errorOut = "Could not create " + formatDisplayName(format) + " writer.";
+        return false;
+    }
+    stream.release();
+    if (!writer->writeFromAudioSampleBuffer(buffer, 0, static_cast<int>(sampleCount)))
+    {
+        errorOut = "Write failed.";
+        return false;
+    }
+    return true;
+}
+
+void AudioEngine::exportCapturedAudio(ExportFormat format,
+                                      juce::Component* parent,
+                                      std::function<void(bool success, const juce::String& message)> onDone)
+{
+    const juce::String ext = extensionForFormat(format);
+    auto chooser = std::make_shared<juce::FileChooser>(
+        "Save recording",
+        juce::File::getSpecialLocation(juce::File::userDocumentsDirectory),
+        "*." + ext);
+
+    chooser->launchAsync(
+        juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
+        [this, format, onDone, chooser](const juce::FileChooser& fc) {
+            const juce::File file = fc.getResult();
+            if (file == juce::File())
+            {
+                if (onDone)
+                {
+                    onDone(false, "Save cancelled.");
+                }
+                return;
+            }
+            juce::File target = file;
+            if (!target.hasFileExtension(extensionForFormat(format)))
+            {
+                target = target.withFileExtension(extensionForFormat(format));
+            }
+            juce::String error;
+            const bool ok = writeCaptureToFile(target, format, error);
+            if (onDone)
+            {
+                onDone(ok, ok ? ("Saved to " + target.getFullPathName()) : error);
+            }
+        });
+    juce::ignoreUnused(parent);
+}
+
+void AudioEngine::exportCapturedAudio(juce::Component* parent,
+                                      std::function<void(bool success, const juce::String& message)> onDone)
+{
+    exportCapturedAudio(m_exportFormat, parent, std::move(onDone));
+}
+
+ExportFormat AudioEngine::exportFormat() const
+{
+    return m_exportFormat;
+}
+
+void AudioEngine::setExportFormat(ExportFormat format)
+{
+    m_exportFormat = format;
+}
+
 void AudioEngine::prepareRenderBuffers(int maxExpectedBlockSize)
 {
     const size_t capacity = static_cast<size_t>(std::max(1, maxExpectedBlockSize));
@@ -457,6 +667,10 @@ void AudioEngine::audioDeviceAboutToStart(juce::AudioIODevice* device)
 void AudioEngine::audioDeviceStopped()
 {
     m_audioRunning = false;
+    if (m_recorder.isActive())
+    {
+        m_recorder.stop();
+    }
     if (m_lastBlockNonFinite)
     {
         m_host.m_engine.SoftResetFxState();
@@ -470,6 +684,10 @@ void AudioEngine::audioDeviceError(const juce::String& errorMessage)
 {
     juce::Logger::writeToLog("FroggersTigaV2 audio error: " + errorMessage);
     m_audioRunning = false;
+    if (m_recorder.isActive())
+    {
+        m_recorder.stop();
+    }
     if (m_lastBlockNonFinite)
     {
         m_host.m_engine.SoftResetFxState();
@@ -570,6 +788,18 @@ void AudioEngine::renderSimOutputChunk(const float* inputChannel0,
         }
     }
 
+    if (m_recorder.isActive())
+    {
+        if (outR != nullptr)
+        {
+            m_recorder.appendStereo(outL, outR, n);
+        }
+        else
+        {
+            m_recorder.appendStereo(outL, outL, n);
+        }
+    }
+
     bool blockNonFinite = false;
     for (size_t i = 0; i < n; i++)
     {
@@ -644,4 +874,109 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* inputChan
         m_delay.softResetFx();
         m_lastBlockNonFinite = false;
     }
+}
+
+FilePatchRuntimeState& AudioEngine::filePatchState()
+{
+    return m_filePatchState;
+}
+
+const FilePatchRuntimeState& AudioEngine::filePatchState() const
+{
+    return m_filePatchState;
+}
+
+bool AudioEngine::savePatchToFile(const juce::File& file, juce::String& errorOut)
+{
+    if (m_pluginHosted)
+    {
+        errorOut = "Patch save is standalone-only.";
+        return false;
+    }
+
+    m_revertSnapshot.assign(SimPresetSnapshot::serializedSize(), 0);
+    if (!SimPresetSnapshot::write(m_host, m_delay, m_revertSnapshot.data(), m_revertSnapshot.size()))
+    {
+        errorOut = "Could not serialize patch.";
+        return false;
+    }
+
+    juce::FileOutputStream stream(file);
+    if (!stream.openedOk())
+    {
+        errorOut = "Could not open patch file for writing.";
+        return false;
+    }
+    stream.write(m_revertSnapshot.data(), static_cast<size_t>(m_revertSnapshot.size()));
+    stream.flush();
+    if (stream.getStatus().failed())
+    {
+        errorOut = "Patch write failed.";
+        return false;
+    }
+
+    m_filePatchState.markSaved(file.getFileNameWithoutExtension());
+    m_filePatchState.lastSaveResult = "Saved to " + file.getFullPathName();
+    m_filePatchState.appendLog(m_filePatchState.lastSaveResult);
+    m_midiCvTable.markMappingsSaved("Saved with patch");
+    m_filePatchState.setControllerMappingPersistenceResult(m_midiCvTable.mappingPersistenceMessage());
+    return true;
+}
+
+bool AudioEngine::loadPatchFromFile(const juce::File& file, juce::String& errorOut)
+{
+    if (m_pluginHosted)
+    {
+        errorOut = "Patch load is standalone-only.";
+        return false;
+    }
+
+    juce::FileInputStream stream(file);
+    if (!stream.openedOk())
+    {
+        errorOut = "Could not open patch file.";
+        return false;
+    }
+    std::vector<uint8_t> bytes(static_cast<size_t>(stream.getTotalLength()));
+    if (!stream.read(bytes.data(), static_cast<int>(bytes.size())))
+    {
+        errorOut = "Patch read failed.";
+        return false;
+    }
+
+    if (m_revertSnapshot.empty())
+    {
+        m_revertSnapshot.assign(SimPresetSnapshot::serializedSize(), 0);
+        SimPresetSnapshot::write(m_host, m_delay, m_revertSnapshot.data(), m_revertSnapshot.size());
+    }
+
+    SimPresetSnapshot::read(m_host, m_delay, bytes.data(), bytes.size());
+    notifyStateRestored();
+    m_filePatchState.markSaved(file.getFileNameWithoutExtension());
+    m_filePatchState.lastLoadResult = "Loaded " + file.getFullPathName();
+    m_filePatchState.appendLog(m_filePatchState.lastLoadResult);
+    m_midiCvTable.markMappingsSaved("Loaded with patch");
+    m_filePatchState.setControllerMappingPersistenceResult(m_midiCvTable.mappingPersistenceMessage());
+    return true;
+}
+
+void AudioEngine::revertPatch(juce::String& messageOut)
+{
+    if (m_revertSnapshot.empty())
+    {
+        messageOut = "No revert snapshot available.";
+        m_filePatchState.lastRevertResult = messageOut;
+        return;
+    }
+    SimPresetSnapshot::read(m_host, m_delay, m_revertSnapshot.data(), m_revertSnapshot.size());
+    notifyStateRestored();
+    m_filePatchState.markDirty();
+    messageOut = "Reverted to last saved snapshot.";
+    m_filePatchState.lastRevertResult = messageOut;
+    m_filePatchState.appendLog(messageOut);
+}
+
+DesktopV2AudioStateProjection AudioEngine::buildAudioStateProjection() const
+{
+    return buildStandaloneAudioStateProjection(*this);
 }

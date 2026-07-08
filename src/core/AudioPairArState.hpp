@@ -119,7 +119,7 @@ struct AudioPairArState
         for (uint8_t i = 0; i < kCount; i++)
         {
             modDepth[i] = rgen.UniGenRange(0.0f, 1.0f);
-            modSource[i] = PickSimRandomModIndex(rgen, bridge, hostKind);
+            modSource[i] = DrawAssignableModLane(rgen, bridge, hostKind);
         }
     }
 

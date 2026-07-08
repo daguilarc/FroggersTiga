@@ -137,3 +137,45 @@ juce::Typeface::Ptr DesktopV2LookAndFeel::getTypefaceForFont(const juce::Font& f
 
     return LookAndFeel_V4::getTypefaceForFont(font);
 }
+
+void DesktopV2LookAndFeel::drawToggleButton(juce::Graphics& g,
+                                            juce::ToggleButton& button,
+                                            bool shouldDrawButtonAsHighlighted,
+                                            bool shouldDrawButtonAsDown)
+{
+    if (button.getRadioGroupId() == 0)
+    {
+        LookAndFeel_V4::drawToggleButton(g, button, shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
+        return;
+    }
+
+    const auto bounds = button.getLocalBounds().toFloat().reduced(2.0f);
+    const float diameter = juce::jmin(bounds.getWidth(), bounds.getHeight());
+    const juce::Rectangle<float> circle(bounds.getCentreX() - diameter * 0.5f,
+                                        bounds.getCentreY() - diameter * 0.5f,
+                                        diameter,
+                                        diameter);
+
+    const juce::Colour fill = button.getToggleState()
+                                  ? juce::Colour(0xff58a6ff)
+                                  : juce::Colour(0xff30363d);
+    const juce::Colour outline = shouldDrawButtonAsHighlighted ? juce::Colours::white.withAlpha(0.85f)
+                                                               : juce::Colour(0xff484f58);
+    g.setColour(outline);
+    g.drawEllipse(circle, 1.5f);
+    g.setColour(fill);
+    g.fillEllipse(circle.reduced(3.0f));
+
+    if (button.getToggleState())
+    {
+        g.setColour(juce::Colours::white);
+        g.fillEllipse(circle.reduced(diameter * 0.32f));
+    }
+
+    g.setColour(button.findColour(juce::ToggleButton::textColourId));
+    g.setFont(regularFont(kBodyFontHeightPt));
+    g.drawFittedText(button.getButtonText(),
+                     button.getLocalBounds().withTrimmedLeft(static_cast<int>(diameter) + 4),
+                     juce::Justification::centredLeft,
+                     1);
+}
