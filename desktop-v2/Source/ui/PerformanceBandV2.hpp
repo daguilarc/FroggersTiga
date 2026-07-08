@@ -39,10 +39,10 @@ private:
     juce::Label m_blendLabelL;
     juce::Slider m_sceneBlend;
     juce::Label m_blendLabelR;
-    juce::ToggleButton m_gesture1{"G1"};
+    juce::ToggleButton m_gesture1;
     juce::Slider m_gestureWeight1;
-    juce::ToggleButton m_gesture2{"G2"};
+    juce::ToggleButton m_gesture2;
     juce::Slider m_gestureWeight2;
-    juce::Label m_marblesLabel1{"S&H 1"};
-    juce::Label m_marblesLabel2{"S&H 2"};
+    juce::Label m_marblesLabel1;
+    juce::Label m_marblesLabel2;
 };

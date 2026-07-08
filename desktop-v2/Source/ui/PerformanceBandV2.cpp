@@ -2,9 +2,17 @@
 #include "ui/DesktopV2ChromeLayout.hpp"
 
 #include "ModLedBrightness.hpp"
+#include "manifest/FroggersV2AppManifest.hpp"
 
 namespace
 {
+// Lanes of the permanent modulation source catalog (single authority:
+// froggers_v2::manifest::kPermanentModulationSources) that back the marbles
+// indicators. Shared with the CV readback in refreshMarbles() below so the
+// lane numbers are declared exactly once.
+constexpr uint8_t kMarblesLane1 = 11;
+constexpr uint8_t kMarblesLane2 = 12;
+
 juce::Colour sceneLeftColour()
 {
     return juce::Colour(0xff58a6ff);
@@ -27,6 +35,25 @@ juce::String sceneButtonLabel(uint8_t ordinal, uint8_t leftOrdinal, uint8_t righ
         return label + juce::String::fromUTF8("\xc2\xb7R");
     }
     return label;
+}
+
+// Shared projection helper: manifest display names are namespaced as
+// "Group/Name" (e.g. "Random/Marbles 1", "Global/Gesture1"). The operator
+// label is the part after the last slash, so any manifest rename flows
+// through without a parallel hardcoded string table here.
+juce::String labelTailAfterSlash(const char* fullName)
+{
+    const juce::String full(fullName);
+    const int slash = full.lastIndexOfChar('/');
+    return slash >= 0 ? full.substring(slash + 1) : full;
+}
+
+juce::String gestureDisplayName(uint8_t lane)
+{
+    char buffer[64];
+    froggers_v2::manifest::formatInventoryDisplayName(
+        buffer, sizeof(buffer), HostParameterInventoryV2::Axis::GestureWeight, 0, 0, lane);
+    return juce::String(buffer);
 }
 } // namespace
 
@@ -61,6 +88,9 @@ PerformanceBandV2::PerformanceBandV2()
     {
         juce::ToggleButton* toggle = lane == 0 ? &m_gesture1 : &m_gesture2;
         juce::Slider* weight = lane == 0 ? &m_gestureWeight1 : &m_gestureWeight2;
+        const juce::String fullName = gestureDisplayName(lane);
+        toggle->setButtonText(labelTailAfterSlash(fullName.toRawUTF8()));
+        toggle->setTooltip(fullName);
         toggle->onClick = [this, lane]() { pushGesture(lane); };
         weight->setSliderStyle(juce::Slider::LinearHorizontal);
         weight->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
@@ -74,10 +104,16 @@ PerformanceBandV2::PerformanceBandV2()
     m_scene2.onClick = [this]() { pushScene(1); };
     m_scene3.onClick = [this]() { pushScene(2); };
 
-    for (juce::Label* label : {&m_marblesLabel1, &m_marblesLabel2})
+    const uint8_t marblesLanes[2] = {kMarblesLane1, kMarblesLane2};
+    juce::Label* const marblesLabels[2] = {&m_marblesLabel1, &m_marblesLabel2};
+    for (size_t i = 0; i < 2; ++i)
     {
+        juce::Label* label = marblesLabels[i];
         label->setJustificationType(juce::Justification::centred);
         label->setFont(juce::Font(juce::FontOptions(9.0f)));
+        const char* fullName = froggers_v2::manifest::kPermanentModulationSources[marblesLanes[i]].displayName;
+        label->setText(labelTailAfterSlash(fullName), juce::dontSendNotification);
+        label->setTooltip(juce::String(fullName));
     }
 
     for (juce::Component* c :
@@ -156,6 +192,14 @@ void PerformanceBandV2::updateSceneButtonLabels(uint8_t leftOrdinal, uint8_t rig
     m_scene1.setButtonText(sceneButtonLabel(0, leftOrdinal, rightOrdinal));
     m_scene2.setButtonText(sceneButtonLabel(1, leftOrdinal, rightOrdinal));
     m_scene3.setButtonText(sceneButtonLabel(2, leftOrdinal, rightOrdinal));
+
+    // Scene-blend endpoint labels are tied to the live S1/S2/S3 ordinals so
+    // an operator can see which scenes the blend slider interpolates
+    // between, rather than the anonymous "L"/"R" endpoint markers.
+    const juce::String leftLabel = "S" + juce::String(static_cast<int>(leftOrdinal) + 1);
+    const juce::String rightLabel = "S" + juce::String(static_cast<int>(rightOrdinal) + 1);
+    m_blendLabelL.setText(leftLabel, juce::dontSendNotification);
+    m_blendLabelR.setText(rightLabel, juce::dontSendNotification);
 }
 
 void PerformanceBandV2::refreshMarbles(bool audioRunning)
@@ -166,8 +210,8 @@ void PerformanceBandV2::refreshMarbles(bool audioRunning)
         repaint();
         return;
     }
-    m_marblesLevel[0] = m_host->GetCvOut(11);
-    m_marblesLevel[1] = m_host->GetCvOut(12);
+    m_marblesLevel[0] = m_host->GetCvOut(kMarblesLane1);
+    m_marblesLevel[1] = m_host->GetCvOut(kMarblesLane2);
     repaint();
 }
 

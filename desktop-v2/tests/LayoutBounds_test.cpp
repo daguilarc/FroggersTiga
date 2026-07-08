@@ -112,12 +112,46 @@ bool test_no_global_strip_mod_overlap(LayoutTestShell& shell)
 
 bool test_audio_page_no_scrollbar(LayoutTestShell& shell)
 {
+    // Packet 1.4(b): the Audio module page (page 0) must fit its encoder/mod
+    // rows within the carousel viewport at the default 1280x920 chrome size
+    // without a vertical scrollbar.
     shell.carousel().selectPage(0, false);
     shell.resized();
     if (shell.carousel().activePanelShowsVerticalScrollbar())
     {
         std::printf("FAIL: Audio page shows vertical scrollbar at default size\n");
         return false;
+    }
+    return true;
+}
+
+bool test_mod_cell_width_capped(LayoutTestShell& shell)
+{
+    // Packet 1.4(a): moduleRowColumns().modW must never exceed kModCellW —
+    // this is the authoritative (non-advisory) check for the modW-expansion
+    // defect that check_desktop_v2_operator_truth.sh only greps for.
+    static constexpr uint8_t kPagesToCheck[] = {0, 1};
+    for (const uint8_t page : kPagesToCheck)
+    {
+        shell.carousel().selectPage(page, false);
+        shell.resized();
+        for (int row = 0; row < DesktopV2ChromeLayout::kVisibleEncoderSlots; ++row)
+        {
+            const juce::Rectangle<int> modBounds = shell.carousel().modCellBoundsInCarousel(row);
+            if (modBounds.isEmpty())
+            {
+                continue;
+            }
+            if (modBounds.getWidth() > DesktopV2ChromeLayout::kModCellW)
+            {
+                std::printf("FAIL: page %u mod cell row %d width %d exceeds kModCellW %d\n",
+                            static_cast<unsigned>(page),
+                            row,
+                            modBounds.getWidth(),
+                            DesktopV2ChromeLayout::kModCellW);
+                return false;
+            }
+        }
     }
     return true;
 }
@@ -169,6 +203,10 @@ int main()
         return 1;
     }
     if (!test_audio_page_no_scrollbar(shell))
+    {
+        return 1;
+    }
+    if (!test_mod_cell_width_capped(shell))
     {
         return 1;
     }

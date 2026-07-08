@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <cstdint>
 
 // Desktop v2 chrome — fixed 10px grid unit (u). Spec: desktop-v2-grid-layout.
@@ -34,7 +33,12 @@ constexpr int kGlobalCommandBandH = gridPx(6);
 constexpr int kGlobalStripH = kGlobalCommandBandH;
 constexpr int kPerformanceBandH = gridPx(7);
 constexpr int kCarouselHeaderH = gridPx(3);
-constexpr int kSequencerH = gridPx(18);
+// The sequencer toolbar + single step row only need ~gridPx(7) of vertical
+// space (kSequencerToolbarH + kChromePad + one kSequencerStepCellSize row);
+// gridPx(11) keeps a comfortable margin while returning the rest of the
+// vertical budget to the module carousel so pages (notably the Audio page)
+// fit their encoder/mod rows without a viewport scrollbar at 1280x920.
+constexpr int kSequencerH = gridPx(11);
 constexpr int kTextButtonH = gridPx(3);
 constexpr int kArrowButtonSize = gridPx(2);
 constexpr int kRandomizeButtonW = gridPx(11);
@@ -114,7 +118,7 @@ inline ModuleRowColumnLayout moduleRowColumns(int rowWidth) noexcept
     const int gapW = kModuleRowModGap;
     const int labelEncoderW = labelW + encoderW;
     const int modX = labelEncoderW + gapW;
-    const int modW = std::max(kModCellW, rowWidth - modX);
+    const int modW = kModCellW;
     return {labelW, encoderW, gapW, labelEncoderW, modX, modW, rowWidth};
 }
 
