@@ -1,10 +1,13 @@
 #include "HostParameterInventoryV2.hpp"
 #include "HostParameterRoutingV2.hpp"
+#include "HostParameterStateEnvelopeV2.hpp"
 
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 #ifndef FROGGERS_VST_IS_SYNTH
@@ -198,36 +201,135 @@ bool test_no_sus_stable_ids()
     }
     return true;
 }
+
+// 11.2: plugin state round-trip for the manifest-owned host parameters that the legacy
+// SimPresetSnapshot payload never serializes (GlobalCrunchy, VcoMorph, Sequencer, SceneBlend,
+// GestureWeight — see HostParameterStateEnvelopeV2.hpp for why PageKnob/PageModDepth are
+// intentionally excluded here: those already round-trip correctly through SimPresetSnapshot's
+// raw-value copy, and re-checking them via HostParameterRoutingV2::readValue would fail because
+// several page rows are read back through the musical "Fuego" curve, whose output is not its own
+// inverse). Simulates a real DAW save/reload: values are applied on one
+// (host/delay/sequencer/core) instance, serialized via HostParameterStateEnvelopeV2 (the tail
+// PluginProcessorV2::getStateInformation/setStateInformation append after the legacy
+// SimPresetSnapshot payload — see PluginProcessorV2.cpp), then deserialized into a *fresh*,
+// default-constructed instance standing in for a newly created plugin instance. Every covered
+// stable ID is looked up by name (via a stableId -> expected-value map) rather than assumed to
+// stay at the same index, so a hypothetical future reordering of the inventory axes would still
+// be caught if stable-ID identity broke.
+bool test_state_envelope_tail_round_trip_keyed_by_stable_id()
+{
+    if (HostParameterStateEnvelopeV2::kEntryCount != 12)
+    {
+        std::printf("FAIL: expected HostParameterStateEnvelopeV2 to cover 12 non-page stable IDs, got %zu\n",
+                    HostParameterStateEnvelopeV2::kEntryCount);
+        return false;
+    }
+
+    auto hostA = std::make_unique<DesktopHostIO>();
+    DelayState delayA;
+    SequencerState sequencerA;
+    froggers_v2::FroggersV2ControlCore coreA;
+    initHostAndDelay(*hostA, delayA);
+
+    const size_t firstIndex = HostParameterStateEnvelopeV2::kFirstNonPageIndex;
+    const size_t lastIndex = HostParameterInventoryV2::kCount;
+
+    // Phase 1: apply a varied, deterministic value to every covered entry (golden-ratio stride
+    // keeps it well away from 0/0.5/1 degenerate defaults without ever landing exactly on
+    // entry.minNorm/maxNorm).
+    for (size_t i = firstIndex; i < lastIndex; ++i)
+    {
+        const HostParameterInventoryV2::RuntimeDescriptor entry = HostParameterInventoryV2::buildDescriptorAt(i);
+        const float stride = static_cast<float>(i) * 0.6180339887f;
+        const float fractional = stride - std::floor(stride);
+        const float target = entry.minNorm + fractional * (entry.maxNorm - entry.minNorm);
+        HostParameterRoutingV2::applyValue(entry, target, *hostA, delayA, sequencerA, coreA);
+    }
+
+    // Phase 2: capture the fully-settled read-back (post-quantization, e.g. sequencer
+    // direction/speed choice snapping) for each stable ID. This is exactly what writeTail() below
+    // will independently recompute, so the round trip is judged against the real settled state.
+    std::map<std::string, float> expectedByStableId;
+    for (size_t i = firstIndex; i < lastIndex; ++i)
+    {
+        const HostParameterInventoryV2::RuntimeDescriptor entry = HostParameterInventoryV2::buildDescriptorAt(i);
+        const float settled = HostParameterRoutingV2::readValue(entry, *hostA, delayA, sequencerA, coreA);
+        expectedByStableId[std::string(entry.stableId)] = settled;
+    }
+
+    std::vector<uint8_t> tail(HostParameterStateEnvelopeV2::kTailBytes);
+    HostParameterStateEnvelopeV2::writeTail(*hostA, delayA, sequencerA, coreA, tail.data());
+
+    // Fresh instance: stands in for a brand-new plugin object (e.g. DAW project reopened).
+    auto hostB = std::make_unique<DesktopHostIO>();
+    DelayState delayB;
+    SequencerState sequencerB;
+    froggers_v2::FroggersV2ControlCore coreB;
+    initHostAndDelay(*hostB, delayB);
+
+    HostParameterStateEnvelopeV2::readTail(tail.data(), *hostB, delayB, sequencerB, coreB);
+
+    for (size_t i = firstIndex; i < lastIndex; ++i)
+    {
+        const HostParameterInventoryV2::RuntimeDescriptor entry = HostParameterInventoryV2::buildDescriptorAt(i);
+        const auto found = expectedByStableId.find(std::string(entry.stableId));
+        if (found == expectedByStableId.end())
+        {
+            std::printf("FAIL: no recorded expected value for stableId %s\n", entry.stableId);
+            return false;
+        }
+
+        const float actual = HostParameterRoutingV2::readValue(entry, *hostB, delayB, sequencerB, coreB);
+        if (!nearlyEqual(actual, found->second, 1.0e-4f))
+        {
+            std::printf("FAIL: state round-trip mismatch for stableId %s expected %f got %f\n",
+                        entry.stableId,
+                        found->second,
+                        actual);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+struct NamedTest
+{
+    const char* name;
+    bool (*run)();
+};
+
+// Accumulate-then-apply: run every case and report all results instead of bailing out on the
+// first failure, so one failing case can never hide the pass/fail status of the others.
+constexpr NamedTest kTests[] = {
+    {"test_parameter_count_assertion", test_parameter_count_assertion},
+    {"test_inventory_registry_completeness", test_inventory_registry_completeness},
+    {"test_pending_coalescing_latest_wins", test_pending_coalescing_latest_wins},
+    {"test_global_crunchy_routing", test_global_crunchy_routing},
+    {"test_vco_morph_defaults", test_vco_morph_defaults},
+    {"test_no_pair_ar_axis", test_no_pair_ar_axis},
+    {"test_no_sus_stable_ids", test_no_sus_stable_ids},
+    {"test_state_envelope_tail_round_trip_keyed_by_stable_id",
+     test_state_envelope_tail_round_trip_keyed_by_stable_id},
+};
 } // namespace
 
 int main()
 {
-    if (!test_parameter_count_assertion())
+    bool anyFailure = false;
+    for (const NamedTest& t : kTests)
     {
-        return 1;
+        const bool passed = t.run();
+        std::printf("%s: %s\n", passed ? "PASS" : "FAIL", t.name);
+        if (!passed)
+        {
+            anyFailure = true;
+        }
     }
-    if (!test_inventory_registry_completeness())
+
+    if (anyFailure)
     {
-        return 1;
-    }
-    if (!test_pending_coalescing_latest_wins())
-    {
-        return 1;
-    }
-    if (!test_global_crunchy_routing())
-    {
-        return 1;
-    }
-    if (!test_vco_morph_defaults())
-    {
-        return 1;
-    }
-    if (!test_no_pair_ar_axis())
-    {
-        return 1;
-    }
-    if (!test_no_sus_stable_ids())
-    {
+        std::printf("FAIL: one or more HostParameterProcessorV2 tests failed\n");
         return 1;
     }
 

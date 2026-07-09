@@ -188,6 +188,20 @@ add_custom_target(FroggersV2ManifestArtifacts
     COMMENT "Generating Froggers v2 manifest reviewer artifacts"
 )
 
+add_executable(HostParameterProcessorV2_test
+    tests/HostParameterProcessorV2_test.cpp
+    Source/control/FroggersV2ControlCore.cpp
+)
+target_include_directories(HostParameterProcessorV2_test PRIVATE
+    Source
+    "${CORE_DIR}"
+    "${SIM_DIR}"
+)
+target_compile_definitions(HostParameterProcessorV2_test PRIVATE
+    FROGGERS_VST_IS_SYNTH=1
+)
+add_test(NAME HostParameterProcessorV2_test COMMAND HostParameterProcessorV2_test)
+
 add_executable(FroggersV2Manifest_test
     tests/FroggersV2Manifest_test.cpp
 )

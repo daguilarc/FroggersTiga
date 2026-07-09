@@ -1,5 +1,6 @@
 #include "PluginProcessorV2.h"
 
+#include "HostParameterStateEnvelopeV2.hpp"
 #include "PluginEditorV2.h"
 #include "SimPresetSnapshot.hpp"
 
@@ -10,7 +11,13 @@ namespace
 {
 // v5: Pair-AR refactor — legacy page6 Sus* APVTS stable IDs are dropped (ignored on load):
 // page6_row1_knob/depth, page6_row4_knob/depth, page6_row7_knob/depth.
-constexpr uint8_t kPluginStateEnvelopeVersion = 5;
+constexpr uint8_t kLegacyPluginStateEnvelopeVersionV5 = 5;
+// v6: appends a HostParameterStateEnvelopeV2 tail after the legacy SimPresetSnapshot payload so
+// the manifest-owned host parameters SimPresetSnapshot never serializes (GlobalCrunchy, VcoMorph,
+// Sequencer, SceneBlend, GestureWeight) survive a DAW project save/reload instead of silently
+// resetting to construction defaults. v5-tagged states (no tail present) still load correctly;
+// the tail is only applied when the byte count indicates it is present.
+constexpr uint8_t kPluginStateEnvelopeVersion = 6;
 }
 
 FroggersTigaAudioProcessorV2::FroggersTigaAudioProcessorV2()
@@ -158,15 +165,21 @@ juce::AudioProcessorEditor* FroggersTigaAudioProcessorV2::createEditor()
 
 void FroggersTigaAudioProcessorV2::getStateInformation(juce::MemoryBlock& destData)
 {
-    std::vector<uint8_t> bytes(SimPresetSnapshot::serializedSize() + 1);
+    std::vector<uint8_t> bytes(
+        1 + SimPresetSnapshot::serializedSize() + HostParameterStateEnvelopeV2::kTailBytes);
     if (!SimPresetSnapshot::write(m_audio.getHost(),
                                   m_audio.getDelay(),
                                   bytes.data() + 1,
-                                  bytes.size() - 1))
+                                  SimPresetSnapshot::serializedSize()))
     {
         return;
     }
     bytes[0] = kPluginStateEnvelopeVersion;
+    HostParameterStateEnvelopeV2::writeTail(m_audio.getHost(),
+                                            m_audio.getDelay(),
+                                            m_audio.getSequencer(),
+                                            m_facade.controlCore(),
+                                            bytes.data() + 1 + SimPresetSnapshot::serializedSize());
     destData.replaceAll(bytes.data(), bytes.size());
 }
 
@@ -194,7 +207,8 @@ void FroggersTigaAudioProcessorV2::setStateInformation(const void* data, int siz
         return;
     }
 
-    if (bytes[0] == kPluginStateEnvelopeVersion && byteCount > sizeof(magic) + 1)
+    if ((bytes[0] == kPluginStateEnvelopeVersion || bytes[0] == kLegacyPluginStateEnvelopeVersionV5)
+        && byteCount > sizeof(magic) + 1)
     {
         const void* snapshotData = bytes + 1;
         const size_t snapshotBytes = byteCount - 1;
@@ -206,6 +220,20 @@ void FroggersTigaAudioProcessorV2::setStateInformation(const void* data, int siz
                                        snapshotData,
                                        snapshotBytes))
         {
+            // v6 only: replay the full-inventory tail (GlobalCrunchy/VcoMorph/Sequencer/
+            // SceneBlend/GestureWeight) if present. v5 states have no tail; those axes simply
+            // keep whatever this AudioEngine instance already holds (construction defaults on a
+            // freshly-created processor), matching the pre-existing v5 behavior exactly.
+            const size_t tailOffset = 1 + SimPresetSnapshot::serializedSize();
+            if (bytes[0] == kPluginStateEnvelopeVersion
+                && byteCount >= tailOffset + HostParameterStateEnvelopeV2::kTailBytes)
+            {
+                HostParameterStateEnvelopeV2::readTail(bytes + tailOffset,
+                                                       m_audio.getHost(),
+                                                       m_audio.getDelay(),
+                                                       m_audio.getSequencer(),
+                                                       m_facade.controlCore());
+            }
             syncParametersFromHost();
             m_audio.notifyStateRestored();
         }
