@@ -133,6 +133,18 @@ bool test_global_crunchy_routing()
     froggers_v2::FroggersV2ControlCore core;
     initHostAndDelay(*host, delay);
 
+    // Crunchy is a scene-morphed parameter: setGlobalCrunchy() writes the
+    // *active-scene* endpoint (activeSceneOrdinal()), while globalCrunchy()
+    // returns the left<->right scene crossfade (blendedSceneCenter). Those two
+    // views only coincide when the blend saturates to an endpoint; at the
+    // default blend of 0.5 with left=0/right=1 a set-then-get is intentionally
+    // NOT idempotent (the crossfade semantics are locked in by
+    // test_crunchy_scene_encoder_parity in ControlCoreBridge_test). Pin the
+    // blend to an endpoint so this routing check has a well-defined round-trip:
+    // it verifies the host param reaches BOTH the host flat float and the
+    // control core, not the orthogonal scene-blend morph behaviour.
+    core.setSceneBlend(0.0f);
+
     const HostParameterInventoryV2::RuntimeDescriptor entry =
         HostParameterInventoryV2::buildDescriptorAt(HostParameterInventoryV2::kPageKnobCount
                                                     + HostParameterInventoryV2::kPageModDepthCount);
