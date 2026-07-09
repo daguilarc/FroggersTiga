@@ -39,5 +39,4 @@ void refreshAndWireHostCallbacks(HostCallbackContext& ctx,
                                  PageCarouselComponent& carousel,
                                  uint32_t& lastModRoutesVersion);
 void pushSelectPage(const HostCallbackContext& ctx, uint8_t page);
-void pushRandomizeMod(const HostCallbackContext& ctx, uint8_t page);
 } // namespace desktop_v2

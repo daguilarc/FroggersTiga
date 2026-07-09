@@ -15,24 +15,6 @@ void pushSelectPage(const HostCallbackContext& ctx, uint8_t page)
     ctx.carousel.refresh();
 }
 
-void pushRandomizeMod(const HostCallbackContext& ctx, uint8_t page)
-{
-    // Retained for the (currently unused) HostedMainComponentV2/MainComponent
-    // member wrappers of the same name; no longer wired to
-    // carousel.onRandomizeMod below. Global Rand Mods now routes exclusively
-    // through FroggersV2ControlCore::executeRandomization (see
-    // GlobalStripV2::pushRandMods), which is the single randomization
-    // authority. This host.EnqueueRandomizePanelMod path bypassed the
-    // control core entirely and let the host be a second, divergent
-    // authority for mod state -- that duplicate-authority path is removed
-    // from the reachable UI wiring here (4.6).
-    ctx.host.EnqueueRandomizePanelMod(page);
-    ctx.host.DrainPendingMutations();
-    ctx.lastModRoutesVersion = ctx.host.modRoutesVersion();
-    ctx.bridge.syncFromHostModRoutes();
-    ctx.carousel.refresh();
-}
-
 void wireCallbacks(const HostCallbackContext& ctx)
 {
     ctx.carousel.onPageChanged = [ctxPtr = &ctx](uint8_t page) { pushSelectPage(*ctxPtr, page); };
