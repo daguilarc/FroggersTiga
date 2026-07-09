@@ -6,6 +6,7 @@
 #include "control/FroggersV2HostBridge.hpp"
 #include "ui/DesktopV2ChromeLayout.hpp"
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -808,14 +809,57 @@ bool test_sequencer_dice_step_and_pattern()
     patternDice.page = froggers_v2::kRandSeqScopePattern;
     pushAndProcess(core, patternDice);
 
-    if (!seq.m_slots[2].written)
+    // Packet 5 / "All Steps randomization writes all written steps": Pattern
+    // scope must only touch already-written steps. Step 2 is still blank at
+    // this point (the earlier step-dice wrote step 1, not step 2), so it must
+    // stay unwritten rather than being silently filled in.
+    if (seq.m_slots[2].written)
     {
-        std::printf("FAIL: pattern dice did not fill blank step 2\n");
+        std::printf("FAIL: pattern dice wrote into previously-unwritten step 2\n");
         return false;
     }
     if (nearlyEqual(seq.m_slots[3].payload.sceneCenter[0][0][0], 0.42f, 1.0e-4f))
     {
-        std::printf("FAIL: pattern dice did not overwrite step 3 with hasData\n");
+        std::printf("FAIL: pattern dice did not overwrite already-written step 3\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_rand_seq_all_steps_scope_targets_only_written_steps()
+{
+    // Dedicated regression coverage for the onRandSequencerStep Pattern-scope
+    // fix (desktop-v2-sequencer-operator-loop "All Steps randomization writes
+    // all written steps"): unwritten slots must be skipped entirely -- not
+    // randomized and not marked written -- while already-written slots are
+    // re-randomized in place.
+    FroggersV2ControlCore core;
+    SequencerState seq;
+    core.setSequencerState(&seq);
+
+    seq.m_slots[0].written = true;
+    seq.m_slots[0].payload.sceneCenter[0][0][0] = 0.33f;
+    seq.m_slots[1].written = false;
+    seq.m_slots[1].payload.sceneCenter[0][0][0] = 0.77f;
+
+    MessageIn patternDice;
+    patternDice.type = MessageIn::Type::RandSequencerStep;
+    patternDice.page = froggers_v2::kRandSeqScopePattern;
+    pushAndProcess(core, patternDice);
+
+    if (nearlyEqual(seq.m_slots[0].payload.sceneCenter[0][0][0], 0.33f, 1.0e-4f))
+    {
+        std::printf("FAIL: All Steps rand-seq did not re-randomize written step 0\n");
+        return false;
+    }
+    if (seq.m_slots[1].written)
+    {
+        std::printf("FAIL: All Steps rand-seq marked an unwritten step written\n");
+        return false;
+    }
+    if (!nearlyEqual(seq.m_slots[1].payload.sceneCenter[0][0][0], 0.77f, 1.0e-4f))
+    {
+        std::printf("FAIL: All Steps rand-seq mutated payload of an unwritten step\n");
         return false;
     }
     return true;
@@ -1119,6 +1163,202 @@ bool test_unwritten_step_noop_on_advance()
     if (!nearlyEqual(core.effectiveRow(0, 0).sceneLeft, liveBefore, 2.0e-3f))
     {
         std::printf("FAIL: unwritten step advance changed live audio state\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_playback_skips_unwritten_steps()
+{
+    // desktop-v2-sequencing "Cleared steps are skipped by playback" /
+    // "Written-step mask creates odd effective lengths": with Write Seq. not
+    // armed, the playhead ring must skip past unwritten slots and land on
+    // the next written one, applying that step's snapshot.
+    FroggersV2ControlCore core;
+    DesktopHostIO host;
+    DelayState delay;
+    host.setDelayState(&delay);
+    host.m_hostKind = SimHostKind::DesktopV2;
+    host.Init();
+    host.SetSampleRate(44100.0f);
+    host.m_sequencer.m_playing = true;
+    host.m_sequencer.m_playhead = 0;
+
+    SequencerSlotPayload stepFive{};
+    stepFive.sceneCenter[0][0][0] = 0.6f;
+    stepFive.sceneCenter[0][0][1] = 0.6f;
+    stepFive.sceneCenter[0][0][2] = 0.6f;
+    host.m_sequencer.captureStep(5, stepFive);
+
+    FroggersV2HostBridge bridge(core, host);
+    core.setSequencerState(&host.m_sequencer);
+
+    bridge.onSequencerStepAdvance();
+
+    if (host.m_sequencer.m_playhead != 5)
+    {
+        std::printf(
+            "FAIL: playback did not skip unwritten steps, playhead expected 5 got %u\n",
+            static_cast<unsigned>(host.m_sequencer.m_playhead));
+        return false;
+    }
+    if (!nearlyEqual(core.effectiveRow(0, 0).sceneLeft, 0.6f, 2.0e-3f))
+    {
+        std::printf("FAIL: playback did not apply the written step landed on after skipping\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_empty_pattern_playback_is_transport_noop()
+{
+    // desktop-v2-sequencing "Empty written-step mask is transport no-op":
+    // with every one of the 16 slots unwritten, playback SHALL emit no
+    // snapshot recalls/gates/resets and MUST NOT hang trying to find a
+    // written step that does not exist.
+    FroggersV2ControlCore core;
+    DesktopHostIO host;
+    DelayState delay;
+    host.setDelayState(&delay);
+    host.m_hostKind = SimHostKind::DesktopV2;
+    host.Init();
+    host.SetSampleRate(44100.0f);
+    host.m_sequencer.m_playing = true;
+    host.m_sequencer.m_playhead = 0;
+
+    pushAndProcess(core, MessageIn::ParamTurn(0, 0, 8.0f));
+    const float liveBefore = core.effectiveRow(0, 0).sceneLeft;
+
+    FroggersV2HostBridge bridge(core, host);
+    core.setSequencerState(&host.m_sequencer);
+
+    for (int beat = 0; beat < 3; ++beat)
+    {
+        bridge.onSequencerStepAdvance();
+    }
+
+    for (uint8_t step = 0; step < SequencerState::kSlotCount; ++step)
+    {
+        if (host.m_sequencer.m_slots[step].written)
+        {
+            std::printf("FAIL: empty pattern playback wrote step %u\n", static_cast<unsigned>(step));
+            return false;
+        }
+    }
+    if (!nearlyEqual(core.effectiveRow(0, 0).sceneLeft, liveBefore, 2.0e-3f))
+    {
+        std::printf("FAIL: empty pattern playback changed live audio state\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_sequencer_16_slot_snapshot_and_lock_round_trip()
+{
+    // Task 5.4: exercises snapshot/lock round-trip across all 16 fixed
+    // slots -- a mix of written and unwritten steps, plus a locked written
+    // step -- rather than spot-checking one or two indices. desktop-v2-
+    // sequencing "Fixed sixteen-step ring" / "Cleared steps are skipped by
+    // playback" / lock-gated recall (FroggersV2HostBridge::onSequencerStepAdvance).
+    FroggersV2ControlCore core;
+    DesktopHostIO host;
+    DelayState delay;
+    host.setDelayState(&delay);
+    host.m_hostKind = SimHostKind::DesktopV2;
+    host.Init();
+    host.SetSampleRate(44100.0f);
+    FroggersV2HostBridge bridge(core, host);
+    core.setSequencerState(&host.m_sequencer);
+
+    // Even slots written with distinct, deterministic values; odd slots left
+    // unwritten. Slot 6 is additionally locked.
+    for (uint8_t step = 0; step < SequencerState::kSlotCount; step += 2)
+    {
+        SequencerSlotPayload payload{};
+        const float value = 0.05f * static_cast<float>(step + 1);
+        payload.sceneCenter[0][0][0] = value;
+        payload.sceneCenter[0][0][1] = value;
+        payload.sceneCenter[0][0][2] = value;
+        host.m_sequencer.captureStep(step, payload);
+    }
+    host.m_sequencer.m_slots[6].locked = true;
+
+    for (uint8_t step = 0; step < SequencerState::kSlotCount; ++step)
+    {
+        const bool expectedWritten = (step % 2 == 0);
+        if (host.m_sequencer.slotWritten(step) != expectedWritten)
+        {
+            std::printf(
+                "FAIL: step %u written state expected %d got %d\n",
+                static_cast<unsigned>(step),
+                expectedWritten,
+                host.m_sequencer.slotWritten(step));
+            return false;
+        }
+    }
+
+    host.m_sequencer.m_playing = true;
+    host.m_sequencer.m_playhead = 15;
+
+    std::array<bool, SequencerState::kSlotCount> visited{};
+    for (int i = 0; i < SequencerState::kSlotCount; ++i)
+    {
+        // Manually perform the one-step base advance that advanceOnSamples()
+        // would normally do before invoking the callback (matches the
+        // existing test_write_seq_three_beats_steps_without_duplicate_step0
+        // convention for driving onSequencerStepAdvance directly).
+        host.m_sequencer.advancePlayhead();
+        bridge.onSequencerStepAdvance();
+
+        const uint8_t ph = host.m_sequencer.m_playhead;
+        if (ph % 2 != 0)
+        {
+            std::printf("FAIL: playback landed on unwritten (odd) step %u\n", static_cast<unsigned>(ph));
+            return false;
+        }
+        visited[ph] = true;
+
+        if (ph == 6)
+        {
+            if (nearlyEqual(core.effectiveRow(0, 0).sceneLeft, 0.05f * 7.0f, 1.0e-4f))
+            {
+                std::printf("FAIL: locked step 6 was recalled despite being locked\n");
+                return false;
+            }
+        }
+        else
+        {
+            const float expected = 0.05f * static_cast<float>(ph + 1);
+            if (!nearlyEqual(core.effectiveRow(0, 0).sceneLeft, expected, 2.0e-3f))
+            {
+                std::printf(
+                    "FAIL: step %u recall mismatch expected %f got %f\n",
+                    static_cast<unsigned>(ph),
+                    expected,
+                    core.effectiveRow(0, 0).sceneLeft);
+                return false;
+            }
+        }
+    }
+
+    for (uint8_t step = 0; step < SequencerState::kSlotCount; step += 2)
+    {
+        if (!visited[step])
+        {
+            std::printf(
+                "FAIL: written step %u never visited across a full ring loop\n",
+                static_cast<unsigned>(step));
+            return false;
+        }
+    }
+    if (!host.m_sequencer.m_slots[6].written || !host.m_sequencer.m_slots[6].locked)
+    {
+        std::printf("FAIL: locked step 6 lost its written/locked state\n");
+        return false;
+    }
+    if (!nearlyEqual(host.m_sequencer.m_slots[6].payload.sceneCenter[0][0][0], 0.05f * 7.0f, 1.0e-4f))
+    {
+        std::printf("FAIL: locked step 6 snapshot payload mutated by playback\n");
         return false;
     }
     return true;
@@ -1437,6 +1677,10 @@ int main()
     {
         return 1;
     }
+    if (!test_rand_seq_all_steps_scope_targets_only_written_steps())
+    {
+        return 1;
+    }
     if (!test_sequencer_record_capture())
     {
         return 1;
@@ -1458,6 +1702,18 @@ int main()
         return 1;
     }
     if (!test_unwritten_step_noop_on_advance())
+    {
+        return 1;
+    }
+    if (!test_playback_skips_unwritten_steps())
+    {
+        return 1;
+    }
+    if (!test_empty_pattern_playback_is_transport_noop())
+    {
+        return 1;
+    }
+    if (!test_sequencer_16_slot_snapshot_and_lock_round_trip())
     {
         return 1;
     }

@@ -77,6 +77,24 @@ void FroggersV2HostBridge::onSequencerStepAdvance()
         }
         seq.m_editStep = seq.m_playhead;
     }
+    else
+    {
+        // desktop-v2-sequencing "Cleared steps are skipped by playback": the
+        // fixed 16-slot ring SHALL skip unwritten slots during playback
+        // instead of applying silence/reset/default values. Write Seq.
+        // recording must NOT skip -- it needs to visit every step in order to
+        // fill blanks one beat at a time (see "Write while playing advances
+        // capture" / "three beats produce three distinct captures") -- so
+        // this only runs while Write Seq. is not armed. Bounded to
+        // kSlotCount attempts so an all-unwritten pattern falls through as a
+        // transport no-op instead of spinning forever.
+        for (uint8_t attempts = 0;
+             attempts < SequencerState::kSlotCount && !seq.slotWritten(seq.m_playhead);
+             ++attempts)
+        {
+            seq.advancePlayhead();
+        }
+    }
 
     if (seq.slotWritten(seq.m_playhead) && !(seq.slotLocked(seq.m_playhead)))
     {

@@ -889,11 +889,17 @@ void FroggersV2ControlCore::onRandSequencerStep(uint8_t step, uint8_t scope)
     {
         return;
     }
+    // desktop-v2-sequencer-operator-loop "All Steps randomization writes all
+    // written steps": Pattern/All-Steps scope SHALL only affect steps that
+    // are already written, not silently write previously-blank slots.
     for (uint8_t i = 0; i < manifest::kSequencerSlotCount; ++i)
     {
+        if (!m_sequencer->m_slots[i].written)
+        {
+            continue;
+        }
         randomizeSceneSlotsInto(m_sequencer->m_slots[i].payload);
         zeroStepGestures(m_sequencer->m_slots[i].payload);
-        m_sequencer->m_slots[i].written = true;
     }
 }
 

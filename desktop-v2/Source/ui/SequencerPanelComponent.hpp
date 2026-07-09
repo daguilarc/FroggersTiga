@@ -27,6 +27,20 @@ public:
     juce::Rectangle<int> directionButtonBounds() const;
     juce::Rectangle<int> speedButtonBounds() const;
 
+    // Step-click orchestration (write-on-click when Write Seq. is armed and
+    // stopped; navigate-and-recall otherwise). Public so a StepCell's click
+    // handler can reach it, and so tests can drive the exact production path
+    // without simulating real JUCE mouse events.
+    void setEditStep(int step);
+
+    // Long-press-to-clear test hooks: mirror what a StepCell's mouseDown /
+    // mouseUp send to the panel, without needing a live JUCE event/timer
+    // loop in a unit test.
+    void beginLongPressForTest(int step);
+    void cancelLongPressForTest(int step);
+    void fireLongPressForTest();
+    bool isLongPressPendingForTest() const;
+
     void paint(juce::Graphics& g) override;
     void resized() override;
 
@@ -36,6 +50,7 @@ private:
     public:
         int stepIndex = -1;
         std::function<void(int, const juce::MouseEvent&)> onStepMouseDown;
+        std::function<void(int)> onStepMouseUp;
         std::function<void(int)> onStepDoubleClick;
         std::function<void(int)> onStepClick;
 
@@ -69,6 +84,13 @@ private:
 
         void mouseUp(const juce::MouseEvent& event) override
         {
+            // Always cancel any pending long-press first: releasing before
+            // the long-press threshold SHALL cancel the clear, regardless of
+            // click type (single, double, or context-menu release).
+            if (onStepMouseUp)
+            {
+                onStepMouseUp(stepIndex);
+            }
             if (event.mods.isPopupMenu() || event.getNumberOfClicks() >= 2)
             {
                 return;
@@ -93,7 +115,6 @@ private:
     };
 
     void timerCallback() override;
-    void setEditStep(int step);
     void toggleStepGate(int step);
     void clearStep(int step);
     void showStepContextMenu(int step);
@@ -104,6 +125,7 @@ private:
     void cycleDirection();
     void cycleSpeed();
     void beginLongPress(int step);
+    void cancelLongPress(int step);
     void layoutClockTransport(juce::Rectangle<int> row, int gap, int& x);
     void layoutNavRandScope(juce::Rectangle<int> row, int gap, int x);
     static int sequencerToolbarMinWidth();
@@ -115,7 +137,6 @@ private:
     SequencerState* m_sequencer = nullptr;
     froggers_v2::FroggersV2ControlCore* m_core = nullptr;
     froggers_v2::FroggersV2HostBridge* m_bridge = nullptr;
-    bool m_randAllSteps = false;
     int m_captureFlashStep = -1;
     int m_longPressStep = -1;
     bool m_longPressFired = false;
@@ -137,7 +158,5 @@ private:
         "dice",
         juce::DrawableButton::ImageFitted};
     juce::Label m_randSeqLabel;
-    juce::ToggleButton m_scopeStep{"Step"};
-    juce::ToggleButton m_scopePattern{"All steps"};
     std::array<StepCell, SequencerState::kSlotCount> m_steps{};
 };

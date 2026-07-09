@@ -52,10 +52,12 @@ int SequencerPanelComponent::sequencerToolbarMinWidth()
 {
     using namespace DesktopV2ChromeLayout;
     const int gap = kSectionGap;
+    // No All Steps / Current Step radio group here: that scope selector is
+    // the global-command band's alone (desktop-v2-sequencing "Sequencer
+    // toolbar omits duplicate global randomization").
     return (kPerfBpmLabelW + gap + kPerfBpmSliderW) + gap + (kDirectionButtonW + gap + kSpeedButtonW)
         + gap + kPerfSeqTransportW + gap + kPerfSeqRecordW + gap + kArrowButtonSize + gap + kArrowButtonSize
-        + gap + kSequencerRandSeqLabelW + gap + kArrowButtonSize + gap + gridPx(9) + gap
-        + kSequencerScopeAllStepsW;
+        + gap + kSequencerRandSeqLabelW + gap + kArrowButtonSize;
 }
 
 void SequencerPanelComponent::layoutClockTransport(juce::Rectangle<int> row, int gap, int& x)
@@ -81,11 +83,7 @@ void SequencerPanelComponent::layoutNavRandScope(juce::Rectangle<int> row, int g
 {
     using namespace DesktopV2ChromeLayout;
     const int arrow = kArrowButtonSize;
-    const int scopeH = kTextButtonH;
-    const int scopeStepW = gridPx(9);
-    const int scopeAllStepsW = kSequencerScopeAllStepsW;
     const int btnY = row.getCentreY() - arrow / 2;
-    const int scopeY = row.getCentreY() - scopeH / 2;
 
     m_prevStep.setBounds(x, btnY, arrow, arrow);
     x += arrow + gap;
@@ -94,10 +92,9 @@ void SequencerPanelComponent::layoutNavRandScope(juce::Rectangle<int> row, int g
     m_randSeqLabel.setBounds(x, row.getY(), kSequencerRandSeqLabelW, row.getHeight());
     x += kSequencerRandSeqLabelW + gap;
     m_dice.setBounds(x, btnY, arrow, arrow);
-
-    m_scopePattern.setBounds(row.getRight() - scopeAllStepsW, scopeY, scopeAllStepsW, scopeH);
-    m_scopeStep.setBounds(
-        row.getRight() - scopeAllStepsW - gap - scopeStepW, scopeY, scopeStepW, scopeH);
+    // No local All Steps / Current Step toggle: step scope is the
+    // global-command band's single authority (desktop-v2-sequencer-operator-loop
+    // "Sequencer scope UI is not duplicated").
 }
 
 SequencerPanelComponent::SequencerPanelComponent()
@@ -186,25 +183,6 @@ SequencerPanelComponent::SequencerPanelComponent()
     m_dice.onClick = [this]() { pushDiceRand(); };
     addAndMakeVisible(m_dice);
 
-    m_scopeStep.setRadioGroupId(9001);
-    m_scopeStep.setClickingTogglesState(false);
-    m_scopeStep.setToggleState(true, juce::dontSendNotification);
-    m_scopeStep.onClick = [this]() {
-        m_randAllSteps = false;
-        m_scopeStep.setToggleState(true, juce::dontSendNotification);
-        m_scopePattern.setToggleState(false, juce::dontSendNotification);
-    };
-    addAndMakeVisible(m_scopeStep);
-
-    m_scopePattern.setRadioGroupId(9001);
-    m_scopePattern.setClickingTogglesState(false);
-    m_scopePattern.onClick = [this]() {
-        m_randAllSteps = true;
-        m_scopePattern.setToggleState(true, juce::dontSendNotification);
-        m_scopeStep.setToggleState(false, juce::dontSendNotification);
-    };
-    addAndMakeVisible(m_scopePattern);
-
     for (int i = 0; i < SequencerState::kSlotCount; ++i)
     {
         StepCell& cell = m_steps[static_cast<size_t>(i)];
@@ -230,6 +208,7 @@ SequencerPanelComponent::SequencerPanelComponent()
             }
             beginLongPress(step);
         };
+        cell.onStepMouseUp = [this](int step) { cancelLongPress(step); };
     }
 }
 
@@ -245,6 +224,37 @@ void SequencerPanelComponent::beginLongPress(int step)
     m_longPressStep = step;
     m_longPressFired = false;
     startTimer(kLongPressMs);
+}
+
+void SequencerPanelComponent::cancelLongPress(int step)
+{
+    // desktop-v2-sequencing "Short hold does not clear a written step":
+    // releasing before the long-press threshold SHALL cancel the clear, with
+    // the step remaining written and its snapshot/lock unchanged.
+    if (m_longPressStep == step)
+    {
+        stopTimer();
+    }
+}
+
+void SequencerPanelComponent::beginLongPressForTest(int step)
+{
+    beginLongPress(step);
+}
+
+void SequencerPanelComponent::cancelLongPressForTest(int step)
+{
+    cancelLongPress(step);
+}
+
+void SequencerPanelComponent::fireLongPressForTest()
+{
+    timerCallback();
+}
+
+bool SequencerPanelComponent::isLongPressPendingForTest() const
+{
+    return isTimerRunning();
 }
 
 void SequencerPanelComponent::cycleDirection()
@@ -295,17 +305,38 @@ void SequencerPanelComponent::setEditStep(int step)
     {
         return;
     }
+
+    const bool stopped = !m_sequencer->m_playing;
+    const bool armedWrite = stopped && m_sequencer->m_writeSeqArm && m_bridge != nullptr;
+
     if (static_cast<int>(m_sequencer->m_editStep) == step)
     {
+        // desktop-v2-sequencer-operator-loop "Click step while armed writes
+        // snapshot": clicking the already-selected step while armed and
+        // stopped commits live state into it directly. Otherwise, clicking
+        // the current step is a no-op (nothing to navigate to).
+        if (armedWrite)
+        {
+            m_bridge->captureLiveToSequencerStep(static_cast<uint8_t>(step));
+            refresh();
+        }
         return;
     }
+
     const uint8_t oldEdit = m_sequencer->m_editStep;
-    if (!m_sequencer->m_playing && m_sequencer->m_writeSeqArm && m_bridge != nullptr)
+    if (armedWrite)
     {
         m_bridge->captureLiveToSequencerStep(oldEdit);
     }
     m_sequencer->m_editStep = static_cast<uint8_t>(step);
-    if (!m_sequencer->m_playing && m_bridge != nullptr)
+    if (armedWrite)
+    {
+        // A click always writes wherever the operator lands while Write Seq.
+        // is armed, so capture live state into the newly-selected step too
+        // instead of recalling (and discarding) whatever was stored there.
+        m_bridge->captureLiveToSequencerStep(static_cast<uint8_t>(step));
+    }
+    else if (stopped && m_bridge != nullptr)
     {
         m_bridge->recallSequencerStep(static_cast<uint8_t>(step));
     }
@@ -379,7 +410,12 @@ void SequencerPanelComponent::triggerCaptureFlash(int step)
 
 uint8_t SequencerPanelComponent::getRandSeqScope() const
 {
-    return m_randAllSteps ? froggers_v2::kRandSeqScopePattern : froggers_v2::kRandSeqScopeStep;
+    // The sequencer panel no longer owns a step-scope opinion of its own
+    // (desktop-v2-sequencer-operator-loop "Sequencer scope UI is not
+    // duplicated" -- the global-command band is the single authority for
+    // All Steps / Current Step). This is queried by GlobalStripV2 only as
+    // its Current-Step fallback, so Step is always the correct answer here.
+    return froggers_v2::kRandSeqScopeStep;
 }
 
 juce::Rectangle<int> SequencerPanelComponent::getStepBounds(int stepIndex) const
@@ -403,9 +439,11 @@ juce::Rectangle<int> SequencerPanelComponent::speedButtonBounds() const
 
 void SequencerPanelComponent::pushDiceRand()
 {
-    const uint8_t scope =
-        m_randAllSteps ? froggers_v2::kRandSeqScopePattern : froggers_v2::kRandSeqScopeStep;
-    pushRandSequencerStep(m_sequencer != nullptr ? m_sequencer->m_editStep : 0, scope);
+    // Step scope only: All Steps is selected in the global-command band, not
+    // here (see getRandSeqScope() above). onRandSequencerStep resolves the
+    // actual target step (playhead while playing, edit step while stopped)
+    // regardless of the slot value passed for Step scope.
+    pushRandSequencerStep(m_sequencer != nullptr ? m_sequencer->m_editStep : 0, froggers_v2::kRandSeqScopeStep);
 }
 
 void SequencerPanelComponent::showStepContextMenu(int step)
