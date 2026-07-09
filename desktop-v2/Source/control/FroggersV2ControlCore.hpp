@@ -27,6 +27,11 @@ constexpr uint8_t kRandSceneScopeCurrent = 0;
 constexpr uint8_t kRandSceneScopeAll = 1;
 constexpr uint8_t kModDetailCellCount = manifest::kModDetailCellCount;
 constexpr uint8_t kUiSlots = kModDetailCellCount;
+// The parameter-detail grid enumerates every permanent modulation lane plus one
+// dedicated target/Crispy cell; the manifest-owned lane count must leave room
+// for that extra cell inside the fixed kUiSlots (4x4) grid.
+static_assert(kNumModSources < kUiSlots,
+              "mod detail grid requires kUiSlots > kNumModSources for the dedicated target cell");
 
 struct MessageIn
 {
@@ -213,6 +218,7 @@ private:
     void onParamPress(uint8_t page, uint8_t slot);
     void onSceneSelect(uint8_t sceneOrdinal);
     void onModSourceAssign(uint8_t page, uint8_t row, uint8_t source);
+    static void setSingleModSource(ParamState& param, uint8_t source);
     void onRandAll();
     void onRandPage(uint8_t page);
     void onResetSequencerStep(uint8_t step);
@@ -236,6 +242,8 @@ private:
     void seedSceneCentersFromDefaults();
     void rebuildVisibleSlots();
     EffectiveRow computeEffective(const ParamState& state) const;
+    EffectiveRow slotViewEffective(const VisibleSlot& visible) const;
+    void storeSlotState(uint8_t slot, const EffectiveRow& row);
 
     SequencerState* m_sequencer = nullptr;
     MessageInBus m_bus;
@@ -255,5 +263,6 @@ private:
     float m_sceneBlend = 0.5f;
     ParamState m_crunchy{};
     uint32_t m_randState = 0x12345678u;
+    bool m_externalAudioAvailable = false;
 };
 } // namespace froggers_v2

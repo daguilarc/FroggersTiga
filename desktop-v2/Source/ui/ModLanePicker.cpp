@@ -1,58 +1,28 @@
 #include "ui/ModLanePicker.hpp"
 
 #include "manifest/FroggersV2AppManifest.hpp"
-#include "ui/DesktopV2ChromeLayout.hpp"
-#include "V2ModSourceCatalog.hpp"
 #include "control/FroggersV2ControlCore.hpp"
 
 namespace
 {
-constexpr uint8_t kMenuNone = 255;
+constexpr int kMenuNone = 1;      // PopupMenu item id for "None" (ids must be > 0)
+constexpr int kMenuLaneBase = 2;  // lane L → item id kMenuLaneBase + L
 
 const char* labelForInternal(uint8_t internal)
 {
     if (internal >= froggers_v2::kNumModSources)
     {
-        return "";
+        return "None";
     }
     return froggers_v2::manifest::kPermanentModulationSources[internal].displayName;
 }
-
-uint8_t internalIndexForMenuId(int menuId)
-{
-    if (menuId == kMenuNone)
-    {
-        return froggers_v2::kNoSelection;
-    }
-    if (menuId < 0 || menuId >= static_cast<int>(froggers_v2::kNumModSources))
-    {
-        return froggers_v2::kNoSelection;
-    }
-    return static_cast<uint8_t>(menuId);
-}
-
-int menuIdForInternal(uint8_t internal)
-{
-    return static_cast<int>(internal);
-}
-
-bool isExternalAudioLane(uint8_t lane)
-{
-    return lane == 13 || lane == 14;
-}
 } // namespace
 
-ModLanePicker::ModLanePicker()
+ModLanePicker::ModLanePicker() = default;
+
+void ModLanePicker::setPage(uint8_t page)
 {
-    rebuildMenu();
-    m_dropdown.onChange = [this]() {
-        if (!onAssign)
-        {
-            return;
-        }
-        onAssign(m_row, internalIndexForMenuId(m_dropdown.getSelectedId()));
-    };
-    addAndMakeVisible(m_dropdown);
+    m_page = page;
 }
 
 void ModLanePicker::setRow(uint8_t row)
@@ -63,14 +33,6 @@ void ModLanePicker::setRow(uint8_t row)
 void ModLanePicker::setAssignedSource(uint8_t internalSourceIndex)
 {
     m_assigned = internalSourceIndex;
-    if (m_assigned == froggers_v2::kNoSelection)
-    {
-        m_dropdown.setSelectedId(kMenuNone, juce::dontSendNotification);
-    }
-    else
-    {
-        m_dropdown.setSelectedId(menuIdForInternal(m_assigned), juce::dontSendNotification);
-    }
     repaint();
 }
 
@@ -81,36 +43,68 @@ void ModLanePicker::setExternalAudioAvailable(bool available)
         return;
     }
     m_externalAudioAvailable = available;
-    rebuildMenu();
+    repaint();
 }
 
 void ModLanePicker::refresh()
 {
-    rebuildMenu();
     repaint();
 }
 
-void ModLanePicker::rebuildMenu()
+bool ModLanePicker::isLaneAssignable(uint8_t lane) const
 {
-    m_dropdown.clear(juce::dontSendNotification);
-    m_dropdown.addItem("None", kMenuNone);
+    if (lane >= froggers_v2::kNumModSources)
+    {
+        return false;
+    }
+    // The manifest's isModSourceEligibleForRow() also gates on
+    // ModulationSource::randomizable, which is false for both external-audio
+    // lanes (they are deliberately excluded from Rand All / Rand Mods). That
+    // earlier gate makes the function's own external-audio-availability check
+    // unreachable for those two lanes, so external-audio manual-assignment
+    // availability is applied directly from the manifest's
+    // isExternalAudioModLane() here instead of relying on
+    // isModSourceEligibleForRow() for that part.
+    if (froggers_v2::manifest::isExternalAudioModLane(lane))
+    {
+        return m_externalAudioAvailable;
+    }
+    return froggers_v2::manifest::isModSourceEligibleForRow(m_page, m_row, lane, m_externalAudioAvailable);
+}
+
+void ModLanePicker::showRouteMenu()
+{
+    juce::PopupMenu menu;
+    menu.addItem(kMenuNone, "None", true, m_assigned == froggers_v2::kNoSelection);
     for (uint8_t lane = 0; lane < froggers_v2::kNumModSources; ++lane)
     {
-        const char* label = permanentModSourceDisplayName(lane);
-        m_dropdown.addItem(label, static_cast<int>(lane));
-        if (isExternalAudioLane(lane))
-        {
-            m_dropdown.setItemEnabled(static_cast<int>(lane), m_externalAudioAvailable);
-        }
+        const bool available = isLaneAssignable(lane);
+        const bool ticked = m_assigned == lane;
+        // Unavailable lanes (e.g. external audio with no input) stay visible but
+        // disabled, so the operator can still see the full manifest rack.
+        menu.addItem(kMenuLaneBase + static_cast<int>(lane),
+                     labelForInternal(lane),
+                     available,
+                     ticked);
     }
-    if (m_assigned == froggers_v2::kNoSelection)
-    {
-        m_dropdown.setSelectedId(kMenuNone, juce::dontSendNotification);
-    }
-    else
-    {
-        m_dropdown.setSelectedId(menuIdForInternal(m_assigned), juce::dontSendNotification);
-    }
+
+    juce::Component::SafePointer<ModLanePicker> safeSelf(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),
+                       [safeSelf](int result) {
+                           if (safeSelf == nullptr || result == 0 || !safeSelf->onAssign)
+                           {
+                               return;
+                           }
+                           const uint8_t source = result == kMenuNone
+                               ? froggers_v2::kNoSelection
+                               : static_cast<uint8_t>(result - kMenuLaneBase);
+                           safeSelf->onAssign(safeSelf->m_row, source);
+                       });
+}
+
+void ModLanePicker::mouseUp(const juce::MouseEvent&)
+{
+    showRouteMenu();
 }
 
 juce::Colour ModLanePicker::sourceColour(uint8_t internalSourceIndex) const
@@ -126,6 +120,8 @@ juce::Colour ModLanePicker::sourceColour(uint8_t internalSourceIndex) const
 
 void ModLanePicker::paint(juce::Graphics& g)
 {
+    // Compact manifest route summary chip (not a full-row combobox): a lit
+    // source-coloured pill with the route label, or a dim "None" placeholder.
     auto bounds = getLocalBounds().toFloat().reduced(1.0f);
     const bool lit = m_assigned != froggers_v2::kNoSelection;
     g.setColour(lit ? sourceColour(m_assigned).withAlpha(0.35f) : juce::Colour(0xff21262d));
@@ -133,24 +129,7 @@ void ModLanePicker::paint(juce::Graphics& g)
     g.setColour(lit ? sourceColour(m_assigned) : juce::Colour(0xff484f58));
     g.drawRoundedRectangle(bounds, 4.0f, lit ? 2.0f : 1.0f);
 
-    if (lit)
-    {
-        g.setColour(juce::Colours::white.withAlpha(0.9f));
-        g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
-        g.drawText(
-            labelForInternal(m_assigned),
-            bounds.removeFromTop(static_cast<float>(DesktopV2ChromeLayout::kModLabelStripH)),
-            juce::Justification::centred);
-    }
-    else
-    {
-        bounds.removeFromTop(static_cast<float>(DesktopV2ChromeLayout::kModLabelStripH));
-    }
-}
-
-void ModLanePicker::resized()
-{
-    auto area = juce::Rectangle<int>(0, 0, getWidth(), DesktopV2ChromeLayout::kModCellHeight).reduced(2);
-    area.removeFromTop(DesktopV2ChromeLayout::kModLabelStripH);
-    m_dropdown.setBounds(area);
+    g.setColour(lit ? juce::Colours::white.withAlpha(0.9f) : juce::Colour(0xff8b949e));
+    g.setFont(juce::Font(juce::FontOptions(10.0f, lit ? juce::Font::bold : juce::Font::plain)));
+    g.drawText(labelForInternal(m_assigned), bounds, juce::Justification::centred);
 }

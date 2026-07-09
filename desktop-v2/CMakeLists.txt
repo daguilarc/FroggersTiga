@@ -294,6 +294,20 @@ target_include_directories(GlobalControlParity_test PRIVATE
 target_link_libraries(GlobalControlParity_test PRIVATE juce::juce_gui_basics)
 add_test(NAME GlobalControlParity_test COMMAND GlobalControlParity_test)
 
+add_executable(ModSourceGrid_test
+    tests/ModSourceGrid_test.cpp
+    Source/ui/ModLanePicker.cpp
+    Source/control/FroggersV2ControlCore.cpp
+)
+target_include_directories(ModSourceGrid_test PRIVATE
+    Source
+    Source/ui
+    "${CORE_DIR}"
+    "${SIM_DIR}"
+)
+target_link_libraries(ModSourceGrid_test PRIVATE juce::juce_gui_basics)
+add_test(NAME ModSourceGrid_test COMMAND ModSourceGrid_test)
+
 set(FROGGERS_V2_FACADE_TEST_SOURCES
     tests/FroggersV2AppCoreFacade_test.cpp
     Source/control/FroggersV2AppCoreFacade.cpp

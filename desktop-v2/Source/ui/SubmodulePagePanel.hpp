@@ -29,9 +29,13 @@ public:
     juce::Rectangle<int> modCellBoundsInPanel(int rowIndex) const;
 
 private:
+    static constexpr int kCellCapacity = froggers_v2::kUiSlots;
+
     uint8_t rowCountForPage(uint8_t page) const;
     int documentRowCount() const;
+    bool detailGridOpen() const;
     void layoutRows();
+    void layoutDetailGrid(juce::Rectangle<int> area);
     void wireEncoderCallbacks();
     void pushTurn(uint8_t slot, float delta);
     void pushPress(uint8_t slot);
@@ -46,7 +50,7 @@ private:
     juce::Component m_encoderContent;
     juce::Viewport m_modColumnViewport;
     juce::Component m_modColumnContent;
-    std::array<juce::Label, DesktopV2ChromeLayout::kVisibleEncoderSlots> m_rowLabels{};
-    std::array<EncoderRingComponent, DesktopV2ChromeLayout::kVisibleEncoderSlots> m_rings{};
-    std::array<ModLanePicker, DesktopV2ChromeLayout::kVisibleEncoderSlots> m_modCells{};
+    std::array<juce::Label, kCellCapacity> m_rowLabels{};
+    std::array<EncoderRingComponent, kCellCapacity> m_rings{};
+    std::array<ModLanePicker, kCellCapacity> m_modCells{};
 };

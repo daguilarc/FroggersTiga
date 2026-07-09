@@ -106,6 +106,34 @@ uint8_t FroggersV2ControlCore::visibleRowForSlot(uint8_t slot) const
     return m_visibleSlots[slot].row;
 }
 
+uint8_t FroggersV2ControlCore::visibleModIndexForSlot(uint8_t slot) const
+{
+    if (slot >= m_visibleCount || m_visibleSlots[slot].isTarget)
+    {
+        return kNoSelection;
+    }
+    return m_visibleSlots[slot].modIndex;
+}
+
+bool FroggersV2ControlCore::visibleSlotIsTarget(uint8_t slot) const
+{
+    if (slot >= m_visibleCount)
+    {
+        return false;
+    }
+    return m_visibleSlots[slot].isTarget;
+}
+
+void FroggersV2ControlCore::setExternalAudioAvailable(bool available)
+{
+    m_externalAudioAvailable = available;
+}
+
+bool FroggersV2ControlCore::externalAudioAvailable() const
+{
+    return m_externalAudioAvailable;
+}
+
 float FroggersV2ControlCore::globalCrunchy() const
 {
     return blendedSceneCenter(m_crunchy);
@@ -168,6 +196,23 @@ uint8_t FroggersV2ControlCore::assignedModSource(uint8_t page, uint8_t row) cons
     return kNoSelection;
 }
 
+void FroggersV2ControlCore::setSingleModSource(ParamState& param, uint8_t source)
+{
+    // A row carries at most one active modulation route (matching the host /
+    // sequencer single-source-per-row projection). Clear every lane, then set
+    // the chosen source into the canonical slot 0. source == kNoSelection (or
+    // any out-of-range value) leaves the row cleared.
+    for (uint8_t i = 0; i < kNumModSources; ++i)
+    {
+        param.modSource[i] = kNoSelection;
+        param.modDepth[i] = 0.0f;
+    }
+    if (source < kNumModSources)
+    {
+        param.modSource[0] = source;
+    }
+}
+
 void FroggersV2ControlCore::applyHostModRoute(uint8_t page,
                                               uint8_t row,
                                               uint8_t engineModIndex,
@@ -178,14 +223,9 @@ void FroggersV2ControlCore::applyHostModRoute(uint8_t page,
         return;
     }
     ParamState& param = m_params[page][row];
-    for (uint8_t i = 0; i < kNumModSources; ++i)
-    {
-        param.modSource[i] = kNoSelection;
-        param.modDepth[i] = 0.0f;
-    }
+    setSingleModSource(param, engineModIndex);
     if (engineModIndex < kNumModSources)
     {
-        param.modSource[0] = engineModIndex;
         param.modDepth[0] = clampSigned(depth);
     }
 }
@@ -223,43 +263,65 @@ void FroggersV2ControlCore::compute()
     // Computation is pulled by bridge/UI from the same state snapshot.
 }
 
+void FroggersV2ControlCore::storeSlotState(uint8_t slot, const EffectiveRow& row)
+{
+    m_uiState.sceneLeft[slot].store(row.sceneLeft, std::memory_order_release);
+    m_uiState.sceneRight[slot].store(row.sceneRight, std::memory_order_release);
+    m_uiState.effective[slot].store(row.effective, std::memory_order_release);
+    m_uiState.arcMin[slot].store(row.arcMin, std::memory_order_release);
+    m_uiState.arcMax[slot].store(row.arcMax, std::memory_order_release);
+    m_uiState.modulatorsMask[slot].store(row.modulatorsMask, std::memory_order_release);
+    m_uiState.gesturesMask[slot].store(row.gesturesMask, std::memory_order_release);
+}
+
+FroggersV2ControlCore::EffectiveRow
+FroggersV2ControlCore::slotViewEffective(const VisibleSlot& visible) const
+{
+    const ParamState& param = m_params[m_activePage][visible.row];
+    if (visible.isTarget)
+    {
+        // Dedicated target/Crispy cell: shows the row's base value only.
+        EffectiveRow target;
+        const float blended = blendedSceneCenter(param);
+        target.sceneLeft = blended;
+        target.sceneRight = blended;
+        target.effective = blended;
+        target.arcMin = 0.0f;
+        target.arcMax = 1.0f;
+        return target;
+    }
+    if (m_modView.open)
+    {
+        // Detail-grid lane cell: centre = no depth; the CV LED (modulator bit)
+        // lights only for the row's active source, and its bipolar depth drives
+        // the effective dot and the symmetric arc bounds.
+        const bool selected = visible.modIndex < kNumModSources && param.modSource[0] == visible.modIndex;
+        const float depth = selected ? param.modDepth[0] : 0.0f;
+        const float span = 0.5f * std::abs(depth);
+        EffectiveRow lane;
+        lane.sceneLeft = 0.5f;
+        lane.sceneRight = 0.5f;
+        lane.effective = clamp01(0.5f + 0.5f * depth);
+        lane.arcMin = clamp01(0.5f - span);
+        lane.arcMax = clamp01(0.5f + span);
+        lane.modulatorsMask = selected ? static_cast<uint16_t>(1u) : static_cast<uint16_t>(0u);
+        return lane;
+    }
+    return computeEffective(param);
+}
+
 void FroggersV2ControlCore::populateUiState()
 {
     for (uint8_t slot = 0; slot < m_visibleCount; ++slot)
     {
-        const VisibleSlot& visible = m_visibleSlots[slot];
-        if (visible.isTarget)
-        {
-            const ParamState& target = m_params[m_activePage][visible.row];
-            const float blended = blendedSceneCenter(target);
-            m_uiState.sceneLeft[slot].store(blended, std::memory_order_release);
-            m_uiState.sceneRight[slot].store(blended, std::memory_order_release);
-            m_uiState.effective[slot].store(blended, std::memory_order_release);
-            m_uiState.arcMin[slot].store(0.0f, std::memory_order_release);
-            m_uiState.arcMax[slot].store(1.0f, std::memory_order_release);
-            m_uiState.modulatorsMask[slot].store(0, std::memory_order_release);
-            m_uiState.gesturesMask[slot].store(0, std::memory_order_release);
-            continue;
-        }
-        const EffectiveRow row = effectiveRow(m_activePage, visible.row);
-        m_uiState.sceneLeft[slot].store(row.sceneLeft, std::memory_order_release);
-        m_uiState.sceneRight[slot].store(row.sceneRight, std::memory_order_release);
-        m_uiState.effective[slot].store(row.effective, std::memory_order_release);
-        m_uiState.arcMin[slot].store(row.arcMin, std::memory_order_release);
-        m_uiState.arcMax[slot].store(row.arcMax, std::memory_order_release);
-        m_uiState.modulatorsMask[slot].store(row.modulatorsMask, std::memory_order_release);
-        m_uiState.gesturesMask[slot].store(row.gesturesMask, std::memory_order_release);
+        storeSlotState(slot, slotViewEffective(m_visibleSlots[slot]));
     }
 
+    EffectiveRow empty;
+    empty.arcMax = 0.0f;
     for (uint8_t slot = m_visibleCount; slot < kUiSlots; ++slot)
     {
-        m_uiState.sceneLeft[slot].store(0.0f, std::memory_order_release);
-        m_uiState.sceneRight[slot].store(0.0f, std::memory_order_release);
-        m_uiState.effective[slot].store(0.0f, std::memory_order_release);
-        m_uiState.arcMin[slot].store(0.0f, std::memory_order_release);
-        m_uiState.arcMax[slot].store(0.0f, std::memory_order_release);
-        m_uiState.modulatorsMask[slot].store(0, std::memory_order_release);
-        m_uiState.gesturesMask[slot].store(0, std::memory_order_release);
+        storeSlotState(slot, empty);
     }
 
     m_uiState.activePage.store(m_activePage, std::memory_order_release);
@@ -475,20 +537,36 @@ void FroggersV2ControlCore::onParamTurn(uint8_t page, uint8_t slot, float delta)
     {
         return;
     }
-    const uint8_t activeRow = slotToRow(page, slot);
-    if (activeRow >= rowsForPage(page))
-    {
-        return;
-    }
+    // In the 4x4 parameter-detail grid the slot indexes a detail cell (a mod
+    // lane or the dedicated target/Crispy cell), NOT a page row, so this must
+    // be handled before the row-based slotToRow guard below.
     if (m_modView.open && page == m_activePage)
     {
-        const VisibleSlot visible = m_visibleSlots[slot];
-        if (visible.isTarget)
+        if (slot >= m_visibleCount)
         {
             return;
         }
-        m_params[page][visible.row].modDepth[visible.modIndex] = clampSigned(
-            m_params[page][visible.row].modDepth[visible.modIndex] + delta * kTurnStep);
+        const VisibleSlot visible = m_visibleSlots[slot];
+        ParamState& detailParam = m_params[page][visible.row];
+        if (visible.isTarget)
+        {
+            // Dedicated target/Crispy encoder edits the row's base value.
+            const uint8_t targetScene = activeSceneOrdinal();
+            detailParam.sceneCenter[targetScene] =
+                clamp01(detailParam.sceneCenter[targetScene] + delta * kTurnStep);
+            return;
+        }
+        // Only the row's active source lane exposes an editable bipolar depth;
+        // its value lives in the canonical slot 0.
+        if (visible.modIndex < kNumModSources && detailParam.modSource[0] == visible.modIndex)
+        {
+            detailParam.modDepth[0] = clampSigned(detailParam.modDepth[0] + delta * kTurnStep);
+        }
+        return;
+    }
+    const uint8_t activeRow = slotToRow(page, slot);
+    if (activeRow >= rowsForPage(page))
+    {
         return;
     }
     ParamState& param = m_params[page][activeRow];
@@ -514,13 +592,24 @@ void FroggersV2ControlCore::onParamPress(uint8_t page, uint8_t slot)
     }
     if (m_modView.open)
     {
+        if (slot >= m_visibleCount)
+        {
+            return;
+        }
         const VisibleSlot visible = m_visibleSlots[slot];
         if (visible.isTarget)
         {
             m_modView.open = false;
             m_modView.targetRow = kNoSelection;
             rebuildVisibleSlots();
+            return;
         }
+        // Pressing a lane cell in the 16-cell detail grid selects that lane as
+        // the row's single route; pressing the already-selected lane clears the
+        // route. The route lives in the canonical slot 0 (single-source model).
+        ParamState& param = m_params[page][visible.row];
+        const bool alreadySelected = param.modSource[0] == visible.modIndex;
+        setSingleModSource(param, alreadySelected ? kNoSelection : visible.modIndex);
         return;
     }
     const uint8_t row = slotToRow(page, slot);
@@ -564,29 +653,9 @@ void FroggersV2ControlCore::onModSourceAssign(uint8_t page, uint8_t row, uint8_t
     {
         return;
     }
-    ParamState& param = m_params[page][row];
-    uint8_t insert = kNoSelection;
-    for (uint8_t i = 0; i < kNumModSources; ++i)
-    {
-        if (param.modSource[i] == source)
-        {
-            insert = i;
-            break;
-        }
-        if (param.modSource[i] == kNoSelection && insert == kNoSelection)
-        {
-            insert = i;
-        }
-    }
-    if (insert == kNoSelection)
-    {
-        insert = 0;
-    }
-    param.modSource[insert] = source < kNumModSources ? source : kNoSelection;
-    if (param.modSource[insert] == kNoSelection)
-    {
-        param.modDepth[insert] = 0.0f;
-    }
+    // Compact route pickers are single-select: choosing a source replaces the
+    // row's route; choosing "None" (source == kNoSelection) clears it.
+    setSingleModSource(m_params[page][row], source);
     if (m_modView.open && m_modView.targetRow == row && page == m_activePage)
     {
         rebuildVisibleSlots();
@@ -953,22 +1022,20 @@ void FroggersV2ControlCore::rebuildVisibleSlots()
     }
     if (m_modView.open)
     {
-        const ParamState& param = m_params[m_activePage][m_modView.targetRow];
-        uint8_t count = 0;
-        for (uint8_t mod = 0; mod < kNumModSources; ++mod)
+        // The parameter-detail grid is a fixed 16-cell layout (kUiSlots): every
+        // permanent modulation lane in manifest order, plus one dedicated
+        // target/Crispy cell for the row's own base value. Eligibility/
+        // availability for each lane is a UI concern (manifest projection),
+        // not something the control core filters out of the grid.
+        for (uint8_t lane = 0; lane < kNumModSources; ++lane)
         {
-            if (param.modSource[mod] == kNoSelection)
-            {
-                continue;
-            }
-            m_visibleSlots[count].isTarget = false;
-            m_visibleSlots[count].row = m_modView.targetRow;
-            m_visibleSlots[count].modIndex = mod;
-            ++count;
+            m_visibleSlots[lane].isTarget = false;
+            m_visibleSlots[lane].row = m_modView.targetRow;
+            m_visibleSlots[lane].modIndex = lane;
         }
-        m_visibleSlots[count].isTarget = true;
-        m_visibleSlots[count].row = m_modView.targetRow;
-        m_visibleCount = static_cast<uint8_t>(count + 1);
+        m_visibleSlots[kNumModSources].isTarget = true;
+        m_visibleSlots[kNumModSources].row = m_modView.targetRow;
+        m_visibleCount = kUiSlots;
         return;
     }
     const uint8_t rows = rowsForPage(m_activePage);

@@ -52,7 +52,10 @@ bool test_manifest_lane_affects_effective_value()
     press.page = 0;
     press.slot = 0;
     pushAndProcess(core, press);
-    pushAndProcess(core, froggers_v2::MessageIn::ParamTurn(0, 0, 40.0f));
+    // The parameter-detail grid is a fixed 16-cell layout where cell N maps to
+    // manifest lane N, so the depth for the assigned source (lane 3, VCO 1 EF)
+    // is edited via detail cell 3, not cell 0.
+    pushAndProcess(core, froggers_v2::MessageIn::ParamTurn(0, 3, 40.0f));
 
     froggers_v2::MessageIn sourceClock;
     sourceClock.type = froggers_v2::MessageIn::Type::Clock;
