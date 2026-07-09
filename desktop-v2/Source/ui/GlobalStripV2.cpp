@@ -60,6 +60,12 @@ GlobalStripV2::GlobalStripV2()
         m_core->processBus();
     };
 
+    // Rand Mods randomizes LIVE mod depths on the control core (and, per
+    // scope, captures into written sequencer step snapshots); this is
+    // distinct from the sequencer panel's Rand-seq dice, which randomizes
+    // step scene slots. See SequencerPanelComponent's dice tooltip.
+    m_randMods.setTooltip("Randomize live mod depths (not step scene slots)");
+
     m_shift.onClick = [this]() { pushShift(m_shift.getToggleState()); };
     m_randAll.onClick = [this]() { pushRandAll(); };
     m_randMods.onClick = [this]() { pushRandMods(); };

@@ -19,6 +19,10 @@ HostedMainComponentV2::HostedMainComponentV2(froggers_v2::FroggersV2AppCoreFacad
     m_globalStrip.resolveRandSeqScope = [this]() {
         return m_sequencerPanel.getRandSeqScope();
     };
+    // Carryover C1: let the sequencer's Rand-seq dice read the global
+    // All Steps / Current Step scope so it can resolve Pattern scope instead
+    // of being stuck at Step (mirrors resolveRandSeqScope above).
+    m_sequencerPanel.resolveAllStepsScope = [this]() { return m_globalStrip.allStepsScope(); };
     m_sequencerPanel.bind(
         &m_facade.audioEngine().getSequencer(), &m_facade.controlCore(), &m_facade.hostBridge());
 
@@ -50,11 +54,6 @@ void HostedMainComponentV2::wireCallbacks()
                                             m_facade.host(),
                                             m_carousel,
                                             m_lastModRoutesVersion);
-}
-
-void HostedMainComponentV2::pushRandomizeMod(uint8_t page)
-{
-    desktop_v2::pushRandomizeMod(m_hostCallbacks, page);
 }
 
 void HostedMainComponentV2::pushSelectPage(uint8_t page)

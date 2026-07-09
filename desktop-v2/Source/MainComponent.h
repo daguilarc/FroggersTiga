@@ -34,7 +34,6 @@ private:
     void timerCallback() override;
     void wireCallbacks();
     void pushSelectPage(uint8_t page);
-    void pushRandomizeMod(uint8_t page);
     void updateShiftFromKeyboard();
     void drainMidiUiActions();
     void wireMidiCvCallbacks();

@@ -179,7 +179,11 @@ SequencerPanelComponent::SequencerPanelComponent()
     addAndMakeVisible(m_randSeqLabel);
 
     m_dice.setImages(makeDiceFace());
-    m_dice.setTooltip("Randomize sequencer steps (scene slots)");
+    // Rand-seq dice randomizes step scene slots (this step, or every written
+    // step when the global-command band's All Steps scope is selected) --
+    // distinct from the global Rand Mods button, which randomizes live mod
+    // depths. See GlobalStripV2's Rand Mods tooltip.
+    m_dice.setTooltip("Randomize step scene slots (not live mod depths)");
     m_dice.onClick = [this]() { pushDiceRand(); };
     addAndMakeVisible(m_dice);
 
@@ -439,11 +443,21 @@ juce::Rectangle<int> SequencerPanelComponent::speedButtonBounds() const
 
 void SequencerPanelComponent::pushDiceRand()
 {
-    // Step scope only: All Steps is selected in the global-command band, not
-    // here (see getRandSeqScope() above). onRandSequencerStep resolves the
+    // Scope comes from the global-command band's All Steps / Current Step
+    // radios via resolveAllStepsScope (mirrors how GlobalStripV2::pushRandMods
+    // reads global scope for Rand Mods) -- the panel itself owns no scope
+    // opinion (see getRandSeqScope() below). onRandSequencerStep resolves the
     // actual target step (playhead while playing, edit step while stopped)
-    // regardless of the slot value passed for Step scope.
-    pushRandSequencerStep(m_sequencer != nullptr ? m_sequencer->m_editStep : 0, froggers_v2::kRandSeqScopeStep);
+    // regardless of the slot value passed for Step scope; for Pattern scope
+    // it targets every written step instead.
+    const bool allSteps = resolveAllStepsScope != nullptr && resolveAllStepsScope();
+    const uint8_t scope = allSteps ? froggers_v2::kRandSeqScopePattern : froggers_v2::kRandSeqScopeStep;
+    pushRandSequencerStep(m_sequencer != nullptr ? m_sequencer->m_editStep : 0, scope);
+}
+
+void SequencerPanelComponent::pushDiceRandForTest()
+{
+    pushDiceRand();
 }
 
 void SequencerPanelComponent::showStepContextMenu(int step)

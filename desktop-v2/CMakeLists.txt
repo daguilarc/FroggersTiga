@@ -280,7 +280,9 @@ add_executable(GlobalControlParity_test
     tests/GlobalControlParity_test.cpp
     Source/ui/GlobalStripV2.cpp
     Source/ui/EncoderRingComponent.cpp
+    Source/ui/SequencerPanelComponent.cpp
     Source/control/FroggersV2ControlCore.cpp
+    Source/control/FroggersV2HostBridge.cpp
 )
 target_include_directories(GlobalControlParity_test PRIVATE
     Source

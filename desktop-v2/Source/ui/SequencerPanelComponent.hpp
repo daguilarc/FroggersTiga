@@ -23,6 +23,13 @@ public:
     void refresh();
     uint8_t getRandSeqScope() const;
 
+    // Queried by pushDiceRand() to resolve whether the Rand-seq dice should
+    // target Pattern scope (every written step) or Step scope (just the
+    // current/playhead step). Wired by the owner to GlobalStripV2's
+    // allStepsScope(), the global-command band's single scope authority
+    // (desktop-v2-operator-truth-repair Packet 6 carryover C1).
+    std::function<bool()> resolveAllStepsScope;
+
     juce::Rectangle<int> getStepBounds(int stepIndex) const;
     juce::Rectangle<int> directionButtonBounds() const;
     juce::Rectangle<int> speedButtonBounds() const;
@@ -40,6 +47,11 @@ public:
     void cancelLongPressForTest(int step);
     void fireLongPressForTest();
     bool isLongPressPendingForTest() const;
+
+    // Rand-seq dice test hook: mirrors the other *ForTest members above by
+    // driving the exact production path (m_dice.onClick) without needing a
+    // live JUCE click event.
+    void pushDiceRandForTest();
 
     void paint(juce::Graphics& g) override;
     void resized() override;

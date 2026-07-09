@@ -6,21 +6,9 @@
 
 AdsrPagePanel::AdsrPagePanel()
 {
-    m_randomize.onClick = [this]() {
-        if (onRandomize)
-        {
-            onRandomize();
-        }
-    };
-    m_randomizeMod.onClick = [this]() {
-        if (onRandomizeMod)
-        {
-            onRandomizeMod();
-        }
-    };
-
-    addAndMakeVisible(m_randomize);
-    addAndMakeVisible(m_randomizeMod);
+    // Per-page Randomize/Randmod header buttons removed (desktop-v2
+    // "Randomization affordances are not duplicated"): global Rand All /
+    // Rand Mods in the command band are the single surface now.
 
     m_encoderViewport.setViewedComponent(&m_encoderContent, false);
     m_encoderViewport.setScrollBarsShown(false, false);
@@ -190,12 +178,6 @@ void AdsrPagePanel::layoutRows()
     area.removeFromLeft(DesktopV2ChromeLayout::kChromePad);
     area.removeFromRight(DesktopV2ChromeLayout::kChromePad);
     const auto columns = DesktopV2ChromeLayout::moduleRowColumns(area.getWidth());
-
-    auto btnRow = area.removeFromTop(DesktopV2ChromeLayout::kTextButtonH);
-    m_randomize.setBounds(btnRow.removeFromLeft(DesktopV2ChromeLayout::kRandomizeButtonW));
-    btnRow.removeFromLeft(DesktopV2ChromeLayout::kSectionGap);
-    m_randomizeMod.setBounds(btnRow.removeFromLeft(DesktopV2ChromeLayout::kRandModButtonW));
-    area.removeFromTop(DesktopV2ChromeLayout::kSectionGap);
 
     if (detailGridOpen())
     {

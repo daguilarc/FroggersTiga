@@ -19,6 +19,23 @@ public:
 
     std::function<uint8_t()> resolveRandSeqScope;
 
+    // Exposes the global-command band's All Steps / Current Step scope radio
+    // state so the sequencer panel's Rand-seq dice can resolve Pattern scope
+    // when All Steps is selected (desktop-v2-operator-truth-repair Packet 6
+    // carryover C1: the panel-local toggle Packet 5 removed left the dice
+    // stuck at Step scope; this is the single authority it now reads).
+    bool allStepsScope() const { return m_allStepsScope; }
+
+    // Test hooks: mirror SequencerPanelComponent's *ForTest convention by
+    // driving the exact production path without a live JUCE click event.
+    void triggerRandModsForTest() { pushRandMods(); }
+    void setAllStepsScopeForTest(bool allSteps)
+    {
+        m_allStepsScope = allSteps;
+        m_scopeAllSteps.setToggleState(allSteps, juce::dontSendNotification);
+        m_scopeCurrentStep.setToggleState(!allSteps, juce::dontSendNotification);
+    }
+
     void resized() override;
 
 private:

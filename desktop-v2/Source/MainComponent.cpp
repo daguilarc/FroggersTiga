@@ -55,6 +55,10 @@ MainComponent::MainComponent()
     m_globalStrip.resolveRandSeqScope = [this]() {
         return m_sequencerPanel.getRandSeqScope();
     };
+    // Carryover C1: let the sequencer's Rand-seq dice read the global
+    // All Steps / Current Step scope so it can resolve Pattern scope instead
+    // of being stuck at Step (mirrors resolveRandSeqScope above).
+    m_sequencerPanel.resolveAllStepsScope = [this]() { return m_globalStrip.allStepsScope(); };
     m_sequencerPanel.bind(
         &m_audio->getSequencer(), &m_facade.controlCore(), &m_facade.hostBridge());
 
@@ -124,11 +128,6 @@ void MainComponent::wireCallbacks()
                                             m_facade.host(),
                                             m_carousel,
                                             m_lastModRoutesVersion);
-}
-
-void MainComponent::pushRandomizeMod(uint8_t page)
-{
-    desktop_v2::pushRandomizeMod(m_hostCallbacks, page);
 }
 
 void MainComponent::pushSelectPage(uint8_t page)

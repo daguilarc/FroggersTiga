@@ -27,7 +27,6 @@ private:
     void timerCallback() override;
     void wireCallbacks();
     void pushSelectPage(uint8_t page);
-    void pushRandomizeMod(uint8_t page);
     void updateShiftFromKeyboard();
 
     froggers_v2::FroggersV2AppCoreFacade& m_facade;
