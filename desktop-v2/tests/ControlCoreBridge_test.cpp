@@ -396,6 +396,68 @@ bool test_bridge_sync_and_rand_all_scope()
     return true;
 }
 
+bool test_sync_to_host_reaches_non_active_page()
+{
+    // Packet 3 regression coverage: syncToHost must push every page's rows to
+    // the host every frame, not only the carousel's currently active page.
+    // Before the fix, a Drive/Filter (or any non-visible page) change would
+    // sit in FroggersV2ControlCore until the operator happened to revisit
+    // that page, silently failing to reach audio in the meantime.
+    FroggersV2ControlCore core;
+    DesktopHostIO host;
+    DelayState delay;
+    host.setDelayState(&delay);
+    host.m_hostKind = SimHostKind::DesktopV2;
+    host.Init();
+    host.SetSampleRate(44100.0f);
+
+    FroggersV2HostBridge bridge(core, host);
+    bridge.syncToHost();
+
+    constexpr uint8_t kNonActivePage = 4; // "Drive" page (manifest page name table).
+    constexpr uint8_t kRow = 0;
+    if (core.activePage() != 0)
+    {
+        std::printf("FAIL: test precondition violated, expected default active page 0\n");
+        return false;
+    }
+
+    const float before = host.GetPageParam(kNonActivePage, kRow);
+
+    // Edit a row on a page that is never selected active (no SelectPage message
+    // is ever pushed), mirroring turning a Drive/Filter knob while looking at
+    // a different carousel page.
+    pushAndProcess(core, MessageIn::ParamTurn(kNonActivePage, kRow, 10.0f));
+
+    if (core.activePage() != 0)
+    {
+        std::printf("FAIL: editing a non-active page must not switch the active carousel page\n");
+        return false;
+    }
+
+    bridge.syncToHost();
+
+    const float expected = core.effectiveRow(kNonActivePage, kRow).effective;
+    const float actual = host.GetPageParam(kNonActivePage, kRow);
+    if (!nearlyEqual(actual, expected, 2.0e-3f))
+    {
+        std::printf(
+            "FAIL: non-active page row did not reach host: expected=%f got=%f\n",
+            expected,
+            actual);
+        return false;
+    }
+    if (nearlyEqual(actual, before))
+    {
+        std::printf(
+            "FAIL: non-active page row unchanged by sync (before=%f after=%f)\n",
+            before,
+            actual);
+        return false;
+    }
+    return true;
+}
+
 bool test_rand_page_updates_scenes()
 {
     FroggersV2ControlCore core;
@@ -1151,6 +1213,10 @@ int main()
         return 1;
     }
     if (!test_bridge_sync_and_rand_all_scope())
+    {
+        return 1;
+    }
+    if (!test_sync_to_host_reaches_non_active_page())
     {
         return 1;
     }

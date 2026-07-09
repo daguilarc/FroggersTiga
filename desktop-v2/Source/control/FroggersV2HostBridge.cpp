@@ -145,16 +145,19 @@ void FroggersV2HostBridge::syncToHost()
 {
     DelayState fallbackDelay;
     DelayState& delay = m_host.m_delay != nullptr ? *m_host.m_delay : fallbackDelay;
-    const uint8_t page = m_core.activePage();
-    for (uint8_t slot = 0; slot < m_core.visibleCount(); ++slot)
+    // Push every page's rows every frame, not just the carousel's active page,
+    // so FX changes on a non-visible page (e.g. Drive/Filter) reach the host
+    // immediately instead of waiting for that page to be revisited. Row counts
+    // come from the manifest-backed HostParameterInventoryV2 (single authority),
+    // matching syncAllModRoutesToHost/syncFromHostModRoutes below.
+    for (uint8_t page = 0; page < kNumHostPages; ++page)
     {
-        const uint8_t row = m_core.visibleRowForSlot(slot);
-        if (row == kNoSelection)
+        const uint8_t rowLimit = HostParameterInventoryV2::rowsForUiPage(page);
+        for (uint8_t row = 0; row < rowLimit; ++row)
         {
-            continue;
+            const FroggersV2ControlCore::EffectiveRow effective = m_core.effectiveRow(page, row);
+            HostParameterRoutingV2::applyPageKnob(page, row, effective.effective, m_host, delay);
         }
-        const FroggersV2ControlCore::EffectiveRow effective = m_core.effectiveRow(page, row);
-        HostParameterRoutingV2::applyPageKnob(page, row, effective.effective, m_host, delay);
     }
 
     m_host.SetGlobalCrunchy(m_core.globalCrunchy());
