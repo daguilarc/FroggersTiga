@@ -31,6 +31,12 @@ public:
     void setSourceGroup(GlobalOscilloscopeSourceGroup group);
     GlobalOscilloscopeSourceGroup sourceGroup() const;
 
+    // Test/inspection accessors: expose the fixed-capacity trace bindings so
+    // coverage can assert trace count and manifest-tap mapping without
+    // reaching into private state.
+    size_t traceCount() const;
+    uint8_t traceModIndex(size_t trace) const;
+
     void resized() override;
 
 private:

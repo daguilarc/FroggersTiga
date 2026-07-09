@@ -119,6 +119,20 @@ GlobalOscilloscopeSourceGroup GlobalOscilloscopeDisplay::sourceGroup() const
     return m_sourceGroup;
 }
 
+size_t GlobalOscilloscopeDisplay::traceCount() const
+{
+    return m_bindingCount;
+}
+
+uint8_t GlobalOscilloscopeDisplay::traceModIndex(size_t trace) const
+{
+    if (trace >= m_bindingCount)
+    {
+        return UINT8_MAX;
+    }
+    return m_bindings[trace].modIndex;
+}
+
 void GlobalOscilloscopeDisplay::rebuildTraceBindings()
 {
     m_bindingCount = 0;
