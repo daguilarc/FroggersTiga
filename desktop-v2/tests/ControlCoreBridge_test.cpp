@@ -1180,6 +1180,191 @@ bool test_rand_mods_per_step_snapshots()
     }
     return true;
 }
+
+// 4.8: single-authority randomization tests covering the executeRandomization
+// adapter that GlobalStripV2 now routes through (see spec scenarios "Global
+// Rand Mods randomizes live mod depths", "Global Rand Mods is not
+// sequencer-only", "Rand All respects scene scope", "Rand Mods respects step
+// scope").
+
+bool test_rand_mods_changes_live_depths_without_sequencer()
+{
+    FroggersV2ControlCore core;
+
+    // Assign live mod routes on two different pages -- including the Delay
+    // page (kDelayUiPage == 5, HostParameterInventoryV2.hpp) -- matching an
+    // operator who turned module rows onto a modulation source before
+    // hitting Rand Mods. No sequencer is bound at all, which exercises
+    // "Global Rand Mods is not sequencer-only": the live depths must still
+    // randomize.
+    MessageIn assignAudio;
+    assignAudio.type = MessageIn::Type::ModSourceAssign;
+    assignAudio.page = 0;
+    assignAudio.slot = 0;
+    assignAudio.index = 2;
+    pushAndProcess(core, assignAudio);
+
+    MessageIn assignDelay;
+    assignDelay.type = MessageIn::Type::ModSourceAssign;
+    assignDelay.page = 5;
+    assignDelay.slot = 0;
+    assignDelay.index = 3;
+    pushAndProcess(core, assignDelay);
+
+    const float audioDepthBefore = core.assignedModDepth(0, 0);
+    const float delayDepthBefore = core.assignedModDepth(5, 0);
+
+    core.executeRandomization(
+        FroggersV2ControlCore::RandomizationCommand::RandMods, 0, froggers_v2::kRandSeqScopeStep);
+
+    const float audioDepthAfterFirst = core.assignedModDepth(0, 0);
+    const float delayDepthAfterFirst = core.assignedModDepth(5, 0);
+    if (nearlyEqual(audioDepthAfterFirst, audioDepthBefore))
+    {
+        std::printf("FAIL: Rand Mods did not change the live mod depth on page 0 row 0\n");
+        return false;
+    }
+    if (nearlyEqual(delayDepthAfterFirst, delayDepthBefore))
+    {
+        std::printf("FAIL: Rand Mods did not change the live mod depth on the Delay page (5)\n");
+        return false;
+    }
+
+    // Revert round trip / no-gaming proof: a second Rand Mods call must move
+    // the live depth again. A hardcoded return value or a "randomize the
+    // snapshot only, leave live state as a copy" stub would produce the same
+    // depth on both calls.
+    core.executeRandomization(
+        FroggersV2ControlCore::RandomizationCommand::RandMods, 0, froggers_v2::kRandSeqScopeStep);
+    const float audioDepthAfterSecond = core.assignedModDepth(0, 0);
+    if (nearlyEqual(audioDepthAfterSecond, audioDepthAfterFirst))
+    {
+        std::printf("FAIL: second Rand Mods call did not move the live depth again (looks gamed/cached)\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_rand_mods_step_scope_writes_only_written_steps()
+{
+    FroggersV2ControlCore core;
+    SequencerState seq;
+    seq.m_editStep = 2;
+    core.setSequencerState(&seq);
+
+    seq.m_slots[2].written = true;
+    seq.m_slots[3].written = false;
+    seq.m_slots[3].payload.modSource[0][0] = froggers_v2::kNoSelection;
+
+    MessageIn assign;
+    assign.type = MessageIn::Type::ModSourceAssign;
+    assign.page = 0;
+    assign.slot = 0;
+    assign.index = 4;
+    pushAndProcess(core, assign);
+
+    core.executeRandomization(
+        FroggersV2ControlCore::RandomizationCommand::RandMods, 0, froggers_v2::kRandSeqScopeStep);
+
+    if (seq.m_slots[2].payload.modSource[0][0] != 4)
+    {
+        std::printf(
+            "FAIL: Rand Mods (Current Step) did not capture the live mod route into the written edit step\n");
+        return false;
+    }
+    if (seq.m_slots[3].written || seq.m_slots[3].payload.modSource[0][0] != froggers_v2::kNoSelection)
+    {
+        std::printf("FAIL: Rand Mods (Current Step) touched an unwritten step\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_rand_mods_all_steps_scope_targets_only_written_steps()
+{
+    FroggersV2ControlCore core;
+    SequencerState seq;
+    core.setSequencerState(&seq);
+
+    seq.m_slots[0].written = true;
+    seq.m_slots[1].written = false;
+    seq.m_slots[1].payload.modSource[0][0] = froggers_v2::kNoSelection;
+
+    MessageIn assign;
+    assign.type = MessageIn::Type::ModSourceAssign;
+    assign.page = 0;
+    assign.slot = 0;
+    assign.index = 5;
+    pushAndProcess(core, assign);
+
+    core.executeRandomization(
+        FroggersV2ControlCore::RandomizationCommand::RandMods, 0, froggers_v2::kRandSeqScopePattern);
+
+    if (seq.m_slots[0].payload.modSource[0][0] != 5)
+    {
+        std::printf("FAIL: All Steps Rand Mods did not write the live mod route into written step 0\n");
+        return false;
+    }
+    if (seq.m_slots[1].written || seq.m_slots[1].payload.modSource[0][0] != froggers_v2::kNoSelection)
+    {
+        std::printf("FAIL: All Steps Rand Mods wrote into (or marked written) an unwritten step\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_rand_all_respects_scene_scope()
+{
+    FroggersV2ControlCore core;
+
+    // Default left/right scene ordinals (0/1) and blend (0.5) resolve
+    // activeSceneOrdinal() to scene index 1; scene index 0 is the
+    // non-active slot that Current Scene scope must leave untouched.
+    const uint8_t leftBefore = core.uiState().leftSceneOrdinal.load(std::memory_order_acquire);
+    const uint8_t rightBefore = core.uiState().rightSceneOrdinal.load(std::memory_order_acquire);
+    const float blendBefore = core.uiState().sceneBlend.load(std::memory_order_acquire);
+    const float nonActiveSceneBefore = core.effectiveRow(0, 0).sceneLeft;
+    const float activeSceneBefore = core.effectiveRow(0, 0).sceneRight;
+
+    core.executeRandomization(
+        FroggersV2ControlCore::RandomizationCommand::RandAll, froggers_v2::kRandSceneScopeCurrent, 0);
+
+    const uint8_t leftAfter = core.uiState().leftSceneOrdinal.load(std::memory_order_acquire);
+    const uint8_t rightAfter = core.uiState().rightSceneOrdinal.load(std::memory_order_acquire);
+    const float blendAfter = core.uiState().sceneBlend.load(std::memory_order_acquire);
+    if (leftAfter != leftBefore || rightAfter != rightBefore || !nearlyEqual(blendAfter, blendBefore))
+    {
+        std::printf("FAIL: Current Scene Rand All changed the scene endpoints or blend\n");
+        return false;
+    }
+    const float nonActiveSceneAfter = core.effectiveRow(0, 0).sceneLeft;
+    if (!nearlyEqual(nonActiveSceneAfter, nonActiveSceneBefore))
+    {
+        std::printf("FAIL: Current Scene Rand All mutated the non-active scene slot\n");
+        return false;
+    }
+    const float activeSceneAfter = core.effectiveRow(0, 0).sceneRight;
+    if (nearlyEqual(activeSceneAfter, activeSceneBefore))
+    {
+        std::printf("FAIL: Current Scene Rand All did not randomize the active scene edit target\n");
+        return false;
+    }
+
+    // All Scenes scope (the other radio state) must still move the scene
+    // endpoints/blend, proving the scope radio genuinely changes behavior
+    // rather than being decorative.
+    core.executeRandomization(
+        FroggersV2ControlCore::RandomizationCommand::RandAll, froggers_v2::kRandSceneScopeAll, 0);
+    const uint8_t leftAfterAll = core.uiState().leftSceneOrdinal.load(std::memory_order_acquire);
+    const uint8_t rightAfterAll = core.uiState().rightSceneOrdinal.load(std::memory_order_acquire);
+    const float blendAfterAll = core.uiState().sceneBlend.load(std::memory_order_acquire);
+    if (leftAfterAll == leftAfter && rightAfterAll == rightAfter && nearlyEqual(blendAfterAll, blendAfter))
+    {
+        std::printf("FAIL: All Scenes Rand All did not randomize the scene endpoints or blend\n");
+        return false;
+    }
+    return true;
+}
 } // namespace
 
 int main()
@@ -1281,6 +1466,22 @@ int main()
         return 1;
     }
     if (!test_rand_mods_per_step_snapshots())
+    {
+        return 1;
+    }
+    if (!test_rand_mods_changes_live_depths_without_sequencer())
+    {
+        return 1;
+    }
+    if (!test_rand_mods_step_scope_writes_only_written_steps())
+    {
+        return 1;
+    }
+    if (!test_rand_mods_all_steps_scope_targets_only_written_steps())
+    {
+        return 1;
+    }
+    if (!test_rand_all_respects_scene_scope())
     {
         return 1;
     }

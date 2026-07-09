@@ -23,8 +23,14 @@ constexpr uint8_t kNoSelection = 255;
 constexpr uint8_t kRandSeqScopeStep = 0;
 constexpr uint8_t kRandSeqScopePattern = 1;
 constexpr uint8_t kRandSeqScopeFullStep = 2;
-constexpr uint8_t kRandSceneScopeCurrent = 0;
-constexpr uint8_t kRandSceneScopeAll = 1;
+// kRandSceneScopeAll == 0 matches MessageIn's default-constructed `page`
+// field so a RandAll message pushed without an explicit scope (legacy
+// call sites, and FroggersV2AppCoreFacade_test.cpp /
+// GlobalControlParity_test.cpp, which construct bare RandAll messages)
+// keeps randomizing scene endpoints/blend exactly as before scope support
+// existed. Current-scene targeting is the opt-in, non-default value.
+constexpr uint8_t kRandSceneScopeAll = 0;
+constexpr uint8_t kRandSceneScopeCurrent = 1;
 constexpr uint8_t kModDetailCellCount = manifest::kModDetailCellCount;
 constexpr uint8_t kUiSlots = kModDetailCellCount;
 // The parameter-detail grid enumerates every permanent modulation lane plus one
@@ -47,6 +53,7 @@ struct MessageIn
         ModSourceAssign,
         SelectPage,
         RandAll,
+        RandMods,
         RandPage,
         ResetSequencerStep,
         RandSequencerStep,
@@ -122,6 +129,17 @@ struct FroggersV2UIState
 class FroggersV2ControlCore
 {
 public:
+    // Single authority for randomization commands. UI components (GlobalStripV2
+    // and, transitively, anything wired through DesktopV2HostCallbacks) MUST
+    // route Rand All / Rand Mods through executeRandomization() below rather
+    // than constructing and pushing MessageIn values themselves, so there is
+    // exactly one place that resolves scope into control-core mutation.
+    enum class RandomizationCommand : uint8_t
+    {
+        RandAll,
+        RandMods,
+    };
+
     struct EffectiveRow
     {
         float sceneLeft = 0.0f;
@@ -182,6 +200,13 @@ public:
     float externalMidiMod(uint8_t slot) const;
     EffectiveRow effectiveRow(uint8_t page, uint8_t row) const;
 
+    // The sole randomization mutator entry point for UI callers. sceneScope is
+    // consulted for RandAll (kRandSceneScopeAll / kRandSceneScopeCurrent);
+    // stepScope is consulted for RandMods (kRandSeqScopeStep /
+    // kRandSeqScopePattern). Unused scope arguments are ignored by the
+    // relevant command.
+    void executeRandomization(RandomizationCommand command, uint8_t sceneScope, uint8_t stepScope);
+
 private:
     struct ParamState
     {
@@ -219,7 +244,8 @@ private:
     void onSceneSelect(uint8_t sceneOrdinal);
     void onModSourceAssign(uint8_t page, uint8_t row, uint8_t source);
     static void setSingleModSource(ParamState& param, uint8_t source);
-    void onRandAll();
+    void onRandAll(uint8_t sceneScope);
+    void onRandMods(uint8_t stepScope);
     void onRandPage(uint8_t page);
     void onResetSequencerStep(uint8_t step);
     void onRandSequencerStep(uint8_t step, uint8_t scope);
@@ -227,8 +253,15 @@ private:
     void randomizeModIntoSnapshot(SequencerSlotPayload& snapshot);
     void randomizeSceneSlotValues(float (&scenes)[kNumScenes]);
     void randomizeSceneSlotValues(std::array<float, kNumScenes>& scenes);
-    void randomizeSceneSlotValues(ParamState& param);
+    void randomizeSceneSlotValues(ParamState& param, uint8_t sceneScope);
     void randomizeSceneSlotsInto(uint8_t page);
+    void randomizeSceneSlotsInto(uint8_t page, uint8_t sceneScope);
+    // Shared authority for the "live mod depth" randomization transform used
+    // by both Rand All's mod portion and Rand Mods (4.4): one implementation,
+    // two callers, instead of duplicating the per-row/per-source loop.
+    void randomizeLiveModDepths(uint8_t page);
+    void randomizeLiveModDepths();
+    void captureModRoutesIntoSnapshot(SequencerSlotPayload& snapshot) const;
     void randomizeSceneEndpointsAndBlend();
     void zeroStepGestures(SequencerSlotPayload& snapshot);
     void resetCrunchy();

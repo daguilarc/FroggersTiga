@@ -81,7 +81,6 @@ target_sources(FroggersTigaDesktopV2 PRIVATE
     Source/ui/PageCarouselComponent.cpp
     Source/ui/GlobalOscilloscopeDisplay.cpp
     Source/ui/GlobalStripV2.cpp
-    Source/ui/CenterGlobalClusterV2.cpp
     Source/ui/PerformanceBandV2.cpp
     Source/ui/SequencerPanelComponent.cpp
     Source/ui/CvScopeDisplay.cpp
@@ -235,7 +234,6 @@ set(DESKTOP_V2_CAROUSEL_TEST_SOURCES
     Source/control/FroggersV2ControlCore.cpp
     Source/control/FroggersV2HostBridge.cpp
     Source/ui/PageCarouselComponent.cpp
-    Source/ui/CenterGlobalClusterV2.cpp
     Source/ui/SubmodulePagePanel.cpp
     Source/ui/AdsrPagePanel.cpp
     Source/ui/EncoderRingComponent.cpp
@@ -281,7 +279,6 @@ add_test(NAME LayoutBounds_test COMMAND LayoutBounds_test)
 add_executable(GlobalControlParity_test
     tests/GlobalControlParity_test.cpp
     Source/ui/GlobalStripV2.cpp
-    Source/ui/CenterGlobalClusterV2.cpp
     Source/ui/EncoderRingComponent.cpp
     Source/control/FroggersV2ControlCore.cpp
 )

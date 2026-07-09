@@ -16,8 +16,6 @@ PageCarouselComponent::PageCarouselComponent()
 
     addChildComponent(m_submodulePanel);
     addChildComponent(m_adsrPanel);
-    addChildComponent(m_centerCluster);
-    m_centerCluster.setVisible(false);
 
     m_submodulePanel.onRandomize = [this](uint8_t page) {
         if (onRandomize)
@@ -56,8 +54,12 @@ void PageCarouselComponent::bindCore(froggers_v2::FroggersV2ControlCore* core)
 
 void PageCarouselComponent::bindHost(DesktopHostIO* host, froggers_v2::FroggersV2ControlCore* core)
 {
+    // The permanently-hidden duplicate rand cluster this carousel used to
+    // bind here has been deleted entirely (4.9); host is retained in the
+    // signature since MainComponent/HostedMainComponentV2 call this with
+    // both arguments, but the carousel no longer needs it.
+    juce::ignoreUnused(host);
     bindCore(core);
-    m_centerCluster.bind(host, core);
 }
 
 void PageCarouselComponent::setActivePage(uint8_t page)
@@ -148,7 +150,6 @@ void PageCarouselComponent::resized()
 
     m_submodulePanel.setBounds(area);
     m_adsrPanel.setBounds(area);
-    m_centerCluster.setBounds(0, 0, 0, 0);
 }
 
 bool PageCarouselComponent::activePanelShowsVerticalScrollbar() const

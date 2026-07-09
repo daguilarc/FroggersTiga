@@ -3,7 +3,6 @@
 #include "DesktopHostIO.hpp"
 #include "control/FroggersV2ControlCore.hpp"
 #include "ui/AdsrPagePanel.hpp"
-#include "ui/CenterGlobalClusterV2.hpp"
 #include "ui/SubmodulePagePanel.hpp"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -44,5 +43,4 @@ private:
     juce::TextButton m_next{">"};
     SubmodulePagePanel m_submodulePanel;
     AdsrPagePanel m_adsrPanel;
-    CenterGlobalClusterV2 m_centerCluster;
 };

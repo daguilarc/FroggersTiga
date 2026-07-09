@@ -132,11 +132,10 @@ void GlobalStripV2::pushRandAll()
     {
         return;
     }
-    juce::ignoreUnused(m_allScenesScope);
-    froggers_v2::MessageIn message;
-    message.type = froggers_v2::MessageIn::Type::RandAll;
-    m_core->bus().push(message);
-    m_core->processBus();
+    const uint8_t sceneScope = m_allScenesScope ? froggers_v2::kRandSceneScopeAll
+                                                 : froggers_v2::kRandSceneScopeCurrent;
+    m_core->executeRandomization(
+        froggers_v2::FroggersV2ControlCore::RandomizationCommand::RandAll, sceneScope, 0);
 }
 
 void GlobalStripV2::pushRandMods()
@@ -145,22 +144,17 @@ void GlobalStripV2::pushRandMods()
     {
         return;
     }
-    froggers_v2::MessageIn message;
-    message.type = froggers_v2::MessageIn::Type::RandSequencerMods;
+    uint8_t stepScope = froggers_v2::kRandSeqScopeStep;
     if (m_allStepsScope)
     {
-        message.page = froggers_v2::kRandSeqScopePattern;
+        stepScope = froggers_v2::kRandSeqScopePattern;
     }
     else if (resolveRandSeqScope != nullptr)
     {
-        message.page = resolveRandSeqScope();
+        stepScope = resolveRandSeqScope();
     }
-    else
-    {
-        message.page = froggers_v2::kRandSeqScopeStep;
-    }
-    m_core->bus().push(message);
-    m_core->processBus();
+    m_core->executeRandomization(
+        froggers_v2::FroggersV2ControlCore::RandomizationCommand::RandMods, 0, stepScope);
 }
 
 void GlobalStripV2::refresh()

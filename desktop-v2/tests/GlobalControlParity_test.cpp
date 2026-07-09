@@ -1,5 +1,4 @@
 #include "control/FroggersV2ControlCore.hpp"
-#include "ui/CenterGlobalClusterV2.hpp"
 #include "ui/GlobalStripV2.hpp"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -85,20 +84,11 @@ bool test_shift_parity()
     return true;
 }
 
-bool test_center_cluster_hidden_in_carousel()
-{
-    froggers_v2::FroggersV2ControlCore core;
-    DesktopHostIO host;
-    CenterGlobalClusterV2 cluster;
-    cluster.bind(&host, &core);
-    cluster.setBounds(0, 0, 0, 0);
-    if (!cluster.getBounds().isEmpty())
-    {
-        std::printf("FAIL: center cluster should have empty bounds when retired\n");
-        return false;
-    }
-    return true;
-}
+// test_center_cluster_hidden_in_carousel removed (4.9): CenterGlobalClusterV2
+// was a permanently-hidden duplicate of GlobalStripV2's rand cluster with the
+// same broken pushRandMods -> RandSequencerMods wiring; it has been deleted
+// entirely rather than kept invisible, so there is nothing left to bind or
+// assert empty bounds on.
 } // namespace
 
 int main()
@@ -113,10 +103,6 @@ int main()
         return 1;
     }
     if (!test_shift_parity())
-    {
-        return 1;
-    }
-    if (!test_center_cluster_hidden_in_carousel())
     {
         return 1;
     }
