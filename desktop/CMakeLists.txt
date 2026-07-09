@@ -226,7 +226,6 @@ set(FROGGERS_V2_UI_SOURCES
     "${DESKTOP_V2_DIR}/Source/ui/PageCarouselComponent.cpp"
     "${DESKTOP_V2_DIR}/Source/ui/GlobalOscilloscopeDisplay.cpp"
     "${DESKTOP_V2_DIR}/Source/ui/GlobalStripV2.cpp"
-    "${DESKTOP_V2_DIR}/Source/ui/CenterGlobalClusterV2.cpp"
     "${DESKTOP_V2_DIR}/Source/ui/PerformanceBandV2.cpp"
     "${DESKTOP_V2_DIR}/Source/ui/SequencerPanelComponent.cpp"
     "${DESKTOP_V2_DIR}/Source/ui/CvScopeDisplay.cpp"
