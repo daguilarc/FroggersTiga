@@ -192,9 +192,9 @@ Stereo delay effect for the desktop app and web sim only. Sixth column on deskto
 | 9 | Halo — delay halo width |
 | 10 | Crispy |
 
-## Mod bay
+## Mod bay (v1 desktop and web)
 
-Mod sources can push any knob (including pair-AR and Crispy). Desktop shows five sources; web shows four.
+Mod sources can push any knob (including pair-AR and Crispy). Desktop v1 shows five sources; web shows four.
 
 **Web:** pick a source in the dropdown under each knob; the knob then sets **mod depth**.
 

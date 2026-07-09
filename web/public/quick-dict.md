@@ -91,7 +91,7 @@ Rand All — Clears gesture selection before randomizing
 
 ## Sequencer (desktop v2)
 
-Fixed 16 steps — Exactly sixteen slots (indices 0..15); no pattern-length or **Steps** control
+Fixed 16 steps — Exactly sixteen slots (indices 0..15)
 Written / unwritten — Each slot stores whether a step snapshot exists; unwritten slots are skipped during playback
 Direction — Toolbar icon cycles `<`, `>`, `RND` (default `>`)
 Speed — Toolbar icon cycles `/2`, `/1.5`, `1`, `x1.5`, `x2` (default `1`)
@@ -125,7 +125,7 @@ MIDI In — Pick one input stream: computer keyboard (QWERTY notes on virtual ch
 Pitch — Page + row target (read-only parameter name); incoming notes bend that knob
 Gate — **Any** held note on/off drives Pair-AR envelope gates when enabled; OR-combines with **step gates** while **Start Sequence** runs — not assignable on the Shift row
 MIDI CC A / MIDI CC B — Controller targets mapped to manifest parameter IDs; not permanent mod-rack lanes
-Shift button — Dedicated Note or CC + Ch for the **Shift** toggle row only (no factory-reset gesture)
+Shift button — Dedicated Note or CC + Ch for the **Shift** toggle row only
 Scene S1 / S2 / S3 — MIDI triggers for scene L/R endpoint selection (Note or CC + Ch)
 QWERTY Ch — Virtual MIDI channel for computer keyboard notes (1–16)
 External MIDI clock — Optional sequencer clock source (timing only; not gesture routing)
