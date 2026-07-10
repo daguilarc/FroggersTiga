@@ -195,13 +195,16 @@ int main()
             return 1;
         }
 
-        // Revert.
+        // Revert restores the last saved snapshot, so the patch is CLEAN again
+        // (matches AudioEngine::revertPatch, which calls markClean()). Simulate
+        // prior unsaved edits, then revert.
         state.markDirty();
+        state.markClean();
         state.lastRevertResult = "Reverted to last saved snapshot.";
         state.appendLog(state.lastRevertResult);
-        if (!state.dirty || state.patchIdentity != "OtherPatch")
+        if (state.dirty || state.patchIdentity != "OtherPatch")
         {
-            std::printf("FAIL: FilePatchRuntimeState revert did not flag dirty state\n");
+            std::printf("FAIL: FilePatchRuntimeState revert should leave patch clean\n");
             return 1;
         }
 
