@@ -227,6 +227,30 @@ int main()
         }
     }
 
+    // Test markClean() leaves patchIdentity unchanged
+    {
+        FilePatchRuntimeState state;
+        state.markSaved("MyPatch");
+        state.markDirty();
+        if (!state.dirty)
+        {
+            std::printf("FAIL: precondition — expected dirty before markClean\n");
+            return 1;
+        }
+        state.markClean();
+        if (state.dirty)
+        {
+            std::printf("FAIL: markClean did not clear dirty\n");
+            return 1;
+        }
+        if (state.patchIdentity != "MyPatch")
+        {
+            std::printf("FAIL: markClean must not change patchIdentity (got %s)\n",
+                         state.patchIdentity.toRawUTF8());
+            return 1;
+        }
+    }
+
     MidiCvAssignmentTable table;
     table.markMappingsDirty();
     const std::vector<ControllerTargetMappingRow> rows = table.buildTargetMappingRows();

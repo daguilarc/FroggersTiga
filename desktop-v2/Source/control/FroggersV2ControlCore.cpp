@@ -267,15 +267,53 @@ void FroggersV2ControlCore::executeRandomization(RandomizationCommand command,
     processBus();
 }
 
+namespace
+{
+bool messageMutatesPatchContent(MessageIn::Type type)
+{
+    switch (type)
+    {
+        case MessageIn::Type::ParamIncDec:
+        case MessageIn::Type::ParamPress:
+        case MessageIn::Type::ModSourceAssign:
+        case MessageIn::Type::GestureWeight:
+        case MessageIn::Type::RandAll:
+        case MessageIn::Type::RandMods:
+        case MessageIn::Type::RandPage:
+        case MessageIn::Type::ResetSequencerStep:
+        case MessageIn::Type::RandSequencerStep:
+        case MessageIn::Type::RandSequencerMods:
+            return true;
+        case MessageIn::Type::ShiftHeld:
+        case MessageIn::Type::SceneSelect:
+        case MessageIn::Type::SceneBlend:
+        case MessageIn::Type::GestureSelect:
+        case MessageIn::Type::SelectPage:
+        case MessageIn::Type::Clock:
+            return false;
+    }
+    return false;
+}
+} // namespace
+
 void FroggersV2ControlCore::processBus()
 {
     MessageIn message;
     while (m_bus.pop(message))
     {
+        if (messageMutatesPatchContent(message.type))
+        {
+            m_contentMutated.store(true, std::memory_order_release);
+        }
         applyMessage(message);
     }
     compute();
     populateUiState();
+}
+
+bool FroggersV2ControlCore::consumeContentMutated()
+{
+    return m_contentMutated.exchange(false, std::memory_order_acq_rel);
 }
 
 void FroggersV2ControlCore::compute()

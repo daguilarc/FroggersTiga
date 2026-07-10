@@ -15,6 +15,7 @@ struct FilePatchRuntimeState
     const juce::StringArray& logMessages() const;
 
     void markDirty();
+    void markClean();
     void markSaved(const juce::String& identity);
     void setControllerMappingPersistenceResult(const juce::String& result);
 

@@ -188,6 +188,7 @@ public:
     float assignedModDepth(uint8_t page, uint8_t row) const;
     void applyHostModRoute(uint8_t page, uint8_t row, uint8_t engineModIndex, float depth);
     void processBus();
+    bool consumeContentMutated();
     void compute();
     void populateUiState();
     void setSequencerState(SequencerState* sequencer);
@@ -295,6 +296,7 @@ private:
     uint8_t m_activeGestureLane = kNoSelection;
     float m_sceneBlend = 0.5f;
     ParamState m_crunchy{};
+    std::atomic<bool> m_contentMutated{false};
     uint32_t m_randState = 0x12345678u;
     bool m_externalAudioAvailable = false;
 };

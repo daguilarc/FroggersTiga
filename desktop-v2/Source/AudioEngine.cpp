@@ -970,7 +970,7 @@ void AudioEngine::revertPatch(juce::String& messageOut)
     }
     SimPresetSnapshot::read(m_host, m_delay, m_revertSnapshot.data(), m_revertSnapshot.size());
     notifyStateRestored();
-    m_filePatchState.markDirty();
+    m_filePatchState.markClean();
     messageOut = "Reverted to last saved snapshot.";
     m_filePatchState.lastRevertResult = messageOut;
     m_filePatchState.appendLog(messageOut);

@@ -328,6 +328,10 @@ void MainComponent::timerCallback()
     drainMidiUiActions();
     const uint32_t prevModRoutesVersion = m_lastModRoutesVersion;
     m_facade.publishUiFrame();
+    if (m_facade.controlCore().consumeContentMutated())
+    {
+        m_audio->filePatchState().markDirty();
+    }
     m_lastModRoutesVersion = m_facade.lastModRoutesVersion();
     if (m_lastModRoutesVersion != prevModRoutesVersion)
     {

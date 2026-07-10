@@ -19,6 +19,11 @@ void FilePatchRuntimeState::markDirty()
     dirty = true;
 }
 
+void FilePatchRuntimeState::markClean()
+{
+    dirty = false;
+}
+
 void FilePatchRuntimeState::markSaved(const juce::String& identity)
 {
     patchIdentity = identity;
