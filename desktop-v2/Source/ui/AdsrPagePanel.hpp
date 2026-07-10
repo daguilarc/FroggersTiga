@@ -20,17 +20,6 @@ public:
     void bindCore(froggers_v2::FroggersV2ControlCore* core);
     void refresh();
 
-    // onRandomize / onRandomizeMod: the per-page Randomize/Randmod header
-    // buttons that used to invoke these hooks are removed (desktop-v2
-    // "Randomization affordances are not duplicated" -- global Rand All /
-    // Rand Mods in the command band are the single surface). The hooks stay
-    // declared because PageCarouselComponent still assigns them; nothing in
-    // this panel invokes them anymore. Follow-up scope: retire the hooks and
-    // their PageCarouselComponent plumbing once that file is in a packet's
-    // write scope.
-    std::function<void()> onRandomize;
-    std::function<void()> onRandomizeMod;
-
     void paint(juce::Graphics& g) override;
     void resized() override;
 

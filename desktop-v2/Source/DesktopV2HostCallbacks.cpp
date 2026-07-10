@@ -18,19 +18,6 @@ void pushSelectPage(const HostCallbackContext& ctx, uint8_t page)
 void wireCallbacks(const HostCallbackContext& ctx)
 {
     ctx.carousel.onPageChanged = [ctxPtr = &ctx](uint8_t page) { pushSelectPage(*ctxPtr, page); };
-    ctx.carousel.onRandomize = [ctxPtr = &ctx](uint8_t page) {
-        froggers_v2::MessageIn message;
-        message.type = froggers_v2::MessageIn::Type::RandPage;
-        message.page = page;
-        ctxPtr->core.bus().push(message);
-        ctxPtr->core.processBus();
-        ctxPtr->bridge.syncToHost();
-        ctxPtr->carousel.refresh();
-    };
-    // carousel.onRandomizeMod intentionally left unwired: the per-module
-    // header "Randmod" button forwarded here into
-    // DesktopHostIO::EnqueueRandomizePanelMod, a parallel randomization
-    // mutator outside control-core authority (4.6, 4.1 single authority).
 }
 
 void refreshAndWireHostCallbacks(HostCallbackContext& ctx,

@@ -16,32 +16,6 @@ PageCarouselComponent::PageCarouselComponent()
 
     addChildComponent(m_submodulePanel);
     addChildComponent(m_adsrPanel);
-
-    m_submodulePanel.onRandomize = [this](uint8_t page) {
-        if (onRandomize)
-        {
-            onRandomize(page);
-        }
-    };
-    m_submodulePanel.onRandomizeMod = [this](uint8_t page) {
-        if (onRandomizeMod)
-        {
-            onRandomizeMod(page);
-        }
-    };
-
-    m_adsrPanel.onRandomize = [this]() {
-        if (onRandomize)
-        {
-            onRandomize(AdsrPagePanel::kAdsrPage);
-        }
-    };
-    m_adsrPanel.onRandomizeMod = [this]() {
-        if (onRandomizeMod)
-        {
-            onRandomizeMod(AdsrPagePanel::kAdsrPage);
-        }
-    };
 }
 
 void PageCarouselComponent::bindCore(froggers_v2::FroggersV2ControlCore* core)

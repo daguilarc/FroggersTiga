@@ -27,8 +27,6 @@ public:
     juce::Rectangle<int> modCellBoundsInCarousel(int rowIndex) const;
 
     std::function<void(uint8_t page)> onPageChanged;
-    std::function<void(uint8_t page)> onRandomize;
-    std::function<void(uint8_t page)> onRandomizeMod;
 
     void resized() override;
 
