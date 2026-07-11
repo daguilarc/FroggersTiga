@@ -143,6 +143,45 @@ else
 fi
 echo
 
+# ---------------------------------------------------------------------------
+# (d) Control-core external-audio wiring bug
+# ---------------------------------------------------------------------------
+# Check that both MainComponent and HostedMainComponentV2 wire the external
+# audio availability to the control core via m_facade.controlCore().setExternalAudioAvailable()
+echo "== GATE: control-core-external-audio-wiring =="
+MAIN_COMPONENT="desktop-v2/Source/MainComponent.cpp"
+HOSTED_COMPONENT="desktop-v2/Source/HostedMainComponentV2.cpp"
+wiring_fail=0
+
+if [[ ! -f "$MAIN_COMPONENT" ]]; then
+  echo "FAIL: expected file missing: $MAIN_COMPONENT"
+  wiring_fail=1
+else
+  if grep -q "m_facade.controlCore().setExternalAudioAvailable(" "$MAIN_COMPONENT"; then
+    echo "PASS: MainComponent wires external audio to control core ($MAIN_COMPONENT)"
+  else
+    echo "FAIL: MainComponent does not wire external audio to control core ($MAIN_COMPONENT)"
+    wiring_fail=1
+  fi
+fi
+
+if [[ ! -f "$HOSTED_COMPONENT" ]]; then
+  echo "FAIL: expected file missing: $HOSTED_COMPONENT"
+  wiring_fail=1
+else
+  if grep -q "m_facade.controlCore().setExternalAudioAvailable(" "$HOSTED_COMPONENT"; then
+    echo "PASS: HostedMainComponentV2 wires external audio to control core ($HOSTED_COMPONENT)"
+  else
+    echo "FAIL: HostedMainComponentV2 does not wire external audio to control core ($HOSTED_COMPONENT)"
+    wiring_fail=1
+  fi
+fi
+
+if [[ "${wiring_fail}" -ne 0 ]]; then
+  fail=1
+fi
+echo
+
 if [[ "${fail}" -ne 0 ]]; then
   echo "Operator-truth gate FAILED (see above; modW check above is advisory-only and does not affect this exit code)"
   exit 1

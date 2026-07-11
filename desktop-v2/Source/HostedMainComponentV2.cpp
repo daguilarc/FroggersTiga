@@ -101,6 +101,7 @@ void HostedMainComponentV2::timerCallback()
 
     m_globalOscilloscope.setAudioRunning(true);
     m_globalOscilloscope.setExternalAudioAvailable(m_facade.audioEngine().isExternalInputEnabled());
+    m_facade.controlCore().setExternalAudioAvailable(m_facade.audioEngine().isExternalInputEnabled());
     m_performanceBand.refreshMarbles(true);
     m_sequencerPanel.refresh();
 }

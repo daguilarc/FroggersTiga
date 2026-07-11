@@ -351,6 +351,8 @@ void MainComponent::timerCallback()
     m_globalOscilloscope.setAudioRunning(running);
     m_globalOscilloscope.setExternalAudioAvailable(
         m_audio->isExternalInputEnabled() && running);
+    m_facade.controlCore().setExternalAudioAvailable(
+        m_audio->isExternalInputEnabled() && running);
     m_performanceBand.refreshMarbles(running);
     m_sequencerPanel.refresh();
 }
