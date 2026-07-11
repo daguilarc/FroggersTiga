@@ -1507,10 +1507,23 @@ bool test_rand_mods_step_scope_writes_only_written_steps()
     core.executeRandomization(
         FroggersV2ControlCore::RandomizationCommand::RandMods, 0, froggers_v2::kRandSeqScopeStep);
 
-    if (seq.m_slots[2].payload.modSource[0][0] != 4)
+    // Packet 15.2a retired the single-route identity model: randomizeLiveModDepths
+    // now randomizes all kNumModSources lanes on the row (not just the one
+    // ModSourceAssign(index=4) touched above), so the captured representative
+    // lane (assignedModSource = first lane with a non-zero depth) is no longer
+    // guaranteed to be lane 4 -- asserting "!= 4" here encodes the retired
+    // model. What still matters, and is asserted below, is that *some* live
+    // route got captured into the written edit step with a non-zero depth.
+    if (seq.m_slots[2].payload.modSource[0][0] == froggers_v2::kNoSelection)
     {
         std::printf(
             "FAIL: Rand Mods (Current Step) did not capture the live mod route into the written edit step\n");
+        return false;
+    }
+    if (nearlyEqual(seq.m_slots[2].payload.modDepth[0][0], 0.0f))
+    {
+        std::printf(
+            "FAIL: Rand Mods (Current Step) captured a zero depth for the written edit step\n");
         return false;
     }
     if (seq.m_slots[3].written || seq.m_slots[3].payload.modSource[0][0] != froggers_v2::kNoSelection)
@@ -1541,9 +1554,18 @@ bool test_rand_mods_all_steps_scope_targets_only_written_steps()
     core.executeRandomization(
         FroggersV2ControlCore::RandomizationCommand::RandMods, 0, froggers_v2::kRandSeqScopePattern);
 
-    if (seq.m_slots[0].payload.modSource[0][0] != 5)
+    // Packet 15.2a retired the single-route identity model (see the matching
+    // comment in test_rand_mods_step_scope_writes_only_written_steps): the
+    // captured representative lane is no longer guaranteed to be lane 5, only
+    // that a live route with a non-zero depth was captured.
+    if (seq.m_slots[0].payload.modSource[0][0] == froggers_v2::kNoSelection)
     {
         std::printf("FAIL: All Steps Rand Mods did not write the live mod route into written step 0\n");
+        return false;
+    }
+    if (nearlyEqual(seq.m_slots[0].payload.modDepth[0][0], 0.0f))
+    {
+        std::printf("FAIL: All Steps Rand Mods captured a zero depth for written step 0\n");
         return false;
     }
     if (seq.m_slots[1].written || seq.m_slots[1].payload.modSource[0][0] != froggers_v2::kNoSelection)
@@ -1612,16 +1634,14 @@ bool test_rand_all_respects_scene_scope()
 // modulation store (sim/V2LaneDepthStore.hpp) so 15-A's engine-side apply
 // (Page::GetPreFuegoValue) stops reading all zeros.
 //
-// ParamState still stores parallel modSource[15]/modDepth[15] arrays under
-// the pre-15.2 single-active-route-per-row model (setSingleModSource clears
-// every lane slot before writing the chosen source into slot 0; collapsing
-// the arrays so every lane is independently addressable is 15.2a, explicitly
-// out of scope here). So a single row can only ever carry one live nonzero
-// lane depth through the normal input path -- the tests below prove the
-// per-lane loop places each row's assigned lane at the *correct* lane index
-// in the host store (not hardcoded to lane 0) by exercising two different
-// rows carrying two different lanes, rather than claiming two simultaneous
-// lanes on one row (which the current single-route model cannot express).
+// Packet 15.2a collapsed ParamState to the lane identity model: modDepth[i]
+// IS lane i's signed depth (the parallel modSource[15] identity array is
+// retired), so every one of the kNumModSources lanes is independently
+// addressable and any number may carry a non-zero depth on the same row at
+// once. The two-different-rows setup below still holds as a places-each-lane-
+// at-its-own-index proof; the genuinely simultaneous multi-lane-on-one-row
+// case 15.2a unlocks is covered separately below
+// (test_multiple_lanes_active_simultaneously_on_one_row and friends).
 
 bool assignLiveModRoute(FroggersV2ControlCore& core, uint8_t page, uint8_t row, uint8_t lane, float turnSteps)
 {
@@ -1849,6 +1869,193 @@ bool test_v2_lane_depth_additive_sum_reaches_engine()
     }
     return true;
 }
+
+// Packet 15.2a: the load-bearing capability this packet unlocks. Pre-15.2a
+// ParamState carried a parallel modSource[15] identity array alongside
+// modDepth[15], and every mutation path (setSingleModSource) cleared every
+// lane before writing at most one identity into slot 0 -- so a row could
+// never carry more than one non-zero lane depth at once. Packet 15.2a
+// deletes that identity array; lane i's source IS i, "lane on" = modDepth[i]
+// != 0, and every lane is independently turn-editable, so two (or all 15)
+// lanes can be simultaneously non-zero on the same row. This test proves
+// that directly -- impossible to express before this packet.
+bool test_multiple_lanes_active_simultaneously_on_one_row()
+{
+    FroggersV2ControlCore core;
+
+    constexpr uint8_t kPage = 1; // Filter: no VCO pair-bus eligibility special-case (that's page 0 only)
+    constexpr uint8_t kRow = 6;
+    constexpr uint8_t kLaneA = 3; // vco_1_ef
+    constexpr uint8_t kLaneB = 7; // vco_23_ef
+
+    MessageIn selectPage;
+    selectPage.type = MessageIn::Type::SelectPage;
+    selectPage.page = kPage;
+    pushAndProcess(core, selectPage);
+
+    MessageIn openPress;
+    openPress.type = MessageIn::Type::ParamPress;
+    openPress.page = kPage;
+    openPress.slot = kRow;
+    pushAndProcess(core, openPress);
+
+    // Turn both lane cells while the same detail-grid session stays open --
+    // no close/reopen, no re-selection between them.
+    pushAndProcess(core, MessageIn::ParamTurn(kPage, kLaneA, 10.0f));
+    pushAndProcess(core, MessageIn::ParamTurn(kPage, kLaneB, -6.0f));
+
+    const float depthA = core.laneDepth(kPage, kRow, kLaneA);
+    const float depthB = core.laneDepth(kPage, kRow, kLaneB);
+    if (nearlyEqual(depthA, 0.0f) || nearlyEqual(depthB, 0.0f))
+    {
+        std::printf(
+            "FAIL: expected both lanes non-zero simultaneously on one row (A=%f B=%f)\n",
+            depthA,
+            depthB);
+        return false;
+    }
+    return true;
+}
+
+bool test_press_clears_one_lane_leaves_sibling_lane_active()
+{
+    FroggersV2ControlCore core;
+
+    constexpr uint8_t kPage = 1;
+    constexpr uint8_t kRow = 6;
+    constexpr uint8_t kLaneA = 3;
+    constexpr uint8_t kLaneB = 7;
+
+    MessageIn selectPage;
+    selectPage.type = MessageIn::Type::SelectPage;
+    selectPage.page = kPage;
+    pushAndProcess(core, selectPage);
+
+    MessageIn openPress;
+    openPress.type = MessageIn::Type::ParamPress;
+    openPress.page = kPage;
+    openPress.slot = kRow;
+    pushAndProcess(core, openPress);
+
+    pushAndProcess(core, MessageIn::ParamTurn(kPage, kLaneA, 10.0f));
+    pushAndProcess(core, MessageIn::ParamTurn(kPage, kLaneB, -6.0f));
+
+    if (nearlyEqual(core.laneDepth(kPage, kRow, kLaneA), 0.0f)
+        || nearlyEqual(core.laneDepth(kPage, kRow, kLaneB), 0.0f))
+    {
+        std::printf("FAIL: test precondition, expected both lanes non-zero before the clearing press\n");
+        return false;
+    }
+
+    // Press = clear a lane (turn = set its depth); pressing lane A's cell
+    // must not touch lane B's independently-live depth.
+    MessageIn clearPress;
+    clearPress.type = MessageIn::Type::ParamPress;
+    clearPress.page = kPage;
+    clearPress.slot = kLaneA;
+    pushAndProcess(core, clearPress);
+
+    if (!nearlyEqual(core.laneDepth(kPage, kRow, kLaneA), 0.0f))
+    {
+        std::printf("FAIL: press did not clear lane A's depth\n");
+        return false;
+    }
+    if (nearlyEqual(core.laneDepth(kPage, kRow, kLaneB), 0.0f))
+    {
+        std::printf("FAIL: clearing lane A also cleared sibling lane B (should be unaffected)\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_v2_lane_depth_store_and_engine_sum_two_simultaneous_lanes()
+{
+    // End-to-end: two lanes live on the same row, pushed through the ToHost
+    // sync (15-B path) into the owning V2LaneDepthStore, then read back
+    // through Page::GetPreFuegoValue's additive sum via the public
+    // GetPageParam path (see test_v2_lane_depth_additive_sum_reaches_engine
+    // for why neutral crunchy makes that path reduce to plain arithmetic).
+    FroggersV2ControlCore core;
+    DesktopHostIO host;
+    DelayState delay;
+    host.setDelayState(&delay);
+    host.m_hostKind = SimHostKind::DesktopV2;
+    host.Init();
+    host.SetSampleRate(44100.0f);
+    FroggersV2HostBridge bridge(core, host);
+
+    constexpr uint8_t kPage = 1;
+    constexpr uint8_t kRow = 6;
+    constexpr uint8_t kLaneA = 3; // vco_1_ef
+    constexpr uint8_t kLaneB = 7; // vco_23_ef
+
+    MessageIn selectPage;
+    selectPage.type = MessageIn::Type::SelectPage;
+    selectPage.page = kPage;
+    pushAndProcess(core, selectPage);
+
+    bridge.syncToHost();
+    const uint8_t pmPage = HostParameterRoutingV2::pmPageForUiPage(kPage);
+    const float knobBaseline = host.GetPageParam(pmPage, kRow);
+
+    MessageIn openPress;
+    openPress.type = MessageIn::Type::ParamPress;
+    openPress.page = kPage;
+    openPress.slot = kRow;
+    pushAndProcess(core, openPress);
+
+    pushAndProcess(core, MessageIn::ParamTurn(kPage, kLaneA, 10.0f));  // depth ~ +0.4
+    pushAndProcess(core, MessageIn::ParamTurn(kPage, kLaneB, -6.0f)); // depth ~ -0.24
+
+    const float depthA = core.laneDepth(kPage, kRow, kLaneA);
+    const float depthB = core.laneDepth(kPage, kRow, kLaneB);
+    if (nearlyEqual(depthA, 0.0f) || nearlyEqual(depthB, 0.0f))
+    {
+        std::printf("FAIL: test precondition, expected two non-zero simultaneous lane depths\n");
+        return false;
+    }
+
+    triggerToHostModRouteSync(bridge, 0);
+
+    const float storedA = host.m_v2LaneDepths.Get(pmPage, kRow, kLaneA);
+    const float storedB = host.m_v2LaneDepths.Get(pmPage, kRow, kLaneB);
+    if (!nearlyEqual(storedA, depthA, 2.0e-3f))
+    {
+        std::printf("FAIL: lane A store expected %f got %f\n", depthA, storedA);
+        return false;
+    }
+    if (!nearlyEqual(storedB, depthB, 2.0e-3f))
+    {
+        std::printf("FAIL: lane B store expected %f got %f\n", depthB, storedB);
+        return false;
+    }
+
+    // PermanentModTapRack::SetTap clamps to [0, 1] -- taps are the unipolar
+    // modulator signal value; the bipolar part of the formula is the depth
+    // (already set above via the two ParamTurn calls), not the tap.
+    constexpr float kTapA = 0.5f;
+    constexpr float kTapB = 0.7f;
+    host.m_v2ModTaps.SetTap(kLaneA, kTapA);
+    host.m_v2ModTaps.SetTap(kLaneB, kTapB);
+
+    const float expected =
+        std::min(std::max(knobBaseline + kTapA * depthA + kTapB * depthB, 0.0f), 1.0f);
+    const float actual = host.GetPageParam(pmPage, kRow);
+    if (!nearlyEqual(actual, expected, 2.0e-3f))
+    {
+        std::printf(
+            "FAIL: two-lane additive sum mismatch expected=%f got=%f (knob=%f dA=%f dB=%f tapA=%f tapB=%f)\n",
+            expected,
+            actual,
+            knobBaseline,
+            depthA,
+            depthB,
+            kTapA,
+            kTapB);
+        return false;
+    }
+    return true;
+}
 } // namespace
 
 int main()
@@ -2006,6 +2213,18 @@ int main()
         return 1;
     }
     if (!test_v2_lane_depth_additive_sum_reaches_engine())
+    {
+        return 1;
+    }
+    if (!test_multiple_lanes_active_simultaneously_on_one_row())
+    {
+        return 1;
+    }
+    if (!test_press_clears_one_lane_leaves_sibling_lane_active())
+    {
+        return 1;
+    }
+    if (!test_v2_lane_depth_store_and_engine_sum_two_simultaneous_lanes())
     {
         return 1;
     }

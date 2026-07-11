@@ -186,12 +186,12 @@ public:
     void setGestureWeight(uint8_t lane, float value);
     uint8_t assignedModSource(uint8_t page, uint8_t row) const;
     float assignedModDepth(uint8_t page, uint8_t row) const;
-    // Packet 15-B: per-lane depth accessor feeding the V2 additive multi-tap
-    // apply (sim/V2LaneDepthStore.hpp). ParamState still stores parallel
-    // modSource[15]/modDepth[15] arrays under the pre-15.2 single-route
-    // model (collapsing them to lane identity is 15.2a, out of scope here),
-    // so this searches for the lane's slot rather than indexing modDepth
-    // directly by lane.
+    // Packet 15.2a: ParamState collapsed to lane identity -- modDepth[i] IS
+    // lane i's signed depth, so this indexes modDepth directly by lane. All
+    // kNumModSources lanes are independently addressable/non-zero at once
+    // (see ParamState below); assignedModSource/assignedModDepth above are
+    // now single-value *representative* accessors (first non-zero lane) kept
+    // for the host/sequencer single-route projection, not the live model.
     float laneDepth(uint8_t page, uint8_t row, uint8_t lane) const;
     void applyHostModRoute(uint8_t page, uint8_t row, uint8_t engineModIndex, float depth);
     void processBus();
@@ -219,12 +219,13 @@ private:
     struct ParamState
     {
         float sceneCenter[kNumScenes]{0.0f, 0.0f, 0.0f};
+        // Packet 15.2a: lane identity model. modDepth[i] is the signed depth
+        // (-1..+1) of modulation source i; lane i's source IS i. "Lane on" =
+        // modDepth[i] != 0. All kNumModSources lanes are independent and any
+        // number may be non-zero at once -- this is the single authority for
+        // a row's live modulation state (the parallel modSource[] identity
+        // array this used to carry alongside it is retired).
         float modDepth[kNumModSources]{0.0f};
-        uint8_t modSource[kNumModSources]{
-            kNoSelection, kNoSelection, kNoSelection, kNoSelection, kNoSelection,
-            kNoSelection, kNoSelection, kNoSelection, kNoSelection, kNoSelection,
-            kNoSelection, kNoSelection, kNoSelection, kNoSelection, kNoSelection,
-        };
         float gestureDepth[kNumGestures]{0.0f, 0.0f};
     };
 
@@ -251,7 +252,6 @@ private:
     void onParamPress(uint8_t page, uint8_t slot);
     void onSceneSelect(uint8_t sceneOrdinal);
     void onModSourceAssign(uint8_t page, uint8_t row, uint8_t source);
-    static void setSingleModSource(ParamState& param, uint8_t source);
     void onRandAll(uint8_t sceneScope);
     void onRandMods(uint8_t stepScope);
     void onRandPage(uint8_t page);

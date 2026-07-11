@@ -188,29 +188,12 @@ uint8_t FroggersV2ControlCore::assignedModSource(uint8_t page, uint8_t row) cons
     const ParamState& param = m_params[page][row];
     for (uint8_t i = 0; i < kNumModSources; ++i)
     {
-        if (param.modSource[i] != kNoSelection)
+        if (param.modDepth[i] != 0.0f)
         {
-            return param.modSource[i];
+            return i;
         }
     }
     return kNoSelection;
-}
-
-void FroggersV2ControlCore::setSingleModSource(ParamState& param, uint8_t source)
-{
-    // A row carries at most one active modulation route (matching the host /
-    // sequencer single-source-per-row projection). Clear every lane, then set
-    // the chosen source into the canonical slot 0. source == kNoSelection (or
-    // any out-of-range value) leaves the row cleared.
-    for (uint8_t i = 0; i < kNumModSources; ++i)
-    {
-        param.modSource[i] = kNoSelection;
-        param.modDepth[i] = 0.0f;
-    }
-    if (source < kNumModSources)
-    {
-        param.modSource[0] = source;
-    }
 }
 
 void FroggersV2ControlCore::applyHostModRoute(uint8_t page,
@@ -218,16 +201,11 @@ void FroggersV2ControlCore::applyHostModRoute(uint8_t page,
                                               uint8_t engineModIndex,
                                               float depth)
 {
-    if (page >= kNumHostPages || row >= rowsForPage(page))
+    if (page >= kNumHostPages || row >= rowsForPage(page) || engineModIndex >= kNumModSources)
     {
         return;
     }
-    ParamState& param = m_params[page][row];
-    setSingleModSource(param, engineModIndex);
-    if (engineModIndex < kNumModSources)
-    {
-        param.modDepth[0] = clampSigned(depth);
-    }
+    m_params[page][row].modDepth[engineModIndex] = clampSigned(depth);
 }
 
 float FroggersV2ControlCore::assignedModDepth(uint8_t page, uint8_t row) const
@@ -239,7 +217,7 @@ float FroggersV2ControlCore::assignedModDepth(uint8_t page, uint8_t row) const
     const ParamState& param = m_params[page][row];
     for (uint8_t i = 0; i < kNumModSources; ++i)
     {
-        if (param.modSource[i] != kNoSelection)
+        if (param.modDepth[i] != 0.0f)
         {
             return param.modDepth[i];
         }
@@ -253,15 +231,7 @@ float FroggersV2ControlCore::laneDepth(uint8_t page, uint8_t row, uint8_t lane) 
     {
         return 0.0f;
     }
-    const ParamState& param = m_params[page][row];
-    for (uint8_t i = 0; i < kNumModSources; ++i)
-    {
-        if (param.modSource[i] == lane)
-        {
-            return param.modDepth[i];
-        }
-    }
-    return 0.0f;
+    return m_params[page][row].modDepth[lane];
 }
 
 void FroggersV2ControlCore::executeRandomization(RandomizationCommand command,
@@ -370,8 +340,8 @@ FroggersV2ControlCore::slotViewEffective(const VisibleSlot& visible) const
         // Detail-grid lane cell: centre = no depth; the CV LED (modulator bit)
         // lights only for the row's active source, and its bipolar depth drives
         // the effective dot and the symmetric arc bounds.
-        const bool selected = visible.modIndex < kNumModSources && param.modSource[0] == visible.modIndex;
-        const float depth = selected ? param.modDepth[0] : 0.0f;
+        const bool selected = visible.modIndex < kNumModSources && param.modDepth[visible.modIndex] != 0.0f;
+        const float depth = selected ? param.modDepth[visible.modIndex] : 0.0f;
         const float span = 0.5f * std::abs(depth);
         EffectiveRow lane;
         lane.sceneLeft = 0.5f;
@@ -634,11 +604,14 @@ void FroggersV2ControlCore::onParamTurn(uint8_t page, uint8_t slot, float delta)
                 clamp01(detailParam.sceneCenter[targetScene] + delta * kTurnStep);
             return;
         }
-        // Only the row's active source lane exposes an editable bipolar depth;
-        // its value lives in the canonical slot 0.
-        if (visible.modIndex < kNumModSources && detailParam.modSource[0] == visible.modIndex)
+        // Packet 15.2a: every lane cell in the 4x4 detail grid is
+        // independently editable -- lane identity is the cell index itself,
+        // so turning any cell edits that lane's own depth with no prior
+        // "selection" required.
+        if (visible.modIndex < kNumModSources)
         {
-            detailParam.modDepth[0] = clampSigned(detailParam.modDepth[0] + delta * kTurnStep);
+            detailParam.modDepth[visible.modIndex] =
+                clampSigned(detailParam.modDepth[visible.modIndex] + delta * kTurnStep);
         }
         return;
     }
@@ -682,12 +655,13 @@ void FroggersV2ControlCore::onParamPress(uint8_t page, uint8_t slot)
             rebuildVisibleSlots();
             return;
         }
-        // Pressing a lane cell in the 16-cell detail grid selects that lane as
-        // the row's single route; pressing the already-selected lane clears the
-        // route. The route lives in the canonical slot 0 (single-source model).
-        ParamState& param = m_params[page][visible.row];
-        const bool alreadySelected = param.modSource[0] == visible.modIndex;
-        setSingleModSource(param, alreadySelected ? kNoSelection : visible.modIndex);
+        // Packet 15.2a: pressing a lane cell in the 16-cell detail grid clears
+        // that lane (turn sets a lane's depth, press clears it -- there is no
+        // "selection" concept left once every lane is independently active).
+        if (visible.modIndex < kNumModSources)
+        {
+            m_params[page][visible.row].modDepth[visible.modIndex] = 0.0f;
+        }
         return;
     }
     const uint8_t row = slotToRow(page, slot);
@@ -695,22 +669,14 @@ void FroggersV2ControlCore::onParamPress(uint8_t page, uint8_t slot)
     {
         return;
     }
-    const ParamState& param = m_params[page][row];
-    bool hasAssignment = false;
-    for (uint8_t i = 0; i < kNumModSources; ++i)
-    {
-        if (param.modSource[i] != kNoSelection)
-        {
-            hasAssignment = true;
-            break;
-        }
-    }
-    if (hasAssignment)
-    {
-        m_modView.open = true;
-        m_modView.targetRow = row;
-        rebuildVisibleSlots();
-    }
+    // Packet 15.2a: any row's detail grid is reachable on press, not only
+    // rows that already carry a route -- the old hasAssignment gate encoded
+    // the retired single-route model (a row's detail grid only opened once a
+    // compact picker had assigned it a route) and is dead now that every
+    // lane is independently turn-editable straight from the grid.
+    m_modView.open = true;
+    m_modView.targetRow = row;
+    rebuildVisibleSlots();
 }
 
 void FroggersV2ControlCore::onSceneSelect(uint8_t sceneOrdinal)
@@ -731,9 +697,20 @@ void FroggersV2ControlCore::onModSourceAssign(uint8_t page, uint8_t row, uint8_t
     {
         return;
     }
-    // Compact route pickers are single-select: choosing a source replaces the
-    // row's route; choosing "None" (source == kNoSelection) clears it.
-    setSingleModSource(m_params[page][row], source);
+    // Packet 15.2a: compact route pickers are single-select: choosing a
+    // source silences every other lane on the row, leaving the chosen lane's
+    // own depth untouched (0 if it was never turned); choosing "None"
+    // (source == kNoSelection, or any other out-of-range value) silences
+    // every lane -- no lane index ever equals an out-of-range source, so the
+    // same loop handles both cases without a special case.
+    ParamState& param = m_params[page][row];
+    for (uint8_t i = 0; i < kNumModSources; ++i)
+    {
+        if (i != source)
+        {
+            param.modDepth[i] = 0.0f;
+        }
+    }
     if (m_modView.open && m_modView.targetRow == row && page == m_activePage)
     {
         rebuildVisibleSlots();
@@ -1243,12 +1220,12 @@ FroggersV2ControlCore::EffectiveRow FroggersV2ControlCore::computeEffective(cons
     float maxSum = 0.0f;
     for (uint8_t i = 0; i < kNumModSources; ++i)
     {
-        if (state.modSource[i] == kNoSelection)
+        if (state.modDepth[i] == 0.0f)
         {
             continue;
         }
         const float depth = state.modDepth[i];
-        const float bipolarSource = sourceValue(state.modSource[i]) * 2.0f - 1.0f;
+        const float bipolarSource = sourceValue(i) * 2.0f - 1.0f;
         sum += bipolarSource * depth;
         minSum -= std::abs(depth);
         maxSum += std::abs(depth);
