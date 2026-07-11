@@ -39,6 +39,7 @@ struct PagedHostIO
     bool m_sw2Pulse{false};
     bool m_marblesPulse{false};
     PermanentModTapRack m_v2ModTaps;
+    V2LaneDepthStore m_v2LaneDepths;
     VcoAdsrState m_vcoAdsr;
     float m_globalCrunchy = 0.0f;
     bool m_enableCurrentPageKnobReplay = true;
@@ -446,7 +447,7 @@ private:
         for (uint8_t page = 0; page < m_pageManager.m_numPages; ++page)
         {
             const uint8_t crispyRow = V2ParamDisplayNames::CrispyRowForPage(page);
-            m_pageManager.m_pages[page].ConfigureV2Fuego(&m_globalCrunchy, crispyRow, &m_v2ModTaps);
+            m_pageManager.m_pages[page].ConfigureV2Fuego(&m_globalCrunchy, crispyRow, &m_v2ModTaps, &m_v2LaneDepths);
         }
     }
 };

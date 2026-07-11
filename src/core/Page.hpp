@@ -10,6 +10,16 @@
 #include <cstdint>
 
 struct PageManager;
+struct V2LaneDepthStore;
+
+// Defined in V2LaneDepthStore.hpp; forward-declared here so Page can call it
+// without requiring V2LaneDepthStore's full definition (which itself needs
+// PageManager::x_numPages, included at the bottom of this file).
+inline float ApplyV2LaneMod(float knob,
+                            uint8_t page,
+                            uint8_t position,
+                            const V2LaneDepthStore& depths,
+                            const PermanentModTapRack& taps);
 
 struct Page
 {
@@ -20,6 +30,7 @@ struct Page
     bool m_useV2Fuego = false;
     float* m_globalCrunchy = nullptr;
     const PermanentModTapRack* m_v2ModTaps = nullptr;
+    const V2LaneDepthStore* m_v2LaneDepths = nullptr;
     uint8_t m_v2CrispyRow = static_cast<uint8_t>(Parameter::x_numParameters - 1);
 
     void InitParam(const char* name, uint8_t position, float defaultValue)
@@ -99,12 +110,16 @@ struct Page
         }
     }
 
-    void ConfigureV2Fuego(float* globalCrunchy, uint8_t crispyRow, const PermanentModTapRack* v2ModTaps)
+    void ConfigureV2Fuego(float* globalCrunchy,
+                          uint8_t crispyRow,
+                          const PermanentModTapRack* v2ModTaps,
+                          const V2LaneDepthStore* v2LaneDepths = nullptr)
     {
         m_useV2Fuego = true;
         m_globalCrunchy = globalCrunchy;
         m_v2CrispyRow = crispyRow;
         m_v2ModTaps = v2ModTaps;
+        m_v2LaneDepths = v2LaneDepths;
     }
 
     float ApplyV2MusicalFuego(float preFuegoValue, uint8_t row) const
@@ -139,6 +154,10 @@ private:
             return 0.0f;
         }
         const Parameter& param = m_parameters[position];
+        if (m_useV2Fuego && m_v2LaneDepths && m_v2ModTaps)
+        {
+            return ApplyV2LaneMod(param.m_knobValue, m_pageId, position, *m_v2LaneDepths, *m_v2ModTaps);
+        }
         if (!m_modMgr || param.m_modIndex == 255)
         {
             return param.m_knobValue;
@@ -521,3 +540,9 @@ struct PageManager
         }
     }
 };
+
+// Included at the bottom (not the top) of this file on purpose: V2LaneDepthStore
+// sizes its array from PageManager::x_numPages, so it must be defined after
+// PageManager above. Page itself only needs the forward declaration + the
+// ApplyV2LaneMod prototype declared near the top of this file.
+#include "V2LaneDepthStore.hpp"
