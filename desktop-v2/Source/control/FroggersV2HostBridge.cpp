@@ -3,6 +3,7 @@
 #include "HostParameterInventoryV2.hpp"
 #include "HostParameterRoutingV2.hpp"
 #include "PermanentModTapRack.hpp"
+#include "manifest/FroggersV2AppManifest.hpp"
 
 #include <algorithm>
 
@@ -138,6 +139,27 @@ void FroggersV2HostBridge::syncModRoutes(uint8_t page, uint8_t row, ModRouteDire
     const uint8_t engineMod = engineModFromInternal(internal);
     const float depth = m_core.assignedModDepth(page, row);
     HostParameterRoutingV2::applyPageModSource(page, row, engineMod, m_host, delay);
+
+    // Packet 15-B: populate the V2-only additive multi-tap depth store
+    // (sim/V2LaneDepthStore.hpp) so Page::GetPreFuegoValue's lane sum is no
+    // longer all zeros. Ineligible lanes are zeroed so the engine sum stays
+    // correct. The Delay UI page is excluded -- its PM page index (5) aliases
+    // the ADSR PM page (HostParameterInventoryV2::kPmAdsrPage == 5), and
+    // Delay mod routing stays on DelayState's own single-route storage
+    // (out of scope for this packet).
+    if (!HostParameterRoutingV2::isDelayUiPage(page))
+    {
+        const bool externalAudioAvailable = m_core.externalAudioAvailable();
+        const uint8_t pmPage = HostParameterRoutingV2::pmPageForUiPage(page);
+        for (uint8_t lane = 0; lane < PermanentModTapRack::kNumTaps; ++lane)
+        {
+            const bool eligible = froggers_v2::manifest::isModSourceEligibleForRow(
+                page, row, lane, externalAudioAvailable);
+            const float laneDepthValue = eligible ? m_core.laneDepth(page, row, lane) : 0.0f;
+            m_host.SetPageLaneDepth(pmPage, row, lane, laneDepthValue);
+        }
+    }
+
     if (delay != nullptr)
     {
         HostParameterRoutingV2::applyPageModDepth(page, row, depth, m_host, *delay);

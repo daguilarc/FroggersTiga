@@ -186,6 +186,13 @@ public:
     void setGestureWeight(uint8_t lane, float value);
     uint8_t assignedModSource(uint8_t page, uint8_t row) const;
     float assignedModDepth(uint8_t page, uint8_t row) const;
+    // Packet 15-B: per-lane depth accessor feeding the V2 additive multi-tap
+    // apply (sim/V2LaneDepthStore.hpp). ParamState still stores parallel
+    // modSource[15]/modDepth[15] arrays under the pre-15.2 single-route
+    // model (collapsing them to lane identity is 15.2a, out of scope here),
+    // so this searches for the lane's slot rather than indexing modDepth
+    // directly by lane.
+    float laneDepth(uint8_t page, uint8_t row, uint8_t lane) const;
     void applyHostModRoute(uint8_t page, uint8_t row, uint8_t engineModIndex, float depth);
     void processBus();
     bool consumeContentMutated();

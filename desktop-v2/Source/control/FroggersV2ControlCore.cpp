@@ -247,6 +247,23 @@ float FroggersV2ControlCore::assignedModDepth(uint8_t page, uint8_t row) const
     return 0.0f;
 }
 
+float FroggersV2ControlCore::laneDepth(uint8_t page, uint8_t row, uint8_t lane) const
+{
+    if (page >= kNumHostPages || row >= rowsForPage(page) || lane >= kNumModSources)
+    {
+        return 0.0f;
+    }
+    const ParamState& param = m_params[page][row];
+    for (uint8_t i = 0; i < kNumModSources; ++i)
+    {
+        if (param.modSource[i] == lane)
+        {
+            return param.modDepth[i];
+        }
+    }
+    return 0.0f;
+}
+
 void FroggersV2ControlCore::executeRandomization(RandomizationCommand command,
                                                   uint8_t sceneScope,
                                                   uint8_t stepScope)

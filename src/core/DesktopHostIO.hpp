@@ -615,6 +615,15 @@ struct DesktopHostIO
         m_pageManager.SetPageModDepth(page, position, depth);
     }
 
+    // Packet 15-B: V2-only per-lane depth write, mirroring SetPageModDepth's
+    // direct (non-queued) write discipline in this file. Feeds the additive
+    // multi-tap store (sim/V2LaneDepthStore.hpp) that Page::GetPreFuegoValue
+    // reads via ApplyV2LaneMod.
+    void SetPageLaneDepth(uint8_t page, uint8_t position, uint8_t lane, float depth)
+    {
+        m_v2LaneDepths.Set(page, position, lane, depth);
+    }
+
     void SetMidiCcPairEnabled(uint8_t pairIndex, bool enabled)
     {
         if (pairIndex >= 2)

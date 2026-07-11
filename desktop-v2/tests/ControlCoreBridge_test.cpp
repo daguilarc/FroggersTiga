@@ -1,5 +1,6 @@
 #include "DelayState.hpp"
 #include "HostParameterInventoryV2.hpp"
+#include "HostParameterRoutingV2.hpp"
 #include "PermanentModTapRack.hpp"
 #include "V2ParamDisplayNames.hpp"
 #include "control/FroggersV2ControlCore.hpp"
@@ -1605,6 +1606,249 @@ bool test_rand_all_respects_scene_scope()
     }
     return true;
 }
+
+// Packet 15-B: plumb per-lane depths (FroggersV2ControlCore::laneDepth /
+// DesktopHostIO::SetPageLaneDepth) into the V2-only additive multi-lane
+// modulation store (sim/V2LaneDepthStore.hpp) so 15-A's engine-side apply
+// (Page::GetPreFuegoValue) stops reading all zeros.
+//
+// ParamState still stores parallel modSource[15]/modDepth[15] arrays under
+// the pre-15.2 single-active-route-per-row model (setSingleModSource clears
+// every lane slot before writing the chosen source into slot 0; collapsing
+// the arrays so every lane is independently addressable is 15.2a, explicitly
+// out of scope here). So a single row can only ever carry one live nonzero
+// lane depth through the normal input path -- the tests below prove the
+// per-lane loop places each row's assigned lane at the *correct* lane index
+// in the host store (not hardcoded to lane 0) by exercising two different
+// rows carrying two different lanes, rather than claiming two simultaneous
+// lanes on one row (which the current single-route model cannot express).
+
+bool assignLiveModRoute(FroggersV2ControlCore& core, uint8_t page, uint8_t row, uint8_t lane, float turnSteps)
+{
+    MessageIn assign;
+    assign.type = MessageIn::Type::ModSourceAssign;
+    assign.page = page;
+    assign.slot = row;
+    assign.index = lane;
+    pushAndProcess(core, assign);
+
+    MessageIn press;
+    press.type = MessageIn::Type::ParamPress;
+    press.page = page;
+    press.slot = row;
+    pushAndProcess(core, press);
+
+    // While the detail (mod-view) grid is open, slot == lane addresses that
+    // lane's cell directly (FroggersV2ControlCore::rebuildVisibleSlots).
+    pushAndProcess(core, MessageIn::ParamTurn(page, lane, turnSteps));
+
+    MessageIn closePress;
+    closePress.type = MessageIn::Type::ParamPress;
+    closePress.page = page;
+    closePress.slot = static_cast<uint8_t>(core.uiState().visibleCount.load(std::memory_order_acquire) - 1);
+    pushAndProcess(core, closePress);
+    return true;
+}
+
+// FroggersV2HostBridge::syncModRoutes/syncAllModRoutesToHost (where the
+// Packet 15-B per-lane push lives) are private -- the bridge's only public
+// trigger for the ToHost mod-route sync is a sequencer recall. Capturing the
+// core's current live state into a sequencer slot and immediately recalling
+// it is a value-preserving round trip (capture reads back exactly what was
+// just assigned) that reaches that private sync through public API only,
+// matching the existing test_write_seq_stopped_navigate_save-style usage of
+// captureLiveToSequencerStep/recallSequencerStep elsewhere in this file.
+void triggerToHostModRouteSync(FroggersV2HostBridge& bridge, uint8_t sequencerSlot)
+{
+    bridge.captureLiveToSequencerStep(sequencerSlot);
+    bridge.recallSequencerStep(sequencerSlot);
+}
+
+bool test_v2_lane_depth_store_places_each_row_at_its_own_lane()
+{
+    FroggersV2ControlCore core;
+    DesktopHostIO host;
+    DelayState delay;
+    host.setDelayState(&delay);
+    host.m_hostKind = SimHostKind::DesktopV2;
+    host.Init();
+    host.SetSampleRate(44100.0f);
+    FroggersV2HostBridge bridge(core, host);
+
+    constexpr uint8_t kPage = 1; // Filter: no VCO pair-bus eligibility special-case (that's page 0 only)
+    constexpr uint8_t kRowA = 2;
+    constexpr uint8_t kLaneA = 8; // lfo_1
+    constexpr uint8_t kRowB = 3;
+    constexpr uint8_t kLaneB = 10; // lfo_3
+
+    MessageIn selectPage;
+    selectPage.type = MessageIn::Type::SelectPage;
+    selectPage.page = kPage;
+    pushAndProcess(core, selectPage);
+
+    assignLiveModRoute(core, kPage, kRowA, kLaneA, 10.0f);  // depth ~ +0.4
+    assignLiveModRoute(core, kPage, kRowB, kLaneB, -6.0f);  // depth ~ -0.24
+
+    const float expectedDepthA = core.laneDepth(kPage, kRowA, kLaneA);
+    const float expectedDepthB = core.laneDepth(kPage, kRowB, kLaneB);
+    if (nearlyEqual(expectedDepthA, 0.0f) || nearlyEqual(expectedDepthB, 0.0f))
+    {
+        std::printf(
+            "FAIL: test precondition, expected non-zero live lane depths (A=%f B=%f)\n",
+            expectedDepthA,
+            expectedDepthB);
+        return false;
+    }
+
+    triggerToHostModRouteSync(bridge, 0);
+
+    const uint8_t pmPage = HostParameterRoutingV2::pmPageForUiPage(kPage);
+    const float storedA = host.m_v2LaneDepths.Get(pmPage, kRowA, kLaneA);
+    const float storedB = host.m_v2LaneDepths.Get(pmPage, kRowB, kLaneB);
+    if (!nearlyEqual(storedA, expectedDepthA, 2.0e-3f))
+    {
+        std::printf("FAIL: row A lane store expected %f got %f\n", expectedDepthA, storedA);
+        return false;
+    }
+    if (!nearlyEqual(storedB, expectedDepthB, 2.0e-3f))
+    {
+        std::printf("FAIL: row B lane store expected %f got %f\n", expectedDepthB, storedB);
+        return false;
+    }
+    // Each row's non-assigned lane slot must stay zero -- proves the per-lane
+    // loop writes into the correct lane index per row, not a fixed lane 0 or
+    // smeared across every lane.
+    if (!nearlyEqual(host.m_v2LaneDepths.Get(pmPage, kRowA, kLaneB), 0.0f))
+    {
+        std::printf("FAIL: row A lane B slot expected 0\n");
+        return false;
+    }
+    if (!nearlyEqual(host.m_v2LaneDepths.Get(pmPage, kRowB, kLaneA), 0.0f))
+    {
+        std::printf("FAIL: row B lane A slot expected 0\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_v2_lane_depth_store_zeros_ineligible_lane()
+{
+    // isModSourceEligibleForRow rejects external-audio lanes (13/14) whenever
+    // externalAudioAvailable() is false -- FroggersV2ControlCore's default
+    // (wiring it from the audio engine is Packet 15.3a, out of scope here).
+    // ModSourceAssign itself doesn't enforce eligibility (that's a host-
+    // store/UI concern per the manifest), so a live route can still point at
+    // an ineligible lane; the bridge's per-lane push must zero it in the host
+    // store rather than leaking a nonzero depth into the engine's additive
+    // sum.
+    FroggersV2ControlCore core;
+    DesktopHostIO host;
+    DelayState delay;
+    host.setDelayState(&delay);
+    host.m_hostKind = SimHostKind::DesktopV2;
+    host.Init();
+    host.SetSampleRate(44100.0f);
+    FroggersV2HostBridge bridge(core, host);
+
+    constexpr uint8_t kPage = 1;
+    constexpr uint8_t kRow = 4;
+    constexpr uint8_t kLane = froggers_v2::manifest::kExternalAudioRateLane;
+
+    if (core.externalAudioAvailable())
+    {
+        std::printf("FAIL: test precondition, expected externalAudioAvailable() false by default\n");
+        return false;
+    }
+
+    MessageIn selectPage;
+    selectPage.type = MessageIn::Type::SelectPage;
+    selectPage.page = kPage;
+    pushAndProcess(core, selectPage);
+
+    assignLiveModRoute(core, kPage, kRow, kLane, 10.0f);
+
+    const float liveDepth = core.laneDepth(kPage, kRow, kLane);
+    if (nearlyEqual(liveDepth, 0.0f))
+    {
+        std::printf("FAIL: test precondition, expected a non-zero live depth on the ineligible lane\n");
+        return false;
+    }
+
+    triggerToHostModRouteSync(bridge, 0);
+
+    const uint8_t pmPage = HostParameterRoutingV2::pmPageForUiPage(kPage);
+    const float stored = host.m_v2LaneDepths.Get(pmPage, kRow, kLane);
+    if (!nearlyEqual(stored, 0.0f))
+    {
+        std::printf(
+            "FAIL: ineligible lane depth expected 0 in host store, got %f (live depth was %f)\n",
+            stored,
+            liveDepth);
+        return false;
+    }
+    return true;
+}
+
+bool test_v2_lane_depth_additive_sum_reaches_engine()
+{
+    // Integration: the populated V2LaneDepthStore must actually change
+    // Page::GetPreFuegoValue's output through ApplyV2LaneMod's additive sum,
+    // not just sit in the store unread. GetPreFuegoValue itself is private,
+    // so this drives the public GetParam/GetPageParam path with neutral
+    // crunchy (globalCrunchy defaults to 0, and the page's crispy row is
+    // left untouched at its own zero default) so the V2 fuego stack's
+    // Fuegoize calls degenerate to identity and GetPageParam reduces exactly
+    // to clamp(knob + tap*depth, 0, 1).
+    FroggersV2ControlCore core;
+    DesktopHostIO host;
+    DelayState delay;
+    host.setDelayState(&delay);
+    host.m_hostKind = SimHostKind::DesktopV2;
+    host.Init();
+    host.SetSampleRate(44100.0f);
+    FroggersV2HostBridge bridge(core, host);
+
+    constexpr uint8_t kPage = 1;
+    constexpr uint8_t kRow = 5;
+    constexpr uint8_t kLane = 9; // lfo_2
+
+    MessageIn selectPage;
+    selectPage.type = MessageIn::Type::SelectPage;
+    selectPage.page = kPage;
+    pushAndProcess(core, selectPage);
+
+    bridge.syncToHost();
+    const uint8_t pmPage = HostParameterRoutingV2::pmPageForUiPage(kPage);
+    const float knobBaseline = host.GetPageParam(pmPage, kRow);
+
+    assignLiveModRoute(core, kPage, kRow, kLane, 10.0f); // depth ~ +0.4
+    const float depth = core.laneDepth(kPage, kRow, kLane);
+    if (nearlyEqual(depth, 0.0f))
+    {
+        std::printf("FAIL: test precondition, expected a non-zero live lane depth\n");
+        return false;
+    }
+
+    triggerToHostModRouteSync(bridge, 0);
+
+    constexpr float kTapValue = 0.5f;
+    host.m_v2ModTaps.SetTap(kLane, kTapValue);
+
+    const float expected = std::min(std::max(knobBaseline + kTapValue * depth, 0.0f), 1.0f);
+    const float actual = host.GetPageParam(pmPage, kRow);
+    if (!nearlyEqual(actual, expected, 2.0e-3f))
+    {
+        std::printf(
+            "FAIL: additive sum mismatch expected=%f got=%f (knob=%f depth=%f tap=%f)\n",
+            expected,
+            actual,
+            knobBaseline,
+            depth,
+            kTapValue);
+        return false;
+    }
+    return true;
+}
 } // namespace
 
 int main()
@@ -1750,6 +1994,18 @@ int main()
         return 1;
     }
     if (!test_pair_ar_page_seven_rows())
+    {
+        return 1;
+    }
+    if (!test_v2_lane_depth_store_places_each_row_at_its_own_lane())
+    {
+        return 1;
+    }
+    if (!test_v2_lane_depth_store_zeros_ineligible_lane())
+    {
+        return 1;
+    }
+    if (!test_v2_lane_depth_additive_sum_reaches_engine())
     {
         return 1;
     }
