@@ -60,3 +60,34 @@ inline float ApplyV2LaneMod(float knob,
     }
     return std::min(std::max(sum, 0.0f), 1.0f);
 }
+
+// Type-erased entry point matching Page.hpp's V2FuegoApplyFn signature.
+// Page.hpp cannot see the complete PermanentModTapRack/V2LaneDepthStore types
+// (firmware never puts sim/ on its include path), so it calls through this
+// function pointer with void* instead. Callers that DO have the real types
+// (DesktopHostIO, PagedHostIO, sim tests) pass &ApplyV2FuegoOpaque to
+// Page::ConfigureV2Fuego. laneDepthsVoid non-null selects the multi-lane
+// additive sum; null falls back to the single-source crossfade this codebase
+// used before Packet 15's multi-lane model (still exercised by callers that
+// configure V2Fuego without a depth store).
+inline float ApplyV2FuegoOpaque(float knobValue,
+                                uint8_t modIndex,
+                                float modAmount,
+                                uint8_t pageId,
+                                uint8_t position,
+                                const void* tapsVoid,
+                                const void* laneDepthsVoid)
+{
+    const auto* taps = static_cast<const PermanentModTapRack*>(tapsVoid);
+    const auto* depths = static_cast<const V2LaneDepthStore*>(laneDepthsVoid);
+    if (depths != nullptr)
+    {
+        return ApplyV2LaneMod(knobValue, pageId, position, *depths, *taps);
+    }
+    if (modIndex <= PermanentModTapRack::kLastIndex)
+    {
+        const float tap = taps->GetTap(modIndex);
+        return std::min(std::max(knobValue * (1.0f - modAmount) + tap * modAmount, 0.0f), 1.0f);
+    }
+    return knobValue;
+}

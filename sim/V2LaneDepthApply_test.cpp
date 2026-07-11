@@ -1,6 +1,7 @@
 #include "ModMgr.hpp"
 #include "Page.hpp"
 #include "PermanentModTapRack.hpp"
+#include "V2FuegoStack.hpp"
 #include "V2LaneDepthStore.hpp"
 
 #include <cmath>
@@ -24,7 +25,12 @@ int main()
         PermanentModTapRack taps;
         Page page{};
         page.m_pageId = 0;
-        page.ConfigureV2Fuego(nullptr, 9, &taps, &depths);
+        page.ConfigureV2Fuego(
+            nullptr,
+            9,
+            &taps,
+            V2FuegoFns{&ApplyV2FuegoOpaque, &V2FuegoStack::ApplyGlobal, &V2FuegoStack::ApplyMusicalRow},
+            &depths);
         page.m_parameters[3].m_knobValue = 0.5f;
 
         taps.SetTap(3, 1.0f);
@@ -47,7 +53,12 @@ int main()
         PermanentModTapRack taps;
         Page page{};
         page.m_pageId = 0;
-        page.ConfigureV2Fuego(nullptr, 9, &taps, &depths);
+        page.ConfigureV2Fuego(
+            nullptr,
+            9,
+            &taps,
+            V2FuegoFns{&ApplyV2FuegoOpaque, &V2FuegoStack::ApplyGlobal, &V2FuegoStack::ApplyMusicalRow},
+            &depths);
         page.m_parameters[2].m_knobValue = 0.5f;
 
         taps.SetTap(0, 1.0f);
@@ -81,7 +92,12 @@ int main()
         PermanentModTapRack taps;
         Page page{};
         page.m_pageId = 0;
-        page.ConfigureV2Fuego(nullptr, 9, &taps, &depths);
+        page.ConfigureV2Fuego(
+            nullptr,
+            9,
+            &taps,
+            V2FuegoFns{&ApplyV2FuegoOpaque, &V2FuegoStack::ApplyGlobal, &V2FuegoStack::ApplyMusicalRow},
+            &depths);
         page.m_parameters[5].m_knobValue = 0.37f;
 
         for (uint8_t lane = 0; lane < PermanentModTapRack::kNumTaps; lane++)

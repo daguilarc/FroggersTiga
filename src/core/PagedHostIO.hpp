@@ -8,6 +8,8 @@
 #include "SimModSource.hpp"
 #include "V2EngineSetup.hpp"
 #include "PermanentModTapRack.hpp"
+#include "V2FuegoStack.hpp"
+#include "V2LaneDepthStore.hpp"
 #include "V2ParamDisplayNames.hpp"
 #include "VcoAdsrState.hpp"
 
@@ -456,7 +458,12 @@ private:
         for (uint8_t page = 0; page < m_pageManager.m_numPages; ++page)
         {
             const uint8_t crispyRow = V2ParamDisplayNames::CrispyRowForPage(page);
-            m_pageManager.m_pages[page].ConfigureV2Fuego(&m_globalCrunchy, crispyRow, &m_v2ModTaps, &m_v2LaneDepths);
+            m_pageManager.m_pages[page].ConfigureV2Fuego(
+                &m_globalCrunchy,
+                crispyRow,
+                &m_v2ModTaps,
+                V2FuegoFns{&ApplyV2FuegoOpaque, &V2FuegoStack::ApplyGlobal, &V2FuegoStack::ApplyMusicalRow},
+                &m_v2LaneDepths);
         }
     }
 };

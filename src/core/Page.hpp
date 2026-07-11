@@ -3,23 +3,42 @@
 #include "Parameter.hpp"
 #include "ModMgr.hpp"
 #include "SimModSource.hpp"
-#include "PermanentModTapRack.hpp"
-#include "V2FuegoStack.hpp"
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 
 struct PageManager;
-struct V2LaneDepthStore;
 
-// Defined in V2LaneDepthStore.hpp; forward-declared here so Page can call it
-// without requiring V2LaneDepthStore's full definition (which itself needs
-// PageManager::x_numPages, included at the bottom of this file).
-inline float ApplyV2LaneMod(float knob,
-                            uint8_t page,
-                            uint8_t position,
-                            const V2LaneDepthStore& depths,
-                            const PermanentModTapRack& taps);
+// V2-fuego modulation is implemented in sim/ (PermanentModTapRack,
+// V2LaneDepthStore, V2FuegoStack/Fuegoize) but Page must stay compilable by
+// firmware targets that never put sim/ on their include path (Daisy) -- Page
+// never enables V2Fuego there, so it never needs the complete sim/ types,
+// only an opaque pointer + a small bundle of function pointers to call
+// through. Callers that DO need V2Fuego (desktop-v2, VST, web, VCV, sim
+// tests) supply the real typed implementation via ConfigureV2Fuego; see
+// sim/V2LaneDepthStore.hpp's ApplyV2FuegoOpaque and V2FuegoStack.hpp's
+// ApplyGlobal/ApplyMusicalRow (the latter two take only primitives, so they
+// are passed directly as function pointers -- no opaque wrapper needed).
+using V2FuegoApplyFn = float (*)(float knobValue,
+                                 uint8_t modIndex,
+                                 float modAmount,
+                                 uint8_t pageId,
+                                 uint8_t position,
+                                 const void* taps,
+                                 const void* laneDepths);
+using V2FuegoGlobalFn = float (*)(float value, float globalCrunchy, uint8_t row);
+using V2FuegoMusicalRowFn = float (*)(float value,
+                                      float globalCrunchy,
+                                      float crispyKnobPreFuego,
+                                      uint8_t row,
+                                      uint8_t crispyRow);
+
+struct V2FuegoFns
+{
+    V2FuegoApplyFn apply = nullptr;
+    V2FuegoGlobalFn applyGlobal = nullptr;
+    V2FuegoMusicalRowFn applyMusicalRow = nullptr;
+};
 
 struct Page
 {
@@ -29,8 +48,9 @@ struct Page
     ModMgr* m_modMgr;
     bool m_useV2Fuego = false;
     float* m_globalCrunchy = nullptr;
-    const PermanentModTapRack* m_v2ModTaps = nullptr;
-    const V2LaneDepthStore* m_v2LaneDepths = nullptr;
+    const void* m_v2ModTaps = nullptr;
+    const void* m_v2LaneDepths = nullptr;
+    V2FuegoFns m_v2Fuego{};
     uint8_t m_v2CrispyRow = static_cast<uint8_t>(Parameter::x_numParameters - 1);
 
     void InitParam(const char* name, uint8_t position, float defaultValue)
@@ -112,25 +132,27 @@ struct Page
 
     void ConfigureV2Fuego(float* globalCrunchy,
                           uint8_t crispyRow,
-                          const PermanentModTapRack* v2ModTaps,
-                          const V2LaneDepthStore* v2LaneDepths = nullptr)
+                          const void* v2ModTaps,
+                          const V2FuegoFns& fns,
+                          const void* v2LaneDepths = nullptr)
     {
         m_useV2Fuego = true;
         m_globalCrunchy = globalCrunchy;
         m_v2CrispyRow = crispyRow;
         m_v2ModTaps = v2ModTaps;
+        m_v2Fuego = fns;
         m_v2LaneDepths = v2LaneDepths;
     }
 
     float ApplyV2MusicalFuego(float preFuegoValue, uint8_t row) const
     {
-        if (!m_useV2Fuego)
+        if (!m_useV2Fuego || !m_v2Fuego.applyMusicalRow)
         {
             return preFuegoValue;
         }
         const float globalCrunchy = m_globalCrunchy ? *m_globalCrunchy : 0.0f;
         const float crispyKnobPre = GetPreFuegoValue(m_v2CrispyRow);
-        return V2FuegoStack::ApplyMusicalRow(
+        return m_v2Fuego.applyMusicalRow(
             preFuegoValue, globalCrunchy, crispyKnobPre, row, m_v2CrispyRow);
     }
 
@@ -154,19 +176,19 @@ private:
             return 0.0f;
         }
         const Parameter& param = m_parameters[position];
-        if (m_useV2Fuego && m_v2LaneDepths && m_v2ModTaps)
+        if (m_useV2Fuego && m_v2Fuego.apply && m_v2ModTaps)
         {
-            return ApplyV2LaneMod(param.m_knobValue, m_pageId, position, *m_v2LaneDepths, *m_v2ModTaps);
+            return m_v2Fuego.apply(param.m_knobValue,
+                                   param.m_modIndex,
+                                   param.m_modAmount,
+                                   m_pageId,
+                                   position,
+                                   m_v2ModTaps,
+                                   m_v2LaneDepths);
         }
         if (!m_modMgr || param.m_modIndex == 255)
         {
             return param.m_knobValue;
-        }
-        if (m_useV2Fuego && m_v2ModTaps && param.m_modIndex <= PermanentModTapRack::kLastIndex)
-        {
-            const float tap = m_v2ModTaps->GetTap(param.m_modIndex);
-            return std::min(
-                std::max(param.m_knobValue * (1.0f - param.m_modAmount) + tap * param.m_modAmount, 0.0f), 1.0f);
         }
         if (param.m_modIndex <= 6)
         {
@@ -181,7 +203,7 @@ private:
         if (position == m_v2CrispyRow || position >= x_numParameters)
         {
             const float globalCrunchy = m_globalCrunchy ? *m_globalCrunchy : 0.0f;
-            return V2FuegoStack::ApplyGlobal(value, globalCrunchy, position);
+            return m_v2Fuego.applyGlobal ? m_v2Fuego.applyGlobal(value, globalCrunchy, position) : value;
         }
         return ApplyV2MusicalFuego(value, position);
     }
@@ -540,9 +562,3 @@ struct PageManager
         }
     }
 };
-
-// Included at the bottom (not the top) of this file on purpose: V2LaneDepthStore
-// sizes its array from PageManager::x_numPages, so it must be defined after
-// PageManager above. Page itself only needs the forward declaration + the
-// ApplyV2LaneMod prototype declared near the top of this file.
-#include "V2LaneDepthStore.hpp"

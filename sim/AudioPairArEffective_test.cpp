@@ -2,6 +2,8 @@
 #include "ModMgr.hpp"
 #include "Page.hpp"
 #include "PermanentModTapRack.hpp"
+#include "V2FuegoStack.hpp"
+#include "V2LaneDepthStore.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -140,7 +142,11 @@ int main()
     {
         audioPage.InitParam("x", i, 0.0f);
     }
-    audioPage.ConfigureV2Fuego(&globalCrunchy, 7, &v2Taps);
+    audioPage.ConfigureV2Fuego(
+        &globalCrunchy,
+        7,
+        &v2Taps,
+        V2FuegoFns{&ApplyV2FuegoOpaque, &V2FuegoStack::ApplyGlobal, &V2FuegoStack::ApplyMusicalRow});
     state.setV2FuegoConfig(&audioPage, SimHostKind::Web);
     state.setModSource(0, 255);
     globalCrunchy = 0.0f;
