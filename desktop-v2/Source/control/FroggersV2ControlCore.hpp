@@ -45,6 +45,7 @@ struct MessageIn
     {
         ParamIncDec,
         ParamPress,
+        ModDrillIn,
         ShiftHeld,
         SceneSelect,
         SceneBlend,
@@ -74,6 +75,15 @@ struct MessageIn
         m.page = pageIn;
         m.slot = slotIn;
         m.value = delta;
+        return m;
+    }
+
+    static MessageIn ModDrillIn(uint8_t pageIn, uint8_t slotIn)
+    {
+        MessageIn m;
+        m.type = Type::ModDrillIn;
+        m.page = pageIn;
+        m.slot = slotIn;
         return m;
     }
 
@@ -250,6 +260,7 @@ private:
     void applyMessage(const MessageIn& message);
     void onParamTurn(uint8_t page, uint8_t slot, float delta);
     void onParamPress(uint8_t page, uint8_t slot);
+    void onModDrillIn(uint8_t page, uint8_t slot);
     void onSceneSelect(uint8_t sceneOrdinal);
     void onModSourceAssign(uint8_t page, uint8_t row, uint8_t source);
     void onRandAll(uint8_t sceneScope);

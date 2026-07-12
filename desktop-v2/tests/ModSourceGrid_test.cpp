@@ -47,13 +47,9 @@ MessageIn assignSource(uint8_t page, uint8_t row, uint8_t source)
     return m;
 }
 
-MessageIn press(uint8_t page, uint8_t slot)
+MessageIn modDrillIn(uint8_t page, uint8_t slot)
 {
-    MessageIn m;
-    m.type = MessageIn::Type::ParamPress;
-    m.page = page;
-    m.slot = slot;
-    return m;
+    return MessageIn::ModDrillIn(page, slot);
 }
 
 // Opens the parameter-detail grid on (page, row) with `source` assigned.
@@ -61,7 +57,7 @@ void openDetailGrid(FroggersV2ControlCore& core, uint8_t page, uint8_t row, uint
 {
     pushAndProcess(core, selectPage(page));
     pushAndProcess(core, assignSource(page, row, source));
-    pushAndProcess(core, press(page, row));
+    pushAndProcess(core, modDrillIn(page, row));
 }
 
 bool test_15_lane_rack()

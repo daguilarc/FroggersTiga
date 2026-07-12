@@ -276,6 +276,7 @@ bool messageMutatesPatchContent(MessageIn::Type type)
         case MessageIn::Type::SceneBlend:
         case MessageIn::Type::GestureSelect:
         case MessageIn::Type::SelectPage:
+        case MessageIn::Type::ModDrillIn:
         case MessageIn::Type::Clock:
             return false;
     }
@@ -507,6 +508,9 @@ void FroggersV2ControlCore::applyMessage(const MessageIn& message)
         case MessageIn::Type::ParamPress:
             onParamPress(message.page, message.slot);
             break;
+        case MessageIn::Type::ModDrillIn:
+            onModDrillIn(message.page, message.slot);
+            break;
         case MessageIn::Type::ShiftHeld:
             break;
         case MessageIn::Type::SceneSelect:
@@ -641,27 +645,39 @@ void FroggersV2ControlCore::onParamPress(uint8_t page, uint8_t slot)
     {
         return;
     }
-    if (m_modView.open)
+    if (!m_modView.open)
     {
-        if (slot >= m_visibleCount)
-        {
-            return;
-        }
-        const VisibleSlot visible = m_visibleSlots[slot];
-        if (visible.isTarget)
-        {
-            m_modView.open = false;
-            m_modView.targetRow = kNoSelection;
-            rebuildVisibleSlots();
-            return;
-        }
-        // Packet 15.2a: pressing a lane cell in the 16-cell detail grid clears
-        // that lane (turn sets a lane's depth, press clears it -- there is no
-        // "selection" concept left once every lane is independently active).
-        if (visible.modIndex < kNumModSources)
-        {
-            m_params[page][visible.row].modDepth[visible.modIndex] = 0.0f;
-        }
+        return;
+    }
+    if (slot >= m_visibleCount)
+    {
+        return;
+    }
+    const VisibleSlot visible = m_visibleSlots[slot];
+    if (visible.isTarget)
+    {
+        m_modView.open = false;
+        m_modView.targetRow = kNoSelection;
+        rebuildVisibleSlots();
+        return;
+    }
+    // Packet 15.2a: pressing a lane cell in the 16-cell detail grid clears
+    // that lane (turn sets a lane's depth, press clears it -- there is no
+    // "selection" concept left once every lane is independently active).
+    if (visible.modIndex < kNumModSources)
+    {
+        m_params[page][visible.row].modDepth[visible.modIndex] = 0.0f;
+    }
+}
+
+void FroggersV2ControlCore::onModDrillIn(uint8_t page, uint8_t slot)
+{
+    if (page == kCrunchyPage)
+    {
+        return;
+    }
+    if (page >= kNumHostPages)
+    {
         return;
     }
     const uint8_t row = slotToRow(page, slot);

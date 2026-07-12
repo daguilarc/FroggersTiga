@@ -183,11 +183,7 @@ bool test_interaction_matrix_revert_and_mod_view()
     assign.index = 0;
     pushAndProcess(core, assign);
 
-    MessageIn press;
-    press.type = MessageIn::Type::ParamPress;
-    press.page = 0;
-    press.slot = 0;
-    pushAndProcess(core, press);
+    pushAndProcess(core, MessageIn::ModDrillIn(0, 0));
     if (core.uiState().modViewTargetRow.load(std::memory_order_acquire) != 0)
     {
         std::printf("FAIL: mod view did not open on assigned row\n");
@@ -1652,11 +1648,7 @@ bool assignLiveModRoute(FroggersV2ControlCore& core, uint8_t page, uint8_t row, 
     assign.index = lane;
     pushAndProcess(core, assign);
 
-    MessageIn press;
-    press.type = MessageIn::Type::ParamPress;
-    press.page = page;
-    press.slot = row;
-    pushAndProcess(core, press);
+    pushAndProcess(core, MessageIn::ModDrillIn(page, row));
 
     // While the detail (mod-view) grid is open, slot == lane addresses that
     // lane's cell directly (FroggersV2ControlCore::rebuildVisibleSlots).
@@ -1893,11 +1885,7 @@ bool test_multiple_lanes_active_simultaneously_on_one_row()
     selectPage.page = kPage;
     pushAndProcess(core, selectPage);
 
-    MessageIn openPress;
-    openPress.type = MessageIn::Type::ParamPress;
-    openPress.page = kPage;
-    openPress.slot = kRow;
-    pushAndProcess(core, openPress);
+    pushAndProcess(core, MessageIn::ModDrillIn(kPage, kRow));
 
     // Turn both lane cells while the same detail-grid session stays open --
     // no close/reopen, no re-selection between them.
@@ -1931,11 +1919,7 @@ bool test_press_clears_one_lane_leaves_sibling_lane_active()
     selectPage.page = kPage;
     pushAndProcess(core, selectPage);
 
-    MessageIn openPress;
-    openPress.type = MessageIn::Type::ParamPress;
-    openPress.page = kPage;
-    openPress.slot = kRow;
-    pushAndProcess(core, openPress);
+    pushAndProcess(core, MessageIn::ModDrillIn(kPage, kRow));
 
     pushAndProcess(core, MessageIn::ParamTurn(kPage, kLaneA, 10.0f));
     pushAndProcess(core, MessageIn::ParamTurn(kPage, kLaneB, -6.0f));
@@ -1998,11 +1982,7 @@ bool test_v2_lane_depth_store_and_engine_sum_two_simultaneous_lanes()
     const uint8_t pmPage = HostParameterRoutingV2::pmPageForUiPage(kPage);
     const float knobBaseline = host.GetPageParam(pmPage, kRow);
 
-    MessageIn openPress;
-    openPress.type = MessageIn::Type::ParamPress;
-    openPress.page = kPage;
-    openPress.slot = kRow;
-    pushAndProcess(core, openPress);
+    pushAndProcess(core, MessageIn::ModDrillIn(kPage, kRow));
 
     pushAndProcess(core, MessageIn::ParamTurn(kPage, kLaneA, 10.0f));  // depth ~ +0.4
     pushAndProcess(core, MessageIn::ParamTurn(kPage, kLaneB, -6.0f)); // depth ~ -0.24
@@ -2112,6 +2092,77 @@ bool test_rand_mods_gates_ineligible_lanes()
         return false;
     }
 
+    return true;
+}
+
+// Packet 15-C1: ModDrillIn (not ParamPress) is the sole action that opens the
+// detail grid; ParamPress inside an already-open view keeps its Packet 15.2a
+// meaning (clear a lane / exit via the Target-Back cell).
+bool test_mod_drill_in_opens_detail_grid()
+{
+    FroggersV2ControlCore core;
+    pushAndProcess(core, MessageIn::ModDrillIn(0, 0));
+    if (core.uiState().modViewTargetRow.load(std::memory_order_acquire) != 0)
+    {
+        std::printf("FAIL: ModDrillIn did not open the detail grid\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_param_press_no_longer_opens_detail_grid()
+{
+    FroggersV2ControlCore core;
+    MessageIn press;
+    press.type = MessageIn::Type::ParamPress;
+    press.page = 0;
+    press.slot = 0;
+    pushAndProcess(core, press);
+    if (core.uiState().modViewTargetRow.load(std::memory_order_acquire) != froggers_v2::kNoSelection)
+    {
+        std::printf("FAIL: ParamPress opened the detail grid (should be ModDrillIn-only now)\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_param_press_still_clears_lane_while_detail_grid_open()
+{
+    FroggersV2ControlCore core;
+    pushAndProcess(core, MessageIn::ModDrillIn(0, 0));
+    pushAndProcess(core, MessageIn::ParamTurn(0, 5, 10.0f));
+    if (nearlyEqual(core.laneDepth(0, 0, 5), 0.0f))
+    {
+        std::printf("FAIL: test precondition, lane 5 should be non-zero after turning\n");
+        return false;
+    }
+    MessageIn clearPress;
+    clearPress.type = MessageIn::Type::ParamPress;
+    clearPress.page = 0;
+    clearPress.slot = 5;
+    pushAndProcess(core, clearPress);
+    if (!nearlyEqual(core.laneDepth(0, 0, 5), 0.0f))
+    {
+        std::printf("FAIL: ParamPress on an open lane cell did not clear it\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_param_press_still_exits_detail_grid_via_target_cell()
+{
+    FroggersV2ControlCore core;
+    pushAndProcess(core, MessageIn::ModDrillIn(0, 0));
+    MessageIn closePress;
+    closePress.type = MessageIn::Type::ParamPress;
+    closePress.page = 0;
+    closePress.slot = static_cast<uint8_t>(core.uiState().visibleCount.load(std::memory_order_acquire) - 1);
+    pushAndProcess(core, closePress);
+    if (core.uiState().modViewTargetRow.load(std::memory_order_acquire) != froggers_v2::kNoSelection)
+    {
+        std::printf("FAIL: ParamPress on the Target(Back) cell did not exit the detail grid\n");
+        return false;
+    }
     return true;
 }
 } // namespace
@@ -2247,6 +2298,22 @@ int main()
         return 1;
     }
     if (!test_rand_mods_gates_ineligible_lanes())
+    {
+        return 1;
+    }
+    if (!test_mod_drill_in_opens_detail_grid())
+    {
+        return 1;
+    }
+    if (!test_param_press_no_longer_opens_detail_grid())
+    {
+        return 1;
+    }
+    if (!test_param_press_still_clears_lane_while_detail_grid_open())
+    {
+        return 1;
+    }
+    if (!test_param_press_still_exits_detail_grid_via_target_cell())
     {
         return 1;
     }

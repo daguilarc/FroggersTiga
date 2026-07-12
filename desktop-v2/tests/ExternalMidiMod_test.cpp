@@ -34,11 +34,8 @@ bool test_manifest_lane_assignment_persists()
     // depth defaults to 0/off"). Open the detail grid and turn the assigned
     // lane's own cell before checking assignedModSource, the same pattern
     // test_manifest_lane_affects_effective_value below already uses.
-    froggers_v2::MessageIn press;
-    press.type = froggers_v2::MessageIn::Type::ParamPress;
-    press.page = 0;
-    press.slot = 0;
-    pushAndProcess(core, press);
+    // Packet 15-C1: ModDrillIn (not ParamPress) opens the detail grid.
+    pushAndProcess(core, froggers_v2::MessageIn::ModDrillIn(0, 0));
     pushAndProcess(core, froggers_v2::MessageIn::ParamTurn(0, 8, 5.0f));
 
     if (core.assignedModSource(0, 0) != 8)
@@ -60,11 +57,8 @@ bool test_manifest_lane_affects_effective_value()
     assign.index = 3;
     pushAndProcess(core, assign);
 
-    froggers_v2::MessageIn press;
-    press.type = froggers_v2::MessageIn::Type::ParamPress;
-    press.page = 0;
-    press.slot = 0;
-    pushAndProcess(core, press);
+    // Packet 15-C1: ModDrillIn (not ParamPress) opens the detail grid.
+    pushAndProcess(core, froggers_v2::MessageIn::ModDrillIn(0, 0));
     // The parameter-detail grid is a fixed 16-cell layout where cell N maps to
     // manifest lane N, so the depth for the assigned source (lane 3, VCO 1 EF)
     // is edited via detail cell 3, not cell 0.
