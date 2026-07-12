@@ -28,6 +28,19 @@ bool test_manifest_lane_assignment_persists()
     assign.index = 8;
     pushAndProcess(core, assign);
 
+    // Packet 15.2a retired the single-route identity model: assignment alone
+    // does not make a lane "on" (a freshly-assigned lane genuinely reads as
+    // off/depth-0 until turned -- matches the target contract's "each lane
+    // depth defaults to 0/off"). Open the detail grid and turn the assigned
+    // lane's own cell before checking assignedModSource, the same pattern
+    // test_manifest_lane_affects_effective_value below already uses.
+    froggers_v2::MessageIn press;
+    press.type = froggers_v2::MessageIn::Type::ParamPress;
+    press.page = 0;
+    press.slot = 0;
+    pushAndProcess(core, press);
+    pushAndProcess(core, froggers_v2::MessageIn::ParamTurn(0, 8, 5.0f));
+
     if (core.assignedModSource(0, 0) != 8)
     {
         std::printf("FAIL: LFO 1 lane assignment did not persist\n");

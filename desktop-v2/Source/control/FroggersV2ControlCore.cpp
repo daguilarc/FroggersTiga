@@ -702,7 +702,11 @@ void FroggersV2ControlCore::onModSourceAssign(uint8_t page, uint8_t row, uint8_t
     // own depth untouched (0 if it was never turned); choosing "None"
     // (source == kNoSelection, or any other out-of-range value) silences
     // every lane -- no lane index ever equals an out-of-range source, so the
-    // same loop handles both cases without a special case.
+    // same loop handles both cases without a special case. A freshly-assigned
+    // lane genuinely reads as "off" (depth 0) until turned -- there is no
+    // separate identity marker in this model, matching the target contract
+    // ("each lane depth defaults to 0/off"; assignment alone is not enough
+    // to make a lane audible).
     ParamState& param = m_params[page][row];
     for (uint8_t i = 0; i < kNumModSources; ++i)
     {

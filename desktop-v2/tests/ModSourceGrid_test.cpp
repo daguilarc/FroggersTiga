@@ -130,6 +130,10 @@ bool test_cv_led_behavior()
 {
     FroggersV2ControlCore core;
     openDetailGrid(core, 3, 0, 5);
+    // Packet 15.2a: a lane's CV LED lights when its depth is non-zero, not on
+    // assignment alone (assignment alone leaves depth at 0/off, matching the
+    // target contract) -- turn the assigned lane's own cell before checking.
+    pushAndProcess(core, MessageIn::ParamTurn(3, 5, 5.0f));
 
     // Only the assigned lane's cell lights its CV LED (modulator mask bit); the
     // route also lights the row's aggregate modulator mask.
