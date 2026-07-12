@@ -9,3 +9,7 @@ desktop/dist/
 web/dist/
 .DS_Store
 **/.DS_Store
+
+# Local SDD execution ledger (scratch progress notes, not versioned;
+# see openspec/changes/desktop-v2-operator-truth-repair/tasks.md Packet R)
+.sdd/
