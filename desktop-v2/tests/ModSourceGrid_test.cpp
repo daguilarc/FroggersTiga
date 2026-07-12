@@ -4,9 +4,6 @@
 // (FroggersV2AppManifest.hpp) — this suite consumes it, it does not re-derive it.
 #include "control/FroggersV2ControlCore.hpp"
 #include "manifest/FroggersV2AppManifest.hpp"
-#include "ui/ModLanePicker.hpp"
-
-#include <juce_gui_basics/juce_gui_basics.h>
 
 #include <cmath>
 #include <cstdio>
@@ -195,16 +192,13 @@ bool test_bipolar_depth()
 
 bool test_unavailable_external_audio()
 {
-    juce::ScopedJuceInitialiser_GUI gui;
-    ModLanePicker picker;
-    picker.setPage(3);  // non-VCO page: pair-bus special-casing does not apply
-    picker.setRow(0);
+    constexpr uint8_t kPage = 3;  // non-VCO page: pair-bus special-casing does not apply
+    constexpr uint8_t kRow = 0;
 
     // LFO 1-3 (lanes 8,9,10) are always assignable.
-    picker.setExternalAudioAvailable(false);
     for (uint8_t lfo = 8; lfo <= 10; ++lfo)
     {
-        if (!picker.isLaneAssignable(lfo))
+        if (!manifest::isModLaneAssignable(kPage, kRow, lfo, false))
         {
             std::printf("FAIL: LFO lane %u should be assignable\n", static_cast<unsigned>(lfo));
             return false;
@@ -212,17 +206,16 @@ bool test_unavailable_external_audio()
     }
 
     // External-audio lanes are visible-but-unavailable with no input.
-    if (picker.isLaneAssignable(manifest::kExternalAudioRateLane)
-        || picker.isLaneAssignable(manifest::kExternalAudioEfLane))
+    if (manifest::isModLaneAssignable(kPage, kRow, manifest::kExternalAudioRateLane, false)
+        || manifest::isModLaneAssignable(kPage, kRow, manifest::kExternalAudioEfLane, false))
     {
         std::printf("FAIL: external-audio lanes assignable with no input\n");
         return false;
     }
 
     // With input present, both external-audio lanes become assignable.
-    picker.setExternalAudioAvailable(true);
-    if (!picker.isLaneAssignable(manifest::kExternalAudioRateLane)
-        || !picker.isLaneAssignable(manifest::kExternalAudioEfLane))
+    if (!manifest::isModLaneAssignable(kPage, kRow, manifest::kExternalAudioRateLane, true)
+        || !manifest::isModLaneAssignable(kPage, kRow, manifest::kExternalAudioEfLane, true))
     {
         std::printf("FAIL: external-audio lanes not assignable with input present\n");
         return false;
@@ -232,21 +225,15 @@ bool test_unavailable_external_audio()
 
 bool test_vco_pair_bus_eligibility()
 {
-    juce::ScopedJuceInitialiser_GUI gui;
-    ModLanePicker picker;
-    picker.setExternalAudioAvailable(false);
-
     // VCO page (0): each VCO row only accepts the complementary pair-bus lane
     // (VCO1→2+3=lane1, VCO2→1+3=lane2, VCO3→1+2=lane0); no raw single-VCO lanes.
     struct RowExpect { uint8_t row; uint8_t eligibleLane; };
     const RowExpect expected[] = {{0, 1}, {1, 2}, {2, 0}};
     for (const auto& e : expected)
     {
-        picker.setPage(0);
-        picker.setRow(e.row);
         for (uint8_t lane = 0; lane <= 2; ++lane)
         {
-            const bool assignable = picker.isLaneAssignable(lane);
+            const bool assignable = manifest::isModLaneAssignable(0, e.row, lane, false);
             if (assignable != (lane == e.eligibleLane))
             {
                 std::printf("FAIL: VCO row %u lane %u eligibility wrong (got %d)\n",
@@ -257,11 +244,9 @@ bool test_vco_pair_bus_eligibility()
     }
 
     // Non-VCO page: pair-bus special-casing does not apply, all three assignable.
-    picker.setPage(3);
-    picker.setRow(0);
     for (uint8_t lane = 0; lane <= 2; ++lane)
     {
-        if (!picker.isLaneAssignable(lane))
+        if (!manifest::isModLaneAssignable(3, 0, lane, false))
         {
             std::printf("FAIL: pair-bus lane %u not assignable on non-VCO page\n",
                         static_cast<unsigned>(lane));

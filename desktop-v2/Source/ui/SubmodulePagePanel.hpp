@@ -3,7 +3,6 @@
 #include "control/FroggersV2ControlCore.hpp"
 #include "ui/DesktopV2ChromeLayout.hpp"
 #include "ui/EncoderRingComponent.hpp"
-#include "ui/ModLanePicker.hpp"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -36,16 +35,13 @@ private:
     void wireEncoderCallbacks();
     void pushTurn(uint8_t slot, float delta);
     void pushPress(uint8_t slot);
-    void pushModAssign(uint8_t row, uint8_t internalSource);
+    void pushModDrillIn(uint8_t row);
 
     froggers_v2::FroggersV2ControlCore* m_core = nullptr;
     uint8_t m_page = 0;
     bool m_scrollBarsVisible = false;
     juce::Viewport m_encoderViewport;
     juce::Component m_encoderContent;
-    juce::Viewport m_modColumnViewport;
-    juce::Component m_modColumnContent;
     std::array<juce::Label, kCellCapacity> m_rowLabels{};
     std::array<EncoderRingComponent, kCellCapacity> m_rings{};
-    std::array<ModLanePicker, kCellCapacity> m_modCells{};
 };

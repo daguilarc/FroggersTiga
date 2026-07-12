@@ -10,6 +10,11 @@ constexpr float kPi = 3.14159265f;
 constexpr float kStartAngle = kPi * 1.25f;
 constexpr float kSweepAngle = kPi * 1.5f;
 
+// D17: fixed-center MOD/CV LED hit-zone and visual radii (px). The hit-zone
+// is intentionally larger than the drawn LED for a comfortable click target.
+constexpr float kCenterModHitRadius = 9.0f;
+constexpr float kCenterModLedRadius = 4.0f;
+
 juce::Colour sceneLeftColour()
 {
     return juce::Colour(0xff58a6ff);
@@ -137,11 +142,45 @@ void EncoderRingComponent::paint(juce::Graphics& g)
     g.setColour(juce::Colours::white);
     g.fillEllipse(dotX - dotR, dotY - dotR, dotR * 2.0f, dotR * 2.0f);
 
+    // D17: fixed-center MOD/CV LED, distinct from the bipolar effective-dot
+    // above (which moves with m_effective/arc angle). Placeholder styling —
+    // color/intensity encoding signed modulation bias is a manual-QA pass.
+    g.setColour(juce::Colour(0xff2ea043).withAlpha(0.55f));
+    g.fillEllipse(centre.x - kCenterModLedRadius,
+                  centre.y - kCenterModLedRadius,
+                  kCenterModLedRadius * 2.0f,
+                  kCenterModLedRadius * 2.0f);
+
     paintBadges(g, bounds.reduced(2.0f));
+}
+
+bool EncoderRingComponent::hitsCenterModZone(juce::Point<float> position) const
+{
+    const auto bounds = getLocalBounds().toFloat();
+    const juce::Point<float> centre(bounds.getCentreX(), bounds.getCentreY());
+    return centre.getDistanceFrom(position) <= kCenterModHitRadius;
 }
 
 void EncoderRingComponent::mouseDown(const juce::MouseEvent& event)
 {
+    if (hitsCenterModZone(event.position))
+    {
+        // Center MOD/CV LED: the sole drill-in target (D17). Does not start
+        // a drag session.
+        if (onModDrillIn)
+        {
+            onModDrillIn(m_slot);
+        }
+        return;
+    }
+
+    // Ring annulus: click+drag turns the parameter. onPress still fires here
+    // (unchanged from before this packet) because it is not itself a
+    // mod-detail-opening action — only ModDrillIn opens mod detail (D17).
+    // ParamPress remains the detail-grid Target(Back)/lane-clear-press
+    // action (15-C1's onParamPress), and is a no-op when the detail grid is
+    // closed, so reusing the same onPress signal for both the closed
+    // module-row state and the open detail-grid state is correct here.
     m_dragging = true;
     m_dragStartY = static_cast<float>(event.position.y);
     if (onPress)

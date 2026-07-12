@@ -75,7 +75,6 @@ target_sources(FroggersTigaDesktopV2 PRIVATE
     Source/runtime/ControllersRuntimePageComponent.cpp
     Source/runtime/HostedRuntimeStatusPanel.cpp
     Source/ui/EncoderRingComponent.cpp
-    Source/ui/ModLanePicker.cpp
     Source/ui/SubmodulePagePanel.cpp
     Source/ui/AdsrPagePanel.cpp
     Source/ui/PageCarouselComponent.cpp
@@ -251,7 +250,6 @@ set(DESKTOP_V2_CAROUSEL_TEST_SOURCES
     Source/ui/SubmodulePagePanel.cpp
     Source/ui/AdsrPagePanel.cpp
     Source/ui/EncoderRingComponent.cpp
-    Source/ui/ModLanePicker.cpp
     Source/ui/DesktopV2LookAndFeel.cpp
 )
 
@@ -309,7 +307,6 @@ add_test(NAME GlobalControlParity_test COMMAND GlobalControlParity_test)
 
 add_executable(ModSourceGrid_test
     tests/ModSourceGrid_test.cpp
-    Source/ui/ModLanePicker.cpp
     Source/control/FroggersV2ControlCore.cpp
 )
 target_include_directories(ModSourceGrid_test PRIVATE

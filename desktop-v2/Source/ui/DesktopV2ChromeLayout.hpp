@@ -114,11 +114,15 @@ struct ModuleRowColumnLayout
 inline ModuleRowColumnLayout moduleRowColumns(int rowWidth) noexcept
 {
     const int labelW = kRowLabelW;
-    const int encoderW = kEncoderRingSize;
     const int gapW = kModuleRowModGap;
+    // Packet 15-C2 (D12): the mod-source dropdown column is retired, so its
+    // width is folded back into the encoder column instead of going dead —
+    // the encoder column now claims the rest of the row past the label.
+    const int reclaimedEncoderW = rowWidth - labelW;
+    const int encoderW = reclaimedEncoderW > kEncoderRingSize ? reclaimedEncoderW : kEncoderRingSize;
     const int labelEncoderW = labelW + encoderW;
-    const int modX = labelEncoderW + gapW;
-    const int modW = kModCellW;
+    const int modX = labelEncoderW;
+    const int modW = 0;
     return {labelW, encoderW, gapW, labelEncoderW, modX, modW, rowWidth};
 }
 

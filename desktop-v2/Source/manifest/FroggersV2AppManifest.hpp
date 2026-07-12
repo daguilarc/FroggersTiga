@@ -388,6 +388,31 @@ inline bool isModSourceEligibleForRow(uint8_t page, uint8_t row, uint8_t lane, b
     return true;
 }
 
+// Whether the given manifest lane (0-based index into
+// kPermanentModulationSources) can be manually assigned to the given
+// page/row, per manifest eligibility + external-audio availability. Moved
+// here from the now-retired ModLanePicker UI dropdown (Packet 15-C2) so the
+// eligibility logic has a single home independent of any UI component.
+inline bool isModLaneAssignable(uint8_t page, uint8_t row, uint8_t lane, bool externalAudioAvailable)
+{
+    if (lane >= kPermanentModulationSources.size())
+    {
+        return false;
+    }
+    // isModSourceEligibleForRow() also gates on ModulationSource::randomizable,
+    // which is false for both external-audio lanes (they are deliberately
+    // excluded from Rand All / Rand Mods). That earlier gate makes the
+    // function's own external-audio-availability check unreachable for those
+    // two lanes, so external-audio manual-assignment availability is applied
+    // directly from isExternalAudioModLane() here instead of relying on
+    // isModSourceEligibleForRow() for that part.
+    if (isExternalAudioModLane(lane))
+    {
+        return externalAudioAvailable;
+    }
+    return isModSourceEligibleForRow(page, row, lane, externalAudioAvailable);
+}
+
 inline std::array<HostedParameterEntry, HostParameterInventoryV2::kCount> buildHostedParameterEntries()
 {
     std::array<HostedParameterEntry, HostParameterInventoryV2::kCount> entries{};

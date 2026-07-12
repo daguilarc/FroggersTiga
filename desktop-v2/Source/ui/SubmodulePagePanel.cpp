@@ -14,16 +14,11 @@ SubmodulePagePanel::SubmodulePagePanel()
     m_encoderViewport.setScrollBarsShown(false, false);
     addAndMakeVisible(m_encoderViewport);
 
-    m_modColumnViewport.setViewedComponent(&m_modColumnContent, false);
-    m_modColumnViewport.setScrollBarsShown(false, false);
-    addAndMakeVisible(m_modColumnViewport);
-
     for (int i = 0; i < kCellCapacity; ++i)
     {
         m_rowLabels[static_cast<size_t>(i)].setJustificationType(juce::Justification::centredLeft);
         m_encoderContent.addAndMakeVisible(m_rowLabels[static_cast<size_t>(i)]);
         m_encoderContent.addAndMakeVisible(m_rings[static_cast<size_t>(i)]);
-        m_modColumnContent.addAndMakeVisible(m_modCells[static_cast<size_t>(i)]);
     }
 
     wireEncoderCallbacks();
@@ -78,9 +73,7 @@ void SubmodulePagePanel::wireEncoderCallbacks()
         m_rings[static_cast<size_t>(i)].setSlot(slot);
         m_rings[static_cast<size_t>(i)].onTurn = [this](uint8_t slotIn, float delta) { pushTurn(slotIn, delta); };
         m_rings[static_cast<size_t>(i)].onPress = [this](uint8_t slotIn) { pushPress(slotIn); };
-        m_modCells[static_cast<size_t>(i)].onAssign = [this](uint8_t row, uint8_t source) {
-            pushModAssign(row, source);
-        };
+        m_rings[static_cast<size_t>(i)].onModDrillIn = [this](uint8_t slotIn) { pushModDrillIn(slotIn); };
     }
 }
 
@@ -109,18 +102,13 @@ void SubmodulePagePanel::pushPress(uint8_t slot)
     m_core->processBus();
 }
 
-void SubmodulePagePanel::pushModAssign(uint8_t row, uint8_t internalSource)
+void SubmodulePagePanel::pushModDrillIn(uint8_t row)
 {
     if (!m_core)
     {
         return;
     }
-    froggers_v2::MessageIn message;
-    message.type = froggers_v2::MessageIn::Type::ModSourceAssign;
-    message.page = m_page;
-    message.slot = row;
-    message.index = internalSource;
-    m_core->bus().push(message);
+    m_core->bus().push(froggers_v2::MessageIn::ModDrillIn(m_page, row));
     m_core->processBus();
 }
 
@@ -138,9 +126,6 @@ void SubmodulePagePanel::refresh()
         const bool active = i < static_cast<int>(visible);
         m_rowLabels[static_cast<size_t>(i)].setVisible(active);
         m_rings[static_cast<size_t>(i)].setVisible(active);
-        // The compact route picker only appears on module rows; in the
-        // parameter-detail grid the source per cell is fixed by lane.
-        m_modCells[static_cast<size_t>(i)].setVisible(active && !detail);
         if (!active)
         {
             continue;
@@ -160,11 +145,6 @@ void SubmodulePagePanel::refresh()
         m_rowLabels[static_cast<size_t>(i)].setText(
             V2ParamDisplayNames::forHostPageRow(m_page, row),
             juce::dontSendNotification);
-        m_modCells[static_cast<size_t>(i)].setPage(m_page);
-        m_modCells[static_cast<size_t>(i)].setRow(row);
-        m_modCells[static_cast<size_t>(i)].setExternalAudioAvailable(m_core->externalAudioAvailable());
-        m_modCells[static_cast<size_t>(i)].setAssignedSource(m_core->assignedModSource(m_page, row));
-        m_modCells[static_cast<size_t>(i)].refresh();
     }
     layoutRows();
     repaint();
@@ -184,12 +164,10 @@ void SubmodulePagePanel::resized()
 void SubmodulePagePanel::layoutDetailGrid(juce::Rectangle<int> area)
 {
     using namespace froggers_v2::ui;
-    // The whole encoder region becomes the 4x4 grid; the compact route column
-    // and any scroll are suppressed in detail mode.
+    // The whole encoder region becomes the 4x4 grid; any scroll is
+    // suppressed in detail mode.
     m_scrollBarsVisible = false;
     m_encoderViewport.setScrollBarsShown(false, false);
-    m_modColumnViewport.setScrollBarsShown(false, false);
-    m_modColumnViewport.setBounds({});
     m_encoderViewport.setBounds(area);
     m_encoderContent.setSize(area.getWidth(), area.getHeight());
     m_encoderViewport.setViewPosition(0, 0);
@@ -219,23 +197,18 @@ void SubmodulePagePanel::layoutRows()
         return;
     }
 
-    auto modColumnArea = area.removeFromRight(columns.modW);
     m_encoderViewport.setBounds(area.withWidth(columns.labelEncoderW));
-    m_modColumnViewport.setBounds(modColumnArea);
 
     const int rows = documentRowCount();
     const int docH = DesktopV2ChromeLayout::encoderDocumentHeight(rows);
     m_encoderContent.setSize(columns.labelEncoderW, docH);
-    m_modColumnContent.setSize(columns.modW, docH);
 
     const bool needsScroll = docH > m_encoderViewport.getHeight();
     m_scrollBarsVisible = needsScroll;
     m_encoderViewport.setScrollBarsShown(needsScroll, false);
-    m_modColumnViewport.setScrollBarsShown(needsScroll, false);
     if (!needsScroll)
     {
         m_encoderViewport.setViewPosition(0, 0);
-        m_modColumnViewport.setViewPosition(0, 0);
     }
 
     int rowY = 0;
@@ -243,7 +216,6 @@ void SubmodulePagePanel::layoutRows()
     {
         const int rowH = DesktopV2ChromeLayout::kEncoderRowH;
         const int ringY = rowY + (rowH - DesktopV2ChromeLayout::kEncoderRingSize) / 2;
-        const int modY = rowY + (rowH - DesktopV2ChromeLayout::kModCellHeight) / 2;
 
         m_rowLabels[static_cast<size_t>(i)].setBounds(
             DesktopV2ChromeLayout::kModuleRowLabelOffset, rowY, columns.labelW, rowH);
@@ -252,7 +224,6 @@ void SubmodulePagePanel::layoutRows()
             ringY,
             columns.encoderW,
             DesktopV2ChromeLayout::kEncoderRingSize);
-        m_modCells[static_cast<size_t>(i)].setBounds(0, modY, columns.modW, DesktopV2ChromeLayout::kModCellHeight);
 
         rowY += rowH;
     }
@@ -263,14 +234,11 @@ bool SubmodulePagePanel::encoderViewportShowsVerticalScrollbar() const
     return m_scrollBarsVisible;
 }
 
-juce::Rectangle<int> SubmodulePagePanel::modCellBoundsInPanel(int rowIndex) const
+juce::Rectangle<int> SubmodulePagePanel::modCellBoundsInPanel(int) const
 {
-    if (rowIndex < 0 || rowIndex >= DesktopV2ChromeLayout::kVisibleEncoderSlots)
-    {
-        return {};
-    }
-    auto bounds = m_modCells[static_cast<size_t>(rowIndex)].getBounds();
-    bounds = bounds.translated(m_modColumnContent.getX(), m_modColumnContent.getY());
-    bounds = m_modColumnViewport.getLocalArea(&m_modColumnContent, bounds);
-    return getLocalArea(&m_modColumnViewport, bounds);
+    // Packet 15-C2 (D12): the mod-source dropdown column is retired, so
+    // there is no mod cell to report bounds for. Callers (LayoutBounds_test
+    // via PageCarouselComponent::modCellBoundsInCarousel) already treat an
+    // empty rectangle as "nothing to check here".
+    return {};
 }
