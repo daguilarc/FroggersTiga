@@ -2056,6 +2056,64 @@ bool test_v2_lane_depth_store_and_engine_sum_two_simultaneous_lanes()
     }
     return true;
 }
+
+bool test_rand_mods_gates_ineligible_lanes()
+{
+    // Packet 15-D: randomizeLiveModDepths must gate ineligible lanes to 0.0f.
+    // Page 0, row 0: only VCO pair-bus lane 1 is eligible; lanes 0 and 2 are
+    // ineligible. Verify that lanes 0 and 2 are zeroed while lane 1 (and
+    // other eligible lanes) get randomized to non-zero.
+    FroggersV2ControlCore core;
+
+    // Verify precondition: m_externalAudioAvailable is false (default).
+    // This makes external audio lanes ineligible.
+    constexpr uint8_t kPage = 0;
+    constexpr uint8_t kRow = 0;
+
+    core.executeRandomization(
+        FroggersV2ControlCore::RandomizationCommand::RandMods, 0, froggers_v2::kRandSeqScopeStep);
+
+    // After randomization:
+    // Lane 0 (VCO pair-bus, ineligible for page 0 row 0) must be 0.0f
+    const float depth0 = core.laneDepth(kPage, kRow, 0);
+    if (!nearlyEqual(depth0, 0.0f))
+    {
+        std::printf(
+            "FAIL: Rand Mods should gate ineligible lane 0 on page 0 row 0 to 0.0f, got %f\n",
+            depth0);
+        return false;
+    }
+
+    // Lane 1 (VCO pair-bus, eligible for page 0 row 0) should be non-zero
+    const float depth1 = core.laneDepth(kPage, kRow, 1);
+    if (nearlyEqual(depth1, 0.0f))
+    {
+        std::printf(
+            "FAIL: Rand Mods should randomize eligible lane 1 on page 0 row 0 to non-zero, got 0.0f\n");
+        return false;
+    }
+
+    // Lane 2 (VCO pair-bus, ineligible for page 0 row 0) must be 0.0f
+    const float depth2 = core.laneDepth(kPage, kRow, 2);
+    if (!nearlyEqual(depth2, 0.0f))
+    {
+        std::printf(
+            "FAIL: Rand Mods should gate ineligible lane 2 on page 0 row 0 to 0.0f, got %f\n",
+            depth2);
+        return false;
+    }
+
+    // Lane 3+ (not VCO pair-bus or external audio) should be non-zero
+    const float depth3 = core.laneDepth(kPage, kRow, 3);
+    if (nearlyEqual(depth3, 0.0f))
+    {
+        std::printf(
+            "FAIL: Rand Mods should randomize eligible lane 3 on page 0 row 0 to non-zero, got 0.0f\n");
+        return false;
+    }
+
+    return true;
+}
 } // namespace
 
 int main()
@@ -2185,6 +2243,10 @@ int main()
         return 1;
     }
     if (!test_rand_mods_all_steps_scope_targets_only_written_steps())
+    {
+        return 1;
+    }
+    if (!test_rand_mods_gates_ineligible_lanes())
     {
         return 1;
     }

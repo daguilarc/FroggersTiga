@@ -795,8 +795,11 @@ void FroggersV2ControlCore::randomizeLiveModDepths(uint8_t page)
         for (uint8_t source = 0; source < kNumModSources; ++source)
         {
             advanceRandState();
-            param.modDepth[source] = clampSigned(
+            const float candidate = clampSigned(
                 static_cast<float>(static_cast<int32_t>(m_randState & 1023u) - 512) / 512.0f);
+            const bool eligible = manifest::isModSourceEligibleForRow(
+                page, row, source, m_externalAudioAvailable);
+            param.modDepth[source] = eligible ? candidate : 0.0f;
         }
     }
 }
