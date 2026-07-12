@@ -14,6 +14,11 @@ APPROVED_PATHS=(
   "desktop-v2/tests/FroggersV2Manifest_test.cpp"
   "desktop-v2/tests/FroggersV2ProjectionValidators_test.cpp"
   "desktop-v2/tools/FroggersV2ManifestSnapshot.cpp"
+  # sim/V2ParamDisplayNames.hpp: single authority for row/page display-name
+  # DATA (design.md D19, 2026-07-11) — the manifest's productPageDisplayName/
+  # productRowDisplayName delegate here; sim/DelayState.hpp, PagedHostIO, and
+  # wasm bindings sit below the manifest and need this data directly.
+  "sim/V2ParamDisplayNames.hpp"
 )
 
 scan_category() {
