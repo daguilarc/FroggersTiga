@@ -316,7 +316,7 @@ MidiCvSettingsComponent::MidiCvSettingsComponent(AudioEngine& engine,
     , m_presentation(presentation)
 {
     m_inSectionLabel.setText("MIDI In", juce::dontSendNotification);
-    m_inSectionLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+    m_inSectionLabel.setFont(juce::Font(juce::FontOptions{}.withHeight(14.0f).withStyle("Bold")));
     m_inHelp.setText(
         "Select one MIDI input stream: computer keyboard, none, or a hardware port.",
         juce::dontSendNotification);
@@ -328,7 +328,7 @@ MidiCvSettingsComponent::MidiCvSettingsComponent(AudioEngine& engine,
     m_inStatus.setJustificationType(juce::Justification::centredLeft);
 
     m_assignSectionLabel.setText("CV Assignments", juce::dontSendNotification);
-    m_assignSectionLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+    m_assignSectionLabel.setFont(juce::Font(juce::FontOptions{}.withHeight(14.0f).withStyle("Bold")));
     m_assignHelp.setText(
         "Rows project manifest controller targets via buildTargetMappingRows(). "
         "Pitch and Gate are performance targets. MIDI CC A and MIDI CC B route through the controller model. "
@@ -340,7 +340,7 @@ MidiCvSettingsComponent::MidiCvSettingsComponent(AudioEngine& engine,
     wireTargetRowCallbacks();
 
     m_outSectionLabel.setText("MIDI Out (VCO Env)", juce::dontSendNotification);
-    m_outSectionLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+    m_outSectionLabel.setFont(juce::Font(juce::FontOptions{}.withHeight(14.0f).withStyle("Bold")));
     m_outLabel.setText("Device", juce::dontSendNotification);
     m_outHelp.setText(
         "Sends VCO envelope level to a physical MIDI port when a device is selected.",
