@@ -3,6 +3,7 @@
 #include "V2ParamDisplayNames.hpp"
 #include "manifest/FroggersV2AppManifest.hpp"
 #include "ui/ModDetailGridLayout.hpp"
+#include "ui/ModDetailUnderlayBind.hpp"
 
 AdsrPagePanel::AdsrPagePanel()
 {
@@ -31,6 +32,12 @@ AdsrPagePanel::AdsrPagePanel()
 void AdsrPagePanel::bindCore(froggers_v2::FroggersV2ControlCore* core)
 {
     m_core = core;
+    refresh();
+}
+
+void AdsrPagePanel::bindLaneHistory(const CvLaneHistoryStore* store)
+{
+    m_laneHistory = store;
     refresh();
 }
 
@@ -91,6 +98,10 @@ void AdsrPagePanel::refresh()
     const auto& state = m_core->uiState();
     const uint8_t visible = state.visibleCount.load(std::memory_order_acquire);
     const bool detail = detailGridOpen();
+    const uint8_t detailRow = state.modViewTargetRow.load(std::memory_order_acquire);
+    const bool externalAudio = m_core->externalAudioAvailable();
+    const juce::Colour labelAvailable(0xffe6edf3);
+    const juce::Colour labelUnavailable = labelAvailable.withAlpha(0.35f);
     for (int i = 0; i < kCellCapacity; ++i)
     {
         const bool active = i < static_cast<int>(visible);
@@ -105,17 +116,27 @@ void AdsrPagePanel::refresh()
         {
             const bool isTarget = m_core->visibleSlotIsTarget(static_cast<uint8_t>(i));
             const uint8_t lane = m_core->visibleModIndexForSlot(static_cast<uint8_t>(i));
+            const bool laneAvailable = isTarget
+                || (lane < froggers_v2::kNumModSources
+                    && froggers_v2::manifest::isModLaneAssignable(
+                        kAdsrPage, detailRow, lane, externalAudio));
+            m_rings[static_cast<size_t>(i)].setLaneAvailable(laneAvailable);
+            m_rowLabels[static_cast<size_t>(i)].setColour(
+                juce::Label::textColourId, laneAvailable ? labelAvailable : labelUnavailable);
             const char* label = isTarget || lane >= froggers_v2::kNumModSources
-                ? "Target"
+                ? "Target (Back)"
                 : froggers_v2::manifest::kPermanentModulationSources[lane].displayName;
             m_rowLabels[static_cast<size_t>(i)].setText(label, juce::dontSendNotification);
             continue;
         }
+        m_rings[static_cast<size_t>(i)].setLaneAvailable(true);
+        m_rowLabels[static_cast<size_t>(i)].setColour(juce::Label::textColourId, labelAvailable);
         const uint8_t row = m_core->visibleRowForSlot(static_cast<uint8_t>(i));
         m_rowLabels[static_cast<size_t>(i)].setText(
             V2ParamDisplayNames::forHostPageRow(kAdsrPage, row),
             juce::dontSendNotification);
     }
+    desktop_v2::bindDetailUnderlays(m_rings, m_core, m_laneHistory, detail);
     layoutRows();
     repaint();
 }

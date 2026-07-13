@@ -7,7 +7,7 @@
 #include <cstdint>
 
 // Manifest permanent rack: VCO 1+2, VCO 2+3, VCO 1+3, VCO 1 EF, VCO 2 EF, VCO 3 EF,
-// VCO 1+2 EF, VCO 2+3 EF, LFO 1, LFO 2, LFO 3, Random/Marbles 1, Random/Marbles 2,
+// VCO 1+2 EF, VCO 2+3 EF, LFO 1, LFO 2, LFO 3, Random S&H 1, Random S&H 2,
 // External Audio (audio rate), External Audio (envelope follower).
 struct PermanentModTapRack
 {

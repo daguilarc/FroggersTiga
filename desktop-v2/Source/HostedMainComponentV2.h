@@ -7,6 +7,7 @@
 #include "ui/PerformanceBandV2.hpp"
 #include "ui/GlobalStripV2.hpp"
 #include "ui/GlobalOscilloscopeDisplay.hpp"
+#include "ui/CvLaneHistoryStore.hpp"
 #include "ui/SequencerPanelComponent.hpp"
 
 #include <juce_gui_extra/juce_gui_extra.h>
@@ -27,9 +28,8 @@ private:
     void timerCallback() override;
     void wireCallbacks();
     void pushSelectPage(uint8_t page);
-    void updateShiftFromKeyboard();
-
     froggers_v2::FroggersV2AppCoreFacade& m_facade;
+    CvLaneHistoryStore m_cvLaneHistory;
     GlobalOscilloscopeDisplay m_globalOscilloscope;
     GlobalStripV2 m_globalStrip;
     PerformanceBandV2 m_performanceBand;

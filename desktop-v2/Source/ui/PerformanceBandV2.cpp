@@ -37,10 +37,9 @@ juce::String sceneButtonLabel(uint8_t ordinal, uint8_t leftOrdinal, uint8_t righ
     return label;
 }
 
-// Shared projection helper: manifest display names are namespaced as
-// "Group/Name" (e.g. "Random/Marbles 1", "Global/Gesture1"). The operator
-// label is the part after the last slash, so any manifest rename flows
-// through without a parallel hardcoded string table here.
+// Shared projection helper: slash-namespaced inventory labels
+// (e.g. "Global/Gesture1") show the tail; names without a slash
+// (e.g. "Random S&H 1") show the full operator displayName.
 juce::String labelTailAfterSlash(const char* fullName)
 {
     const juce::String full(fullName);
@@ -264,46 +263,63 @@ void PerformanceBandV2::refresh()
 
 void PerformanceBandV2::resized()
 {
-    auto area = getLocalBounds().reduced(DesktopV2ChromeLayout::kChromePad);
+    using namespace DesktopV2ChromeLayout;
+
+    auto area = getLocalBounds().reduced(kChromePad);
     const int y = area.getY();
     const int h = area.getHeight();
+    const int gap = kSectionGap;
+
+    // Packet 17 (D14): fixed minima for labeled controls; leftover width
+    // goes into the three flexible sliders so nothing overlaps and no empty
+    // gap sits past the marbles columns.
+    const int sceneLabelW = kPerfSceneLabelW;
+    const int sceneW = kSceneButtonMinWidth;
+    const int blendEndW = kPerfBlendEndpointLabelW;
+    const int gestureW = kPerfGestureToggleW;
+    const int marblesW = kPerfMarblesColW;
+    const int blendMinW = kPerfSceneBlendW;
+    const int weightMinW = kPerfGestureWeightW;
+    constexpr int kGapCount = 10;
+    const int fixedW = sceneLabelW + 3 * sceneW + 2 * blendEndW + 2 * gestureW + 2 * marblesW;
+    const int flexibleMinW = blendMinW + 2 * weightMinW;
+    int extra = juce::jmax(0, area.getWidth() - fixedW - flexibleMinW - kGapCount * gap);
+    const int weightExtra = extra / 3;
+    const int blendExtra = extra - 2 * weightExtra;
+    const int blendW = blendMinW + blendExtra;
+    const int weightW = weightMinW + weightExtra;
+
     int x = area.getX();
-    const int gap = DesktopV2ChromeLayout::kSectionGap;
+    m_sceneLabel.setBounds(x, y, sceneLabelW, h);
+    x += sceneLabelW + gap;
 
-    m_sceneLabel.setBounds(x, y, DesktopV2ChromeLayout::kPerfSceneLabelW, h);
-    x += DesktopV2ChromeLayout::kPerfSceneLabelW + gap;
-
-    const int sceneW = DesktopV2ChromeLayout::kSceneButtonMinWidth;
-    const int sceneH = DesktopV2ChromeLayout::kTextButtonH;
+    const int sceneH = kTextButtonH;
     const int sceneY = y + (h - sceneH) / 2;
-    m_scene1.setBounds(x, sceneY, sceneW, sceneH);
-    x += sceneW + gap;
-    m_scene2.setBounds(x, sceneY, sceneW, sceneH);
-    x += sceneW + gap;
-    m_scene3.setBounds(x, sceneY, sceneW, sceneH);
-    x += sceneW + gap;
+    juce::TextButton* const scenes[] = {&m_scene1, &m_scene2, &m_scene3};
+    for (juce::TextButton* scene : scenes)
+    {
+        scene->setBounds(x, sceneY, sceneW, sceneH);
+        x += sceneW + gap;
+    }
 
-    m_blendLabelL.setBounds(x, y, DesktopV2ChromeLayout::kPerfBlendEndpointLabelW, h);
-    x += DesktopV2ChromeLayout::kPerfBlendEndpointLabelW;
-    m_sceneBlend.setBounds(x, y, DesktopV2ChromeLayout::kPerfSceneBlendW, h);
-    x += DesktopV2ChromeLayout::kPerfSceneBlendW;
-    m_blendLabelR.setBounds(x, y, DesktopV2ChromeLayout::kPerfBlendEndpointLabelW, h);
-    x += DesktopV2ChromeLayout::kPerfBlendEndpointLabelW + gap;
+    m_blendLabelL.setBounds(x, y, blendEndW, h);
+    x += blendEndW;
+    m_sceneBlend.setBounds(x, y, blendW, h);
+    x += blendW;
+    m_blendLabelR.setBounds(x, y, blendEndW, h);
+    x += blendEndW + gap;
 
-    m_gesture1.setBounds(x, y, DesktopV2ChromeLayout::kPerfGestureToggleW, h);
-    x += DesktopV2ChromeLayout::kPerfGestureToggleW + gap;
-    m_gestureWeight1.setBounds(x, y, DesktopV2ChromeLayout::kPerfGestureWeightW, h);
-    x += DesktopV2ChromeLayout::kPerfGestureWeightW + gap;
-    m_gesture2.setBounds(x, y, DesktopV2ChromeLayout::kPerfGestureToggleW, h);
-    x += DesktopV2ChromeLayout::kPerfGestureToggleW + gap;
-    m_gestureWeight2.setBounds(x, y, DesktopV2ChromeLayout::kPerfGestureWeightW, h);
-    x += DesktopV2ChromeLayout::kPerfGestureWeightW + gap;
+    m_gesture1.setBounds(x, y, gestureW, h);
+    x += gestureW + gap;
+    m_gestureWeight1.setBounds(x, y, weightW, h);
+    x += weightW + gap;
+    m_gesture2.setBounds(x, y, gestureW, h);
+    x += gestureW + gap;
+    m_gestureWeight2.setBounds(x, y, weightW, h);
+    x += weightW + gap;
 
-    const int marblesLabelY = y + (h - DesktopV2ChromeLayout::kPerfMarblesLabelH) / 2;
-    m_marblesLabel1.setBounds(
-        x, marblesLabelY, DesktopV2ChromeLayout::kPerfMarblesColW, DesktopV2ChromeLayout::kPerfMarblesLabelH);
-    m_marblesLabel2.setBounds(x + DesktopV2ChromeLayout::kPerfMarblesColW + gap,
-                              marblesLabelY,
-                              DesktopV2ChromeLayout::kPerfMarblesColW,
-                              DesktopV2ChromeLayout::kPerfMarblesLabelH);
+    const int marblesLabelY = y + (h - kPerfMarblesLabelH) / 2;
+    m_marblesLabel1.setBounds(x, marblesLabelY, marblesW, kPerfMarblesLabelH);
+    x += marblesW + gap;
+    m_marblesLabel2.setBounds(x, marblesLabelY, marblesW, kPerfMarblesLabelH);
 }

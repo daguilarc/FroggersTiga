@@ -32,9 +32,9 @@ inline const char* permanentModSourceDisplayName(uint8_t laneIndex)
         case 10:
             return "LFO 3";
         case 11:
-            return "Random/Marbles 1";
+            return "Random S&H 1";
         case 12:
-            return "Random/Marbles 2";
+            return "Random S&H 2";
         case 13:
             return "External Audio (audio rate)";
         case 14:

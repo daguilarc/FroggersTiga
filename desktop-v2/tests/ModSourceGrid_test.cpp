@@ -2,9 +2,14 @@
 // CV LED behavior, bipolar mod depth, and unavailable-external-audio state.
 // Every source lane / eligibility rule projects from the manifest
 // (FroggersV2AppManifest.hpp) — this suite consumes it, it does not re-derive it.
+// Packet 4 (modulator visualizers): CvLaneHistoryStore + underlay bind / Target clear.
 #include "control/FroggersV2ControlCore.hpp"
 #include "manifest/FroggersV2AppManifest.hpp"
+#include "ui/CvLaneHistoryStore.hpp"
+#include "ui/EncoderRingComponent.hpp"
+#include "ui/ModDetailUnderlayBind.hpp"
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -255,13 +260,155 @@ bool test_vco_pair_bus_eligibility()
     }
     return true;
 }
+
+bool test_multi_lane_effective_with_eligibility()
+{
+    // Packet 15.9: two eligible depths sum into modulatorsMask; ineligible
+    // leftover depth is ignored by effectiveRow/computeEffective.
+    FroggersV2ControlCore core;
+    constexpr uint8_t kPage = 0;
+    constexpr uint8_t kRow = 0;
+
+    core.setLaneDepth(kPage, kRow, 1, 0.4f);  // eligible pair-bus
+    core.setLaneDepth(kPage, kRow, 8, 0.3f);  // eligible LFO 1
+    core.setLaneDepth(kPage, kRow, 0, 0.9f);  // ineligible pair-bus leftover
+
+    MessageIn selectPage;
+    selectPage.type = MessageIn::Type::SelectPage;
+    selectPage.page = kPage;
+    pushAndProcess(core, selectPage);
+
+    const auto row = core.effectiveRow(kPage, kRow);
+    const uint16_t expected = static_cast<uint16_t>((1u << 1) | (1u << 8));
+    if (row.modulatorsMask != expected)
+    {
+        std::printf("FAIL: multi-lane eligibility mask expected 0x%x got 0x%x\n",
+                    static_cast<unsigned>(expected),
+                    static_cast<unsigned>(row.modulatorsMask));
+        return false;
+    }
+    return true;
+}
+
+bool test_unavailable_lane_not_editable()
+{
+    FroggersV2ControlCore core;
+    constexpr uint8_t kPage = 3;
+    constexpr uint8_t kRow = 0;
+    constexpr uint8_t kLane = manifest::kExternalAudioRateLane;
+
+    pushAndProcess(core, selectPage(kPage));
+    pushAndProcess(core, modDrillIn(kPage, kRow));
+    pushAndProcess(core, MessageIn::ParamTurn(kPage, kLane, 12.0f));
+    if (!nearlyEqual(core.laneDepth(kPage, kRow, kLane), 0.0f))
+    {
+        std::printf("FAIL: unavailable external-audio lane accepted ParamTurn\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_cv_lane_history_store()
+{
+    CvLaneHistoryStore store;
+    if (store.bufferSize() != CvLaneHistoryStore::kBufferSize
+        || CvLaneHistoryStore::kNumLanes != 15
+        || CvLaneHistoryStore::kBufferSize != CvScopeDisplay::kBufferSize)
+    {
+        std::printf("FAIL: CvLaneHistoryStore sizing mismatch\n");
+        return false;
+    }
+
+    store.pushLaneSample(0, -0.5f);
+    store.pushLaneSample(0, 1.5f);
+    store.pushLaneSample(0, 0.25f);
+    if (!nearlyEqual(store.latest(0), 0.25f))
+    {
+        std::printf("FAIL: store latest after clamp/push got %f\n", store.latest(0));
+        return false;
+    }
+    if (store.samples(0) == nullptr || store.writeIndex(0) == 0)
+    {
+        std::printf("FAIL: store samples/writeIndex not advanced\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_underlay_bind_and_target_clear()
+{
+    FroggersV2ControlCore core;
+    openDetailGrid(core, 3, 0, 5);
+
+    CvLaneHistoryStore store;
+    for (uint8_t lane = 0; lane < CvLaneHistoryStore::kNumLanes; ++lane)
+    {
+        store.pushLaneSample(lane, 0.1f * static_cast<float>(lane));
+    }
+
+    std::array<EncoderRingComponent, froggers_v2::kUiSlots> rings{};
+    desktop_v2::bindDetailUnderlays(rings, &core, &store, true);
+
+    for (uint8_t lane = 0; lane < froggers_v2::kNumModSources; ++lane)
+    {
+        if (!rings[lane].hasUnderlay())
+        {
+            std::printf("FAIL: detail lane cell %u missing underlay\n",
+                        static_cast<unsigned>(lane));
+            return false;
+        }
+    }
+    if (rings[15].hasUnderlay())
+    {
+        std::printf("FAIL: Target (Back) cell still has underlay\n");
+        return false;
+    }
+
+    // Unavailable external-audio lane stays bound (display-only; grey chrome elsewhere).
+    constexpr uint8_t kExtLane = manifest::kExternalAudioRateLane;
+    if (!rings[kExtLane].hasUnderlay())
+    {
+        std::printf("FAIL: unavailable lane underlay not bound safely\n");
+        return false;
+    }
+
+    desktop_v2::bindDetailUnderlays(rings, &core, &store, false);
+    for (auto& ring : rings)
+    {
+        if (ring.hasUnderlay())
+        {
+            std::printf("FAIL: underlay not cleared when detail closed\n");
+            return false;
+        }
+    }
+
+    EncoderRingComponent standalone;
+    float samples[4] = {0.0f, 0.5f, 1.0f, 0.25f};
+    standalone.setUnderlay(samples, 4, 2, juce::Colours::orange);
+    if (!standalone.hasUnderlay())
+    {
+        std::printf("FAIL: setUnderlay did not arm underlay\n");
+        return false;
+    }
+    standalone.clearUnderlay();
+    if (standalone.hasUnderlay())
+    {
+        std::printf("FAIL: clearUnderlay left underlay armed\n");
+        return false;
+    }
+    return true;
+}
 } // namespace
 
 int main()
 {
     const bool ok = test_15_lane_rack() && test_16_cell_detail_grid() && test_cv_led_behavior()
                  && test_bipolar_depth() && test_unavailable_external_audio()
-                 && test_vco_pair_bus_eligibility();
+                 && test_vco_pair_bus_eligibility()
+                 && test_multi_lane_effective_with_eligibility()
+                 && test_unavailable_lane_not_editable()
+                 && test_cv_lane_history_store()
+                 && test_underlay_bind_and_target_clear();
     if (!ok)
     {
         return 1;

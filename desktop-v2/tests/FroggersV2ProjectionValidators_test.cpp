@@ -364,38 +364,45 @@ CheckResult checkSequencerAuthority()
 CheckResult checkControllerTargets()
 {
     CheckResult result{"2.5", "Desktop MIDI/controller target declarations", false, {}};
-    const auto& targets = froggers_v2::manifest::kControllerTargetDeclarations;
+    const auto& targets = froggers_v2::manifest::controllerTargetDeclarations();
     const std::string midiCvSettingsCpp = readTextFile("desktop-v2/Source/MidiCvSettingsComponent.cpp");
     const std::string midiCvSettingsH = readTextFile("desktop-v2/Source/MidiCvSettingsComponent.h");
     const std::string midiCvTableCpp = readTextFile("desktop-v2/Source/control/MidiCvAssignmentTable.cpp");
     const std::string audioEngineCpp = readTextFile("desktop-v2/Source/AudioEngine.cpp");
     const MidiCvControllerTargetIds& ids = midiCvControllerTargetIds();
-    const std::array<const char*, 10> actualIds{{ids.pitch,
-                                                 ids.gate,
-                                                 ids.externalModA,
-                                                 ids.externalModB,
-                                                 ids.shiftButton,
-                                                 ids.scene1,
-                                                 ids.scene2,
-                                                 ids.scene3,
-                                                 ids.qwertyVirtual,
-                                                 ids.externalClock}};
+    const std::array<const char*, froggers_v2::manifest::kBaseControllerTargetCount> actualIds{{
+        ids.pitch,
+        ids.gate,
+        ids.externalModA,
+        ids.externalModB,
+        ids.scene1,
+        ids.scene2,
+        ids.scene3,
+        ids.qwertyVirtual,
+        ids.externalClock}};
 
     std::vector<std::string> missingTargetLabels;
     std::vector<std::string> mismatchedTargetIds;
-    if (actualIds.size() != targets.size())
+    if (targets.size() != froggers_v2::manifest::kControllerTargetCount)
     {
         std::ostringstream out;
-        out << "controller target ID count mismatch actual=" << actualIds.size()
-            << " manifest=" << targets.size();
+        out << "controller target count mismatch manifest=" << targets.size()
+            << " expected=" << froggers_v2::manifest::kControllerTargetCount;
         result.detail = out.str();
         return result;
     }
-    const bool manifestBackedLabels = contains(midiCvSettingsCpp, "kControllerTargetDeclarations")
+    const bool manifestBackedLabels = contains(midiCvSettingsCpp, "controllerTargetDeclarations")
                                    && contains(midiCvTableCpp, "buildTargetMappingRows")
-                                   && contains(midiCvTableCpp, "kControllerTargetDeclarations");
+                                   && contains(midiCvTableCpp, "controllerTargetDeclarations");
+    size_t encoderTargetCount = 0;
     for (const auto& target : targets)
     {
+        if (froggers_v2::manifest::isEncoderTurnBindingRole(target.bindingRole)
+            || froggers_v2::manifest::isEncoderModDrillInBindingRole(target.bindingRole))
+        {
+            ++encoderTargetCount;
+            continue;
+        }
         const bool visible = contains(midiCvSettingsCpp, target.displayName) || contains(midiCvSettingsH, target.displayName)
                            || contains(midiCvTableCpp, target.displayName)
                            || contains(audioEngineCpp, target.displayName)
@@ -405,7 +412,15 @@ CheckResult checkControllerTargets()
             missingTargetLabels.emplace_back(target.displayName);
         }
     }
-    for (size_t i = 0; i < targets.size(); ++i)
+    if (encoderTargetCount != froggers_v2::manifest::kEncoderControllerTargetCount)
+    {
+        std::ostringstream out;
+        out << "encoder target count mismatch actual=" << encoderTargetCount
+            << " expected=" << froggers_v2::manifest::kEncoderControllerTargetCount;
+        result.detail = out.str();
+        return result;
+    }
+    for (size_t i = 0; i < actualIds.size(); ++i)
     {
         const char* actual = actualIds[i] != nullptr ? actualIds[i] : "";
         const char* expected = targets[i].stableId != nullptr ? targets[i].stableId : "";
@@ -424,12 +439,16 @@ CheckResult checkControllerTargets()
                                    && contains(midiCvSettingsText, "MIDI CC B")
                                    && contains(midiCvSettingsText, "QWERTY virtual MIDI")
                                    && contains(midiCvSettingsText, "External MIDI clock")
-                                   && contains(midiCvSettingsCpp, "kControllerTargetDeclarations")
+                                   && contains(midiCvSettingsCpp, "controllerTargetDeclarations")
+                                   && contains(midiCvSettingsCpp, "rowKindForBindingRole")
                                    && contains(midiCvSettingsCpp, "manifestTargetIdForBindingRole")
-                                   && contains(midiCvSettingsCpp, "MidiCvBindingRole::HeldModifier")
                                    && contains(midiCvSettingsCpp, "MidiCvBindingRole::SceneOrdinal0")
+                                   && !contains(midiCvSettingsCpp, "HeldModifier")
+                                   && !contains(midiCvSettingsCpp, "shiftButton")
                                    && contains(midiCvTableCpp, "manifestTargetIdForBindingRole")
-                                   && contains(midiCvTableCpp, "midiCvControllerTargetIds");
+                                   && contains(midiCvTableCpp, "midiCvControllerTargetIds")
+                                   && contains(midiCvTableCpp, "ParamTurn")
+                                   && contains(midiCvTableCpp, "ModDrillIn");
 
     if (!missingTargetLabels.empty() || !mismatchedTargetIds.empty() || !targetSurfaceVisible)
     {

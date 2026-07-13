@@ -107,7 +107,7 @@ Three oscillators. Click the waveform icon beside VCO1–VCO3 to cycle sine ↔ 
 
 ## Random
 
-Dual stepped random S&H — two independent bags of held random values.
+Dual stepped random S&H — two independent bags of held random values. Inspired by Mutable Instruments Marbles (UI labels are **Random S&H 1/2**).
 
 Two random CV channels live here. Press **Rand Resample** on the global strip to draw new values from each bag. Outputs appear in the mod bay as **Random S&H 1** and **Random S&H 2**. There is no internal clock — you trigger steps.
 
@@ -224,8 +224,8 @@ One chrome region above the carousel with two bands:
 
 | Band | Controls |
 |------|----------|
-| **Transport / signal** | **Play**, **Stop**, **Record audio**, and the **global oscilloscope** (three color-coded VCO traces by default; switches to other manifest source groups when inspected) |
-| **Global command** | **Rand All**, **Rand Mods**, **Rand waveforms**, **Rand Resample**, **Crunchy** (scene encoder ring), **Shift**; **All Scenes** / **Current Scene** under **Rand All**; **All Steps** / **Current Step** under **Rand Mods** |
+| **Transport / signal** | **Play**, **Stop**, **Record audio**, and the **global oscilloscope** (three color-coded VCO traces by default; switches to other manifest source groups when inspected; fed from the same fifteen-lane CV history used by detail underlays) |
+| **Global command** | **Rand All**, **Rand Mods**, **Rand waveforms**, **Rand Resample**, **Crunchy** (scene encoder ring); **All Scenes** / **Current Scene** under **Rand All**; **All Steps** / **Current Step** under **Rand Mods** |
 
 The global oscilloscope stays visible across carousel modules and runtime pages. The Audio runtime page shows device/status only — it does not duplicate the scope.
 
@@ -256,30 +256,30 @@ Each knob row shows a Sheaf-style encoder ring:
 - **Outer ring** — scene L effective value
 - **Inner ring** — scene R effective value
 - **Center dot** — blended value sent to the engine
-- **CV LED** — in-encoder modulation monitor (red/green balance from signed displacement; no per-source badges)
-- **MOD label** — click to open the **parameter-detail** view for that row
+- **CV LED / MOD** — fixed-center affordance; click opens parameter-detail modulation for that row
+- **Ring annulus** — drag-turn edits the parameter (or an open detail-lane depth); turn does **not** open detail
 
-**Normal carousel view** — drag a ring to edit the scene-blended center (or gesture offset when **G1** / **G2** is selected in the performance band).
+**Turn vs drill-in (device-neutral):** rotation / ring drag → `ParamTurn`; press / MOD LED click → `ModDrillIn`. Mouse: ring annulus drag stays `ParamTurn`; center **MOD/CV LED** click dispatches `ModDrillIn`. MIDI pressable encoder (Controllers page): map rotation to `…_encoder_turn` → `ParamTurn`; map press to `…_encoder_mod_drill_in` → `ModDrillIn`.
 
-**Parameter-detail view (4×4 grid)** — sixteen cells: fifteen permanent **mod source depth** encoders plus one **Crispy/target** cell. Drag a lane ring to edit that source's depth (bipolar, 0 = off). Press the target cell to close detail and return to the module page. Crispy/target stays visible while editing depths.
+**Normal carousel view** — drag a ring to edit the scene-blended center (or gesture offset when **G1** / **G2** is selected in the performance band). Click the center **MOD/CV LED** to open detail even when every lane depth is still zero (no prior assignment step).
 
-There is **no** general held-gesture model: **Rand All**, **Rand Mods**, **Crunchy**, and related commands fire once from explicit clicks using the visible scope pairs. **Shift** does not factory-reset parameters (no **Shift + press** reset path).
+**Parameter-detail view (4×4 grid)** — sixteen cells: fifteen permanent **mod source depth** encoders plus one **Target (Back)** cell. Each source-depth cell paints a display-only **CV activity underlay** from the shared fifteen-lane CV history (same samples that feed the global oscilloscope); **Target (Back)** has no underlay. Underlays do not receive pointer events — ring drag stays `ParamTurn`, center MOD stays `ModDrillIn`. Each lane has an independent signed depth; **depth 0 = that lane off**. Multiple nonzero assignable lanes on the same row **sum** into effective modulation (additive multi-lane depths, not a single-source crossfade). Drag a lane ring to edit that source's depth. Unavailable lanes (external audio with no input; blocked VCO pair-bus self-feedback) stay visible but greyed (underlay included at reduced alpha) and refuse turn/clear-press. Press **Target (Back)** to close detail and return to the module page.
+
+There is **no** general held-gesture model: **Rand All**, **Rand Mods**, **Crunchy**, and related commands fire once from explicit clicks using the visible scope pairs. **Shift** was removed from desktop v2 (no held-modifier path; no **Shift + press** reset).
 
 ### Permanent 15-lane mod sources
 
-Every eligible parameter exposes the same fifteen source lanes in parameter detail (depth 0 = off; no patch cables):
+Every eligible parameter exposes the same fifteen source lanes in parameter detail (depth 0 = off; no patch cables; no module-row mod dropdown):
 
 | Lane | Name |
 |------|------|
 | 1–3 | **VCO 1+2**, **VCO 2+3**, **VCO 1+3** (audio-rate pair buses; raw per-VCO audio lanes absent) |
 | 4–8 | **VCO 1 EF**, **VCO 2 EF**, **VCO 3 EF**, **VCO 1+2 EF**, **VCO 2+3 EF** |
 | 9–11 | **LFO 1**, **LFO 2**, **LFO 3** |
-| 12–13 | **Random/Marbles 1**, **Random/Marbles 2** |
+| 12–13 | **Random S&H 1**, **Random S&H 2** |
 | 14–15 | **External Audio (audio rate)**, **External Audio (envelope follower)** — visible but unavailable when external input is off |
 
 **VCO self-feedback rule:** VCO1-owned rows block VCO 1+2 and VCO 1+3 buses; VCO2-owned rows block VCO 1+2 and VCO 2+3; VCO3-owned rows block VCO 2+3 and VCO 1+3.
-
-Module pages also show a compact **mod column** (dropdown per row) for quick lane picks from the same catalog.
 
 **MIDI is not a mod lane.** Hardware MIDI and DAW automation map to **manifest target IDs** through the MIDI/Controllers runtime page (standalone) or host parameters (DAW-hosted build). **MIDI CC A** and **MIDI CC B** are controller targets, not entries in the fifteen-lane catalog.
 
@@ -345,9 +345,11 @@ Desktop v2 initializes **stereo output** by default. Select mono in the **Audio*
 
 ### MIDI / Controllers (desktop v2 standalone)
 
-One primary input stream. Explicit mapping rows (no MIDI learn, no recent-event list): **Pitch**, **Gate**, **MIDI CC A**, **MIDI CC B**, **Shift button**, **Scene S1–S3**, **QWERTY Ch**, optional **External MIDI clock** for sequencer sync. Duplicate physical messages may fan out to multiple targets.
+One primary input stream. Explicit mapping rows (no MIDI learn, no recent-event list): **Pitch**, **Gate**, **MIDI CC A**, **MIDI CC B**, **Scene S1–S3**, **QWERTY Ch**, optional **External MIDI clock** for sequencer sync, plus **per-parameter encoder turn** and **encoder mod drill-in** targets generated from the module-row inventory. Duplicate physical messages may fan out to multiple targets.
 
-**Pitch** and **Gate** are performance targets. **MIDI CC A/B** route through the controller model to eligible parameters — not through the fifteen-lane mod source catalog. **Shift** is a dedicated mapping row, not the Gate row.
+**Pitch** and **Gate** are performance targets. **MIDI CC A/B** route through the controller model to eligible parameters — not through the fifteen-lane mod source catalog.
+
+**Encoder turn vs mod drill-in:** map relative CC / encoder rotation to a parameter’s `…_encoder_turn` target → control-core `ParamTurn(page, slot, delta)`. Map encoder button / note / CC-threshold to `…_encoder_mod_drill_in` → `ModDrillIn(page, slot)` (same enter-mod semantics as the center MOD LED; see turn vs drill-in above). Persistence keys are inventory stable IDs; unknown IDs are rejected.
 
 DAW-hosted Froggers v2 uses host parameters and read-only status — no standalone MIDI picker or record/export row.
 

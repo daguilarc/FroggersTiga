@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CvLaneHistoryStore.hpp"
 #include "CvScopeDisplay.h"
 #include "DesktopHostIO.hpp"
 
@@ -26,6 +27,7 @@ public:
     GlobalOscilloscopeDisplay();
 
     void bindHost(DesktopHostIO* host);
+    void bindLaneHistory(const CvLaneHistoryStore* store);
     void setAudioRunning(bool running);
     void setExternalAudioAvailable(bool available);
     void setSourceGroup(GlobalOscilloscopeSourceGroup group);
@@ -36,6 +38,10 @@ public:
     // reaching into private state.
     size_t traceCount() const;
     uint8_t traceModIndex(size_t trace) const;
+
+    // Shells push GetCvOut into CvLaneHistoryStore once per tick, then call
+    // this so traces consume the store (no GetCvOut inside).
+    void refreshTraces();
 
     void resized() override;
 
@@ -49,9 +55,9 @@ private:
 
     void timerCallback() override;
     void rebuildTraceBindings();
-    void refreshTraces();
 
     DesktopHostIO* m_host = nullptr;
+    const CvLaneHistoryStore* m_laneHistory = nullptr;
     bool m_audioRunning = false;
     bool m_externalAudioAvailable = false;
     GlobalOscilloscopeSourceGroup m_sourceGroup = GlobalOscilloscopeSourceGroup::VcoDefault;

@@ -20,7 +20,9 @@ enum class MidiCvTargetRowKind : uint8_t
     CcBinding,
     ButtonBinding,
     QwertyChannel,
-    ExternalClock
+    ExternalClock,
+    EncoderTurn,
+    EncoderDrillIn
 };
 
 class MidiCvSettingsComponent : public juce::Component,
@@ -32,11 +34,15 @@ public:
                             MidiCvSettingsPresentation presentation = MidiCvSettingsPresentation::Dialog);
 
     void resized() override;
+    int preferredContentHeight() const;
 
 private:
     struct TargetRowUi
     {
         const char* targetId = nullptr;
+        const char* bindingRole = nullptr;
+        uint8_t targetPage = froggers_v2::manifest::kControllerTargetNoPageRow;
+        uint8_t targetRow = froggers_v2::manifest::kControllerTargetNoPageRow;
         MidiCvTargetRowKind kind = MidiCvTargetRowKind::Pitch;
         juce::Label label;
         juce::Label readbackLabel;
@@ -66,6 +72,7 @@ private:
     void initTargetRows();
     void wireTargetRowCallbacks();
     void addTargetRowComponents(TargetRowUi& row);
+    int estimatedRowHeight(const TargetRowUi& row) const;
 
     AudioEngine& m_engine;
     std::function<void()> m_onClose;
@@ -80,7 +87,7 @@ private:
 
     juce::Label m_assignSectionLabel;
     juce::Label m_assignHelp;
-    std::array<TargetRowUi, froggers_v2::manifest::kControllerTargetDeclarations.size()> m_targetRows;
+    std::array<TargetRowUi, froggers_v2::manifest::kControllerTargetCount> m_targetRows;
 
     juce::Label m_outSectionLabel;
     juce::Label m_outLabel;

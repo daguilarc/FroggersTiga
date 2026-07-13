@@ -46,7 +46,6 @@ struct MessageIn
         ParamIncDec,
         ParamPress,
         ModDrillIn,
-        ShiftHeld,
         SceneSelect,
         SceneBlend,
         GestureSelect,
@@ -203,7 +202,12 @@ public:
     // now single-value *representative* accessors (first non-zero lane) kept
     // for the host/sequencer single-route projection, not the live model.
     float laneDepth(uint8_t page, uint8_t row, uint8_t lane) const;
+    // Additive per-lane write (does not clear sibling lanes).
+    void setLaneDepth(uint8_t page, uint8_t row, uint8_t lane, float depth);
+    // Additive single-lane write used by tests / multi-lane injection.
     void applyHostModRoute(uint8_t page, uint8_t row, uint8_t engineModIndex, float depth);
+    // Single-route host/sequencer projection: clears all lanes, then sets one.
+    void replaceHostModRoute(uint8_t page, uint8_t row, uint8_t engineModIndex, float depth);
     void processBus();
     bool consumeContentMutated();
     void compute();
@@ -293,7 +297,11 @@ private:
     void resetParameter(uint8_t page, uint8_t row);
     void seedSceneCentersFromDefaults();
     void rebuildVisibleSlots();
+    // Ungated path for Crunchy (no page/row eligibility context).
     EffectiveRow computeEffective(const ParamState& state) const;
+    // Host-page rows: skip lanes failing isModLaneAssignable (manual assignability,
+    // not Rand eligibility — external-audio lanes contribute when available).
+    EffectiveRow computeEffective(const ParamState& state, uint8_t page, uint8_t row) const;
     EffectiveRow slotViewEffective(const VisibleSlot& visible) const;
     void storeSlotState(uint8_t slot, const EffectiveRow& row);
 

@@ -196,18 +196,6 @@ uint8_t FroggersV2ControlCore::assignedModSource(uint8_t page, uint8_t row) cons
     return kNoSelection;
 }
 
-void FroggersV2ControlCore::applyHostModRoute(uint8_t page,
-                                              uint8_t row,
-                                              uint8_t engineModIndex,
-                                              float depth)
-{
-    if (page >= kNumHostPages || row >= rowsForPage(page) || engineModIndex >= kNumModSources)
-    {
-        return;
-    }
-    m_params[page][row].modDepth[engineModIndex] = clampSigned(depth);
-}
-
 float FroggersV2ControlCore::assignedModDepth(uint8_t page, uint8_t row) const
 {
     if (page >= kNumHostPages || row >= rowsForPage(page))
@@ -232,6 +220,49 @@ float FroggersV2ControlCore::laneDepth(uint8_t page, uint8_t row, uint8_t lane) 
         return 0.0f;
     }
     return m_params[page][row].modDepth[lane];
+}
+
+void FroggersV2ControlCore::setLaneDepth(uint8_t page, uint8_t row, uint8_t lane, float depth)
+{
+    if (page >= kNumHostPages || row >= rowsForPage(page) || lane >= kNumModSources)
+    {
+        return;
+    }
+    m_params[page][row].modDepth[lane] = clampSigned(depth);
+}
+
+void FroggersV2ControlCore::applyHostModRoute(uint8_t page,
+                                              uint8_t row,
+                                              uint8_t engineModIndex,
+                                              float depth)
+{
+    if (page >= kNumHostPages || row >= rowsForPage(page) || engineModIndex >= kNumModSources)
+    {
+        return;
+    }
+    m_params[page][row].modDepth[engineModIndex] = clampSigned(depth);
+}
+
+void FroggersV2ControlCore::replaceHostModRoute(uint8_t page,
+                                                uint8_t row,
+                                                uint8_t engineModIndex,
+                                                float depth)
+{
+    if (page >= kNumHostPages || row >= rowsForPage(page))
+    {
+        return;
+    }
+    // Single-route host/sequencer projection replaces the row's lane vector.
+    ParamState& param = m_params[page][row];
+    for (uint8_t i = 0; i < kNumModSources; ++i)
+    {
+        param.modDepth[i] = 0.0f;
+    }
+    if (engineModIndex >= kNumModSources)
+    {
+        return;
+    }
+    param.modDepth[engineModIndex] = clampSigned(depth);
 }
 
 void FroggersV2ControlCore::executeRandomization(RandomizationCommand command,
@@ -271,7 +302,6 @@ bool messageMutatesPatchContent(MessageIn::Type type)
         case MessageIn::Type::RandSequencerStep:
         case MessageIn::Type::RandSequencerMods:
             return true;
-        case MessageIn::Type::ShiftHeld:
         case MessageIn::Type::SceneSelect:
         case MessageIn::Type::SceneBlend:
         case MessageIn::Type::GestureSelect:
@@ -353,7 +383,7 @@ FroggersV2ControlCore::slotViewEffective(const VisibleSlot& visible) const
         lane.modulatorsMask = selected ? static_cast<uint16_t>(1u) : static_cast<uint16_t>(0u);
         return lane;
     }
-    return computeEffective(param);
+    return computeEffective(param, m_activePage, visible.row);
 }
 
 void FroggersV2ControlCore::populateUiState()
@@ -380,6 +410,8 @@ void FroggersV2ControlCore::populateUiState()
     m_uiState.sceneBlend.store(m_sceneBlend, std::memory_order_release);
     m_uiState.activeGesture.store(m_activeGestureLane, std::memory_order_release);
 
+    // Crunchy has no page/row eligibility context — ungated sum so lanes are
+    // not falsely zeroed by host-row manifest rules.
     const EffectiveRow crunchyRow = computeEffective(m_crunchy);
     m_uiState.crunchySceneLeft.store(crunchyRow.sceneLeft, std::memory_order_release);
     m_uiState.crunchySceneRight.store(crunchyRow.sceneRight, std::memory_order_release);
@@ -392,7 +424,7 @@ void FroggersV2ControlCore::populateUiState()
 
 FroggersV2ControlCore::EffectiveRow FroggersV2ControlCore::effectiveRow(uint8_t page, uint8_t row) const
 {
-    return computeEffective(m_params[page][row]);
+    return computeEffective(m_params[page][row], page, row);
 }
 
 void FroggersV2ControlCore::setSequencerState(SequencerState* sequencer)
@@ -413,7 +445,7 @@ void FroggersV2ControlCore::applySequencerSlotPayload(const SequencerSlotPayload
                 param.sceneCenter[scene] =
                     clamp01(snapshot.sceneCenter[page][row][scene]);
             }
-            applyHostModRoute(
+            replaceHostModRoute(
                 page,
                 row,
                 engineModFromInternal(snapshot.modSource[page][row]),
@@ -511,8 +543,6 @@ void FroggersV2ControlCore::applyMessage(const MessageIn& message)
         case MessageIn::Type::ModDrillIn:
             onModDrillIn(message.page, message.slot);
             break;
-        case MessageIn::Type::ShiftHeld:
-            break;
         case MessageIn::Type::SceneSelect:
             onSceneSelect(message.index % kNumScenes);
             break;
@@ -608,12 +638,16 @@ void FroggersV2ControlCore::onParamTurn(uint8_t page, uint8_t slot, float delta)
                 clamp01(detailParam.sceneCenter[targetScene] + delta * kTurnStep);
             return;
         }
-        // Packet 15.2a: every lane cell in the 4x4 detail grid is
-        // independently editable -- lane identity is the cell index itself,
-        // so turning any cell edits that lane's own depth with no prior
-        // "selection" required.
+        // Packet 15.2a/15.3: every assignable lane cell is independently
+        // editable; unavailable lanes (external-audio / VCO pair-bus) refuse
+        // turn edits while remaining visible in the grid.
         if (visible.modIndex < kNumModSources)
         {
+            if (!manifest::isModLaneAssignable(
+                    page, visible.row, visible.modIndex, m_externalAudioAvailable))
+            {
+                return;
+            }
             detailParam.modDepth[visible.modIndex] =
                 clampSigned(detailParam.modDepth[visible.modIndex] + delta * kTurnStep);
         }
@@ -661,11 +695,15 @@ void FroggersV2ControlCore::onParamPress(uint8_t page, uint8_t slot)
         rebuildVisibleSlots();
         return;
     }
-    // Packet 15.2a: pressing a lane cell in the 16-cell detail grid clears
-    // that lane (turn sets a lane's depth, press clears it -- there is no
-    // "selection" concept left once every lane is independently active).
+    // Packet 15.2a/15.3: pressing an assignable lane cell clears that lane;
+    // unavailable lanes refuse clear-press the same way they refuse turns.
     if (visible.modIndex < kNumModSources)
     {
+        if (!manifest::isModLaneAssignable(
+                page, visible.row, visible.modIndex, m_externalAudioAvailable))
+        {
+            return;
+        }
         m_params[page][visible.row].modDepth[visible.modIndex] = 0.0f;
     }
 }
@@ -971,9 +1009,28 @@ void FroggersV2ControlCore::randomizeModIntoSnapshot(SequencerSlotPayload& snaps
                 snapshot.modDepth[page][row] = 0.0f;
                 continue;
             }
+            // Packet 15.5: single-route sequencer payload still picks one
+            // source, but only from eligibility-gated lanes. Do not expand
+            // SequencerSlotPayload to multi-lane depths here.
+            uint8_t eligible[kNumModSources];
+            uint8_t eligibleCount = 0;
+            for (uint8_t source = 0; source < kNumModSources; ++source)
+            {
+                if (manifest::isModSourceEligibleForRow(
+                        page, row, source, m_externalAudioAvailable))
+                {
+                    eligible[eligibleCount++] = source;
+                }
+            }
+            if (eligibleCount == 0)
+            {
+                snapshot.modSource[page][row] = kNoSelection;
+                snapshot.modDepth[page][row] = 0.0f;
+                continue;
+            }
             advanceRandState();
-            const uint8_t source = static_cast<uint8_t>(m_randState % kNumModSources);
-            snapshot.modSource[page][row] = source;
+            snapshot.modSource[page][row] =
+                eligible[static_cast<uint8_t>(m_randState % eligibleCount)];
             advanceRandState();
             snapshot.modDepth[page][row] = clampSigned(
                 static_cast<float>(static_cast<int32_t>(m_randState & 1023u) - 512) / 512.0f);
@@ -1232,11 +1289,20 @@ void FroggersV2ControlCore::rebuildVisibleSlots()
 
 FroggersV2ControlCore::EffectiveRow FroggersV2ControlCore::computeEffective(const ParamState& state) const
 {
+    // Ungated: Crunchy has no page/row eligibility context.
+    return computeEffective(state, kNoSelection, kNoSelection);
+}
+
+FroggersV2ControlCore::EffectiveRow FroggersV2ControlCore::computeEffective(const ParamState& state,
+                                                                             uint8_t page,
+                                                                             uint8_t row) const
+{
     EffectiveRow out;
     out.sceneLeft = state.sceneCenter[m_sceneLeftOrdinal];
     out.sceneRight = state.sceneCenter[m_sceneRightOrdinal];
     const float center = blendedSceneCenter(state);
     const float modulationScale = std::min(center, 1.0f - center);
+    const bool gateEligibility = page < kNumHostPages && row < rowsForPage(page);
 
     float sum = 0.0f;
     float minSum = 0.0f;
@@ -1244,6 +1310,11 @@ FroggersV2ControlCore::EffectiveRow FroggersV2ControlCore::computeEffective(cons
     for (uint8_t i = 0; i < kNumModSources; ++i)
     {
         if (state.modDepth[i] == 0.0f)
+        {
+            continue;
+        }
+        if (gateEligibility
+            && !manifest::isModLaneAssignable(page, row, i, m_externalAudioAvailable))
         {
             continue;
         }

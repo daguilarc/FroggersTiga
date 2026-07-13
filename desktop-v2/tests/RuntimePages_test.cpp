@@ -257,16 +257,31 @@ int main()
     MidiCvAssignmentTable table;
     table.markMappingsDirty();
     const std::vector<ControllerTargetMappingRow> rows = table.buildTargetMappingRows();
-    if (rows.size() != froggers_v2::manifest::kControllerTargetDeclarations.size())
+    if (rows.size() != froggers_v2::manifest::kControllerTargetCount
+        || rows.size() != froggers_v2::manifest::controllerTargetDeclarations().size())
     {
         std::printf("FAIL: controller model row count does not match manifest targets\n");
         return 1;
     }
     if (rows[0].targetId == nullptr
         || std::string(rows[0].targetId)
-               != std::string(froggers_v2::manifest::kControllerTargetDeclarations[0].stableId))
+               != std::string(froggers_v2::manifest::controllerTargetDeclarations()[0].stableId))
     {
         std::printf("FAIL: controller model does not expose manifest target IDs\n");
+        return 1;
+    }
+    size_t encoderRows = 0;
+    for (const auto& target : froggers_v2::manifest::controllerTargetDeclarations())
+    {
+        if (froggers_v2::manifest::isEncoderTurnBindingRole(target.bindingRole)
+            || froggers_v2::manifest::isEncoderModDrillInBindingRole(target.bindingRole))
+        {
+            ++encoderRows;
+        }
+    }
+    if (encoderRows != froggers_v2::manifest::kEncoderControllerTargetCount)
+    {
+        std::printf("FAIL: encoder controller target count mismatch\n");
         return 1;
     }
 

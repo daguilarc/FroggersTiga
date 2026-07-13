@@ -86,11 +86,6 @@ void PageCarouselComponent::refresh()
     }
 }
 
-void PageCarouselComponent::setShiftHeld(bool held)
-{
-    juce::ignoreUnused(held);
-}
-
 SubmodulePagePanel& PageCarouselComponent::submodulePanel()
 {
     return m_submodulePanel;

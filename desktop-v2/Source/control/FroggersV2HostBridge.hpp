@@ -15,13 +15,13 @@ public:
 
     void syncToHost();
     void syncFromHostModRoutes();
+    void syncModRoutesToHost();
     void onSequencerStepAdvance();
     void captureLiveToSequencerStep(uint8_t step);
     void recallSequencerStep(uint8_t step);
     void setOnStepCaptured(std::function<void(uint8_t step)> callback);
 
 private:
-    void syncAllModRoutesToHost();
     enum class ModRouteDirection : uint8_t
     {
         FromHost,

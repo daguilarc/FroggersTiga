@@ -4,7 +4,6 @@
 #include "control/FroggersV2ControlCore.hpp"
 #include "manifest/FroggersV2AppManifest.hpp"
 
-#include <array>
 #include <cstring>
 
 namespace
@@ -13,11 +12,11 @@ constexpr int kChannelControlWidth = 50;
 constexpr int kCcControlWidth = 80;
 constexpr int kCcTextBoxWidth = 44;
 constexpr int kRowControlHeight = 24;
-constexpr int kBindingLabelWidth = 120;
+constexpr int kBindingLabelWidth = 220;
 constexpr int kBindingEnableWidth = 40;
 constexpr int kBindingChLabelWidth = 24;
 constexpr int kBindingKindWidth = 72;
-constexpr int kReadbackWidth = 140;
+constexpr int kReadbackWidth = 160;
 
 void configureChannelSlider(juce::Slider& slider)
 {
@@ -73,10 +72,6 @@ MidiCvButtonBinding* buttonBindingForTargetId(MidiCvAssignmentTable& table, cons
     {
         return nullptr;
     }
-    if (std::strcmp(targetId, ids.shiftButton) == 0)
-    {
-        return &table.shiftButton;
-    }
     if (std::strcmp(targetId, ids.scene1) == 0)
     {
         return &table.sceneButtons[0];
@@ -99,10 +94,6 @@ MidiCvBindingRole bindingRoleForTargetId(const char* targetId)
     {
         return MidiCvBindingRole::None;
     }
-    if (std::strcmp(targetId, ids.shiftButton) == 0)
-    {
-        return MidiCvBindingRole::HeldModifier;
-    }
     if (std::strcmp(targetId, ids.scene1) == 0)
     {
         return MidiCvBindingRole::SceneOrdinal0;
@@ -118,54 +109,78 @@ MidiCvBindingRole bindingRoleForTargetId(const char* targetId)
     return MidiCvBindingRole::None;
 }
 
-MidiCvTargetRowKind rowKindForIndex(size_t index)
+MidiCvTargetRowKind rowKindForBindingRole(const char* bindingRole)
 {
-    switch (index)
+    using froggers_v2::manifest::bindingRoleEquals;
+    using froggers_v2::manifest::kBindingRoleEncoderModDrillIn;
+    using froggers_v2::manifest::kBindingRoleEncoderTurn;
+    using froggers_v2::manifest::kBindingRoleExternalModA;
+    using froggers_v2::manifest::kBindingRoleExternalModB;
+    using froggers_v2::manifest::kBindingRoleGate;
+    using froggers_v2::manifest::kBindingRolePitch;
+    using froggers_v2::manifest::kBindingRoleSceneSelect;
+    using froggers_v2::manifest::kBindingRoleSequencerSync;
+    using froggers_v2::manifest::kBindingRoleVirtualKeyboard;
+
+    if (bindingRoleEquals(bindingRole, kBindingRolePitch))
     {
-        case 0:
-            return MidiCvTargetRowKind::Pitch;
-        case 1:
-            return MidiCvTargetRowKind::Gate;
-        case 2:
-        case 3:
-            return MidiCvTargetRowKind::CcBinding;
-        case 4:
-        case 5:
-        case 6:
-        case 7:
-            return MidiCvTargetRowKind::ButtonBinding;
-        case 8:
-            return MidiCvTargetRowKind::QwertyChannel;
-        case 9:
-            return MidiCvTargetRowKind::ExternalClock;
-        default:
-            return MidiCvTargetRowKind::ButtonBinding;
+        return MidiCvTargetRowKind::Pitch;
     }
+    if (bindingRoleEquals(bindingRole, kBindingRoleGate))
+    {
+        return MidiCvTargetRowKind::Gate;
+    }
+    if (bindingRoleEquals(bindingRole, kBindingRoleExternalModA)
+        || bindingRoleEquals(bindingRole, kBindingRoleExternalModB))
+    {
+        return MidiCvTargetRowKind::CcBinding;
+    }
+    if (bindingRoleEquals(bindingRole, kBindingRoleSceneSelect))
+    {
+        return MidiCvTargetRowKind::ButtonBinding;
+    }
+    if (bindingRoleEquals(bindingRole, kBindingRoleVirtualKeyboard))
+    {
+        return MidiCvTargetRowKind::QwertyChannel;
+    }
+    if (bindingRoleEquals(bindingRole, kBindingRoleSequencerSync))
+    {
+        return MidiCvTargetRowKind::ExternalClock;
+    }
+    if (bindingRoleEquals(bindingRole, kBindingRoleEncoderTurn))
+    {
+        return MidiCvTargetRowKind::EncoderTurn;
+    }
+    if (bindingRoleEquals(bindingRole, kBindingRoleEncoderModDrillIn))
+    {
+        return MidiCvTargetRowKind::EncoderDrillIn;
+    }
+    return MidiCvTargetRowKind::ButtonBinding;
+}
+
+size_t productRowLinearIndex(uint8_t page, uint8_t row)
+{
+    size_t cursor = 0;
+    for (uint8_t p = 0; p < page; ++p)
+    {
+        cursor += HostParameterInventoryV2::rowsForUiPage(p);
+    }
+    return cursor + row;
 }
 } // namespace
 
 void MidiCvSettingsComponent::initTargetRows()
 {
-    const MidiCvControllerTargetIds& ids = midiCvControllerTargetIds();
-    const std::array<const char*, froggers_v2::manifest::kControllerTargetDeclarations.size()> targetIds{{
-        ids.pitch,
-        ids.gate,
-        ids.externalModA,
-        ids.externalModB,
-        ids.shiftButton,
-        ids.scene1,
-        ids.scene2,
-        ids.scene3,
-        ids.qwertyVirtual,
-        ids.externalClock,
-    }};
-
+    const auto& decls = froggers_v2::manifest::controllerTargetDeclarations();
     for (size_t i = 0; i < m_targetRows.size(); ++i)
     {
         TargetRowUi& row = m_targetRows[i];
-        const auto& decl = froggers_v2::manifest::kControllerTargetDeclarations[i];
-        row.targetId = targetIds[i];
-        row.kind = rowKindForIndex(i);
+        const auto& decl = decls[i];
+        row.targetId = decl.stableId;
+        row.bindingRole = decl.bindingRole;
+        row.targetPage = decl.page;
+        row.targetRow = decl.row;
+        row.kind = rowKindForBindingRole(decl.bindingRole);
         row.label.setText(
             juce::String(decl.displayName) + " [" + juce::String(row.targetId) + "]",
             juce::dontSendNotification);
@@ -193,17 +208,26 @@ void MidiCvSettingsComponent::initTargetRows()
                 "Note on/off drives ADSR and sequencer gates.", juce::dontSendNotification);
             row.help.setJustificationType(juce::Justification::topLeft);
         }
-        else if (row.kind == MidiCvTargetRowKind::CcBinding)
+        else if (row.kind == MidiCvTargetRowKind::CcBinding || row.kind == MidiCvTargetRowKind::EncoderTurn)
         {
             row.enable.setButtonText("On");
             row.chLabel.setText("Ch", juce::dontSendNotification);
-            row.label.setTooltip(
-                "Incoming CC level routed through the controller model to eligible targets.");
+            if (row.kind == MidiCvTargetRowKind::EncoderTurn)
+            {
+                row.label.setTooltip(
+                    "Relative CC (64 = center) dispatches ParamTurn for this module-row parameter.");
+            }
+            else
+            {
+                row.label.setTooltip(
+                    "Incoming CC level routed through the controller model to eligible targets.");
+            }
             row.number.setName("CC");
             configureAnyChannelSlider(row.channel);
             configureNumberSlider(row.number, 127);
         }
-        else if (row.kind == MidiCvTargetRowKind::ButtonBinding)
+        else if (row.kind == MidiCvTargetRowKind::ButtonBinding
+                 || row.kind == MidiCvTargetRowKind::EncoderDrillIn)
         {
             row.enable.setButtonText("On");
             row.chLabel.setText("Ch", juce::dontSendNotification);
@@ -212,11 +236,19 @@ void MidiCvSettingsComponent::initTargetRows()
             row.kindCombo.addItem("CC", 2);
             row.kindCombo.setSelectedId(1, juce::dontSendNotification);
             configureNumberSlider(row.number, 127);
-            const MidiCvBindingRole role = bindingRoleForTargetId(row.targetId);
-            row.label.setText(
-                juce::String(decl.displayName) + " ["
-                    + juce::String(manifestTargetIdForBindingRole(role)) + "]",
-                juce::dontSendNotification);
+            if (row.kind == MidiCvTargetRowKind::ButtonBinding)
+            {
+                const MidiCvBindingRole role = bindingRoleForTargetId(row.targetId);
+                row.label.setText(
+                    juce::String(decl.displayName) + " ["
+                        + juce::String(manifestTargetIdForBindingRole(role)) + "]",
+                    juce::dontSendNotification);
+            }
+            else
+            {
+                row.label.setTooltip(
+                    "Encoder button / note / CC threshold dispatches ModDrillIn for this parameter.");
+            }
         }
         else if (row.kind == MidiCvTargetRowKind::QwertyChannel)
         {
@@ -249,19 +281,16 @@ void MidiCvSettingsComponent::addTargetRowComponents(TargetRowUi& row)
     {
         addAndMakeVisible(row.help);
     }
-    if (row.kind == MidiCvTargetRowKind::CcBinding || row.kind == MidiCvTargetRowKind::ButtonBinding)
+    if (row.kind == MidiCvTargetRowKind::CcBinding || row.kind == MidiCvTargetRowKind::ButtonBinding
+        || row.kind == MidiCvTargetRowKind::EncoderTurn || row.kind == MidiCvTargetRowKind::EncoderDrillIn)
     {
         addAndMakeVisible(row.chLabel);
         addAndMakeVisible(row.channel);
+        addAndMakeVisible(row.number);
     }
-    if (row.kind == MidiCvTargetRowKind::ButtonBinding)
+    if (row.kind == MidiCvTargetRowKind::ButtonBinding || row.kind == MidiCvTargetRowKind::EncoderDrillIn)
     {
         addAndMakeVisible(row.kindCombo);
-        addAndMakeVisible(row.number);
-    }
-    if (row.kind == MidiCvTargetRowKind::CcBinding)
-    {
-        addAndMakeVisible(row.number);
     }
     if (row.kind == MidiCvTargetRowKind::QwertyChannel)
     {
@@ -285,12 +314,13 @@ void MidiCvSettingsComponent::wireTargetRowCallbacks()
             row.page.onChange = syncOnChange;
             row.row.onValueChange = syncOnChange;
         }
-        if (row.kind == MidiCvTargetRowKind::CcBinding || row.kind == MidiCvTargetRowKind::ButtonBinding)
+        if (row.kind == MidiCvTargetRowKind::CcBinding || row.kind == MidiCvTargetRowKind::ButtonBinding
+            || row.kind == MidiCvTargetRowKind::EncoderTurn || row.kind == MidiCvTargetRowKind::EncoderDrillIn)
         {
             row.channel.onValueChange = syncOnChange;
             row.number.onValueChange = syncOnChange;
         }
-        if (row.kind == MidiCvTargetRowKind::ButtonBinding)
+        if (row.kind == MidiCvTargetRowKind::ButtonBinding || row.kind == MidiCvTargetRowKind::EncoderDrillIn)
         {
             row.kindCombo.onChange = syncOnChange;
         }
@@ -300,8 +330,8 @@ void MidiCvSettingsComponent::wireTargetRowCallbacks()
         }
         if (row.kind == MidiCvTargetRowKind::ExternalClock)
         {
-            row.enable.onClick = [this]() {
-                m_engine.getSequencer().m_externalClock = m_targetRows[9].enable.getToggleState();
+            row.enable.onClick = [this, &row]() {
+                m_engine.getSequencer().m_externalClock = row.enable.getToggleState();
                 updateMappingReadbacks();
             };
         }
@@ -332,7 +362,8 @@ MidiCvSettingsComponent::MidiCvSettingsComponent(AudioEngine& engine,
     m_assignHelp.setText(
         "Rows project manifest controller targets via buildTargetMappingRows(). "
         "Pitch and Gate are performance targets. MIDI CC A and MIDI CC B route through the controller model. "
-        "Shift is a dedicated mapping row, not the Gate row.",
+        "Scene S1–S3 are dedicated mapping rows. Per-parameter encoder turn maps relative CC → ParamTurn; "
+        "encoder mod drill-in maps press → ModDrillIn.",
         juce::dontSendNotification);
     m_assignHelp.setJustificationType(juce::Justification::topLeft);
 
@@ -407,7 +438,38 @@ MidiCvSettingsComponent::MidiCvSettingsComponent(AudioEngine& engine,
         m_close.setVisible(false);
     }
     startTimerHz(4);
-    setSize(560, m_presentation == MidiCvSettingsPresentation::RuntimePage ? 720 : 900);
+    setSize(640, preferredContentHeight());
+}
+
+int MidiCvSettingsComponent::estimatedRowHeight(const TargetRowUi& row) const
+{
+    switch (row.kind)
+    {
+        case MidiCvTargetRowKind::Pitch:
+            return 50;
+        case MidiCvTargetRowKind::Gate:
+            return 52;
+        case MidiCvTargetRowKind::ButtonBinding:
+        case MidiCvTargetRowKind::EncoderDrillIn:
+            return 46;
+        case MidiCvTargetRowKind::CcBinding:
+        case MidiCvTargetRowKind::EncoderTurn:
+        case MidiCvTargetRowKind::QwertyChannel:
+        case MidiCvTargetRowKind::ExternalClock:
+            return 32;
+    }
+    return 32;
+}
+
+int MidiCvSettingsComponent::preferredContentHeight() const
+{
+    int height = 280;
+    for (const TargetRowUi& row : m_targetRows)
+    {
+        height += estimatedRowHeight(row);
+    }
+    height += 160;
+    return height;
 }
 
 void MidiCvSettingsComponent::configureCcSlider(juce::Slider& slider)
@@ -450,51 +512,126 @@ void MidiCvSettingsComponent::updateMappingReadbacks()
         }
     }
 
-    TargetRowUi& pitchRow = m_targetRows[0];
-    const uint8_t page = static_cast<uint8_t>(pitchRow.page.getSelectedId() - 1);
-    const uint8_t row = static_cast<uint8_t>(pitchRow.row.getValue());
-    pitchRow.readbackLabel.setText(
-        V2ParamDisplayNames::forHostPageRow(page, row), juce::dontSendNotification);
+    for (TargetRowUi& uiRow : m_targetRows)
+    {
+        if (uiRow.kind != MidiCvTargetRowKind::Pitch)
+        {
+            continue;
+        }
+        const uint8_t page = static_cast<uint8_t>(uiRow.page.getSelectedId() - 1);
+        const uint8_t row = static_cast<uint8_t>(uiRow.row.getValue());
+        uiRow.readbackLabel.setText(
+            V2ParamDisplayNames::forHostPageRow(page, row), juce::dontSendNotification);
+        break;
+    }
+
+    for (TargetRowUi& uiRow : m_targetRows)
+    {
+        if (uiRow.kind != MidiCvTargetRowKind::EncoderTurn && uiRow.kind != MidiCvTargetRowKind::EncoderDrillIn)
+        {
+            continue;
+        }
+        if (uiRow.targetPage == froggers_v2::manifest::kControllerTargetNoPageRow
+            || uiRow.targetRow == froggers_v2::manifest::kControllerTargetNoPageRow)
+        {
+            continue;
+        }
+        const juce::String product = V2ParamDisplayNames::forHostPageRow(uiRow.targetPage, uiRow.targetRow);
+        if (uiRow.kind == MidiCvTargetRowKind::EncoderTurn)
+        {
+            uiRow.readbackLabel.setText(product + " · turn", juce::dontSendNotification);
+        }
+        else
+        {
+            uiRow.readbackLabel.setText(product + " · drill-in", juce::dontSendNotification);
+        }
+    }
 }
 
 void MidiCvSettingsComponent::syncUiFromTable()
 {
     MidiCvAssignmentTable& table = m_engine.getMidiCvTable();
+    const MidiCvControllerTargetIds& ids = midiCvControllerTargetIds();
 
-    m_targetRows[0].enable.setToggleState(table.pitchEnabled, juce::dontSendNotification);
-    m_targetRows[0].page.setSelectedId(static_cast<int>(table.pitchPage) + 1, juce::dontSendNotification);
-    m_targetRows[0].row.setValue(table.pitchRow, juce::dontSendNotification);
-
-    m_targetRows[1].enable.setToggleState(table.gateEnabled, juce::dontSendNotification);
-
-    m_targetRows[2].enable.setToggleState(table.externalModA.enabled, juce::dontSendNotification);
-    m_targetRows[2].channel.setValue(table.externalModA.channel, juce::dontSendNotification);
-    m_targetRows[2].number.setValue(table.externalModA.cc, juce::dontSendNotification);
-
-    m_targetRows[3].enable.setToggleState(table.externalModB.enabled, juce::dontSendNotification);
-    m_targetRows[3].channel.setValue(table.externalModB.channel, juce::dontSendNotification);
-    m_targetRows[3].number.setValue(table.externalModB.cc, juce::dontSendNotification);
-
-    for (size_t i = 4; i <= 7; ++i)
+    for (TargetRowUi& uiRow : m_targetRows)
     {
-        MidiCvButtonBinding* binding = buttonBindingForTargetId(table, m_targetRows[i].targetId);
-        if (binding == nullptr)
+        if (uiRow.targetId == nullptr)
         {
             continue;
         }
-        TargetRowUi& uiRow = m_targetRows[i];
-        uiRow.enable.setToggleState(binding->enabled, juce::dontSendNotification);
-        setTriggerKindCombo(uiRow.kindCombo, binding->kind);
-        uiRow.number.setValue(binding->number, juce::dontSendNotification);
-        uiRow.channel.setValue(binding->channel, juce::dontSendNotification);
+        if (std::strcmp(uiRow.targetId, ids.pitch) == 0)
+        {
+            uiRow.enable.setToggleState(table.pitchEnabled, juce::dontSendNotification);
+            uiRow.page.setSelectedId(static_cast<int>(table.pitchPage) + 1, juce::dontSendNotification);
+            uiRow.row.setValue(table.pitchRow, juce::dontSendNotification);
+            continue;
+        }
+        if (std::strcmp(uiRow.targetId, ids.gate) == 0)
+        {
+            uiRow.enable.setToggleState(table.gateEnabled, juce::dontSendNotification);
+            continue;
+        }
+        if (std::strcmp(uiRow.targetId, ids.externalModA) == 0)
+        {
+            uiRow.enable.setToggleState(table.externalModA.enabled, juce::dontSendNotification);
+            uiRow.channel.setValue(table.externalModA.channel, juce::dontSendNotification);
+            uiRow.number.setValue(table.externalModA.cc, juce::dontSendNotification);
+            continue;
+        }
+        if (std::strcmp(uiRow.targetId, ids.externalModB) == 0)
+        {
+            uiRow.enable.setToggleState(table.externalModB.enabled, juce::dontSendNotification);
+            uiRow.channel.setValue(table.externalModB.channel, juce::dontSendNotification);
+            uiRow.number.setValue(table.externalModB.cc, juce::dontSendNotification);
+            continue;
+        }
+        if (MidiCvButtonBinding* binding = buttonBindingForTargetId(table, uiRow.targetId))
+        {
+            uiRow.enable.setToggleState(binding->enabled, juce::dontSendNotification);
+            setTriggerKindCombo(uiRow.kindCombo, binding->kind);
+            uiRow.number.setValue(binding->number, juce::dontSendNotification);
+            uiRow.channel.setValue(binding->channel, juce::dontSendNotification);
+            continue;
+        }
+        if (std::strcmp(uiRow.targetId, ids.qwertyVirtual) == 0)
+        {
+            uiRow.enable.setToggleState(table.qwertyVirtualChannelEnabled, juce::dontSendNotification);
+            uiRow.channel.setValue(table.qwertyMidiChannel, juce::dontSendNotification);
+            continue;
+        }
+        if (std::strcmp(uiRow.targetId, ids.externalClock) == 0)
+        {
+            uiRow.enable.setToggleState(
+                m_engine.getSequencer().m_externalClock, juce::dontSendNotification);
+            continue;
+        }
+        if (uiRow.kind == MidiCvTargetRowKind::EncoderTurn
+            && uiRow.targetPage != froggers_v2::manifest::kControllerTargetNoPageRow)
+        {
+            const size_t index = productRowLinearIndex(uiRow.targetPage, uiRow.targetRow);
+            if (index < table.encoderTurns.size())
+            {
+                const MidiCvEncoderTurnBinding& binding = table.encoderTurns[index];
+                uiRow.enable.setToggleState(binding.enabled, juce::dontSendNotification);
+                uiRow.channel.setValue(binding.channel, juce::dontSendNotification);
+                uiRow.number.setValue(binding.cc, juce::dontSendNotification);
+            }
+            continue;
+        }
+        if (uiRow.kind == MidiCvTargetRowKind::EncoderDrillIn
+            && uiRow.targetPage != froggers_v2::manifest::kControllerTargetNoPageRow)
+        {
+            const size_t index = productRowLinearIndex(uiRow.targetPage, uiRow.targetRow);
+            if (index < table.encoderDrillIns.size())
+            {
+                const MidiCvEncoderDrillInBinding& binding = table.encoderDrillIns[index];
+                uiRow.enable.setToggleState(binding.enabled, juce::dontSendNotification);
+                setTriggerKindCombo(uiRow.kindCombo, binding.kind);
+                uiRow.channel.setValue(binding.channel, juce::dontSendNotification);
+                uiRow.number.setValue(binding.number, juce::dontSendNotification);
+            }
+        }
     }
-
-    m_targetRows[8].enable.setToggleState(
-        table.qwertyVirtualChannelEnabled, juce::dontSendNotification);
-    m_targetRows[8].channel.setValue(table.qwertyMidiChannel, juce::dontSendNotification);
-
-    m_targetRows[9].enable.setToggleState(
-        m_engine.getSequencer().m_externalClock, juce::dontSendNotification);
 
     updateMappingReadbacks();
 }
@@ -503,37 +640,78 @@ void MidiCvSettingsComponent::syncTableFromUi()
 {
     m_engine.getMidiCvTable().markMappingsDirty();
     MidiCvAssignmentTable& table = m_engine.getMidiCvTable();
+    const MidiCvControllerTargetIds& ids = midiCvControllerTargetIds();
 
-    table.pitchEnabled = m_targetRows[0].enable.getToggleState();
-    table.gateEnabled = m_targetRows[1].enable.getToggleState();
-    table.pitchPage = static_cast<uint8_t>(m_targetRows[0].page.getSelectedId() - 1);
-    table.pitchRow = static_cast<uint8_t>(m_targetRows[0].row.getValue());
-
-    table.externalModA.enabled = m_targetRows[2].enable.getToggleState();
-    table.externalModA.channel = static_cast<uint8_t>(m_targetRows[2].channel.getValue());
-    table.externalModA.cc = static_cast<uint8_t>(m_targetRows[2].number.getValue());
-
-    table.externalModB.enabled = m_targetRows[3].enable.getToggleState();
-    table.externalModB.channel = static_cast<uint8_t>(m_targetRows[3].channel.getValue());
-    table.externalModB.cc = static_cast<uint8_t>(m_targetRows[3].number.getValue());
-
-    for (size_t i = 4; i <= 7; ++i)
+    for (TargetRowUi& uiRow : m_targetRows)
     {
-        MidiCvButtonBinding* binding = buttonBindingForTargetId(table, m_targetRows[i].targetId);
-        if (binding == nullptr)
+        if (uiRow.targetId == nullptr)
         {
             continue;
         }
-        const TargetRowUi& uiRow = m_targetRows[i];
-        binding->enabled = uiRow.enable.getToggleState();
-        binding->kind = triggerKindFromCombo(uiRow.kindCombo);
-        binding->number = static_cast<uint8_t>(uiRow.number.getValue());
-        binding->channel = static_cast<uint8_t>(uiRow.channel.getValue());
-        binding->target = bindingRoleForTargetId(uiRow.targetId);
+        if (std::strcmp(uiRow.targetId, ids.pitch) == 0)
+        {
+            table.pitchEnabled = uiRow.enable.getToggleState();
+            table.pitchPage = static_cast<uint8_t>(uiRow.page.getSelectedId() - 1);
+            table.pitchRow = static_cast<uint8_t>(uiRow.row.getValue());
+            continue;
+        }
+        if (std::strcmp(uiRow.targetId, ids.gate) == 0)
+        {
+            table.gateEnabled = uiRow.enable.getToggleState();
+            continue;
+        }
+        if (std::strcmp(uiRow.targetId, ids.externalModA) == 0)
+        {
+            table.externalModA.enabled = uiRow.enable.getToggleState();
+            table.externalModA.channel = static_cast<uint8_t>(uiRow.channel.getValue());
+            table.externalModA.cc = static_cast<uint8_t>(uiRow.number.getValue());
+            continue;
+        }
+        if (std::strcmp(uiRow.targetId, ids.externalModB) == 0)
+        {
+            table.externalModB.enabled = uiRow.enable.getToggleState();
+            table.externalModB.channel = static_cast<uint8_t>(uiRow.channel.getValue());
+            table.externalModB.cc = static_cast<uint8_t>(uiRow.number.getValue());
+            continue;
+        }
+        if (MidiCvButtonBinding* binding = buttonBindingForTargetId(table, uiRow.targetId))
+        {
+            binding->enabled = uiRow.enable.getToggleState();
+            binding->kind = triggerKindFromCombo(uiRow.kindCombo);
+            binding->number = static_cast<uint8_t>(uiRow.number.getValue());
+            binding->channel = static_cast<uint8_t>(uiRow.channel.getValue());
+            binding->target = bindingRoleForTargetId(uiRow.targetId);
+            continue;
+        }
+        if (std::strcmp(uiRow.targetId, ids.qwertyVirtual) == 0)
+        {
+            table.qwertyVirtualChannelEnabled = uiRow.enable.getToggleState();
+            table.qwertyMidiChannel = static_cast<uint8_t>(uiRow.channel.getValue());
+            continue;
+        }
+        if (uiRow.kind == MidiCvTargetRowKind::EncoderTurn)
+        {
+            const size_t index = productRowLinearIndex(uiRow.targetPage, uiRow.targetRow);
+            if (index < table.encoderTurns.size())
+            {
+                table.encoderTurns[index].enabled = uiRow.enable.getToggleState();
+                table.encoderTurns[index].channel = static_cast<uint8_t>(uiRow.channel.getValue());
+                table.encoderTurns[index].cc = static_cast<uint8_t>(uiRow.number.getValue());
+            }
+            continue;
+        }
+        if (uiRow.kind == MidiCvTargetRowKind::EncoderDrillIn)
+        {
+            const size_t index = productRowLinearIndex(uiRow.targetPage, uiRow.targetRow);
+            if (index < table.encoderDrillIns.size())
+            {
+                table.encoderDrillIns[index].enabled = uiRow.enable.getToggleState();
+                table.encoderDrillIns[index].kind = triggerKindFromCombo(uiRow.kindCombo);
+                table.encoderDrillIns[index].channel = static_cast<uint8_t>(uiRow.channel.getValue());
+                table.encoderDrillIns[index].number = static_cast<uint8_t>(uiRow.number.getValue());
+            }
+        }
     }
-
-    table.qwertyVirtualChannelEnabled = m_targetRows[8].enable.getToggleState();
-    table.qwertyMidiChannel = static_cast<uint8_t>(m_targetRows[8].channel.getValue());
 }
 
 void MidiCvSettingsComponent::timerCallback()
@@ -720,7 +898,7 @@ void MidiCvSettingsComponent::layoutTargetRow(juce::Rectangle<int>& area, Target
         return;
     }
 
-    if (row.kind == MidiCvTargetRowKind::CcBinding)
+    if (row.kind == MidiCvTargetRowKind::CcBinding || row.kind == MidiCvTargetRowKind::EncoderTurn)
     {
         auto ccLine = area.removeFromTop(24);
         row.label.setBounds(ccLine.removeFromLeft(kBindingLabelWidth));
@@ -736,7 +914,7 @@ void MidiCvSettingsComponent::layoutTargetRow(juce::Rectangle<int>& area, Target
         return;
     }
 
-    if (row.kind == MidiCvTargetRowKind::ButtonBinding)
+    if (row.kind == MidiCvTargetRowKind::ButtonBinding || row.kind == MidiCvTargetRowKind::EncoderDrillIn)
     {
         auto buttonLine = area.removeFromTop(24);
         row.label.setBounds(buttonLine.removeFromLeft(kBindingLabelWidth));
@@ -793,7 +971,7 @@ void MidiCvSettingsComponent::resized()
 
     m_assignSectionLabel.setBounds(area.removeFromTop(20));
     area.removeFromTop(4);
-    m_assignHelp.setBounds(area.removeFromTop(48));
+    m_assignHelp.setBounds(area.removeFromTop(56));
     area.removeFromTop(4);
 
     for (TargetRowUi& row : m_targetRows)
@@ -807,18 +985,17 @@ void MidiCvSettingsComponent::resized()
     m_outLabel.setBounds(area.removeFromTop(16));
     m_outDevice.setBounds(area.removeFromTop(24));
     area.removeFromTop(4);
-    m_outHelp.setBounds(area.removeFromTop(24));
-    area.removeFromTop(6);
+    m_outHelp.setBounds(area.removeFromTop(28));
+    area.removeFromTop(4);
     auto outRow = area.removeFromTop(24);
-    m_outChLabel.setBounds(outRow.removeFromLeft(60));
-    m_outChannel.setBounds(outRow.removeFromLeft(kChannelControlWidth));
+    m_outCcLabel.setBounds(outRow.removeFromLeft(28));
+    m_outCc.setBounds(outRow.removeFromLeft(120));
     outRow.removeFromLeft(8);
-    m_outCcLabel.setBounds(outRow.removeFromLeft(30));
-    m_outCc.setBounds(outRow.removeFromLeft(kCcControlWidth));
-    area.removeFromTop(10);
-
-    if (m_close.isVisible())
+    m_outChLabel.setBounds(outRow.removeFromLeft(56));
+    m_outChannel.setBounds(outRow.removeFromLeft(100));
+    area.removeFromTop(8);
+    if (m_presentation != MidiCvSettingsPresentation::RuntimePage)
     {
-        m_close.setBounds(area.removeFromTop(28).removeFromRight(100));
+        m_close.setBounds(area.removeFromBottom(28).removeFromRight(100));
     }
 }

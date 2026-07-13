@@ -12,7 +12,7 @@ VCO Envelope — Slow level from VCO mix; scope trace
 Random S&H 1 — S&H random mod CV ch.1 — resample with Rand Resample; see Mod indicators in Manual
 Random S&H 2 — S&H random mod CV ch.2 — resample with Rand Resample; see Mod indicators in Manual
 
-Mod depth — Crossfade amount between stored knob (base) and mod source; 0 = base only, 1 = mod only
+Mod depth — Desktop v2: per-lane signed depth toward that mod source; 0 = lane off; multiple nonzero assignable lanes on a row sum into effective modulation. v1/web: crossfade between stored knob (base) and one mod source (0 = base only, 1 = mod only)
 
 ## Transport
 
@@ -26,15 +26,16 @@ Rand mod — Mod depths on current page from the 15-lane catalog
 Rand All — All modules: all three scene slots per musical row (not Crispy) + mod depths + global Crunchy scene slots; also randomizes L/R endpoint assignment and scene blend; clears gesture selection first. **All Scenes** / **Current Scene** scope pair under the button selects scene write target.
 Rand-seq — Sequencer toolbar dice: same scene-slot policy as Rand All (includes Crunchy slots); writes step buffer(s) per **Step** / **All steps** scope; also randomizes live L/R endpoints and blend once per press; does not write mod depths
 Rand Mods — Global-command band: randomize mod depths per **All Steps** / **Current Step** scope pair; when writing sequencer snapshots, respects sequencer toolbar **Step** / **All steps** scope
-Rand Resample — Resample both Random/Marbles channels (draws from bags)
+Rand Resample — Resample both Random S&H channels (draws from bags)
 Rand waveforms — Randomize VCO morph (sine/saw/square blend)
 Crunchy — Global fuego on all pages and all Crispy instances (web global strip; desktop v2 global-command band scene encoder ring)
 
 ## Top chrome (desktop v2)
 
 Transport / signal band — **Play**, **Stop**, **Record audio**, and the **global oscilloscope** (persistent across carousel and runtime pages)
-Global-command band — **Rand All**, **Rand Mods**, **Rand waveforms**, **Rand Resample**, **Crunchy** label + ring, **Shift**; scene/step scope radio pairs directly below **Rand All** and **Rand Mods**
-Global oscilloscope — Shell-level signal monitor in the transport band; default three color-coded VCO traces; source-group switching for LFO, pair buses, EFs, Random/Marbles, External Audio when inspected; separate from per-row CV LEDs and mod-column indicators
+Global-command band — **Rand All**, **Rand Mods**, **Rand waveforms**, **Rand Resample**, **Crunchy** label + ring; scene/step scope radio pairs directly below **Rand All** and **Rand Mods**
+Global oscilloscope — Shell-level signal monitor in the transport band; default three color-coded VCO traces; source-group switching for LFO, pair buses, EFs, Random S&H, External Audio when inspected; samples come from the shared fifteen-lane CV history (one GetCvOut push per UI tick); separate from per-row CV LEDs and MOD drill-in
+Parameter detail underlay — Display-only source-activity waveform under each detail-grid depth encoder (manifest lane color); Target (Back) has none; same history store as the global oscilloscope; does not change ParamTurn / ModDrillIn hit targets
 All Scenes / Current Scene — Randomization scope under **Rand All**: write all three scene slots per row vs only the active scene edit target; preserves L/R endpoint picks and blend slider
 All Steps / Current Step — Randomization scope under **Rand Mods**: all 16 sequencer indices vs playhead (playing) or edit step (stopped)
 
@@ -46,7 +47,7 @@ MIDI — Right rail: selected input, connection/receiving/error state, explicit 
 
 ## Permanent mod sources (desktop v2)
 
-Fifteen lanes in parameter detail and mod-column dropdowns (depth 0 = off). MIDI CC A/B are **not** lanes — they are controller targets.
+Fifteen lanes in the parameter-detail 4×4 grid (depth 0 = off; multi-lane depths sum when eligible). No module-row mod dropdown. MIDI CC A/B are **not** lanes — they are controller targets.
 
 VCO 1+2 — Audio-rate VCO pair bus (lane 1)
 VCO 2+3 — Audio-rate VCO pair bus (lane 2)
@@ -59,13 +60,14 @@ VCO 2+3 EF — Adjacent-pair envelope follower
 LFO 1 — LFO module output 1
 LFO 2 — LFO module output 2
 LFO 3 — LFO module output 3
-Random/Marbles 1 — Random stepped source 1 (resample with **Rand Resample**)
-Random/Marbles 2 — Random stepped source 2 (resample with **Rand Resample**)
+Random S&H 1 — Random stepped source 1 (resample with **Rand Resample**; inspired by Mutable Instruments Marbles)
+Random S&H 2 — Random stepped source 2 (resample with **Rand Resample**)
 External Audio (audio rate) — External input audio-rate lane; visible but unavailable when input off
 External Audio (envelope follower) — External input EF lane; visible but unavailable when input off
 
-MOD — Clickable label on module encoder rings; opens 4×4 parameter-detail grid (15 depth encoders + Crispy/target cell)
-Parameter detail — 4×4 modulation grid for one row; press Crispy/target cell to return to module page
+MOD / CV LED — Fixed-center click target on module encoder rings; opens 4×4 parameter-detail grid (ModDrillIn). Ring drag stays ParamTurn and does not open detail. Device-neutral: rotate/turn → ParamTurn; press (MOD LED or mapped MIDI encoder press via Controllers `…_encoder_mod_drill_in`) → ModDrillIn.
+Parameter detail — 4×4 modulation grid for one row: 15 independent depth encoders (each with a CV activity underlay) + **Target (Back)**; press Target (Back) to return to the module page
+Target (Back) — Sixteenth detail cell; ParamPress exits detail; no underlay
 
 ## Page carousel (desktop v2)
 
@@ -119,16 +121,17 @@ Step gates — Same policy: affect envelopes only while sequencer is playing.
 
 ## MIDI / Controllers (desktop v2 standalone)
 
-Performance-first layout — One primary MIDI input: explicit mapping rows for **Pitch**, **Gate**, **MIDI CC A**, **MIDI CC B**, **Shift button**, **Scene S1–S3**, **QWERTY Ch**, optional **External MIDI clock**. No MIDI learn or recent-event list. Multi-target fan-out allowed. DAW-hosted build uses host parameters instead — no standalone MIDI picker.
+Performance-first layout — One primary MIDI input: explicit mapping rows for **Pitch**, **Gate**, **MIDI CC A**, **MIDI CC B**, **Scene S1–S3**, **QWERTY Ch**, optional **External MIDI clock**, plus inventory-generated **encoder turn** / **mod drill-in** targets per module-row parameter. No MIDI learn or recent-event list. Multi-target fan-out allowed. DAW-hosted build uses host parameters instead — no standalone MIDI picker.
 
 MIDI In — Pick one input stream: computer keyboard (QWERTY notes on virtual channel), none, or a hardware port
 Pitch — Page + row target (read-only parameter name); incoming notes bend that knob
-Gate — **Any** held note on/off drives Pair-AR envelope gates when enabled; OR-combines with **step gates** while **Start Sequence** runs — not assignable on the Shift row
+Gate — **Any** held note on/off drives Pair-AR envelope gates when enabled; OR-combines with **step gates** while **Start Sequence** runs
 MIDI CC A / MIDI CC B — Controller targets mapped to manifest parameter IDs; not permanent mod-rack lanes
-Shift button — Dedicated Note or CC + Ch for the **Shift** toggle row only
 Scene S1 / S2 / S3 — MIDI triggers for scene L/R endpoint selection (Note or CC + Ch)
 QWERTY Ch — Virtual MIDI channel for computer keyboard notes (1–16)
 External MIDI clock — Optional sequencer clock source (timing only; not gesture routing)
+Encoder turn — Relative CC → `ParamTurn` for that inventory parameter (stable ID `…_encoder_turn`)
+Encoder mod drill-in — Button / note / CC threshold → `ModDrillIn` for that parameter (stable ID `…_encoder_mod_drill_in`); same enter-mod action as the MOD LED (Packet 15)
 
 ## Pair-AR (desktop v2 module)
 

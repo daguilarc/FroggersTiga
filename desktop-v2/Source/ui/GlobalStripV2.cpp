@@ -66,7 +66,6 @@ GlobalStripV2::GlobalStripV2()
     // step scene slots. See SequencerPanelComponent's dice tooltip.
     m_randMods.setTooltip("Randomize live mod depths (not step scene slots)");
 
-    m_shift.onClick = [this]() { pushShift(m_shift.getToggleState()); };
     m_randAll.onClick = [this]() { pushRandAll(); };
     m_randMods.onClick = [this]() { pushRandMods(); };
     m_randWaveforms.onClick = [this]() {
@@ -96,7 +95,6 @@ GlobalStripV2::GlobalStripV2()
                                static_cast<juce::Component*>(&m_randResample),
                                static_cast<juce::Component*>(&m_crunchyLabel),
                                static_cast<juce::Component*>(&m_crunchyRing),
-                               static_cast<juce::Component*>(&m_shift),
                                static_cast<juce::Component*>(&m_scopeAllScenes),
                                static_cast<juce::Component*>(&m_scopeCurrentScene),
                                static_cast<juce::Component*>(&m_scopeAllSteps),
@@ -111,25 +109,6 @@ void GlobalStripV2::bind(DesktopHostIO* host, froggers_v2::FroggersV2ControlCore
     m_host = host;
     m_core = core;
     refresh();
-}
-
-void GlobalStripV2::setShiftHeld(bool held)
-{
-    m_shift.setToggleState(held, juce::dontSendNotification);
-    pushShift(held);
-}
-
-void GlobalStripV2::pushShift(bool held)
-{
-    if (!m_core)
-    {
-        return;
-    }
-    froggers_v2::MessageIn message;
-    message.type = froggers_v2::MessageIn::Type::ShiftHeld;
-    message.value = held ? 1.0f : 0.0f;
-    m_core->bus().push(message);
-    m_core->processBus();
 }
 
 void GlobalStripV2::pushRandAll()
@@ -176,12 +155,19 @@ void GlobalStripV2::resized()
 {
     using namespace DesktopV2ChromeLayout;
 
+    // Honest two-row grid (D14 / Packet 17 + 18): command controls on row 0,
+    // scope radios on dedicated non-overlapping columns on row 1. Remaining
+    // width after the last fixed control (Crunchy ring) fills to the strip's
+    // right edge — Shift was removed in Packet 18.
     auto area = getLocalBounds();
     const int gap = kSectionGap;
     const int btnH = kTextButtonH;
-    const int scopeH = kTextButtonH;
     auto commandRow = area.removeFromTop(btnH);
-    auto scopeRow = area.removeFromTop(scopeH);
+    if (area.getHeight() > btnH)
+    {
+        area.removeFromTop(juce::jmin(gap, area.getHeight() - btnH));
+    }
+    auto scopeRow = area.removeFromTop(btnH);
 
     int x = commandRow.getX();
     const int btnY = commandRow.getY();
@@ -207,18 +193,45 @@ void GlobalStripV2::resized()
     x += kGlobalStripCrunchyLabelW + gap;
 
     const int ringSide = kEncoderRingSize;
+    const int ringCellW = juce::jmax(ringSide, commandRow.getRight() - x);
     const int ringY = commandRow.getCentreY() - ringSide / 2;
-    m_crunchyRing.setBounds(x, ringY, ringSide, ringSide);
-    x += ringSide + gap;
-    m_shift.setBounds(x, btnY, kGlobalStripShiftW, btnH);
+    // Fill remaining command-row width; EncoderRingComponent paints a
+    // circle centered in its bounds (Packet 18: no Shift fill control).
+    m_crunchyRing.setBounds(x, ringY, ringCellW, ringSide);
 
-    int sceneX = commandRow.getX();
-    m_scopeAllScenes.setBounds(sceneX, scopeRow.getY(), kGlobalScopeSceneAllW, scopeH);
-    sceneX += kGlobalScopeSceneAllW + gap;
-    m_scopeCurrentScene.setBounds(sceneX, scopeRow.getY(), kGlobalScopeSceneCurrentW, scopeH);
+    juce::ToggleButton* const scopeButtons[] = {
+        &m_scopeAllScenes,
+        &m_scopeCurrentScene,
+        &m_scopeAllSteps,
+        &m_scopeCurrentStep,
+    };
+    const int scopeMinW[] = {
+        kGlobalScopeSceneAllW,
+        kGlobalScopeSceneCurrentW,
+        kGlobalScopeStepAllW,
+        kGlobalScopeStepCurrentW,
+    };
+    constexpr int kScopeCount = 4;
+    int scopeMinTotal = 0;
+    for (int i = 0; i < kScopeCount; ++i)
+    {
+        scopeMinTotal += scopeMinW[i];
+    }
+    scopeMinTotal += (kScopeCount - 1) * gap;
+    int scopeExtra = juce::jmax(0, scopeRow.getWidth() - scopeMinTotal);
+    const int scopeExtraEach = scopeExtra / kScopeCount;
+    scopeExtra -= scopeExtraEach * kScopeCount;
 
-    int stepX = commandRow.getX() + kGlobalStripRandAllW + gap;
-    m_scopeAllSteps.setBounds(stepX, scopeRow.getY(), kGlobalScopeStepAllW, scopeH);
-    stepX += kGlobalScopeStepAllW + gap;
-    m_scopeCurrentStep.setBounds(stepX, scopeRow.getY(), kGlobalScopeStepCurrentW, scopeH);
+    int scopeX = scopeRow.getX();
+    const int scopeY = scopeRow.getY();
+    for (int i = 0; i < kScopeCount; ++i)
+    {
+        int width = scopeMinW[i] + scopeExtraEach;
+        if (i == kScopeCount - 1)
+        {
+            width += scopeExtra;
+        }
+        scopeButtons[i]->setBounds(scopeX, scopeY, width, btnH);
+        scopeX += width + gap;
+    }
 }

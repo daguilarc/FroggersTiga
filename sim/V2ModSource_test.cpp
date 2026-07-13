@@ -26,13 +26,13 @@ int main()
 
     if (!IsSimModSourceAvailable(11, bridge, SimHostKind::VstV2))
     {
-        std::printf("FAIL: VstV2 mod index 11 (Random/Marbles 1) should be available\n");
+        std::printf("FAIL: VstV2 mod index 11 (Random S&H 1) should be available\n");
         return 1;
     }
 
     if (!IsSimModSourceAvailable(12, bridge, SimHostKind::VstV2))
     {
-        std::printf("FAIL: VstV2 mod index 12 (Random/Marbles 2) should be available\n");
+        std::printf("FAIL: VstV2 mod index 12 (Random S&H 2) should be available\n");
         return 1;
     }
 
@@ -85,10 +85,10 @@ int main()
         return 1;
     }
 
-    if (std::strcmp(permanentModSourceDisplayName(11), "Random/Marbles 1") != 0
-        || std::strcmp(permanentModSourceDisplayName(12), "Random/Marbles 2") != 0)
+    if (std::strcmp(permanentModSourceDisplayName(11), "Random S&H 1") != 0
+        || std::strcmp(permanentModSourceDisplayName(12), "Random S&H 2") != 0)
     {
-        std::printf("FAIL: permanentModSourceDisplayName Random/Marbles mismatch\n");
+        std::printf("FAIL: permanentModSourceDisplayName Random S&H mismatch\n");
         return 1;
     }
 

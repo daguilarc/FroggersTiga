@@ -29,7 +29,9 @@ constexpr int kHostedEditorMinHeight = gridPx(72);
 
 constexpr int kTransportRowH = gridPx(7);
 constexpr int kVstScopeStripH = gridPx(5);
-constexpr int kGlobalCommandBandH = gridPx(6);
+// Packet 17 (D14): two readable command/scope rows at 1280px need a 10px
+// inter-row gap (kTextButtonH + kSectionGap + kTextButtonH).
+constexpr int kGlobalCommandBandH = gridPx(7);
 constexpr int kGlobalStripH = kGlobalCommandBandH;
 constexpr int kPerformanceBandH = gridPx(7);
 constexpr int kCarouselHeaderH = gridPx(3);
@@ -70,27 +72,28 @@ constexpr int kModLabelStripH = 14;
 constexpr int kSceneButtonMinWidth = 44;
 constexpr int kBlendLabelMinWidth = 16;
 
-constexpr int kPerfSceneLabelW = gridPx(4);
+constexpr int kPerfSceneLabelW = gridPx(5);
 constexpr int kPerfSceneButtonSize = kSceneButtonMinWidth;
 constexpr int kPerfMarblesLabelH = gridPx(2);
 constexpr int kGlobalStripRandAllW = gridPx(8);
-constexpr int kGlobalStripRandModsW = gridPx(9);
+constexpr int kGlobalStripRandModsW = gridPx(11);
 constexpr int kGlobalStripRandWaveformsW = gridPx(13);
 constexpr int kGlobalStripRandResampleW = gridPx(12);
 constexpr int kGlobalStripCrunchyLabelW = gridPx(6);
-constexpr int kGlobalStripShiftW = gridPx(7);
-constexpr int kGlobalScopeSceneAllW = gridPx(9);
-constexpr int kGlobalScopeSceneCurrentW = gridPx(11);
-constexpr int kGlobalScopeStepAllW = gridPx(8);
-constexpr int kGlobalScopeStepCurrentW = gridPx(11);
+// Packet 17: scope radio minima sized for full label text at 1280px
+// (toggle chrome ≈ 24px beyond glyph width).
+constexpr int kGlobalScopeSceneAllW = gridPx(10);
+constexpr int kGlobalScopeSceneCurrentW = gridPx(13);
+constexpr int kGlobalScopeStepAllW = gridPx(9);
+constexpr int kGlobalScopeStepCurrentW = gridPx(12);
 constexpr int kSequencerToolbarH = gridPx(3);
 constexpr int kSequencerRandSeqLabelW = gridPx(7);
 constexpr int kSequencerScopeAllStepsW = gridPx(14);
 constexpr int kSequencerStepCellSize = gridPx(3);
 constexpr int kSequencerDirectionSpeedStripH = gridPx(6);
-constexpr int kPerfBlendEndpointLabelW = kBlendLabelMinWidth;
+constexpr int kPerfBlendEndpointLabelW = gridPx(3);
 constexpr int kPerfSceneBlendW = gridPx(8);
-constexpr int kPerfGestureToggleW = gridPx(4);
+constexpr int kPerfGestureToggleW = gridPx(9);
 constexpr int kPerfGestureWeightW = gridPx(7);
 constexpr int kPerfSeqTransportW = 108;
 constexpr int kPerfSeqRecordW = gridPx(6);
@@ -98,7 +101,8 @@ constexpr int kPerfBpmLabelW = gridPx(3);
 constexpr int kPerfBpmSliderW = gridPx(10);
 constexpr int kPerfStepsLabelW = gridPx(4);
 constexpr int kPerfStepsSliderW = gridPx(8);
-constexpr int kPerfMarblesColW = gridPx(6);
+// Minimum column for "Random S&H N"; leftover width is distributed in resized.
+constexpr int kPerfMarblesColW = gridPx(12);
 
 struct ModuleRowColumnLayout
 {

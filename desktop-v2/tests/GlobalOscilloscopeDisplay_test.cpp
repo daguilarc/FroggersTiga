@@ -4,6 +4,7 @@
 #include "manifest/FroggersV2AppManifest.hpp"
 
 #include <cstdio>
+#include <cmath>
 #include <cstring>
 #include <fstream>
 #include <sstream>
@@ -173,6 +174,89 @@ int main()
                     CvScopeDisplay::kMaxTraces,
                     defaultScope.traceCount());
         return 1;
+    }
+
+    // Packet 16: per-trace auto-scale — traces with different absolute CV ranges both
+    // map into visible display-Y activity; flat-line degeneracy stays mid-line.
+    {
+        CvScopeDisplay autoScaleScope;
+        autoScaleScope.setTraceCount(2);
+        constexpr float kTrace0Lo = 0.85f;
+        constexpr float kTrace0Hi = 0.95f;
+        constexpr float kTrace1Lo = 0.05f;
+        constexpr float kTrace1Hi = 0.15f;
+        for (size_t i = 0; i < CvScopeDisplay::kBufferSize; ++i)
+        {
+            const bool highPhase = (i % 2) != 0;
+            autoScaleScope.pushSample(0, highPhase ? kTrace0Hi : kTrace0Lo);
+            autoScaleScope.pushSample(1, highPhase ? kTrace1Hi : kTrace1Lo);
+        }
+
+        const float t0DisplayLo = autoScaleScope.displayNormalized01(0, kTrace0Lo);
+        const float t0DisplayHi = autoScaleScope.displayNormalized01(0, kTrace0Hi);
+        const float t1DisplayLo = autoScaleScope.displayNormalized01(1, kTrace1Lo);
+        const float t1DisplayHi = autoScaleScope.displayNormalized01(1, kTrace1Hi);
+        const float t0Span = t0DisplayHi - t0DisplayLo;
+        const float t1Span = t1DisplayHi - t1DisplayLo;
+        if (t0Span < 0.9f || t1Span < 0.9f)
+        {
+            std::printf(
+                "FAIL: per-trace auto-scale did not expand both traces into visible Y "
+                "(trace0 span=%.3f trace1 span=%.3f)\n",
+                t0Span,
+                t1Span);
+            return 1;
+        }
+
+        // Shared-axis raw span for these ranges is only 0.1; auto-scale must exceed that.
+        constexpr float kSharedAxisSpan = kTrace0Hi - kTrace0Lo;
+        if (t0Span <= kSharedAxisSpan + 0.01f || t1Span <= kSharedAxisSpan + 0.01f)
+        {
+            std::printf("FAIL: auto-scale spans did not exceed shared-axis raw span\n");
+            return 1;
+        }
+
+        CvScopeDisplay degenerateScope;
+        degenerateScope.setTraceCount(1);
+        constexpr float kFlat = 0.7f;
+        for (size_t i = 0; i < CvScopeDisplay::kBufferSize; ++i)
+        {
+            degenerateScope.pushSample(0, kFlat);
+        }
+        const float mid = degenerateScope.displayNormalized01(0, kFlat);
+        if (std::fabs(mid - 0.5f) > 1.0e-5f)
+        {
+            std::printf("FAIL: flat-line degeneracy expected mid-line 0.5, got %.6f\n", mid);
+            return 1;
+        }
+
+        // Single-trace mode still auto-scales.
+        CvScopeDisplay singleTrace;
+        singleTrace.setTraceCount(1);
+        for (size_t i = 0; i < CvScopeDisplay::kBufferSize; ++i)
+        {
+            singleTrace.pushSample(0, (i % 2) != 0 ? 0.4f : 0.3f);
+        }
+        const float singleSpan =
+            singleTrace.displayNormalized01(0, 0.4f) - singleTrace.displayNormalized01(0, 0.3f);
+        if (singleSpan < 0.9f)
+        {
+            std::printf("FAIL: single-trace auto-scale span too small (%.3f)\n", singleSpan);
+            return 1;
+        }
+
+        // Idle paint path must keep shared-axis last-level mapping (source contract).
+        const std::string cvScopeCpp = readTextFile("desktop-v2/Source/ui/CvScopeDisplay.cpp");
+        if (!contains(cvScopeCpp, "sampleY(m_lastLevel[trace]"))
+        {
+            std::printf("FAIL: idle path no longer uses shared-axis last-level sampleY\n");
+            return 1;
+        }
+        if (!contains(cvScopeCpp, "normalizeToTraceRange"))
+        {
+            std::printf("FAIL: active paint missing per-trace normalizeToTraceRange\n");
+            return 1;
+        }
     }
 
     std::printf("PASS: GlobalOscilloscopeDisplay_test\n");

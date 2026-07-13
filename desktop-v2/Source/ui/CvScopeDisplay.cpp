@@ -87,6 +87,48 @@ float CvScopeDisplay::sampleY(float value01, float bottom, float height) const
     return bottom - clamp01(value01) * height;
 }
 
+void CvScopeDisplay::traceBufferMinMax(size_t trace, float& outMin, float& outMax) const
+{
+    float lo = m_samples[trace][0];
+    float hi = m_samples[trace][0];
+    for (size_t i = 1; i < kBufferSize; ++i)
+    {
+        const float v = m_samples[trace][i];
+        if (v < lo)
+        {
+            lo = v;
+        }
+        if (v > hi)
+        {
+            hi = v;
+        }
+    }
+    outMin = lo;
+    outMax = hi;
+}
+
+float CvScopeDisplay::normalizeToTraceRange(float value01, float lo, float hi) const
+{
+    const float range = hi - lo;
+    if (range <= kAutoScaleEpsilon)
+    {
+        return 0.5f;
+    }
+    return clamp01((value01 - lo) / range);
+}
+
+float CvScopeDisplay::displayNormalized01(size_t trace, float value01) const
+{
+    if (trace >= kMaxTraces || !m_hasSamples[trace])
+    {
+        return clamp01(value01);
+    }
+    float lo = 0.0f;
+    float hi = 1.0f;
+    traceBufferMinMax(trace, lo, hi);
+    return normalizeToTraceRange(value01, lo, hi);
+}
+
 void CvScopeDisplay::pushSample(float value01)
 {
     pushSample(0, value01);
@@ -125,7 +167,16 @@ void CvScopeDisplay::paintLevelFill(juce::Graphics& g,
     {
         return;
     }
-    const float y = sampleY(m_lastLevel[trace], bounds.getBottom(), bounds.getHeight());
+    // Idle keeps shared-axis last-level Y; active paint uses per-trace auto-scale.
+    float displayValue = m_lastLevel[trace];
+    if (!m_idle && m_hasSamples[trace])
+    {
+        float lo = 0.0f;
+        float hi = 1.0f;
+        traceBufferMinMax(trace, lo, hi);
+        displayValue = normalizeToTraceRange(m_lastLevel[trace], lo, hi);
+    }
+    const float y = sampleY(displayValue, bounds.getBottom(), bounds.getHeight());
     const auto fill = juce::Rectangle<float>(
         bounds.getX(),
         y,
@@ -172,13 +223,17 @@ void CvScopeDisplay::paintTrace(juce::Graphics& g, juce::Rectangle<float> bounds
     const float height = bounds.getHeight();
     float prevY = bounds.getBottom();
     bool hasPoint = false;
+    float lo = 0.0f;
+    float hi = 1.0f;
+    traceBufferMinMax(trace, lo, hi);
 
     for (size_t i = 0; i < kBufferSize; ++i)
     {
         const size_t index = (m_writeIndex[trace] + i) % kBufferSize;
         const size_t prevIndex = (index + kBufferSize - 1) % kBufferSize;
         const float x = bounds.getX() + (static_cast<float>(i) / static_cast<float>(kBufferSize - 1)) * width;
-        const float y = sampleY(m_samples[trace][index], bounds.getBottom(), height);
+        const float display01 = normalizeToTraceRange(m_samples[trace][index], lo, hi);
+        const float y = sampleY(display01, bounds.getBottom(), height);
         if (!hasPoint)
         {
             path.startNewSubPath(x, y);

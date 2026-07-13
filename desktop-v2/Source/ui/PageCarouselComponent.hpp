@@ -19,8 +19,6 @@ public:
     void setActivePage(uint8_t page);
     void selectPage(uint8_t page, bool fireCallback = true);
     void refresh();
-    void setShiftHeld(bool held);
-
     SubmodulePagePanel& submodulePanel();
     AdsrPagePanel& adsrPanel();
     bool activePanelShowsVerticalScrollbar() const;

@@ -308,6 +308,7 @@ add_test(NAME GlobalControlParity_test COMMAND GlobalControlParity_test)
 add_executable(ModSourceGrid_test
     tests/ModSourceGrid_test.cpp
     Source/control/FroggersV2ControlCore.cpp
+    Source/ui/EncoderRingComponent.cpp
 )
 target_include_directories(ModSourceGrid_test PRIVATE
     Source

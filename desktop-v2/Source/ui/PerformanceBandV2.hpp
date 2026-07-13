@@ -20,6 +20,18 @@ public:
     void resized() override;
     void paint(juce::Graphics& g) override;
 
+    juce::Rectangle<int> sceneLabelBoundsForTest() const { return m_sceneLabel.getBounds(); }
+    juce::Rectangle<int> blendLabelLBoundsForTest() const { return m_blendLabelL.getBounds(); }
+    juce::Rectangle<int> blendLabelRBoundsForTest() const { return m_blendLabelR.getBounds(); }
+    juce::Rectangle<int> gesture1BoundsForTest() const { return m_gesture1.getBounds(); }
+    juce::Rectangle<int> gesture2BoundsForTest() const { return m_gesture2.getBounds(); }
+    juce::Rectangle<int> marblesLabel1BoundsForTest() const { return m_marblesLabel1.getBounds(); }
+    juce::Rectangle<int> marblesLabel2BoundsForTest() const { return m_marblesLabel2.getBounds(); }
+    juce::Rectangle<int> scene1BoundsForTest() const { return m_scene1.getBounds(); }
+    juce::Rectangle<int> sceneBlendBoundsForTest() const { return m_sceneBlend.getBounds(); }
+    juce::Rectangle<int> gestureWeight1BoundsForTest() const { return m_gestureWeight1.getBounds(); }
+    juce::Rectangle<int> gestureWeight2BoundsForTest() const { return m_gestureWeight2.getBounds(); }
+
 private:
     void pushScene(uint8_t ordinal);
     void pushGesture(uint8_t lane);

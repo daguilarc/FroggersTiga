@@ -127,36 +127,16 @@ bool test_cc_routes_external_mod_slots()
     return true;
 }
 
-bool test_shift_and_scene_button_bindings()
+bool test_scene_button_bindings()
 {
     MidiCvAssignmentTable table;
-    table.shiftButton.enabled = true;
-    table.shiftButton.kind = MidiCvTriggerKind::Note;
-    table.shiftButton.number = 36;
-    table.shiftButton.target = MidiCvBindingRole::HeldModifier;
     table.sceneButtons[1].enabled = true;
     table.sceneButtons[1].kind = MidiCvTriggerKind::Cc;
     table.sceneButtons[1].number = 20;
     table.sceneButtons[1].target = MidiCvBindingRole::SceneOrdinal1;
 
-    bool modifierDown = false;
     uint8_t sceneOrdinal = 255;
-    table.setUiShiftCallback([&](bool held) { modifierDown = held; });
     table.setUiSceneCallback([&](uint8_t ordinal) { sceneOrdinal = ordinal; });
-
-    table.processIncomingMessage(1, 0x90, 36, 127, false);
-    if (!modifierDown)
-    {
-        std::printf("FAIL: shift note on did not fire callback\n");
-        return false;
-    }
-
-    table.processIncomingMessage(1, 0x80, 36, 0, false);
-    if (modifierDown)
-    {
-        std::printf("FAIL: shift note off did not clear callback\n");
-        return false;
-    }
 
     table.processIncomingMessage(1, 0xB0, 20, 127, false);
     if (sceneOrdinal != 1)
@@ -240,20 +220,20 @@ bool test_qwerty_channel_filter()
 bool test_pending_ui_action_drain()
 {
     MidiCvAssignmentTable table;
-    table.shiftButton.enabled = true;
-    table.shiftButton.kind = MidiCvTriggerKind::Cc;
-    table.shiftButton.number = 64;
-    table.shiftButton.target = MidiCvBindingRole::HeldModifier;
+    table.sceneButtons[0].enabled = true;
+    table.sceneButtons[0].kind = MidiCvTriggerKind::Cc;
+    table.sceneButtons[0].number = 64;
+    table.sceneButtons[0].target = MidiCvBindingRole::SceneOrdinal0;
 
-    table.setUiShiftCallback(nullptr);
+    table.setUiSceneCallback(nullptr);
     table.processIncomingMessage(1, 0xB0, 64, 127, false);
 
-    bool modifierDown = false;
-    table.setUiShiftCallback([&](bool held) { modifierDown = held; });
+    uint8_t sceneOrdinal = 255;
+    table.setUiSceneCallback([&](uint8_t ordinal) { sceneOrdinal = ordinal; });
     table.drainPendingUiActions();
-    if (!modifierDown)
+    if (sceneOrdinal != 0)
     {
-        std::printf("FAIL: drain did not replay shift callback\n");
+        std::printf("FAIL: drain did not replay scene callback\n");
         return false;
     }
     return true;
@@ -337,7 +317,7 @@ bool test_mapping_identity_persists_via_stable_target_ids()
     table.externalModA.cc = 10;
 
     const MidiCvControllerTargetIds& ids = midiCvControllerTargetIds();
-    const char* expectedId = froggers_v2::manifest::kControllerTargetDeclarations[2].stableId;
+    const char* expectedId = froggers_v2::manifest::controllerTargetDeclarations()[2].stableId;
     if (std::strcmp(ids.externalModA, expectedId) != 0)
     {
         std::printf("FAIL: external mod A target id is not the manifest stable id\n");
@@ -407,21 +387,169 @@ bool test_controller_target_ids_match_manifest()
                             ids.gate,
                             ids.externalModA,
                             ids.externalModB,
-                            ids.shiftButton,
                             ids.scene1,
                             ids.scene2,
                             ids.scene3,
                             ids.qwertyVirtual,
                             ids.externalClock};
-    static_assert(std::size(actual) == froggers_v2::manifest::kControllerTargetDeclarations.size());
-    for (size_t i = 0; i < froggers_v2::manifest::kControllerTargetDeclarations.size(); ++i)
+    static_assert(std::size(actual) == froggers_v2::manifest::kBaseControllerTargetCount);
+    const auto& targets = froggers_v2::manifest::controllerTargetDeclarations();
+    if (targets.size() != froggers_v2::manifest::kControllerTargetCount)
     {
-        const char* expected = froggers_v2::manifest::kControllerTargetDeclarations[i].stableId;
+        std::printf("FAIL: controller target table size mismatch\n");
+        return false;
+    }
+    for (size_t i = 0; i < froggers_v2::manifest::kBaseControllerTargetCount; ++i)
+    {
+        const char* expected = targets[i].stableId;
         if (std::strcmp(actual[i], expected) != 0)
         {
             std::printf("FAIL: controller target ID %zu mismatch\n", i);
             return false;
         }
+    }
+    if (froggers_v2::manifest::kEncoderControllerTargetCount
+        != froggers_v2::manifest::kEncoderParamCount * 2)
+    {
+        std::printf("FAIL: encoder target count is not 2x interactive product rows\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_encoder_relative_cc_dispatches_param_turn()
+{
+    MidiCvAssignmentTable table;
+    table.encoderTurns[0].enabled = true;
+    table.encoderTurns[0].channel = 0;
+    table.encoderTurns[0].cc = 16;
+
+    uint8_t seenPage = 255;
+    uint8_t seenSlot = 255;
+    float seenDelta = 0.0f;
+    int calls = 0;
+    table.setParamTurnEmitCallback([&](uint8_t page, uint8_t slot, float delta) {
+        seenPage = page;
+        seenSlot = slot;
+        seenDelta = delta;
+        ++calls;
+    });
+
+    table.processIncomingMessage(1, 0xB0, 16, 68, false);
+    if (calls != 1 || seenPage != 0 || seenSlot != 0 || seenDelta <= 0.0f)
+    {
+        std::printf("FAIL: relative CC did not dispatch ParamTurn (calls=%d page=%u slot=%u delta=%f)\n",
+                    calls,
+                    static_cast<unsigned>(seenPage),
+                    static_cast<unsigned>(seenSlot),
+                    static_cast<double>(seenDelta));
+        return false;
+    }
+    return true;
+}
+
+bool test_encoder_press_dispatches_mod_drill_in()
+{
+    MidiCvAssignmentTable table;
+    table.encoderDrillIns[0].enabled = true;
+    table.encoderDrillIns[0].kind = MidiCvTriggerKind::Note;
+    table.encoderDrillIns[0].channel = 0;
+    table.encoderDrillIns[0].number = 40;
+
+    uint8_t seenPage = 255;
+    uint8_t seenSlot = 255;
+    int calls = 0;
+    table.setModDrillInEmitCallback([&](uint8_t page, uint8_t slot) {
+        seenPage = page;
+        seenSlot = slot;
+        ++calls;
+    });
+
+    table.processIncomingMessage(1, 0x90, 40, 127, false);
+    if (calls != 1 || seenPage != 0 || seenSlot != 0)
+    {
+        std::printf("FAIL: encoder press did not dispatch ModDrillIn\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_absent_inventory_id_rejected_on_import()
+{
+    MidiCvAssignmentTable table;
+    ControllerMappingRecord bogus;
+    bogus.targetId = "not_a_real_encoder_target";
+    bogus.enabled = true;
+    bogus.event.kind = MidiCvTriggerKind::Cc;
+    bogus.event.number = 10;
+
+    std::vector<std::string> rejected;
+    const size_t applied = table.importMappings({bogus}, rejected);
+    if (applied != 0 || rejected.size() != 1 || rejected[0] != bogus.targetId)
+    {
+        std::printf("FAIL: absent inventory id was not rejected\n");
+        return false;
+    }
+    if (table.mappingPersistenceState() != ControllerPersistenceState::Error)
+    {
+        std::printf("FAIL: rejected import did not mark persistence Error\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_encoder_mapping_round_trip_by_stable_id()
+{
+    MidiCvAssignmentTable table;
+    const auto& targets = froggers_v2::manifest::controllerTargetDeclarations();
+    const froggers_v2::manifest::ControllerTargetDeclaration* turnTarget = nullptr;
+    for (const auto& target : targets)
+    {
+        if (froggers_v2::manifest::isEncoderTurnBindingRole(target.bindingRole))
+        {
+            turnTarget = &target;
+            break;
+        }
+    }
+    if (turnTarget == nullptr)
+    {
+        std::printf("FAIL: no encoder turn target in manifest\n");
+        return false;
+    }
+
+    ControllerMappingRecord record;
+    record.targetId = turnTarget->stableId;
+    record.enabled = true;
+    record.event.kind = MidiCvTriggerKind::Cc;
+    record.event.channel = 3;
+    record.event.number = 22;
+
+    std::vector<std::string> rejected;
+    if (table.importMappings({record}, rejected) != 1 || !rejected.empty())
+    {
+        std::printf("FAIL: encoder mapping import rejected valid stable id\n");
+        return false;
+    }
+
+    const std::vector<ControllerMappingRecord> exported = table.exportMappings();
+    bool found = false;
+    for (const ControllerMappingRecord& row : exported)
+    {
+        if (row.targetId != record.targetId)
+        {
+            continue;
+        }
+        found = true;
+        if (!row.enabled || row.event.channel != 3 || row.event.number != 22)
+        {
+            std::printf("FAIL: encoder mapping did not round-trip by stable id\n");
+            return false;
+        }
+    }
+    if (!found)
+    {
+        std::printf("FAIL: exported mappings missing encoder turn stable id\n");
+        return false;
     }
     return true;
 }
@@ -445,7 +573,7 @@ int main()
     {
         return 1;
     }
-    if (!test_shift_and_scene_button_bindings())
+    if (!test_scene_button_bindings())
     {
         return 1;
     }
@@ -474,6 +602,22 @@ int main()
         return 1;
     }
     if (!test_mapping_identity_persists_via_stable_target_ids())
+    {
+        return 1;
+    }
+    if (!test_encoder_relative_cc_dispatches_param_turn())
+    {
+        return 1;
+    }
+    if (!test_encoder_press_dispatches_mod_drill_in())
+    {
+        return 1;
+    }
+    if (!test_absent_inventory_id_rejected_on_import())
+    {
+        return 1;
+    }
+    if (!test_encoder_mapping_round_trip_by_stable_id())
     {
         return 1;
     }

@@ -81,5 +81,6 @@ void ControllersRuntimePageComponent::resized()
     m_fanOutLabel.setBounds(area.removeFromTop(16));
     area.removeFromTop(6);
     m_viewport.setBounds(area);
-    m_settings.setSize(area.getWidth(), juce::jmax(area.getHeight(), 640));
+    m_settings.setSize(area.getWidth(),
+                       juce::jmax(area.getHeight(), m_settings.preferredContentHeight()));
 }

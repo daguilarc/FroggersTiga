@@ -1,6 +1,7 @@
 #pragma once
 
 #include "control/FroggersV2ControlCore.hpp"
+#include "ui/CvLaneHistoryStore.hpp"
 #include "ui/DesktopV2ChromeLayout.hpp"
 #include "ui/EncoderRingComponent.hpp"
 
@@ -16,6 +17,7 @@ public:
 
     void setPage(uint8_t page);
     void bindCore(froggers_v2::FroggersV2ControlCore* core);
+    void bindLaneHistory(const CvLaneHistoryStore* store);
     void refresh();
 
     void paint(juce::Graphics& g) override;
@@ -23,6 +25,9 @@ public:
 
     bool encoderViewportShowsVerticalScrollbar() const;
     juce::Rectangle<int> modCellBoundsInPanel(int rowIndex) const;
+
+    EncoderRingComponent& ringAt(size_t index) { return m_rings[index]; }
+    const EncoderRingComponent& ringAt(size_t index) const { return m_rings[index]; }
 
 private:
     static constexpr int kCellCapacity = froggers_v2::kUiSlots;
@@ -38,6 +43,7 @@ private:
     void pushModDrillIn(uint8_t row);
 
     froggers_v2::FroggersV2ControlCore* m_core = nullptr;
+    const CvLaneHistoryStore* m_laneHistory = nullptr;
     uint8_t m_page = 0;
     bool m_scrollBarsVisible = false;
     juce::Viewport m_encoderViewport;

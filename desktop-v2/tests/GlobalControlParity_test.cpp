@@ -1,5 +1,6 @@
 #include "SequencerState.hpp"
 #include "control/FroggersV2ControlCore.hpp"
+#include "ui/DesktopV2ChromeLayout.hpp"
 #include "ui/GlobalStripV2.hpp"
 #include "ui/SequencerPanelComponent.hpp"
 
@@ -108,14 +109,21 @@ bool test_rand_mods_scope_parity()
     return true;
 }
 
-bool test_shift_parity()
+bool test_shift_control_absent()
 {
+    // Packet 18.6 / D16: Shift machinery is fully removed. GlobalStripV2 has
+    // no setShiftHeld / Shift toggle; command-row fill is the Crunchy ring.
     DesktopHostIO host;
     froggers_v2::FroggersV2ControlCore core;
     GlobalStripV2 strip;
     strip.bind(&host, &core);
-    strip.setShiftHeld(true);
-    strip.setShiftHeld(false);
+    strip.setSize(1280, DesktopV2ChromeLayout::kGlobalCommandBandH);
+    strip.resized();
+    if (strip.crunchyRingBoundsForTest().getRight() != strip.getLocalBounds().getRight())
+    {
+        std::printf("FAIL: Crunchy ring does not fill to global strip right edge after Shift removal\n");
+        return false;
+    }
     return true;
 }
 
@@ -242,7 +250,7 @@ int main()
     {
         return 1;
     }
-    if (!test_shift_parity())
+    if (!test_shift_control_absent())
     {
         return 1;
     }

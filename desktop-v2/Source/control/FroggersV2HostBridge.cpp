@@ -56,7 +56,7 @@ void FroggersV2HostBridge::recallSequencerStep(uint8_t step)
         return;
     }
     m_core.applySequencerSlotPayload(m_host.m_sequencer.m_slots[step].payload);
-    syncAllModRoutesToHost();
+    syncModRoutesToHost();
     syncToHost();
 }
 
@@ -100,7 +100,7 @@ void FroggersV2HostBridge::onSequencerStepAdvance()
     if (seq.slotWritten(seq.m_playhead) && !(seq.slotLocked(seq.m_playhead)))
     {
         m_core.applySequencerSlotPayload(seq.currentStep());
-        syncAllModRoutesToHost();
+        syncModRoutesToHost();
     }
 
     m_core.bus().push(MessageIn::SequencerStepClock(seq.m_playhead));
@@ -108,7 +108,7 @@ void FroggersV2HostBridge::onSequencerStepAdvance()
     syncToHost();
 }
 
-void FroggersV2HostBridge::syncAllModRoutesToHost()
+void FroggersV2HostBridge::syncModRoutesToHost()
 {
     for (uint8_t page = 0; page < kNumHostPages; ++page)
     {
@@ -131,7 +131,9 @@ void FroggersV2HostBridge::syncModRoutes(uint8_t page, uint8_t row, ModRouteDire
         DelayState& delayRef = delay != nullptr ? *delay : fallbackDelay;
         const float depth =
             HostParameterRoutingV2::readPageModDepth(page, row, m_host, delayRef);
-        m_core.applyHostModRoute(page, row, engineMod, depth);
+        // Single-route host projection replaces multi-lane core state so a
+        // cleared host route (255) does not leave stale lane depths behind.
+        m_core.replaceHostModRoute(page, row, engineMod, depth);
         return;
     }
 
@@ -142,20 +144,21 @@ void FroggersV2HostBridge::syncModRoutes(uint8_t page, uint8_t row, ModRouteDire
 
     // Packet 15-B: populate the V2-only additive multi-tap depth store
     // (sim/V2LaneDepthStore.hpp) so Page::GetPreFuegoValue's lane sum is no
-    // longer all zeros. Ineligible lanes are zeroed so the engine sum stays
-    // correct. The Delay UI page is excluded -- its PM page index (5) aliases
-    // the ADSR PM page (HostParameterInventoryV2::kPmAdsrPage == 5), and
-    // Delay mod routing stays on DelayState's own single-route storage
-    // (out of scope for this packet).
+    // longer all zeros. Non-assignable lanes are zeroed so the engine sum stays
+    // correct (assignability, not Rand eligibility — available external-audio
+    // depths must reach the engine). The Delay UI page is excluded -- its PM
+    // page index (5) aliases the ADSR PM page
+    // (HostParameterInventoryV2::kPmAdsrPage == 5), and Delay mod routing stays
+    // on DelayState's own single-route storage (out of scope for this packet).
     if (!HostParameterRoutingV2::isDelayUiPage(page))
     {
         const bool externalAudioAvailable = m_core.externalAudioAvailable();
         const uint8_t pmPage = HostParameterRoutingV2::pmPageForUiPage(page);
         for (uint8_t lane = 0; lane < PermanentModTapRack::kNumTaps; ++lane)
         {
-            const bool eligible = froggers_v2::manifest::isModSourceEligibleForRow(
+            const bool assignable = froggers_v2::manifest::isModLaneAssignable(
                 page, row, lane, externalAudioAvailable);
-            const float laneDepthValue = eligible ? m_core.laneDepth(page, row, lane) : 0.0f;
+            const float laneDepthValue = assignable ? m_core.laneDepth(page, row, lane) : 0.0f;
             m_host.SetPageLaneDepth(pmPage, row, lane, laneDepthValue);
         }
     }
@@ -189,7 +192,7 @@ void FroggersV2HostBridge::syncToHost()
     // so FX changes on a non-visible page (e.g. Drive/Filter) reach the host
     // immediately instead of waiting for that page to be revisited. Row counts
     // come from the manifest-backed HostParameterInventoryV2 (single authority),
-    // matching syncAllModRoutesToHost/syncFromHostModRoutes below.
+    // matching syncModRoutesToHost/syncFromHostModRoutes below.
     for (uint8_t page = 0; page < kNumHostPages; ++page)
     {
         const uint8_t rowLimit = HostParameterInventoryV2::rowsForUiPage(page);

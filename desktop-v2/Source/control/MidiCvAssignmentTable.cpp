@@ -1,9 +1,8 @@
 #include "control/MidiCvAssignmentTable.hpp"
 
-#include "manifest/FroggersV2AppManifest.hpp"
-
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <string>
 
 namespace
@@ -11,21 +10,83 @@ namespace
 constexpr uint8_t kStatusNoteOff = 0x80;
 constexpr uint8_t kStatusNoteOn = 0x90;
 constexpr uint8_t kStatusCc = 0xB0;
+constexpr float kRelativeCcCenter = 64.0f;
+constexpr float kRelativeCcDeltaScale = 0.25f;
+
+size_t productRowLinearIndex(uint8_t page, uint8_t row)
+{
+    size_t cursor = 0;
+    for (uint8_t p = 0; p < page; ++p)
+    {
+        cursor += HostParameterInventoryV2::rowsForUiPage(p);
+    }
+    return cursor + row;
+}
+
+bool decodeProductRowLinearIndex(size_t index, uint8_t& pageOut, uint8_t& rowOut)
+{
+    return HostParameterInventoryV2::decodePageRowIndex(index, pageOut, rowOut);
+}
+
+ControllerMappingEvent eventFromCcBinding(const MidiCvCcBinding& binding)
+{
+    ControllerMappingEvent event;
+    event.kind = MidiCvTriggerKind::Cc;
+    event.channel = binding.channel;
+    event.number = binding.cc;
+    return event;
+}
+
+ControllerMappingEvent eventFromButtonBinding(const MidiCvButtonBinding& binding)
+{
+    ControllerMappingEvent event;
+    event.kind = binding.kind;
+    event.channel = binding.channel;
+    event.number = binding.number;
+    return event;
+}
+
+ControllerMappingEvent eventFromEncoderTurn(const MidiCvEncoderTurnBinding& binding)
+{
+    ControllerMappingEvent event;
+    event.kind = MidiCvTriggerKind::Cc;
+    event.channel = binding.channel;
+    event.number = binding.cc;
+    return event;
+}
+
+ControllerMappingEvent eventFromEncoderDrillIn(const MidiCvEncoderDrillInBinding& binding)
+{
+    ControllerMappingEvent event;
+    event.kind = binding.kind;
+    event.channel = binding.channel;
+    event.number = binding.number;
+    return event;
+}
+
+bool eventsMatch(const ControllerMappingEvent& lhs, const ControllerMappingEvent& rhs)
+{
+    return lhs.kind == rhs.kind && lhs.channel == rhs.channel && lhs.number == rhs.number;
+}
+
+bool bindingChannelMatches(uint8_t bindingChannel, uint8_t channel1Based)
+{
+    return bindingChannel == 0 || bindingChannel == channel1Based;
+}
 } // namespace
 
 const MidiCvControllerTargetIds& midiCvControllerTargetIds()
 {
     static const MidiCvControllerTargetIds ids{
-        froggers_v2::manifest::kControllerTargetDeclarations[0].stableId,
-        froggers_v2::manifest::kControllerTargetDeclarations[1].stableId,
-        froggers_v2::manifest::kControllerTargetDeclarations[2].stableId,
-        froggers_v2::manifest::kControllerTargetDeclarations[3].stableId,
-        froggers_v2::manifest::kControllerTargetDeclarations[4].stableId,
-        froggers_v2::manifest::kControllerTargetDeclarations[5].stableId,
-        froggers_v2::manifest::kControllerTargetDeclarations[6].stableId,
-        froggers_v2::manifest::kControllerTargetDeclarations[7].stableId,
-        froggers_v2::manifest::kControllerTargetDeclarations[8].stableId,
-        froggers_v2::manifest::kControllerTargetDeclarations[9].stableId,
+        froggers_v2::manifest::kBaseControllerTargetDeclarations[0].stableId,
+        froggers_v2::manifest::kBaseControllerTargetDeclarations[1].stableId,
+        froggers_v2::manifest::kBaseControllerTargetDeclarations[2].stableId,
+        froggers_v2::manifest::kBaseControllerTargetDeclarations[3].stableId,
+        froggers_v2::manifest::kBaseControllerTargetDeclarations[4].stableId,
+        froggers_v2::manifest::kBaseControllerTargetDeclarations[5].stableId,
+        froggers_v2::manifest::kBaseControllerTargetDeclarations[6].stableId,
+        froggers_v2::manifest::kBaseControllerTargetDeclarations[7].stableId,
+        froggers_v2::manifest::kBaseControllerTargetDeclarations[8].stableId,
     };
     return ids;
 }
@@ -35,8 +96,6 @@ const char* manifestTargetIdForBindingRole(MidiCvBindingRole role)
     const MidiCvControllerTargetIds& ids = midiCvControllerTargetIds();
     switch (role)
     {
-        case MidiCvBindingRole::HeldModifier:
-            return ids.shiftButton;
         case MidiCvBindingRole::SceneOrdinal0:
             return ids.scene1;
         case MidiCvBindingRole::SceneOrdinal1:
@@ -101,6 +160,22 @@ void MidiCvAssignmentTable::emitGate(bool high)
     m_hostGate(high);
 }
 
+void MidiCvAssignmentTable::emitParamTurn(uint8_t page, uint8_t slot, float delta)
+{
+    if (m_paramTurnEmit)
+    {
+        m_paramTurnEmit(page, slot, delta);
+    }
+}
+
+void MidiCvAssignmentTable::emitModDrillIn(uint8_t page, uint8_t slot)
+{
+    if (m_modDrillInEmit)
+    {
+        m_modDrillInEmit(page, slot);
+    }
+}
+
 void MidiCvAssignmentTable::updatePitchFromHeldNotes()
 {
     uint8_t highestNote = 0;
@@ -139,21 +214,7 @@ void MidiCvAssignmentTable::updateGateFromHeldNotes()
 
 void MidiCvAssignmentTable::handleButtonTrigger(MidiCvButtonBinding& binding, bool pressed)
 {
-    if (!binding.enabled || binding.target == MidiCvBindingRole::None)
-    {
-        return;
-    }
-    if (binding.target == MidiCvBindingRole::HeldModifier)
-    {
-        m_shiftPendingFlag.store(true, std::memory_order_relaxed);
-        m_shiftPendingValue.store(pressed, std::memory_order_relaxed);
-        if (m_uiShift)
-        {
-            m_uiShift(pressed);
-        }
-        return;
-    }
-    if (!pressed)
+    if (!binding.enabled || binding.target == MidiCvBindingRole::None || !pressed)
     {
         return;
     }
@@ -180,6 +241,41 @@ void MidiCvAssignmentTable::handleButtonTrigger(MidiCvButtonBinding& binding, bo
     }
 }
 
+void MidiCvAssignmentTable::handleEncoderDrillIn(size_t productRowIndex, bool pressed)
+{
+    if (!pressed || productRowIndex >= encoderDrillIns.size())
+    {
+        return;
+    }
+    uint8_t page = 0;
+    uint8_t row = 0;
+    if (!decodeProductRowLinearIndex(productRowIndex, page, row))
+    {
+        return;
+    }
+    emitModDrillIn(page, row);
+}
+
+void MidiCvAssignmentTable::handleEncoderTurn(size_t productRowIndex, uint8_t value)
+{
+    if (productRowIndex >= encoderTurns.size())
+    {
+        return;
+    }
+    uint8_t page = 0;
+    uint8_t row = 0;
+    if (!decodeProductRowLinearIndex(productRowIndex, page, row))
+    {
+        return;
+    }
+    const float delta = (static_cast<float>(value) - kRelativeCcCenter) * kRelativeCcDeltaScale;
+    if (delta == 0.0f)
+    {
+        return;
+    }
+    emitParamTurn(page, row, delta);
+}
+
 void MidiCvAssignmentTable::handleNoteOn(uint8_t channel1Based,
                                          uint8_t note,
                                          uint8_t velocity,
@@ -195,18 +291,22 @@ void MidiCvAssignmentTable::handleNoteOn(uint8_t channel1Based,
         return;
     }
 
-    if (shiftButton.enabled && shiftButton.kind == MidiCvTriggerKind::Note
-        && shiftButton.number == note
-        && (shiftButton.channel == 0 || shiftButton.channel == channel1Based))
-    {
-        handleButtonTrigger(shiftButton, true);
-    }
     for (MidiCvButtonBinding& binding : sceneButtons)
     {
         if (binding.enabled && binding.kind == MidiCvTriggerKind::Note && binding.number == note
-            && (binding.channel == 0 || binding.channel == channel1Based))
+            && bindingChannelMatches(binding.channel, channel1Based))
         {
             handleButtonTrigger(binding, true);
+        }
+    }
+
+    for (size_t i = 0; i < encoderDrillIns.size(); ++i)
+    {
+        const MidiCvEncoderDrillInBinding& binding = encoderDrillIns[i];
+        if (binding.enabled && binding.kind == MidiCvTriggerKind::Note && binding.number == note
+            && bindingChannelMatches(binding.channel, channel1Based))
+        {
+            handleEncoderDrillIn(i, true);
         }
     }
 
@@ -226,13 +326,6 @@ void MidiCvAssignmentTable::handleNoteOff(uint8_t channel1Based, uint8_t note, b
     if (!channelMatches(channel1Based, fromQwerty) || note >= m_heldVelocities.size())
     {
         return;
-    }
-
-    if (shiftButton.enabled && shiftButton.kind == MidiCvTriggerKind::Note
-        && shiftButton.number == note
-        && (shiftButton.channel == 0 || shiftButton.channel == channel1Based))
-    {
-        handleButtonTrigger(shiftButton, false);
     }
 
     m_heldVelocities[note].store(0, std::memory_order_relaxed);
@@ -257,28 +350,41 @@ void MidiCvAssignmentTable::handleCc(uint8_t channel1Based,
     }
 
     if (externalModA.enabled && cc == externalModA.cc
-        && (externalModA.channel == 0 || externalModA.channel == channel1Based))
+        && bindingChannelMatches(externalModA.channel, channel1Based))
     {
         m_externalModA.store(static_cast<float>(value) / 127.0f, std::memory_order_relaxed);
     }
     if (externalModB.enabled && cc == externalModB.cc
-        && (externalModB.channel == 0 || externalModB.channel == channel1Based))
+        && bindingChannelMatches(externalModB.channel, channel1Based))
     {
         m_externalModB.store(static_cast<float>(value) / 127.0f, std::memory_order_relaxed);
     }
 
-    if (shiftButton.enabled && shiftButton.kind == MidiCvTriggerKind::Cc
-        && shiftButton.number == cc
-        && (shiftButton.channel == 0 || shiftButton.channel == channel1Based))
-    {
-        handleButtonTrigger(shiftButton, value >= 64);
-    }
     for (MidiCvButtonBinding& binding : sceneButtons)
     {
         if (binding.enabled && binding.kind == MidiCvTriggerKind::Cc && binding.number == cc
-            && (binding.channel == 0 || binding.channel == channel1Based))
+            && bindingChannelMatches(binding.channel, channel1Based))
         {
             handleButtonTrigger(binding, value >= 64);
+        }
+    }
+
+    for (size_t i = 0; i < encoderTurns.size(); ++i)
+    {
+        const MidiCvEncoderTurnBinding& binding = encoderTurns[i];
+        if (binding.enabled && binding.cc == cc && bindingChannelMatches(binding.channel, channel1Based))
+        {
+            handleEncoderTurn(i, value);
+        }
+    }
+
+    for (size_t i = 0; i < encoderDrillIns.size(); ++i)
+    {
+        const MidiCvEncoderDrillInBinding& binding = encoderDrillIns[i];
+        if (binding.enabled && binding.kind == MidiCvTriggerKind::Cc && binding.number == cc
+            && bindingChannelMatches(binding.channel, channel1Based))
+        {
+            handleEncoderDrillIn(i, value >= 64);
         }
     }
 }
@@ -335,16 +441,6 @@ MidiCvPitchTarget MidiCvAssignmentTable::pitchTarget() const
     return {pitchPage, pitchRow};
 }
 
-bool MidiCvAssignmentTable::consumeShiftPending(bool& held)
-{
-    if (!m_shiftPendingFlag.exchange(false, std::memory_order_acq_rel))
-    {
-        return false;
-    }
-    held = m_shiftPendingValue.load(std::memory_order_relaxed);
-    return true;
-}
-
 bool MidiCvAssignmentTable::consumeScenePending(uint8_t& ordinal)
 {
     if (!m_scenePendingFlag.exchange(false, std::memory_order_acq_rel))
@@ -358,11 +454,6 @@ bool MidiCvAssignmentTable::consumeScenePending(uint8_t& ordinal)
 void MidiCvAssignmentTable::drainPendingUiActions()
 {
     m_receivingInput.store(false, std::memory_order_relaxed);
-    bool held = false;
-    if (consumeShiftPending(held) && m_uiShift)
-    {
-        m_uiShift(held);
-    }
     uint8_t ordinal = 0;
     if (consumeScenePending(ordinal) && m_uiScene)
     {
@@ -415,55 +506,55 @@ void MidiCvAssignmentTable::markMappingsSaved(const std::string& message)
     m_persistenceMessage = message;
 }
 
-namespace
-{
-ControllerMappingEvent eventFromCcBinding(const MidiCvCcBinding& binding)
-{
-    ControllerMappingEvent event;
-    event.kind = MidiCvTriggerKind::Cc;
-    event.channel = binding.channel;
-    event.number = binding.cc;
-    return event;
-}
-
-ControllerMappingEvent eventFromButtonBinding(const MidiCvButtonBinding& binding)
-{
-    ControllerMappingEvent event;
-    event.kind = binding.kind;
-    event.channel = binding.channel;
-    event.number = binding.number;
-    return event;
-}
-
-bool eventsMatch(const ControllerMappingEvent& lhs, const ControllerMappingEvent& rhs)
-{
-    return lhs.kind == rhs.kind && lhs.channel == rhs.channel && lhs.number == rhs.number;
-}
-} // namespace
-
 size_t MidiCvAssignmentTable::fanOutCountForEvent(const ControllerMappingEvent& event,
                                                   const char* excludeTargetId) const
 {
     size_t count = 0;
     const auto& ids = midiCvControllerTargetIds();
-    const std::array<std::pair<const char*, ControllerMappingEvent>, 6> rows{{
-        {ids.externalModA, eventFromCcBinding(externalModA)},
-        {ids.externalModB, eventFromCcBinding(externalModB)},
-        {ids.shiftButton, eventFromButtonBinding(shiftButton)},
-        {ids.scene1, eventFromButtonBinding(sceneButtons[0])},
-        {ids.scene2, eventFromButtonBinding(sceneButtons[1])},
-        {ids.scene3, eventFromButtonBinding(sceneButtons[2])},
-    }};
-    for (const auto& row : rows)
+    const auto& targets = froggers_v2::manifest::controllerTargetDeclarations();
+
+    auto countIfMatch = [&](const char* targetId, bool enabled, const ControllerMappingEvent& mapped) {
+        if (!enabled)
+        {
+            return;
+        }
+        if (excludeTargetId != nullptr && targetId != nullptr
+            && std::string(targetId) == std::string(excludeTargetId))
+        {
+            return;
+        }
+        if (eventsMatch(mapped, event))
+        {
+            ++count;
+        }
+    };
+
+    countIfMatch(ids.externalModA, externalModA.enabled, eventFromCcBinding(externalModA));
+    countIfMatch(ids.externalModB, externalModB.enabled, eventFromCcBinding(externalModB));
+    countIfMatch(ids.scene1, sceneButtons[0].enabled, eventFromButtonBinding(sceneButtons[0]));
+    countIfMatch(ids.scene2, sceneButtons[1].enabled, eventFromButtonBinding(sceneButtons[1]));
+    countIfMatch(ids.scene3, sceneButtons[2].enabled, eventFromButtonBinding(sceneButtons[2]));
+
+    for (const froggers_v2::manifest::ControllerTargetDeclaration& target : targets)
     {
-        if (excludeTargetId != nullptr && row.first != nullptr
-            && std::string(row.first) == std::string(excludeTargetId))
+        if (!froggers_v2::manifest::controllerTargetHasPageRow(target))
         {
             continue;
         }
-        if (eventsMatch(row.second, event))
+        const size_t index = productRowLinearIndex(target.page, target.row);
+        if (index >= froggers_v2::manifest::kEncoderParamCount)
         {
-            ++count;
+            continue;
+        }
+        if (froggers_v2::manifest::isEncoderTurnBindingRole(target.bindingRole))
+        {
+            countIfMatch(target.stableId, encoderTurns[index].enabled, eventFromEncoderTurn(encoderTurns[index]));
+        }
+        else if (froggers_v2::manifest::isEncoderModDrillInBindingRole(target.bindingRole))
+        {
+            countIfMatch(target.stableId,
+                         encoderDrillIns[index].enabled,
+                         eventFromEncoderDrillIn(encoderDrillIns[index]));
         }
     }
     return count;
@@ -472,7 +563,7 @@ size_t MidiCvAssignmentTable::fanOutCountForEvent(const ControllerMappingEvent& 
 std::vector<ControllerTargetMappingRow> MidiCvAssignmentTable::buildTargetMappingRows() const
 {
     const auto& ids = midiCvControllerTargetIds();
-    const auto& targets = froggers_v2::manifest::kControllerTargetDeclarations;
+    const auto& targets = froggers_v2::manifest::controllerTargetDeclarations();
     std::vector<ControllerTargetMappingRow> rows;
     rows.reserve(targets.size());
 
@@ -495,45 +586,271 @@ std::vector<ControllerTargetMappingRow> MidiCvAssignmentTable::buildTargetMappin
         rows.push_back(row);
     };
 
-    ControllerMappingEvent pitchEvent;
-    pitchEvent.kind = MidiCvTriggerKind::Note;
-    pitchEvent.channel = inputChannelFilter;
-    pushRow(ids.pitch, targets[0].displayName, pitchEnabled, pitchEvent,
-            "Page " + std::to_string(static_cast<unsigned>(pitchPage + 1)) + " Row "
-                + std::to_string(static_cast<unsigned>(pitchRow + 1)));
+    for (const froggers_v2::manifest::ControllerTargetDeclaration& target : targets)
+    {
+        if (std::strcmp(target.stableId, ids.pitch) == 0)
+        {
+            ControllerMappingEvent pitchEvent;
+            pitchEvent.kind = MidiCvTriggerKind::Note;
+            pitchEvent.channel = inputChannelFilter;
+            pushRow(ids.pitch,
+                    target.displayName,
+                    pitchEnabled,
+                    pitchEvent,
+                    "Page " + std::to_string(static_cast<unsigned>(pitchPage + 1)) + " Row "
+                        + std::to_string(static_cast<unsigned>(pitchRow + 1)));
+            continue;
+        }
+        if (std::strcmp(target.stableId, ids.gate) == 0)
+        {
+            ControllerMappingEvent gateEvent;
+            gateEvent.kind = MidiCvTriggerKind::Note;
+            gateEvent.channel = inputChannelFilter;
+            pushRow(ids.gate, target.displayName, gateEnabled, gateEvent, gateHigh() ? "On" : "Off");
+            continue;
+        }
+        if (std::strcmp(target.stableId, ids.externalModA) == 0)
+        {
+            pushRow(ids.externalModA,
+                    target.displayName,
+                    externalModA.enabled,
+                    eventFromCcBinding(externalModA),
+                    std::to_string(static_cast<int>(externalModLevel(0) * 100.0f)) + "%");
+            continue;
+        }
+        if (std::strcmp(target.stableId, ids.externalModB) == 0)
+        {
+            pushRow(ids.externalModB,
+                    target.displayName,
+                    externalModB.enabled,
+                    eventFromCcBinding(externalModB),
+                    std::to_string(static_cast<int>(externalModLevel(1) * 100.0f)) + "%");
+            continue;
+        }
+        if (std::strcmp(target.stableId, ids.scene1) == 0)
+        {
+            pushRow(ids.scene1,
+                    target.displayName,
+                    sceneButtons[0].enabled,
+                    eventFromButtonBinding(sceneButtons[0]),
+                    sceneButtons[0].enabled ? "Mapped" : "Off");
+            continue;
+        }
+        if (std::strcmp(target.stableId, ids.scene2) == 0)
+        {
+            pushRow(ids.scene2,
+                    target.displayName,
+                    sceneButtons[1].enabled,
+                    eventFromButtonBinding(sceneButtons[1]),
+                    sceneButtons[1].enabled ? "Mapped" : "Off");
+            continue;
+        }
+        if (std::strcmp(target.stableId, ids.scene3) == 0)
+        {
+            pushRow(ids.scene3,
+                    target.displayName,
+                    sceneButtons[2].enabled,
+                    eventFromButtonBinding(sceneButtons[2]),
+                    sceneButtons[2].enabled ? "Mapped" : "Off");
+            continue;
+        }
+        if (std::strcmp(target.stableId, ids.qwertyVirtual) == 0)
+        {
+            ControllerMappingEvent qwertyEvent;
+            qwertyEvent.kind = MidiCvTriggerKind::Note;
+            qwertyEvent.channel = qwertyMidiChannel;
+            pushRow(ids.qwertyVirtual,
+                    target.displayName,
+                    qwertyVirtualChannelEnabled,
+                    qwertyEvent,
+                    qwertyVirtualChannelEnabled ? "Active" : "Off");
+            continue;
+        }
+        if (std::strcmp(target.stableId, ids.externalClock) == 0)
+        {
+            ControllerMappingEvent clockEvent;
+            clockEvent.kind = MidiCvTriggerKind::Cc;
+            clockEvent.number = 0xF8;
+            pushRow(ids.externalClock, target.displayName, true, clockEvent, "Sequencer sync");
+            continue;
+        }
 
-    ControllerMappingEvent gateEvent;
-    gateEvent.kind = MidiCvTriggerKind::Note;
-    gateEvent.channel = inputChannelFilter;
-    pushRow(ids.gate, targets[1].displayName, gateEnabled, gateEvent,
-            gateHigh() ? "On" : "Off");
-
-    pushRow(ids.externalModA, targets[2].displayName, externalModA.enabled,
-            eventFromCcBinding(externalModA),
-            std::to_string(static_cast<int>(externalModLevel(0) * 100.0f)) + "%");
-    pushRow(ids.externalModB, targets[3].displayName, externalModB.enabled,
-            eventFromCcBinding(externalModB),
-            std::to_string(static_cast<int>(externalModLevel(1) * 100.0f)) + "%");
-    pushRow(ids.shiftButton, targets[4].displayName, shiftButton.enabled,
-            eventFromButtonBinding(shiftButton),
-            shiftButton.enabled ? "Mapped" : "Off");
-    pushRow(ids.scene1, targets[5].displayName, sceneButtons[0].enabled,
-            eventFromButtonBinding(sceneButtons[0]), sceneButtons[0].enabled ? "Mapped" : "Off");
-    pushRow(ids.scene2, targets[6].displayName, sceneButtons[1].enabled,
-            eventFromButtonBinding(sceneButtons[1]), sceneButtons[1].enabled ? "Mapped" : "Off");
-    pushRow(ids.scene3, targets[7].displayName, sceneButtons[2].enabled,
-            eventFromButtonBinding(sceneButtons[2]), sceneButtons[2].enabled ? "Mapped" : "Off");
-
-    ControllerMappingEvent qwertyEvent;
-    qwertyEvent.kind = MidiCvTriggerKind::Note;
-    qwertyEvent.channel = qwertyMidiChannel;
-    pushRow(ids.qwertyVirtual, targets[8].displayName, qwertyVirtualChannelEnabled, qwertyEvent,
-            qwertyVirtualChannelEnabled ? "Active" : "Off");
-
-    ControllerMappingEvent clockEvent;
-    clockEvent.kind = MidiCvTriggerKind::Cc;
-    clockEvent.number = 0xF8;
-    pushRow(ids.externalClock, targets[9].displayName, true, clockEvent, "Sequencer sync");
+        if (!froggers_v2::manifest::controllerTargetHasPageRow(target))
+        {
+            continue;
+        }
+        const size_t index = productRowLinearIndex(target.page, target.row);
+        if (index >= froggers_v2::manifest::kEncoderParamCount)
+        {
+            continue;
+        }
+        if (froggers_v2::manifest::isEncoderTurnBindingRole(target.bindingRole))
+        {
+            const MidiCvEncoderTurnBinding& binding = encoderTurns[index];
+            pushRow(target.stableId,
+                    target.displayName,
+                    binding.enabled,
+                    eventFromEncoderTurn(binding),
+                    binding.enabled ? "Relative CC → ParamTurn" : "Off");
+            continue;
+        }
+        if (froggers_v2::manifest::isEncoderModDrillInBindingRole(target.bindingRole))
+        {
+            const MidiCvEncoderDrillInBinding& binding = encoderDrillIns[index];
+            pushRow(target.stableId,
+                    target.displayName,
+                    binding.enabled,
+                    eventFromEncoderDrillIn(binding),
+                    binding.enabled ? "Press → ModDrillIn" : "Off");
+        }
+    }
 
     return rows;
+}
+
+std::vector<ControllerMappingRecord> MidiCvAssignmentTable::exportMappings() const
+{
+    std::vector<ControllerMappingRecord> records;
+    for (const ControllerTargetMappingRow& row : buildTargetMappingRows())
+    {
+        if (row.targetId == nullptr)
+        {
+            continue;
+        }
+        ControllerMappingRecord record;
+        record.targetId = row.targetId;
+        record.enabled = row.enabled;
+        record.event = row.event;
+        records.push_back(record);
+    }
+    return records;
+}
+
+bool MidiCvAssignmentTable::applyMappingRecord(const ControllerMappingRecord& record,
+                                               std::string& rejectReason)
+{
+    froggers_v2::manifest::ControllerTargetDeclaration target{};
+    if (!froggers_v2::manifest::findControllerTargetByStableId(record.targetId.c_str(), target))
+    {
+        rejectReason = "absent inventory target id";
+        return false;
+    }
+
+    const auto& ids = midiCvControllerTargetIds();
+    if (record.targetId == ids.pitch)
+    {
+        pitchEnabled = record.enabled;
+        return true;
+    }
+    if (record.targetId == ids.gate)
+    {
+        gateEnabled = record.enabled;
+        return true;
+    }
+    if (record.targetId == ids.externalModA)
+    {
+        externalModA.enabled = record.enabled;
+        externalModA.channel = record.event.channel;
+        externalModA.cc = record.event.number;
+        return true;
+    }
+    if (record.targetId == ids.externalModB)
+    {
+        externalModB.enabled = record.enabled;
+        externalModB.channel = record.event.channel;
+        externalModB.cc = record.event.number;
+        return true;
+    }
+    if (record.targetId == ids.scene1 || record.targetId == ids.scene2 || record.targetId == ids.scene3)
+    {
+        MidiCvButtonBinding* binding = nullptr;
+        MidiCvBindingRole role = MidiCvBindingRole::None;
+        if (record.targetId == ids.scene1)
+        {
+            binding = &sceneButtons[0];
+            role = MidiCvBindingRole::SceneOrdinal0;
+        }
+        else if (record.targetId == ids.scene2)
+        {
+            binding = &sceneButtons[1];
+            role = MidiCvBindingRole::SceneOrdinal1;
+        }
+        else
+        {
+            binding = &sceneButtons[2];
+            role = MidiCvBindingRole::SceneOrdinal2;
+        }
+        binding->enabled = record.enabled;
+        binding->kind = record.event.kind;
+        binding->channel = record.event.channel;
+        binding->number = record.event.number;
+        binding->target = role;
+        return true;
+    }
+    if (record.targetId == ids.qwertyVirtual)
+    {
+        qwertyVirtualChannelEnabled = record.enabled;
+        if (record.event.channel >= 1 && record.event.channel <= 16)
+        {
+            qwertyMidiChannel = record.event.channel;
+        }
+        return true;
+    }
+    if (record.targetId == ids.externalClock)
+    {
+        return true;
+    }
+
+    if (!froggers_v2::manifest::controllerTargetHasPageRow(target))
+    {
+        rejectReason = "unsupported target binding";
+        return false;
+    }
+    const size_t index = productRowLinearIndex(target.page, target.row);
+    if (index >= froggers_v2::manifest::kEncoderParamCount)
+    {
+        rejectReason = "encoder product-row index out of range";
+        return false;
+    }
+    if (froggers_v2::manifest::isEncoderTurnBindingRole(target.bindingRole))
+    {
+        encoderTurns[index].enabled = record.enabled;
+        encoderTurns[index].channel = record.event.channel;
+        encoderTurns[index].cc = record.event.number;
+        return true;
+    }
+    if (froggers_v2::manifest::isEncoderModDrillInBindingRole(target.bindingRole))
+    {
+        encoderDrillIns[index].enabled = record.enabled;
+        encoderDrillIns[index].kind = record.event.kind;
+        encoderDrillIns[index].channel = record.event.channel;
+        encoderDrillIns[index].number = record.event.number;
+        return true;
+    }
+    rejectReason = "unsupported encoder binding role";
+    return false;
+}
+
+size_t MidiCvAssignmentTable::importMappings(const std::vector<ControllerMappingRecord>& records,
+                                             std::vector<std::string>& rejectedTargetIds)
+{
+    size_t applied = 0;
+    rejectedTargetIds.clear();
+    for (const ControllerMappingRecord& record : records)
+    {
+        std::string rejectReason;
+        if (applyMappingRecord(record, rejectReason))
+        {
+            ++applied;
+            continue;
+        }
+        rejectedTargetIds.push_back(record.targetId.empty() ? std::string("<empty>") : record.targetId);
+    }
+    if (!rejectedTargetIds.empty())
+    {
+        m_persistenceState = ControllerPersistenceState::Error;
+        m_persistenceMessage = "Rejected " + std::to_string(rejectedTargetIds.size())
+                             + " mapping(s) with absent inventory IDs";
+    }
+    return applied;
 }

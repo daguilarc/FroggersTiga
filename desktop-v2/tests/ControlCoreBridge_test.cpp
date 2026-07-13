@@ -176,11 +176,12 @@ bool test_interaction_matrix_revert_and_mod_view()
 
     pushAndProcess(core, MessageIn::ParamTurn(0, 0, 12.5f));
 
+    // Page 0 row 0: only pair-bus lane 1 is assignable among lanes 0–2.
     MessageIn assign;
     assign.type = MessageIn::Type::ModSourceAssign;
     assign.page = 0;
     assign.slot = 0;
-    assign.index = 0;
+    assign.index = 1;
     pushAndProcess(core, assign);
 
     pushAndProcess(core, MessageIn::ModDrillIn(0, 0));
@@ -191,7 +192,7 @@ bool test_interaction_matrix_revert_and_mod_view()
     }
 
     const float minBefore = core.effectiveRow(0, 0).arcMin;
-    pushAndProcess(core, MessageIn::ParamTurn(0, 0, 1.0f));
+    pushAndProcess(core, MessageIn::ParamTurn(0, 1, 1.0f));
     const float minAfter = core.effectiveRow(0, 0).arcMin;
     if (nearlyEqual(minBefore, minAfter))
     {
@@ -573,6 +574,7 @@ bool test_sequencer_clock_recall_and_bridge_sync()
 
 bool test_rand_mod_syncs_host_mod_routes()
 {
+    extern uint32_t RGen_s_state_probe;
     FroggersV2ControlCore core;
     DesktopHostIO host;
     DelayState delay;
@@ -1662,18 +1664,10 @@ bool assignLiveModRoute(FroggersV2ControlCore& core, uint8_t page, uint8_t row, 
     return true;
 }
 
-// FroggersV2HostBridge::syncModRoutes/syncAllModRoutesToHost (where the
-// Packet 15-B per-lane push lives) are private -- the bridge's only public
-// trigger for the ToHost mod-route sync is a sequencer recall. Capturing the
-// core's current live state into a sequencer slot and immediately recalling
-// it is a value-preserving round trip (capture reads back exactly what was
-// just assigned) that reaches that private sync through public API only,
-// matching the existing test_write_seq_stopped_navigate_save-style usage of
-// captureLiveToSequencerStep/recallSequencerStep elsewhere in this file.
-void triggerToHostModRouteSync(FroggersV2HostBridge& bridge, uint8_t sequencerSlot)
+// Packet 15-B per-lane push: syncModRoutesToHost writes V2LaneDepthStore.
+void triggerToHostModRouteSync(FroggersV2HostBridge& bridge, uint8_t /*sequencerSlot*/)
 {
-    bridge.captureLiveToSequencerStep(sequencerSlot);
-    bridge.recallSequencerStep(sequencerSlot);
+    bridge.syncModRoutesToHost();
 }
 
 bool test_v2_lane_depth_store_places_each_row_at_its_own_lane()
@@ -1745,12 +1739,11 @@ bool test_v2_lane_depth_store_places_each_row_at_its_own_lane()
 
 bool test_v2_lane_depth_store_zeros_ineligible_lane()
 {
-    // isModSourceEligibleForRow rejects external-audio lanes (13/14) whenever
-    // externalAudioAvailable() is false -- FroggersV2ControlCore's default
-    // (wiring it from the audio engine is Packet 15.3a, out of scope here).
+    // isModLaneAssignable rejects external-audio lanes (13/14) whenever
+    // externalAudioAvailable() is false -- FroggersV2ControlCore's default.
     // ModSourceAssign itself doesn't enforce eligibility (that's a host-
     // store/UI concern per the manifest), so a live route can still point at
-    // an ineligible lane; the bridge's per-lane push must zero it in the host
+    // an unassignable lane; the bridge's per-lane push must zero it in the host
     // store rather than leaking a nonzero depth into the engine's additive
     // sum.
     FroggersV2ControlCore core;
@@ -1777,7 +1770,10 @@ bool test_v2_lane_depth_store_zeros_ineligible_lane()
     selectPage.page = kPage;
     pushAndProcess(core, selectPage);
 
-    assignLiveModRoute(core, kPage, kRow, kLane, 10.0f);
+    // Inject leftover live depth via applyHostModRoute (bypasses ParamTurn's
+    // assignability gate) so the bridge can still prove it zeros ineligible
+    // lanes in the host store rather than leaking them into the engine sum.
+    core.applyHostModRoute(kPage, kRow, kLane, 0.4f);
 
     const float liveDepth = core.laneDepth(kPage, kRow, kLane);
     if (nearlyEqual(liveDepth, 0.0f))
@@ -2095,6 +2091,259 @@ bool test_rand_mods_gates_ineligible_lanes()
     return true;
 }
 
+bool test_compute_effective_sums_eligible_skips_ineligible()
+{
+    // Packet 15.4 / 15.9: multi-lane effective sum is assignability-gated.
+    // Page 0 row 0: pair-bus lane 1 assignable; lanes 0 and 2 not.
+    FroggersV2ControlCore core;
+    constexpr uint8_t kPage = 0;
+    constexpr uint8_t kRow = 0;
+    constexpr uint8_t kEligibleLane = 1;
+    constexpr uint8_t kIneligibleLane = 0;
+    constexpr uint8_t kSecondEligible = 8; // LFO 1
+
+    core.setLaneDepth(kPage, kRow, kEligibleLane, 0.5f);
+    core.setLaneDepth(kPage, kRow, kIneligibleLane, 0.5f);
+    core.setLaneDepth(kPage, kRow, kSecondEligible, 0.25f);
+
+    // Drive modulator taps away from center so depth contributes.
+    MessageIn clockEligible;
+    clockEligible.type = MessageIn::Type::Clock;
+    clockEligible.index = static_cast<uint8_t>(6 + kEligibleLane);
+    clockEligible.value = 1.0f;
+    pushAndProcess(core, clockEligible);
+
+    MessageIn clockIneligible;
+    clockIneligible.type = MessageIn::Type::Clock;
+    clockIneligible.index = static_cast<uint8_t>(6 + kIneligibleLane);
+    clockIneligible.value = 1.0f;
+    pushAndProcess(core, clockIneligible);
+
+    MessageIn clockSecond;
+    clockSecond.type = MessageIn::Type::Clock;
+    clockSecond.index = static_cast<uint8_t>(6 + kSecondEligible);
+    clockSecond.value = 1.0f;
+    pushAndProcess(core, clockSecond);
+
+    const auto row = core.effectiveRow(kPage, kRow);
+    const uint16_t expectedMask = static_cast<uint16_t>((1u << kEligibleLane) | (1u << kSecondEligible));
+    if (row.modulatorsMask != expectedMask)
+    {
+        std::printf(
+            "FAIL: computeEffective modulatorsMask expected 0x%x got 0x%x\n",
+            static_cast<unsigned>(expectedMask),
+            static_cast<unsigned>(row.modulatorsMask));
+        return false;
+    }
+    if ((row.modulatorsMask & static_cast<uint16_t>(1u << kIneligibleLane)) != 0)
+    {
+        std::printf("FAIL: ineligible leftover lane contributed to modulatorsMask\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_available_external_audio_contributes_to_effective_and_host()
+{
+    // Packet 15.4 regression: assignability (not Rand eligibility) gates
+    // effective sum and host lane push. External-audio lanes are non-
+    // randomizable but must contribute when setExternalAudioAvailable(true).
+    FroggersV2ControlCore core;
+    DesktopHostIO host;
+    DelayState delay;
+    host.setDelayState(&delay);
+    host.m_hostKind = SimHostKind::DesktopV2;
+    host.Init();
+    host.SetSampleRate(44100.0f);
+    FroggersV2HostBridge bridge(core, host);
+
+    constexpr uint8_t kPage = 1;
+    constexpr uint8_t kRow = 4;
+    constexpr uint8_t kLane = froggers_v2::manifest::kExternalAudioRateLane;
+    constexpr float kDepth = 0.4f;
+
+    core.setExternalAudioAvailable(true);
+    if (!core.externalAudioAvailable())
+    {
+        std::printf("FAIL: precondition, setExternalAudioAvailable(true) did not stick\n");
+        return false;
+    }
+    if (!froggers_v2::manifest::isModLaneAssignable(kPage, kRow, kLane, true))
+    {
+        std::printf("FAIL: precondition, external-audio lane should be assignable when available\n");
+        return false;
+    }
+    if (froggers_v2::manifest::isModSourceEligibleForRow(kPage, kRow, kLane, true))
+    {
+        std::printf(
+            "FAIL: precondition, external-audio lane must remain Rand-ineligible "
+            "(isModSourceEligibleForRow false) even when assignable\n");
+        return false;
+    }
+
+    MessageIn selectPage;
+    selectPage.type = MessageIn::Type::SelectPage;
+    selectPage.page = kPage;
+    pushAndProcess(core, selectPage);
+
+    core.setLaneDepth(kPage, kRow, kLane, kDepth);
+    if (!nearlyEqual(core.laneDepth(kPage, kRow, kLane), kDepth))
+    {
+        std::printf("FAIL: precondition, expected live external-audio depth %f\n", kDepth);
+        return false;
+    }
+
+    const auto row = core.effectiveRow(kPage, kRow);
+    const uint16_t laneBit = static_cast<uint16_t>(1u << kLane);
+    if ((row.modulatorsMask & laneBit) == 0)
+    {
+        std::printf(
+            "FAIL: available external-audio depth missing from modulatorsMask (got 0x%x)\n",
+            static_cast<unsigned>(row.modulatorsMask));
+        return false;
+    }
+
+    triggerToHostModRouteSync(bridge, 0);
+    const uint8_t pmPage = HostParameterRoutingV2::pmPageForUiPage(kPage);
+    const float stored = host.m_v2LaneDepths.Get(pmPage, kRow, kLane);
+    if (!nearlyEqual(stored, kDepth, 2.0e-3f))
+    {
+        std::printf(
+            "FAIL: available external-audio depth expected %f in host store, got %f\n",
+            kDepth,
+            stored);
+        return false;
+    }
+
+    // Unavailable: leftover depth must not contribute / must be zeroed on push.
+    core.setExternalAudioAvailable(false);
+    const auto rowOff = core.effectiveRow(kPage, kRow);
+    if ((rowOff.modulatorsMask & laneBit) != 0)
+    {
+        std::printf("FAIL: unavailable external-audio depth still in modulatorsMask\n");
+        return false;
+    }
+    triggerToHostModRouteSync(bridge, 0);
+    const float storedOff = host.m_v2LaneDepths.Get(pmPage, kRow, kLane);
+    if (!nearlyEqual(storedOff, 0.0f))
+    {
+        std::printf(
+            "FAIL: unavailable external-audio depth expected 0 in host store, got %f\n",
+            storedOff);
+        return false;
+    }
+    return true;
+}
+
+bool test_unavailable_lane_refuses_param_turn_and_press()
+{
+    // Packet 15.3 / 15.9: external-audio lanes refuse edits when unavailable.
+    FroggersV2ControlCore core;
+    constexpr uint8_t kPage = 1;
+    constexpr uint8_t kRow = 0;
+    constexpr uint8_t kLane = froggers_v2::manifest::kExternalAudioRateLane;
+
+    if (core.externalAudioAvailable())
+    {
+        std::printf("FAIL: precondition, externalAudioAvailable should be false\n");
+        return false;
+    }
+
+    MessageIn selectPage;
+    selectPage.type = MessageIn::Type::SelectPage;
+    selectPage.page = kPage;
+    pushAndProcess(core, selectPage);
+    pushAndProcess(core, MessageIn::ModDrillIn(kPage, kRow));
+
+    pushAndProcess(core, MessageIn::ParamTurn(kPage, kLane, 10.0f));
+    if (!nearlyEqual(core.laneDepth(kPage, kRow, kLane), 0.0f))
+    {
+        std::printf("FAIL: ParamTurn edited unavailable external-audio lane\n");
+        return false;
+    }
+
+    // Inject leftover depth, then press — clear must also be refused.
+    core.applyHostModRoute(kPage, kRow, kLane, 0.4f);
+    MessageIn press;
+    press.type = MessageIn::Type::ParamPress;
+    press.page = kPage;
+    press.slot = kLane;
+    pushAndProcess(core, press);
+    if (!nearlyEqual(core.laneDepth(kPage, kRow, kLane), 0.4f))
+    {
+        std::printf("FAIL: ParamPress cleared unavailable external-audio lane\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_rand_seq_mods_picks_only_eligible_sources()
+{
+    // Packet 15.5 / 15.9: randomizeModIntoSnapshot eligibility-gates the
+    // single-route pick (no multi-lane sequencer payload expansion).
+    FroggersV2ControlCore core;
+    SequencerState seq;
+    seq.m_editStep = 0;
+    core.setSequencerState(&seq);
+
+    MessageIn randMods;
+    randMods.type = MessageIn::Type::RandSequencerMods;
+    randMods.page = froggers_v2::kRandSeqScopeStep;
+    pushAndProcess(core, randMods);
+
+    if (!seq.m_slots[0].written)
+    {
+        std::printf("FAIL: RandSequencerMods did not mark step written\n");
+        return false;
+    }
+
+    constexpr uint8_t kPage = 0;
+    constexpr uint8_t kRow = 0;
+    const uint8_t source = seq.m_slots[0].payload.modSource[kPage][kRow];
+    if (source == froggers_v2::kNoSelection)
+    {
+        std::printf("FAIL: expected an eligible rand-seq source on page 0 row 0\n");
+        return false;
+    }
+    if (!froggers_v2::manifest::isModSourceEligibleForRow(kPage, kRow, source, false))
+    {
+        std::printf(
+            "FAIL: rand-seq picked ineligible source %u for page 0 row 0\n",
+            static_cast<unsigned>(source));
+        return false;
+    }
+    // Pair-bus lanes 0 and 2 are ineligible on VCO row 0 — never picked.
+    if (source == 0 || source == 2)
+    {
+        std::printf("FAIL: rand-seq picked blocked VCO pair-bus lane %u\n",
+                    static_cast<unsigned>(source));
+        return false;
+    }
+    return true;
+}
+
+bool test_vco_pair_bus_lane_refuses_edit()
+{
+    // Packet 15.9: VCO pair-bus self-feedback lanes refuse detail edits.
+    FroggersV2ControlCore core;
+    constexpr uint8_t kPage = 0;
+    constexpr uint8_t kRow = 0;
+    constexpr uint8_t kBlockedLane = 0; // ineligible for VCO1 row
+
+    MessageIn selectPage;
+    selectPage.type = MessageIn::Type::SelectPage;
+    selectPage.page = kPage;
+    pushAndProcess(core, selectPage);
+    pushAndProcess(core, MessageIn::ModDrillIn(kPage, kRow));
+    pushAndProcess(core, MessageIn::ParamTurn(kPage, kBlockedLane, 10.0f));
+    if (!nearlyEqual(core.laneDepth(kPage, kRow, kBlockedLane), 0.0f))
+    {
+        std::printf("FAIL: ParamTurn edited blocked VCO pair-bus lane\n");
+        return false;
+    }
+    return true;
+}
+
 // Packet 15-C1: ModDrillIn (not ParamPress) is the sole action that opens the
 // detail grid; ParamPress inside an already-open view keeps its Packet 15.2a
 // meaning (clear a lane / exit via the Target-Back cell).
@@ -2298,6 +2547,26 @@ int main()
         return 1;
     }
     if (!test_rand_mods_gates_ineligible_lanes())
+    {
+        return 1;
+    }
+    if (!test_compute_effective_sums_eligible_skips_ineligible())
+    {
+        return 1;
+    }
+    if (!test_available_external_audio_contributes_to_effective_and_host())
+    {
+        return 1;
+    }
+    if (!test_unavailable_lane_refuses_param_turn_and_press())
+    {
+        return 1;
+    }
+    if (!test_rand_seq_mods_picks_only_eligible_sources())
+    {
+        return 1;
+    }
+    if (!test_vco_pair_bus_lane_refuses_edit())
     {
         return 1;
     }

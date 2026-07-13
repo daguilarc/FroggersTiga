@@ -88,6 +88,11 @@ void GlobalOscilloscopeDisplay::bindHost(DesktopHostIO* host)
     m_host = host;
 }
 
+void GlobalOscilloscopeDisplay::bindLaneHistory(const CvLaneHistoryStore* store)
+{
+    m_laneHistory = store;
+}
+
 void GlobalOscilloscopeDisplay::setAudioRunning(bool running)
 {
     m_audioRunning = running;
@@ -194,7 +199,7 @@ void GlobalOscilloscopeDisplay::rebuildTraceBindings()
 
 void GlobalOscilloscopeDisplay::refreshTraces()
 {
-    if (!m_host || !m_audioRunning)
+    if (!m_laneHistory || !m_audioRunning)
     {
         return;
     }
@@ -206,7 +211,7 @@ void GlobalOscilloscopeDisplay::refreshTraces()
         {
             continue;
         }
-        const float sample = m_host->GetCvOut(binding.modIndex);
+        const float sample = m_laneHistory->latest(binding.modIndex);
         m_scope.pushSample(trace, sample);
         m_scope.setTraceAudioRateModulated(trace, m_scope.hasAudioRateActivity(trace));
     }
@@ -214,7 +219,13 @@ void GlobalOscilloscopeDisplay::refreshTraces()
 
 void GlobalOscilloscopeDisplay::timerCallback()
 {
-    refreshTraces();
+    // When a store is bound, shells push lane samples then call refreshTraces.
+    // Keep this timer only as the named-rate heartbeat for unbound test shells.
+    if (m_laneHistory != nullptr)
+    {
+        return;
+    }
+    juce::ignoreUnused(m_host);
 }
 
 void GlobalOscilloscopeDisplay::resized()

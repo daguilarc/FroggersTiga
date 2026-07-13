@@ -14,7 +14,6 @@ public:
     GlobalStripV2();
 
     void bind(DesktopHostIO* host, froggers_v2::FroggersV2ControlCore* core);
-    void setShiftHeld(bool held);
     void refresh();
 
     std::function<uint8_t()> resolveRandSeqScope;
@@ -36,10 +35,21 @@ public:
         m_scopeCurrentStep.setToggleState(!allSteps, juce::dontSendNotification);
     }
 
+    juce::Rectangle<int> crunchyRingBoundsForTest() const { return m_crunchyRing.getBounds(); }
+    juce::Rectangle<int> scopeAllScenesBoundsForTest() const { return m_scopeAllScenes.getBounds(); }
+    juce::Rectangle<int> scopeCurrentSceneBoundsForTest() const
+    {
+        return m_scopeCurrentScene.getBounds();
+    }
+    juce::Rectangle<int> scopeAllStepsBoundsForTest() const { return m_scopeAllSteps.getBounds(); }
+    juce::Rectangle<int> scopeCurrentStepBoundsForTest() const
+    {
+        return m_scopeCurrentStep.getBounds();
+    }
+
     void resized() override;
 
 private:
-    void pushShift(bool held);
     void pushRandAll();
     void pushRandMods();
 
@@ -54,7 +64,6 @@ private:
     juce::TextButton m_randResample;
     juce::Label m_crunchyLabel;
     EncoderRingComponent m_crunchyRing;
-    juce::ToggleButton m_shift{"Shift"};
     juce::ToggleButton m_scopeAllScenes{"All Scenes"};
     juce::ToggleButton m_scopeCurrentScene{"Current Scene"};
     juce::ToggleButton m_scopeAllSteps{"All Steps"};

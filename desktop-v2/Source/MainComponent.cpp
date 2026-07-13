@@ -48,8 +48,11 @@ MainComponent::MainComponent()
     m_facade.initialize();
 
     m_globalOscilloscope.bindHost(&m_facade.host());
+    m_globalOscilloscope.bindLaneHistory(&m_cvLaneHistory);
     m_globalStrip.bind(&m_facade.host(), &m_facade.controlCore());
     m_carousel.bindHost(&m_facade.host(), &m_facade.controlCore());
+    m_carousel.submodulePanel().bindLaneHistory(&m_cvLaneHistory);
+    m_carousel.adsrPanel().bindLaneHistory(&m_cvLaneHistory);
     m_performanceBand.bind(&m_facade.controlCore());
     m_performanceBand.bindHost(&m_facade.host());
     m_globalStrip.resolveRandSeqScope = [this]() {
@@ -138,17 +141,24 @@ void MainComponent::pushSelectPage(uint8_t page)
 void MainComponent::wireMidiCvCallbacks()
 {
     MidiCvAssignmentTable& table = m_audio->getMidiCvTable();
-    table.setUiShiftCallback([this](bool held) {
-        juce::MessageManager::callAsync([this, held]() {
-            m_globalStrip.setShiftHeld(held);
-        });
-    });
     table.setUiSceneCallback([this](uint8_t ordinal) {
         juce::MessageManager::callAsync([this, ordinal]() {
             froggers_v2::MessageIn message;
             message.type = froggers_v2::MessageIn::Type::SceneSelect;
             message.index = ordinal;
             m_facade.ingestMessage(message);
+            m_carousel.refresh();
+        });
+    });
+    table.setParamTurnEmitCallback([this](uint8_t page, uint8_t slot, float delta) {
+        juce::MessageManager::callAsync([this, page, slot, delta]() {
+            m_facade.ingestMessage(froggers_v2::MessageIn::ParamTurn(page, slot, delta));
+            m_carousel.refresh();
+        });
+    });
+    table.setModDrillInEmitCallback([this](uint8_t page, uint8_t slot) {
+        juce::MessageManager::callAsync([this, page, slot]() {
+            m_facade.ingestMessage(froggers_v2::MessageIn::ModDrillIn(page, slot));
             m_carousel.refresh();
         });
     });
@@ -202,15 +212,8 @@ void MainComponent::syncQwertyKey(int note, bool down)
     m_audio->feedVirtualMidiMessage(juce::MidiMessage::noteOff(channel, note));
 }
 
-void MainComponent::updateShiftFromKeyboard()
-{
-    const bool shift = juce::ModifierKeys::getCurrentModifiers().isShiftDown();
-    m_globalStrip.setShiftHeld(shift);
-}
-
 bool MainComponent::keyPressed(const juce::KeyPress& key)
 {
-    updateShiftFromKeyboard();
     if (!shouldCaptureQwertyMidi())
     {
         return false;
@@ -227,7 +230,6 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
 
 bool MainComponent::keyStateChanged(bool /*isKeyDown*/)
 {
-    updateShiftFromKeyboard();
     if (!shouldCaptureQwertyMidi())
     {
         return false;
@@ -353,6 +355,14 @@ void MainComponent::timerCallback()
         m_audio->isExternalInputEnabled() && running);
     m_facade.controlCore().setExternalAudioAvailable(
         m_audio->isExternalInputEnabled() && running);
+    DesktopHostIO& host = m_facade.host();
+    for (uint8_t lane = 0; lane < CvLaneHistoryStore::kNumLanes; ++lane)
+    {
+        m_cvLaneHistory.pushLaneSample(lane, host.GetCvOut(lane));
+    }
+    m_globalOscilloscope.refreshTraces();
+    m_carousel.submodulePanel().refresh();
+    m_carousel.adsrPanel().refresh();
     m_performanceBand.refreshMarbles(running);
     m_sequencerPanel.refresh();
 }

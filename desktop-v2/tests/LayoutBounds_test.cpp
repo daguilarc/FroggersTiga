@@ -26,6 +26,27 @@ bool nearlyEqual(float a, float b, float eps = 1.0e-4f)
     return std::fabs(a - b) <= eps;
 }
 
+bool textFitsWidth(const juce::Font& font, const juce::String& text, int width, int chromePad)
+{
+    return font.getStringWidthFloat(text) + static_cast<float>(chromePad)
+        <= static_cast<float>(width) + 0.5f;
+}
+
+bool anyBoundsOverlap(const std::vector<juce::Rectangle<int>>& bounds)
+{
+    for (size_t i = 0; i < bounds.size(); ++i)
+    {
+        for (size_t j = i + 1; j < bounds.size(); ++j)
+        {
+            if (bounds[i].intersects(bounds[j]))
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 class LayoutTestShell : public juce::Component
 {
 public:
@@ -74,6 +95,16 @@ public:
     juce::Rectangle<int> globalStripBoundsInRoot() const
     {
         return getLocalArea(&m_globalStrip, m_globalStrip.getLocalBounds());
+    }
+
+    GlobalStripV2& globalStrip()
+    {
+        return m_globalStrip;
+    }
+
+    PerformanceBandV2& performanceBand()
+    {
+        return m_performanceBand;
     }
 
     PageCarouselComponent& carousel()
@@ -360,6 +391,174 @@ bool test_long_press_fires_clear_after_threshold(LayoutTestShell& shell)
     }
     return true;
 }
+
+bool test_global_strip_grid_at_1280(LayoutTestShell& shell)
+{
+    // Packet 17.4 / D14 + Packet 18: honest two-row global strip at default
+    // 1280x920 — scope radios on dedicated non-overlapping columns, Crunchy
+    // ring fills to the right edge (Shift removed), scope label widths fit
+    // full text. Manual visual QA remains UNVALIDATED (Packet 14).
+    using namespace DesktopV2ChromeLayout;
+    shell.setSize(kDefaultWidth, kDefaultHeight);
+    shell.resized();
+
+    GlobalStripV2& strip = shell.globalStrip();
+    const juce::Rectangle<int> stripLocal = strip.getLocalBounds();
+    if (strip.crunchyRingBoundsForTest().getRight() != stripLocal.getRight())
+    {
+        std::printf(
+            "FAIL: Crunchy ring right edge %d leaves dead space before strip right %d\n",
+            strip.crunchyRingBoundsForTest().getRight(),
+            stripLocal.getRight());
+        return false;
+    }
+
+    const juce::Rectangle<int> scopes[] = {
+        strip.scopeAllScenesBoundsForTest(),
+        strip.scopeCurrentSceneBoundsForTest(),
+        strip.scopeAllStepsBoundsForTest(),
+        strip.scopeCurrentStepBoundsForTest(),
+    };
+    const int scopeMins[] = {
+        kGlobalScopeSceneAllW,
+        kGlobalScopeSceneCurrentW,
+        kGlobalScopeStepAllW,
+        kGlobalScopeStepCurrentW,
+    };
+    const char* scopeLabels[] = {
+        "All Scenes",
+        "Current Scene",
+        "All Steps",
+        "Current Step",
+    };
+    std::vector<juce::Rectangle<int>> scopeBounds(scopes, scopes + 4);
+    if (anyBoundsOverlap(scopeBounds))
+    {
+        std::printf("FAIL: global strip scope radios overlap at 1280x920\n");
+        return false;
+    }
+
+    const juce::Font scopeFont = [](juce::LookAndFeel& laf) {
+        juce::TextButton probe("probe");
+        return laf.getTextButtonFont(probe, DesktopV2ChromeLayout::kTextButtonH);
+    }(shell.getLookAndFeel());
+    // ToggleButton chrome is wider than TextButton; pad covers tick + margins.
+    constexpr int kToggleChromePad = 28;
+    for (int i = 0; i < 4; ++i)
+    {
+        if (scopes[i].getWidth() < scopeMins[i])
+        {
+            std::printf("FAIL: scope[%d] width %d < minimum %d\n",
+                        i,
+                        scopes[i].getWidth(),
+                        scopeMins[i]);
+            return false;
+        }
+        if (!textFitsWidth(scopeFont, scopeLabels[i], scopes[i].getWidth(), kToggleChromePad))
+        {
+            std::printf("FAIL: scope label '%s' does not fit width %d\n",
+                        scopeLabels[i],
+                        scopes[i].getWidth());
+            return false;
+        }
+    }
+
+    std::vector<juce::Rectangle<int>> stripChildren;
+    for (int i = 0; i < strip.getNumChildComponents(); ++i)
+    {
+        juce::Component* child = strip.getChildComponent(i);
+        if (child != nullptr && !child->getBounds().isEmpty())
+        {
+            stripChildren.push_back(child->getBounds());
+        }
+    }
+    if (anyBoundsOverlap(stripChildren))
+    {
+        std::printf("FAIL: global strip child controls overlap at 1280x920\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_performance_band_grid_at_1280(LayoutTestShell& shell)
+{
+    // Packet 17.4 / D14: performance band labeled controls do not overlap and
+    // scene/gesture/marbles labels fit without ellipsis at 1280x920. Manual
+    // visual QA remains UNVALIDATED (Packet 14).
+    using namespace DesktopV2ChromeLayout;
+    shell.setSize(kDefaultWidth, kDefaultHeight);
+    shell.resized();
+
+    PerformanceBandV2& band = shell.performanceBand();
+    band.refresh();
+
+    const juce::Rectangle<int> labeled[] = {
+        band.sceneLabelBoundsForTest(),
+        band.blendLabelLBoundsForTest(),
+        band.blendLabelRBoundsForTest(),
+        band.gesture1BoundsForTest(),
+        band.gesture2BoundsForTest(),
+        band.marblesLabel1BoundsForTest(),
+        band.marblesLabel2BoundsForTest(),
+        band.scene1BoundsForTest(),
+        band.sceneBlendBoundsForTest(),
+        band.gestureWeight1BoundsForTest(),
+        band.gestureWeight2BoundsForTest(),
+    };
+    std::vector<juce::Rectangle<int>> labeledBounds(labeled, labeled + 11);
+    if (anyBoundsOverlap(labeledBounds))
+    {
+        std::printf("FAIL: performance band controls overlap at 1280x920\n");
+        return false;
+    }
+
+    juce::Label probeLabel;
+    const juce::Font labelFont = shell.getLookAndFeel().getLabelFont(probeLabel);
+    // PerformanceBandV2 sets marbles labels to 9pt explicitly.
+    const juce::Font marblesFont(juce::FontOptions(9.0f));
+    constexpr int kLabelChromePad = 4;
+    constexpr int kToggleChromePad = 28;
+
+    juce::TextButton buttonProbe("probe");
+    const juce::Font buttonFont =
+        shell.getLookAndFeel().getTextButtonFont(buttonProbe, kTextButtonH);
+
+    struct LabeledWidthCheck
+    {
+        juce::String text;
+        juce::Rectangle<int> bounds;
+        int chromePad;
+        const juce::Font* font;
+    };
+    const LabeledWidthCheck checks[] = {
+        {"Scene", band.sceneLabelBoundsForTest(), kLabelChromePad, &labelFont},
+        {"S1", band.blendLabelLBoundsForTest(), kLabelChromePad, &labelFont},
+        {"S2", band.blendLabelRBoundsForTest(), kLabelChromePad, &labelFont},
+        {"Gesture1", band.gesture1BoundsForTest(), kToggleChromePad, &buttonFont},
+        {"Gesture2", band.gesture2BoundsForTest(), kToggleChromePad, &buttonFont},
+        {"Random S&H 1", band.marblesLabel1BoundsForTest(), kLabelChromePad, &marblesFont},
+        {"Random S&H 2", band.marblesLabel2BoundsForTest(), kLabelChromePad, &marblesFont},
+    };
+
+    for (const LabeledWidthCheck& check : checks)
+    {
+        if (!textFitsWidth(*check.font, check.text, check.bounds.getWidth(), check.chromePad))
+        {
+            std::printf("FAIL: performance label '%s' does not fit width %d\n",
+                        check.text.toRawUTF8(),
+                        check.bounds.getWidth());
+            return false;
+        }
+    }
+
+    if (band.gesture1BoundsForTest().getWidth() < kPerfGestureToggleW
+        || band.marblesLabel1BoundsForTest().getWidth() < kPerfMarblesColW)
+    {
+        std::printf("FAIL: performance band label columns narrower than minima\n");
+        return false;
+    }
+    return true;
+}
 } // namespace
 
 int main()
@@ -400,6 +599,14 @@ int main()
         return 1;
     }
     if (!test_long_press_fires_clear_after_threshold(shell))
+    {
+        return 1;
+    }
+    if (!test_global_strip_grid_at_1280(shell))
+    {
+        return 1;
+    }
+    if (!test_performance_band_grid_at_1280(shell))
     {
         return 1;
     }

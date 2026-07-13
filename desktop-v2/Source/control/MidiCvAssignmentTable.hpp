@@ -1,6 +1,7 @@
 #pragma once
 
 #include "SequencerState.hpp"
+#include "manifest/FroggersV2AppManifest.hpp"
 
 #include <array>
 #include <atomic>
@@ -12,7 +13,6 @@
 enum class MidiCvBindingRole : uint8_t
 {
     None = 0,
-    HeldModifier,
     SceneOrdinal0,
     SceneOrdinal1,
     SceneOrdinal2
@@ -40,6 +40,21 @@ struct MidiCvButtonBinding
     MidiCvBindingRole target = MidiCvBindingRole::None;
 };
 
+struct MidiCvEncoderTurnBinding
+{
+    bool enabled = false;
+    uint8_t channel = 0;
+    uint8_t cc = 0;
+};
+
+struct MidiCvEncoderDrillInBinding
+{
+    bool enabled = false;
+    MidiCvTriggerKind kind = MidiCvTriggerKind::Note;
+    uint8_t channel = 0;
+    uint8_t number = 60;
+};
+
 struct MidiCvPitchTarget
 {
     uint8_t page = 0;
@@ -52,7 +67,6 @@ struct MidiCvControllerTargetIds
     const char* gate;
     const char* externalModA;
     const char* externalModB;
-    const char* shiftButton;
     const char* scene1;
     const char* scene2;
     const char* scene3;
@@ -98,13 +112,21 @@ struct ControllerTargetMappingRow
     size_t fanOutCount = 1;
 };
 
+struct ControllerMappingRecord
+{
+    std::string targetId;
+    bool enabled = false;
+    ControllerMappingEvent event{};
+};
+
 struct MidiCvAssignmentTable
 {
     using SequencerAdvanceHook = std::function<void()>;
     using HostPitchFn = std::function<void(uint8_t page, uint8_t row, float value)>;
     using HostGateFn = std::function<void(bool high)>;
-    using UiShiftFn = std::function<void(bool held)>;
     using UiSceneFn = std::function<void(uint8_t ordinal)>;
+    using ParamTurnEmitFn = std::function<void(uint8_t page, uint8_t slot, float delta)>;
+    using ModDrillInEmitFn = std::function<void(uint8_t page, uint8_t slot)>;
 
     uint8_t inputChannelFilter = 0;
     bool pitchEnabled = true;
@@ -115,8 +137,9 @@ struct MidiCvAssignmentTable
     bool gateEnabled = true;
     MidiCvCcBinding externalModA{true, 0, 1};
     MidiCvCcBinding externalModB{false, 0, 2};
-    MidiCvButtonBinding shiftButton{};
     std::array<MidiCvButtonBinding, 3> sceneButtons{};
+    std::array<MidiCvEncoderTurnBinding, froggers_v2::manifest::kEncoderParamCount> encoderTurns{};
+    std::array<MidiCvEncoderDrillInBinding, froggers_v2::manifest::kEncoderParamCount> encoderDrillIns{};
     bool qwertyVirtualChannelEnabled = true;
     uint8_t qwertyMidiChannel = 1;
 
@@ -135,14 +158,19 @@ struct MidiCvAssignmentTable
         m_hostGate = std::move(callback);
     }
 
-    void setUiShiftCallback(UiShiftFn callback)
-    {
-        m_uiShift = std::move(callback);
-    }
-
     void setUiSceneCallback(UiSceneFn callback)
     {
         m_uiScene = std::move(callback);
+    }
+
+    void setParamTurnEmitCallback(ParamTurnEmitFn callback)
+    {
+        m_paramTurnEmit = std::move(callback);
+    }
+
+    void setModDrillInEmitCallback(ModDrillInEmitFn callback)
+    {
+        m_modDrillInEmit = std::move(callback);
     }
 
     void onMidiClockTick(SequencerState& sequencer)
@@ -171,7 +199,6 @@ struct MidiCvAssignmentTable
     float pitchValue() const;
     MidiCvPitchTarget pitchTarget() const;
 
-    bool consumeShiftPending(bool& held);
     bool consumeScenePending(uint8_t& ordinal);
 
     void setSelectedInputLabel(std::string label);
@@ -184,6 +211,11 @@ struct MidiCvAssignmentTable
     std::vector<ControllerTargetMappingRow> buildTargetMappingRows() const;
     size_t fanOutCountForEvent(const ControllerMappingEvent& event, const char* excludeTargetId) const;
 
+    std::vector<ControllerMappingRecord> exportMappings() const;
+    size_t importMappings(const std::vector<ControllerMappingRecord>& records,
+                          std::vector<std::string>& rejectedTargetIds);
+    bool applyMappingRecord(const ControllerMappingRecord& record, std::string& rejectReason);
+
 private:
     bool channelMatches(uint8_t channel1Based, bool fromQwerty) const;
     float noteToNormalizedPitch(uint8_t note, uint8_t velocity) const;
@@ -191,26 +223,29 @@ private:
     void handleNoteOff(uint8_t channel1Based, uint8_t note, bool fromQwerty);
     void handleCc(uint8_t channel1Based, uint8_t cc, uint8_t value, bool fromQwerty);
     void handleButtonTrigger(MidiCvButtonBinding& binding, bool pressed);
+    void handleEncoderDrillIn(size_t productRowIndex, bool pressed);
+    void handleEncoderTurn(size_t productRowIndex, uint8_t value);
     void updatePitchFromHeldNotes();
     void updateGateFromHeldNotes();
     void emitPitch();
     void emitGate(bool high);
+    void emitParamTurn(uint8_t page, uint8_t slot, float delta);
+    void emitModDrillIn(uint8_t page, uint8_t slot);
 
     std::array<std::atomic<uint8_t>, 128> m_heldVelocities{};
     std::atomic<float> m_pitchValue{0.0f};
     std::atomic<float> m_externalModA{0.0f};
     std::atomic<float> m_externalModB{0.0f};
     std::atomic<bool> m_gateHigh{false};
-    std::atomic<bool> m_shiftPendingFlag{false};
-    std::atomic<bool> m_shiftPendingValue{false};
     std::atomic<bool> m_scenePendingFlag{false};
     std::atomic<uint8_t> m_scenePendingOrdinal{0};
 
     SequencerAdvanceHook m_sequencerAdvanceHook;
     HostPitchFn m_hostPitch;
     HostGateFn m_hostGate;
-    UiShiftFn m_uiShift;
     UiSceneFn m_uiScene;
+    ParamTurnEmitFn m_paramTurnEmit;
+    ModDrillInEmitFn m_modDrillInEmit;
 
     std::string m_selectedInputLabel{"Computer keyboard"};
     ControllerPersistenceState m_persistenceState = ControllerPersistenceState::Saved;

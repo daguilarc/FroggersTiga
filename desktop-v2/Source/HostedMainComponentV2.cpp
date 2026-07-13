@@ -12,8 +12,11 @@ HostedMainComponentV2::HostedMainComponentV2(froggers_v2::FroggersV2AppCoreFacad
                       m_lastModRoutesVersion)
 {
     m_globalOscilloscope.bindHost(&m_facade.host());
+    m_globalOscilloscope.bindLaneHistory(&m_cvLaneHistory);
     m_globalStrip.bind(&m_facade.host(), &m_facade.controlCore());
     m_carousel.bindHost(&m_facade.host(), &m_facade.controlCore());
+    m_carousel.submodulePanel().bindLaneHistory(&m_cvLaneHistory);
+    m_carousel.adsrPanel().bindLaneHistory(&m_cvLaneHistory);
     m_performanceBand.bind(&m_facade.controlCore());
     m_performanceBand.bindHost(&m_facade.host());
     m_globalStrip.resolveRandSeqScope = [this]() {
@@ -61,22 +64,14 @@ void HostedMainComponentV2::pushSelectPage(uint8_t page)
     desktop_v2::pushSelectPage(m_hostCallbacks, page);
 }
 
-void HostedMainComponentV2::updateShiftFromKeyboard()
-{
-    const bool shift = juce::ModifierKeys::getCurrentModifiers().isShiftDown();
-    m_globalStrip.setShiftHeld(shift);
-}
-
 bool HostedMainComponentV2::keyPressed(const juce::KeyPress& key)
 {
     juce::ignoreUnused(key);
-    updateShiftFromKeyboard();
     return false;
 }
 
 bool HostedMainComponentV2::keyStateChanged(bool /*isKeyDown*/)
 {
-    updateShiftFromKeyboard();
     return false;
 }
 
@@ -102,6 +97,14 @@ void HostedMainComponentV2::timerCallback()
     m_globalOscilloscope.setAudioRunning(true);
     m_globalOscilloscope.setExternalAudioAvailable(m_facade.audioEngine().isExternalInputEnabled());
     m_facade.controlCore().setExternalAudioAvailable(m_facade.audioEngine().isExternalInputEnabled());
+    DesktopHostIO& host = m_facade.host();
+    for (uint8_t lane = 0; lane < CvLaneHistoryStore::kNumLanes; ++lane)
+    {
+        m_cvLaneHistory.pushLaneSample(lane, host.GetCvOut(lane));
+    }
+    m_globalOscilloscope.refreshTraces();
+    m_carousel.submodulePanel().refresh();
+    m_carousel.adsrPanel().refresh();
     m_performanceBand.refreshMarbles(true);
     m_sequencerPanel.refresh();
 }

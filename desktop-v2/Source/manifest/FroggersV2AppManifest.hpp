@@ -7,6 +7,7 @@
 #include <array>
 #include <cstdio>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -206,7 +207,45 @@ struct ControllerTargetDeclaration
     const char* displayName;
     const char* surface;
     const char* bindingRole;
+    uint8_t page = 0xFFu;
+    uint8_t row = 0xFFu;
 };
+
+inline constexpr const char* kBindingRolePitch = "pitch target";
+inline constexpr const char* kBindingRoleGate = "gate target";
+inline constexpr const char* kBindingRoleExternalModA = "external mod A";
+inline constexpr const char* kBindingRoleExternalModB = "external mod B";
+inline constexpr const char* kBindingRoleSceneSelect = "scene select";
+inline constexpr const char* kBindingRoleVirtualKeyboard = "virtual keyboard";
+inline constexpr const char* kBindingRoleSequencerSync = "sequencer sync";
+inline constexpr const char* kBindingRoleEncoderTurn = "encoder turn";
+inline constexpr const char* kBindingRoleEncoderModDrillIn = "encoder mod drill-in";
+
+inline constexpr uint8_t kControllerTargetNoPageRow = 0xFFu;
+inline constexpr size_t kBaseControllerTargetCount = 9;
+inline constexpr size_t kEncoderParamCount = HostParameterInventoryV2::kPageRowCount;
+inline constexpr size_t kEncoderControllerTargetCount = kEncoderParamCount * 2;
+inline constexpr size_t kControllerTargetCount = kBaseControllerTargetCount + kEncoderControllerTargetCount;
+
+inline bool bindingRoleEquals(const char* role, const char* expected)
+{
+    return role != nullptr && expected != nullptr && std::strcmp(role, expected) == 0;
+}
+
+inline bool isEncoderTurnBindingRole(const char* role)
+{
+    return bindingRoleEquals(role, kBindingRoleEncoderTurn);
+}
+
+inline bool isEncoderModDrillInBindingRole(const char* role)
+{
+    return bindingRoleEquals(role, kBindingRoleEncoderModDrillIn);
+}
+
+inline bool controllerTargetHasPageRow(const ControllerTargetDeclaration& target)
+{
+    return target.page != kControllerTargetNoPageRow && target.row != kControllerTargetNoPageRow;
+}
 
 struct ModulationSource
 {
@@ -310,18 +349,131 @@ inline constexpr std::array<SequencerSlot, kSequencerSlotCount> kSequencerSlots{
     {15, "slot_15_written_unwritten_state", true, true},
 }};
 
-inline constexpr std::array<ControllerTargetDeclaration, 10> kControllerTargetDeclarations{{
-    {"midi_pitch", "Pitch", "MIDI In", "pitch target"},
-    {"midi_gate", "Gate", "MIDI In", "gate target"},
-    {"midi_external_mod_a", "MIDI CC A", "MIDI In", "external mod A"},
-    {"midi_external_mod_b", "MIDI CC B", "MIDI In", "external mod B"},
-    {"midi_shift_button", "Shift button", "MIDI In", "held shift toggle"},
-    {"midi_scene_1", "Scene S1", "MIDI In", "scene select"},
-    {"midi_scene_2", "Scene S2", "MIDI In", "scene select"},
-    {"midi_scene_3", "Scene S3", "MIDI In", "scene select"},
-    {"midi_qwerty_virtual", "QWERTY virtual MIDI", "MIDI In", "virtual keyboard"},
-    {"midi_external_clock", "External MIDI clock", "MIDI In", "sequencer sync"},
+inline constexpr std::array<ControllerTargetDeclaration, kBaseControllerTargetCount> kBaseControllerTargetDeclarations{{
+    {"midi_pitch", "Pitch", "MIDI In", kBindingRolePitch, kControllerTargetNoPageRow, kControllerTargetNoPageRow},
+    {"midi_gate", "Gate", "MIDI In", kBindingRoleGate, kControllerTargetNoPageRow, kControllerTargetNoPageRow},
+    {"midi_external_mod_a", "MIDI CC A", "MIDI In", kBindingRoleExternalModA, kControllerTargetNoPageRow, kControllerTargetNoPageRow},
+    {"midi_external_mod_b", "MIDI CC B", "MIDI In", kBindingRoleExternalModB, kControllerTargetNoPageRow, kControllerTargetNoPageRow},
+    {"midi_scene_1", "Scene S1", "MIDI In", kBindingRoleSceneSelect, kControllerTargetNoPageRow, kControllerTargetNoPageRow},
+    {"midi_scene_2", "Scene S2", "MIDI In", kBindingRoleSceneSelect, kControllerTargetNoPageRow, kControllerTargetNoPageRow},
+    {"midi_scene_3", "Scene S3", "MIDI In", kBindingRoleSceneSelect, kControllerTargetNoPageRow, kControllerTargetNoPageRow},
+    {"midi_qwerty_virtual", "QWERTY virtual MIDI", "MIDI In", kBindingRoleVirtualKeyboard, kControllerTargetNoPageRow, kControllerTargetNoPageRow},
+    {"midi_external_clock", "External MIDI clock", "MIDI In", kBindingRoleSequencerSync, kControllerTargetNoPageRow, kControllerTargetNoPageRow},
 }};
+
+struct ControllerTargetStringStorage
+{
+    char stableId[72]{};
+    char displayName[128]{};
+};
+
+inline void formatEncoderTurnStableId(char* buffer, size_t capacity, uint8_t page, uint8_t row)
+{
+    char knobId[48]{};
+    formatInventoryStableId(
+        knobId, sizeof(knobId), HostParameterInventoryV2::Axis::PageKnob, page, row, 0);
+    std::snprintf(buffer, capacity, "%s_encoder_turn", knobId);
+}
+
+inline void formatEncoderModDrillInStableId(char* buffer, size_t capacity, uint8_t page, uint8_t row)
+{
+    char knobId[48]{};
+    formatInventoryStableId(
+        knobId, sizeof(knobId), HostParameterInventoryV2::Axis::PageKnob, page, row, 0);
+    std::snprintf(buffer, capacity, "%s_encoder_mod_drill_in", knobId);
+}
+
+inline void formatEncoderTurnDisplayName(char* buffer, size_t capacity, uint8_t page, uint8_t row)
+{
+    std::snprintf(buffer,
+                  capacity,
+                  "%s %s encoder turn",
+                  productPageDisplayName(page),
+                  productRowDisplayName(page, row));
+}
+
+inline void formatEncoderModDrillInDisplayName(char* buffer, size_t capacity, uint8_t page, uint8_t row)
+{
+    std::snprintf(buffer,
+                  capacity,
+                  "%s %s mod drill-in",
+                  productPageDisplayName(page),
+                  productRowDisplayName(page, row));
+}
+
+inline const std::array<ControllerTargetDeclaration, kControllerTargetCount>& controllerTargetDeclarations()
+{
+    struct TableState
+    {
+        std::array<ControllerTargetStringStorage, kEncoderControllerTargetCount> strings{};
+        std::array<ControllerTargetDeclaration, kControllerTargetCount> decls{};
+    };
+
+    static const TableState state = []() {
+        TableState built{};
+        for (size_t i = 0; i < kBaseControllerTargetCount; ++i)
+        {
+            built.decls[i] = kBaseControllerTargetDeclarations[i];
+        }
+
+        size_t stringIndex = 0;
+        size_t declIndex = kBaseControllerTargetCount;
+        for (uint8_t page = 0; page < HostParameterInventoryV2::kNumUiPages; ++page)
+        {
+            const uint8_t rowCount = HostParameterInventoryV2::rowsForUiPage(page);
+            for (uint8_t row = 0; row < rowCount; ++row)
+            {
+                ControllerTargetStringStorage& turnStorage = built.strings[stringIndex++];
+                formatEncoderTurnStableId(turnStorage.stableId, sizeof(turnStorage.stableId), page, row);
+                formatEncoderTurnDisplayName(
+                    turnStorage.displayName, sizeof(turnStorage.displayName), page, row);
+                built.decls[declIndex++] = {turnStorage.stableId,
+                                            turnStorage.displayName,
+                                            "MIDI In",
+                                            kBindingRoleEncoderTurn,
+                                            page,
+                                            row};
+
+                ControllerTargetStringStorage& drillStorage = built.strings[stringIndex++];
+                formatEncoderModDrillInStableId(
+                    drillStorage.stableId, sizeof(drillStorage.stableId), page, row);
+                formatEncoderModDrillInDisplayName(
+                    drillStorage.displayName, sizeof(drillStorage.displayName), page, row);
+                built.decls[declIndex++] = {drillStorage.stableId,
+                                            drillStorage.displayName,
+                                            "MIDI In",
+                                            kBindingRoleEncoderModDrillIn,
+                                            page,
+                                            row};
+            }
+        }
+        return built;
+    }();
+
+    return state.decls;
+}
+
+inline bool findControllerTargetByStableId(const char* stableId, ControllerTargetDeclaration& out)
+{
+    if (stableId == nullptr)
+    {
+        return false;
+    }
+    const auto& targets = controllerTargetDeclarations();
+    for (const ControllerTargetDeclaration& target : targets)
+    {
+        if (target.stableId != nullptr && std::strcmp(target.stableId, stableId) == 0)
+        {
+            out = target;
+            return true;
+        }
+    }
+    return false;
+}
+
+// Compatibility alias: callers that previously indexed the constexpr base table must use
+// controllerTargetDeclarations() / kControllerTargetCount. Kept as a function-style macro
+// would hide type; prefer the function. For size, use kControllerTargetCount.
 
 inline constexpr std::array<ModulationSource, 15> kPermanentModulationSources{{
     {"vco_pair_12", "VCO 1+2", "vco-pair-bus", "audio", "always", 0xff5f57u, true},
@@ -335,8 +487,8 @@ inline constexpr std::array<ModulationSource, 15> kPermanentModulationSources{{
     {"lfo_1", "LFO 1", "lfo", "control", "always", 0x79c0ffu, true},
     {"lfo_2", "LFO 2", "lfo", "control", "always", 0x88d1f1u, true},
     {"lfo_3", "LFO 3", "lfo", "control", "always", 0xb3f0ffu, true},
-    {"random_marbles_1", "Random/Marbles 1", "random", "random", "always", 0xf778bau, true},
-    {"random_marbles_2", "Random/Marbles 2", "random", "random", "always", 0xdb61a2u, true},
+    {"random_marbles_1", "Random S&H 1", "random", "random", "always", 0xf778bau, true},
+    {"random_marbles_2", "Random S&H 2", "random", "random", "always", 0xdb61a2u, true},
     {"external_audio_rate", "External Audio (audio rate)", "external-audio", "audio", "external-audio-input", 0x39d0d8u, false},
     {"external_audio_ef", "External Audio (envelope follower)", "external-audio", "envelope", "external-audio-input", 0x33b1ffu, false},
 }};
@@ -851,13 +1003,14 @@ inline std::string buildSnapshotJson()
     }
     out << "    ],\n";
     out << "    \"controllerTargets\": [\n";
-    for (size_t i = 0; i < kControllerTargetDeclarations.size(); ++i)
+    const auto& controllerTargets = controllerTargetDeclarations();
+    for (size_t i = 0; i < controllerTargets.size(); ++i)
     {
-        const ControllerTargetDeclaration& target = kControllerTargetDeclarations[i];
+        const ControllerTargetDeclaration& target = controllerTargets[i];
         out << "      {\"stableId\": \"" << jsonEscape(target.stableId) << "\", \"displayName\": \""
             << jsonEscape(target.displayName) << "\", \"surface\": \"" << jsonEscape(target.surface)
             << "\", \"bindingRole\": \"" << jsonEscape(target.bindingRole) << "\"}";
-        out << (i + 1 == kControllerTargetDeclarations.size() ? "\n" : ",\n");
+        out << (i + 1 == controllerTargets.size() ? "\n" : ",\n");
     }
     out << "    ],\n";
     out << "    \"hostParameterMapping\": {\n";
@@ -1110,7 +1263,7 @@ inline std::string buildReviewerReportMarkdown()
     out << "## Controller Targets\n\n";
     out << "| Stable ID | Display | Surface | Binding |\n";
     out << "|---|---|---|---|\n";
-    for (const ControllerTargetDeclaration& target : kControllerTargetDeclarations)
+    for (const ControllerTargetDeclaration& target : controllerTargetDeclarations())
     {
         out << "| `" << target.stableId << "` | " << target.displayName << " | " << target.surface << " | "
             << target.bindingRole << " |\n";
