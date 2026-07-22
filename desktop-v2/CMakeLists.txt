@@ -29,6 +29,43 @@ set(SIM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../sim")
 set(REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/..")
 set(V1_DESKTOP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../desktop")
 
+# --- Sheaf runtime vendor slice --------------------------------------------
+# openspec/changes/desktop-v2-sheaf-runtime-harmonization packet 2 (tasks 2.1-2.3).
+# Vendored in-tree (copied, not submoduled/fetched) from Sheaf pinned at
+# commit c1810393; see
+# openspec/changes/desktop-v2-sheaf-runtime-harmonization/sheaf-adoption-inventory.md
+# for the full source->destination table. No network FetchContent of Sheaf.
+set(SHEAF_VENDOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/External/Sheaf")
+
+add_library(SheafRuntimeVendor STATIC
+    "${SHEAF_VENDOR_DIR}/src/ButtonGrid.cpp"
+    "${SHEAF_VENDOR_DIR}/src/DspWavetable.cpp"
+    "${SHEAF_VENDOR_DIR}/src/MidiConfigBlocks.cpp"
+    "${SHEAF_VENDOR_DIR}/src/MidiConfigViewModel.cpp"
+    "${SHEAF_VENDOR_DIR}/src/MidiController.cpp"
+    "${SHEAF_VENDOR_DIR}/src/MidiDevicePoller.cpp"
+    "${SHEAF_VENDOR_DIR}/src/MidiReconcile.cpp"
+    "${SHEAF_VENDOR_DIR}/src/Modules.cpp"
+    "${SHEAF_VENDOR_DIR}/src/ParameterModulation.cpp"
+    "${SHEAF_VENDOR_DIR}/src/PatchPersistence.cpp"
+    "${SHEAF_VENDOR_DIR}/runtime/HostDataPaths.cpp"
+)
+target_include_directories(SheafRuntimeVendor PUBLIC
+    "${SHEAF_VENDOR_DIR}"
+    "${SHEAF_VENDOR_DIR}/include"
+    "${SHEAF_VENDOR_DIR}/runtime"
+    "${SHEAF_VENDOR_DIR}/juce"
+)
+# Sheaf's own build (runtime/juce_build.mk) compiles this slice at -std=c++20
+# (Engine.hpp uses concepts; PortableUIBuilders/GangedRandomLfoVisualizer use
+# std::span). Scoped to this vendored target only; the rest of desktop-v2
+# stays on its existing CMAKE_CXX_STANDARD.
+set_target_properties(SheafRuntimeVendor PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+)
+target_link_libraries(SheafRuntimeVendor PUBLIC juce::juce_core)
+
 set(V2_FONT_REGULAR "${CMAKE_CURRENT_SOURCE_DIR}/Assets/IBMPlexSans-Regular.ttf")
 set(V2_FONT_SEMIBOLD "${CMAKE_CURRENT_SOURCE_DIR}/Assets/IBMPlexSans-SemiBold.ttf")
 set(FROGGERS_V2_ASSET_SOURCES
@@ -368,3 +405,23 @@ add_test(NAME RuntimePages_test COMMAND RuntimePages_test)
 
 add_executable(BootSmoke_test tests/BootSmoke_test.cpp)
 add_test(NAME BootSmoke_test COMMAND BootSmoke_test)
+
+# SheafVendorSmoke_test -- packet 2 compile gate (tasks 2.1-2.3). Proves the
+# vendored synth::Engine / GridManager / RuntimeUIState / ScopeWriter /
+# ScopeVisualizer / GangedRandomLfoVisualizer, plus the JUCE-facing runtime
+# headers (Runtime.hpp/Shell.hpp/MainPane.hpp/PortableJuceBackend.hpp/
+# RuntimePagesJuce.hpp/MidiHandlers.hpp), compile and link against this
+# product's own JUCE modules. Does not instantiate SYNTH_RUNTIME_MAIN /
+# ShellApplication<AppType> as a running app -- that cutover is tasks.md
+# section 10, a later packet.
+add_executable(SheafVendorSmoke_test tests/SheafVendorSmoke_test.cpp)
+target_link_libraries(SheafVendorSmoke_test PRIVATE
+    SheafRuntimeVendor
+    juce::juce_gui_extra
+    juce::juce_audio_devices
+)
+set_target_properties(SheafVendorSmoke_test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+)
+add_test(NAME SheafVendorSmoke_test COMMAND SheafVendorSmoke_test)
