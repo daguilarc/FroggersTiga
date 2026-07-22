@@ -425,3 +425,42 @@ set_target_properties(SheafVendorSmoke_test PROPERTIES
     CXX_STANDARD_REQUIRED ON
 )
 add_test(NAME SheafVendorSmoke_test COMMAND SheafVendorSmoke_test)
+
+# FroggersApp_test -- packet 3 (tasks.md 3.1-3.3). FroggersApp/FroggersAppCore
+# (Source/FroggersApp.hpp, Source/FroggersAppCore.hpp/.cpp) satisfy the
+# vendored synth::SynthApplication concept and delegate ProcessBlock to the
+# existing AudioEngine + FroggersV2ControlCore/facade path (design D2; no DSP
+# rewrite). Built at CXX_STANDARD 20 like SheafVendorSmoke_test, since
+# synth/AppContext.hpp transitively requires std::span (ParameterModulation.hpp).
+add_executable(FroggersApp_test
+    tests/FroggersApp_test.cpp
+    Source/FroggersAppCore.cpp
+    Source/control/FroggersV2AppCoreFacade.cpp
+    Source/control/FroggersV2ControlCore.cpp
+    Source/control/FroggersV2HostBridge.cpp
+    Source/AudioEngine.cpp
+    Source/AudioSettingsComponent.cpp
+    Source/MidiCvSettingsComponent.cpp
+    Source/control/MidiCvAssignmentTable.cpp
+    Source/runtime/FilePatchRuntimeState.cpp
+    Source/runtime/DesktopV2AudioStateProjection.cpp
+    "${V1_DESKTOP_DIR}/Source/AudioRecorder.cpp"
+)
+target_include_directories(FroggersApp_test PRIVATE
+    Source
+    "${V1_DESKTOP_DIR}/Source"
+    "${CORE_DIR}"
+    "${SIM_DIR}"
+)
+target_link_libraries(FroggersApp_test PRIVATE
+    SheafRuntimeVendor
+    juce::juce_audio_utils
+    juce::juce_audio_devices
+    juce::juce_audio_formats
+    juce::juce_gui_extra
+)
+set_target_properties(FroggersApp_test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+)
+add_test(NAME FroggersApp_test COMMAND FroggersApp_test)
