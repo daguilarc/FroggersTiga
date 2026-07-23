@@ -2426,6 +2426,81 @@ bool test_param_press_still_exits_detail_grid_via_target_cell()
     }
     return true;
 }
+
+// Packet 6 (D4): drill-in is capped at 2 layers. The detail grid reuses the
+// same EncoderRingComponent rings as layer 0, and every ring's center-dot
+// hit-zone fires ModDrillIn unconditionally (EncoderRingComponent::mouseDown)
+// -- so a click on a depth cell's own center dot while the grid is already
+// open emits a second ModDrillIn message. That must be rejected as a no-op:
+// the already-open view's targetRow must not change, and it must not close.
+bool test_mod_drill_in_from_depth_cell_is_rejected()
+{
+    FroggersV2ControlCore core;
+    constexpr uint8_t kPage = 0;
+    constexpr uint8_t kFirstRow = 5;
+    constexpr uint8_t kOtherRow = 2;
+
+    pushAndProcess(core, MessageIn::ModDrillIn(kPage, kFirstRow));
+    if (core.uiState().modViewTargetRow.load(std::memory_order_acquire) != kFirstRow)
+    {
+        std::printf("FAIL: test precondition, first ModDrillIn did not open row %u\n", kFirstRow);
+        return false;
+    }
+
+    // Simulate a nested drill-in fired from within the already-open detail
+    // grid (a depth cell's center dot), targeting a different row.
+    pushAndProcess(core, MessageIn::ModDrillIn(kPage, kOtherRow));
+
+    if (core.uiState().modViewTargetRow.load(std::memory_order_acquire) != kFirstRow)
+    {
+        std::printf(
+            "FAIL: nested ModDrillIn while detail grid was open changed/closed the view "
+            "(expected targetRow to remain %u)\n",
+            kFirstRow);
+        return false;
+    }
+    return true;
+}
+
+// Packet 6 (D4): Target(Back) must exit an open detail grid straight to
+// layer 0 -- not to some intermediate state -- covering the case where the
+// grid was entered from a non-zero row.
+bool test_target_back_exits_to_layer_zero_from_nonzero_row()
+{
+    FroggersV2ControlCore core;
+    constexpr uint8_t kPage = 0;
+    constexpr uint8_t kRow = 4;
+    constexpr uint8_t kFirstRowAfterClose = 1;
+
+    pushAndProcess(core, MessageIn::ModDrillIn(kPage, kRow));
+    if (core.uiState().modViewTargetRow.load(std::memory_order_acquire) != kRow)
+    {
+        std::printf("FAIL: test precondition, ModDrillIn did not open row %u\n", kRow);
+        return false;
+    }
+
+    MessageIn closePress;
+    closePress.type = MessageIn::Type::ParamPress;
+    closePress.page = kPage;
+    closePress.slot = static_cast<uint8_t>(core.uiState().visibleCount.load(std::memory_order_acquire) - 1);
+    pushAndProcess(core, closePress);
+
+    if (core.uiState().modViewTargetRow.load(std::memory_order_acquire) != froggers_v2::kNoSelection)
+    {
+        std::printf("FAIL: Target(Back) did not exit the detail grid back to layer 0\n");
+        return false;
+    }
+
+    // Layer 0 must be reachable again: a fresh ModDrillIn on a different row
+    // opens normally (proves the reject gate above does not stick after close).
+    pushAndProcess(core, MessageIn::ModDrillIn(kPage, kFirstRowAfterClose));
+    if (core.uiState().modViewTargetRow.load(std::memory_order_acquire) != kFirstRowAfterClose)
+    {
+        std::printf("FAIL: a fresh ModDrillIn after Target(Back) close did not reopen the grid\n");
+        return false;
+    }
+    return true;
+}
 } // namespace
 
 int main()
@@ -2595,6 +2670,14 @@ int main()
         return 1;
     }
     if (!test_param_press_still_exits_detail_grid_via_target_cell())
+    {
+        return 1;
+    }
+    if (!test_mod_drill_in_from_depth_cell_is_rejected())
+    {
+        return 1;
+    }
+    if (!test_target_back_exits_to_layer_zero_from_nonzero_row())
     {
         return 1;
     }

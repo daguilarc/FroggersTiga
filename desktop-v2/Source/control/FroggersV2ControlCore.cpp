@@ -719,6 +719,19 @@ void FroggersV2ControlCore::onModDrillIn(uint8_t page, uint8_t slot)
     {
         return;
     }
+    // Packet 6 (D4): drill-in is capped at 2 layers (layer 0 = module params,
+    // layer 1 = the mod detail grid). The detail grid reuses the same
+    // EncoderRingComponent rings as layer 0, and every ring's center-dot
+    // hit-zone fires ModDrillIn unconditionally regardless of which layer it
+    // is currently rendering -- so a depth cell's own center dot emits
+    // ModDrillIn too. Reject any drill-in while a detail view is already
+    // open rather than letting it hijack/re-target the open view; Target
+    // (Back) (onParamPress's isTarget branch) is the only way out, and it
+    // always exits to layer 0.
+    if (m_modView.open)
+    {
+        return;
+    }
     const uint8_t row = slotToRow(page, slot);
     if (row >= rowsForPage(page))
     {
