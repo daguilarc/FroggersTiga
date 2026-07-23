@@ -2,6 +2,7 @@
 #include "HostParameterInventoryV2.hpp"
 #include "HostParameterRoutingV2.hpp"
 #include "PermanentModTapRack.hpp"
+#include "V2DesktopPageDisplayNames.hpp"
 #include "V2ParamDisplayNames.hpp"
 #include "control/FroggersV2ControlCore.hpp"
 #include "control/FroggersV2HostBridge.hpp"
@@ -79,8 +80,8 @@ bool test_scene_centers_seeded_from_defaults()
     }
     for (uint8_t row = 0; row < 6; ++row)
     {
-        const float expectedPairAr = HostParameterInventoryV2::pageKnobDefault(6, row);
-        const auto pairArRow = core.effectiveRow(6, row);
+        const float expectedPairAr = HostParameterInventoryV2::pageKnobDefault(5, row);
+        const auto pairArRow = core.effectiveRow(5, row);
         if (!nearlyEqual(pairArRow.effective, expectedPairAr, 2.0e-3f))
         {
             std::printf(
@@ -413,7 +414,13 @@ bool test_sync_to_host_reaches_non_active_page()
     FroggersV2HostBridge bridge(core, host);
     bridge.syncToHost();
 
-    constexpr uint8_t kNonActivePage = 4; // "Drive" page (manifest page name table).
+    // "Drive" UI page after the Random deletion (0 Audio, 1 Reverb, 2 Filter,
+    // 3 Drive, 4 Delay, 5 Pair-AR). Deliberately a non-Delay page so syncToHost
+    // routes it through DesktopHostIO::SetPageKnob rather than DelayState. The
+    // engine PageManager still carries the Marbles page at PM index 1, so the
+    // host must be read at the mapped PM page, not the UI page.
+    constexpr uint8_t kNonActiveUiPage = 3;
+    const uint8_t kNonActivePmPage = HostParameterRoutingV2::pmPageForUiPage(kNonActiveUiPage);
     constexpr uint8_t kRow = 0;
     if (core.activePage() != 0)
     {
@@ -421,12 +428,12 @@ bool test_sync_to_host_reaches_non_active_page()
         return false;
     }
 
-    const float before = host.GetPageParam(kNonActivePage, kRow);
+    const float before = host.GetPageParam(kNonActivePmPage, kRow);
 
     // Edit a row on a page that is never selected active (no SelectPage message
     // is ever pushed), mirroring turning a Drive/Filter knob while looking at
     // a different carousel page.
-    pushAndProcess(core, MessageIn::ParamTurn(kNonActivePage, kRow, 10.0f));
+    pushAndProcess(core, MessageIn::ParamTurn(kNonActiveUiPage, kRow, 10.0f));
 
     if (core.activePage() != 0)
     {
@@ -436,8 +443,8 @@ bool test_sync_to_host_reaches_non_active_page()
 
     bridge.syncToHost();
 
-    const float expected = core.effectiveRow(kNonActivePage, kRow).effective;
-    const float actual = host.GetPageParam(kNonActivePage, kRow);
+    const float expected = core.effectiveRow(kNonActiveUiPage, kRow).effective;
+    const float actual = host.GetPageParam(kNonActivePmPage, kRow);
     if (!nearlyEqual(actual, expected, 2.0e-3f))
     {
         std::printf(
@@ -928,10 +935,10 @@ bool test_pair_ar_page_seven_rows()
 
     MessageIn selectPairAr;
     selectPairAr.type = MessageIn::Type::SelectPage;
-    selectPairAr.page = 6;
+    selectPairAr.page = 5;
     pushAndProcess(core, selectPairAr);
 
-    const uint8_t pairArRowCount = HostParameterInventoryV2::rowsForUiPage(6);
+    const uint8_t pairArRowCount = HostParameterInventoryV2::rowsForUiPage(5);
     if (core.visibleCount() != pairArRowCount)
     {
         std::printf(
@@ -940,9 +947,9 @@ bool test_pair_ar_page_seven_rows()
             static_cast<unsigned>(core.visibleCount()));
         return false;
     }
-    if (std::strcmp(V2ParamDisplayNames::forHostPage(6), "Pair-AR") != 0)
+    if (std::strcmp(V2DesktopPageDisplayNames::forHostPage(5), "Pair-AR") != 0)
     {
-        std::printf("FAIL: page 6 carousel label expected Pair-AR\n");
+        std::printf("FAIL: page 5 carousel label expected Pair-AR\n");
         return false;
     }
     return true;
@@ -1431,7 +1438,7 @@ bool test_rand_mods_changes_live_depths_without_sequencer()
     FroggersV2ControlCore core;
 
     // Assign live mod routes on two different pages -- including the Delay
-    // page (kDelayUiPage == 5, HostParameterInventoryV2.hpp) -- matching an
+    // page (kDelayUiPage == 4, HostParameterInventoryV2.hpp) -- matching an
     // operator who turned module rows onto a modulation source before
     // hitting Rand Mods. No sequencer is bound at all, which exercises
     // "Global Rand Mods is not sequencer-only": the live depths must still
@@ -1445,19 +1452,19 @@ bool test_rand_mods_changes_live_depths_without_sequencer()
 
     MessageIn assignDelay;
     assignDelay.type = MessageIn::Type::ModSourceAssign;
-    assignDelay.page = 5;
+    assignDelay.page = 4;
     assignDelay.slot = 0;
     assignDelay.index = 3;
     pushAndProcess(core, assignDelay);
 
     const float audioDepthBefore = core.assignedModDepth(0, 0);
-    const float delayDepthBefore = core.assignedModDepth(5, 0);
+    const float delayDepthBefore = core.assignedModDepth(4, 0);
 
     core.executeRandomization(
         FroggersV2ControlCore::RandomizationCommand::RandMods, 0, froggers_v2::kRandSeqScopeStep);
 
     const float audioDepthAfterFirst = core.assignedModDepth(0, 0);
-    const float delayDepthAfterFirst = core.assignedModDepth(5, 0);
+    const float delayDepthAfterFirst = core.assignedModDepth(4, 0);
     if (nearlyEqual(audioDepthAfterFirst, audioDepthBefore))
     {
         std::printf("FAIL: Rand Mods did not change the live mod depth on page 0 row 0\n");
@@ -1465,7 +1472,7 @@ bool test_rand_mods_changes_live_depths_without_sequencer()
     }
     if (nearlyEqual(delayDepthAfterFirst, delayDepthBefore))
     {
-        std::printf("FAIL: Rand Mods did not change the live mod depth on the Delay page (5)\n");
+        std::printf("FAIL: Rand Mods did not change the live mod depth on the Delay page (4)\n");
         return false;
     }
 

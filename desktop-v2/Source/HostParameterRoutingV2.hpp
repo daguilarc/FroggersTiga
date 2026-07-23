@@ -83,7 +83,16 @@ inline uint8_t pmPageForUiPage(uint8_t page)
     {
         return HostParameterInventoryV2::kPmAdsrPage;
     }
-    return page;
+    // The Random S&H module UI page was deleted, but the shared engine PageManager
+    // still carries the Marbles page at PM index 1 (it drives the retained Random S&H
+    // 1/2 mod lanes at default knob values). So every desktop-v2 UI page after Audio
+    // maps one PM slot higher: Reverb UI1->PM2, Filter UI2->PM3, Drive UI3->PM4. Delay
+    // is routed through DelayState (isDelayUiPage) and never reaches this function.
+    if (page == 0)
+    {
+        return 0;
+    }
+    return static_cast<uint8_t>(page + 1);
 }
 
 inline float readPageKnob(uint8_t uiPage, uint8_t row, DesktopHostIO& host, DelayState& delay)

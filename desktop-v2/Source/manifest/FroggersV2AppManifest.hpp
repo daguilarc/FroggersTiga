@@ -1,6 +1,7 @@
 #pragma once
 
 #include "HostParameterInventoryV2.hpp"
+#include "V2DesktopPageDisplayNames.hpp"
 #include "SequencerState.hpp"
 
 #include <algorithm>
@@ -24,19 +25,20 @@ constexpr uint8_t kSpeedChoiceCount = 5;
 inline constexpr const char* kSequencerWrittenState = "written-unwritten";
 inline constexpr std::array<const char*, 2> kRandomizationScopes{{"scene", "step"}};
 
-// Page/row display name data + logic is the single authority in
-// sim/V2ParamDisplayNames.hpp (needed below sim/, e.g. DelayState, wasm
-// bindings; transitively included here via HostParameterInventoryV2.hpp).
-// These wrappers exist only because callers in this manifest namespace
-// already spell it as froggers_v2::manifest::product*DisplayName.
+// Desktop-v2 page/row display name authority is V2DesktopPageDisplayNames.hpp
+// (the D10 fork: 6 pages, no Random S&H module page). The shared 7-page
+// sim/V2ParamDisplayNames.hpp still serves the web/wasm V2 host and v1 and is
+// intentionally NOT edited by this change. These wrappers exist because callers
+// in this manifest namespace already spell it as
+// froggers_v2::manifest::product*DisplayName.
 inline const char* productPageDisplayName(uint8_t hostPage)
 {
-    return V2ParamDisplayNames::forHostPage(hostPage);
+    return V2DesktopPageDisplayNames::forHostPage(hostPage);
 }
 
 inline const char* productRowDisplayName(uint8_t hostPage, uint8_t row)
 {
-    return V2ParamDisplayNames::forHostPageRow(hostPage, row);
+    return V2DesktopPageDisplayNames::forHostPageRow(hostPage, row);
 }
 
 inline void formatInventoryStableId(char* buffer,

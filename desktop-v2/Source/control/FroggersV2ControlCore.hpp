@@ -10,7 +10,7 @@
 
 namespace froggers_v2
 {
-constexpr uint8_t kNumHostPages = 7;
+constexpr uint8_t kNumHostPages = 6;
 constexpr uint8_t kNumRows = 10;
 constexpr uint8_t kNumScenes = 3;
 constexpr uint8_t kNumGestures = 2;

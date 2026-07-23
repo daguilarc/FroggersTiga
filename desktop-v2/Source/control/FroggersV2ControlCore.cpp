@@ -1187,7 +1187,7 @@ uint8_t FroggersV2ControlCore::rowsForPage(uint8_t page) const
     {
         return 8;
     }
-    if (page == 6)
+    if (page == 5)
     {
         return 7;
     }

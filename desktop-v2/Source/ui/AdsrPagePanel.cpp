@@ -1,5 +1,6 @@
 #include "ui/AdsrPagePanel.hpp"
 
+#include "V2DesktopPageDisplayNames.hpp"
 #include "V2ParamDisplayNames.hpp"
 #include "manifest/FroggersV2AppManifest.hpp"
 #include "ui/ModDetailGridLayout.hpp"
@@ -133,7 +134,7 @@ void AdsrPagePanel::refresh()
         m_rowLabels[static_cast<size_t>(i)].setColour(juce::Label::textColourId, labelAvailable);
         const uint8_t row = m_core->visibleRowForSlot(static_cast<uint8_t>(i));
         m_rowLabels[static_cast<size_t>(i)].setText(
-            V2ParamDisplayNames::forHostPageRow(kAdsrPage, row),
+            V2DesktopPageDisplayNames::forHostPageRow(kAdsrPage, row),
             juce::dontSendNotification);
     }
     desktop_v2::bindDetailUnderlays(m_rings, m_core, m_laneHistory, detail);

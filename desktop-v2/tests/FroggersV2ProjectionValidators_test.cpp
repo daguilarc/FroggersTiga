@@ -1,5 +1,6 @@
 #include "manifest/FroggersV2AppManifest.hpp"
 #include "HostParameterInventoryV2.hpp"
+#include "V2DesktopPageDisplayNames.hpp"
 #include "V2ParamDisplayNames.hpp"
 #include "control/MidiCvAssignmentTable.hpp"
 #include "SequencerState.hpp"
@@ -191,11 +192,11 @@ CheckResult checkCarouselPageRows()
     size_t computedRows = 0;
     std::vector<std::string> rowLabels;
 
-    if (HostParameterInventoryV2::kNumUiPages != V2ParamDisplayNames::kV2NumHostPages)
+    if (HostParameterInventoryV2::kNumUiPages != V2DesktopPageDisplayNames::kV2NumHostPages)
     {
         std::ostringstream out;
         out << "page count mismatch inventory=" << static_cast<unsigned>(HostParameterInventoryV2::kNumUiPages)
-            << " sim=" << static_cast<unsigned>(V2ParamDisplayNames::kV2NumHostPages);
+            << " desktop-labels=" << static_cast<unsigned>(V2DesktopPageDisplayNames::kV2NumHostPages);
         result.detail = out.str();
         return result;
     }
@@ -204,7 +205,7 @@ CheckResult checkCarouselPageRows()
     {
         const uint8_t rows = HostParameterInventoryV2::rowsForUiPage(page);
         computedRows += rows;
-        const uint8_t crispyRow = V2ParamDisplayNames::CrispyRowForPage(page);
+        const uint8_t crispyRow = V2DesktopPageDisplayNames::CrispyRowForPage(page);
         if (rows == 0 || crispyRow >= rows)
         {
             std::ostringstream out;
@@ -214,7 +215,7 @@ CheckResult checkCarouselPageRows()
             return result;
         }
 
-        const char* pageName = V2ParamDisplayNames::forHostPage(page);
+        const char* pageName = V2DesktopPageDisplayNames::forHostPage(page);
         if (pageName == nullptr || pageName[0] == '\0')
         {
             std::ostringstream out;
@@ -224,7 +225,7 @@ CheckResult checkCarouselPageRows()
         }
         for (uint8_t row = 0; row < rows; ++row)
         {
-            const char* rowName = V2ParamDisplayNames::forHostPageRow(page, row);
+            const char* rowName = V2DesktopPageDisplayNames::forHostPageRow(page, row);
             if (rowName == nullptr || rowName[0] == '\0')
             {
                 std::ostringstream out;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "V2DesktopPageDisplayNames.hpp"
 #include "V2ParamDisplayNames.hpp"
 #include "SequencerState.hpp"
 
@@ -9,12 +10,20 @@
 #include <cstring>
 
 // VST v2 host parameter inventory (OpenSpec §6.2). Dual stableId + displayName per entry.
-// kCount = 142: 148 pre–Pair-AR minus 6 removed Sus axes (3 knob + 3 mod depth on page 6).
+// kCount = 122: 142 (pre-Random-deletion) minus 20 removed Random S&H module-page axes
+// (10 page knobs + 10 page mod depths on the former UI page 1). Random S&H 1/2 survive as
+// modulation lanes only; the shared engine Marbles page is retained (not host-exposed) so
+// the Random S&H mod sources still run at their default knob values (Sheaf-style defaults).
+// Desktop-v2 page labels now come from V2DesktopPageDisplayNames (the D10 fork), not the
+// shared 7-page V2ParamDisplayNames used by the web/wasm V2 host and v1.
 namespace HostParameterInventoryV2
 {
-constexpr uint8_t kNumUiPages = 7;
-constexpr uint8_t kDelayUiPage = 5;
-constexpr uint8_t kAdsrUiPage = 6;
+constexpr uint8_t kNumUiPages = 6;
+constexpr uint8_t kDelayUiPage = 4;
+constexpr uint8_t kAdsrUiPage = 5;
+// The shared engine PageManager still carries the Marbles page at PM index 1
+// (Audio 0, Marbles 1, Reverb 2, Filter 3, Drive 4, ADSR 5), so Pair-AR/Envelope
+// remains PM page 5 even though its desktop-v2 UI page dropped from 6 to 5.
 constexpr uint8_t kPmAdsrPage = 5;
 constexpr uint8_t kMorphCount = 3;
 constexpr uint8_t kSequencerCount = 5;
@@ -114,7 +123,7 @@ constexpr float pageKnobDefault(uint8_t page, uint8_t row)
     {
         return audioVcoFrequencyDefaultNorm();
     }
-    if (row == V2ParamDisplayNames::CrispyRowForPage(page))
+    if (row == V2DesktopPageDisplayNames::CrispyRowForPage(page))
     {
         return 0.0f;
     }

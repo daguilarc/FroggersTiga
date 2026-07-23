@@ -13,7 +13,7 @@
 class AdsrPagePanel : public juce::Component
 {
 public:
-    static constexpr uint8_t kAdsrPage = 6;
+    static constexpr uint8_t kAdsrPage = 5;
 
     AdsrPagePanel();
 

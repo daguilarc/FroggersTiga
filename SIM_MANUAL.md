@@ -105,24 +105,11 @@ Three oscillators. Click the waveform icon beside VCO1–VCO3 to cycle sine ↔ 
 | 7 | Phase mod 3 |
 | 8 | Crispy |
 
-## Random
+## Random S&H (modulation lanes)
 
-Dual stepped random S&H — two independent bags of held random values. Inspired by Mutable Instruments Marbles (UI labels are **Random S&H 1/2**).
+Dual stepped random sample-and-hold — two independent bags of held random values, inspired by Mutable Instruments Marbles (UI labels **Random S&H 1/2**).
 
-Two random CV channels live here. Press **Rand Resample** on the global strip to draw new values from each bag. Outputs appear in the mod bay as **Random S&H 1** and **Random S&H 2**. There is no internal clock — you trigger steps.
-
-| Row | Parameter |
-|-----|-----------|
-| 1 | Step chance — odds each channel resamples on Rand Resample |
-| 2 | Deja vu 1 — channel 1 bag walk / re-roll |
-| 3 | Bag size 1 — channel 1 values (2–8) |
-| 4 | Slew 1 — glide between held values |
-| 5 | Deja vu 2 — channel 2 bag walk / re-roll |
-| 6 | Bag size 2 — channel 2 values (2–8) |
-| 7 | Slew 2 — channel 2 glide |
-| 8 | Spread — random channel spread |
-| 9 | Bias — random channel bias |
-| 10 | Crispy |
+On desktop v2 these are **modulation sources only**: there is **no Random S&H module page** and no Step chance / Deja vu / Bag size / Slew / Spread / Bias knobs. The two channels appear in the mod bay as **Random S&H 1** and **Random S&H 2**, run at fixed Sheaf-style defaults, and share a **ganged random-LFO visualizer** on their mod-depth cells. Press **Rand Resample** on the global strip to draw new values from each bag; there is no internal clock — you trigger steps.
 
 ## Drive
 
@@ -207,7 +194,7 @@ Mod sources can push any knob (including pair-AR and Crispy). Desktop v1 shows f
 | MIDI CC 1 | Desktop + web (web: **External MIDI** gate) |
 | MIDI CC 2 | Desktop standalone only |
 | VCO Envelope | Slow level from VCO mix (scope trace) — not Phase mod 3 |
-| Random S&H 1 | From Random page bags; resample with Rand Resample |
+| Random S&H 1 | Dual stepped random S&H mod source (no module page); resample with Rand Resample |
 | Random S&H 2 | Same |
 
 **Phase mod 3** (Audio row 7) is a dedicated knob on sim hosts. **Crispy** (row 8) is the fuegoizer only — not PM3, not external mix.
@@ -235,7 +222,7 @@ The global oscilloscope stays visible across carousel modules and runtime pages.
 
 | Control | What it does |
 |---------|--------------|
-| **Module carousel** | **Module:** header switches FX blocks: Audio → Random S&H → Reverb → Filter → Drive → Delay → **Pair-AR** (Envelope). Left/right arrows wrap 0↔6. Audio/VCO is the default launch page. |
+| **Module carousel** | **Module:** header switches FX blocks: Audio → Reverb → Filter → Drive → Delay → **Pair-AR** (Envelope). Left/right arrows wrap 0↔5. Random S&H has no module page — it is a modulation lane only. Audio/VCO is the default launch page. |
 | **Runtime rail** | Right-side **File**, **Audio**, and **MIDI** buttons toggle setup pages without replacing carousel arrows. **File/Patch** — save/load/revert and patch identity. **Audio** — devices, channels, sample rate, external input, meters. **MIDI** — controller mappings, connection state, fan-out summary. |
 
 **Audio/VCO** exposes VCO1–VCO3 frequency and **waveform morph** controls (click waveform icons), **cross-coupler** routing (product contract: separate VCO 1/2 and VCO 2/3 couplers; legacy single **Cross-coupler** row remains on web), and phase-mod rows.

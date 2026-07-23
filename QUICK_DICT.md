@@ -172,17 +172,9 @@ Release 1+2 — Pair-sum release (VCO1+VCO2); not reverb Decay — web Audio pai
 Attack 2+3 — Pair-sum attack (VCO2+VCO3) — web Audio pair-AR
 Release 2+3 — Pair-sum release (VCO2+VCO3) — web Audio pair-AR
 
-## Random
+## Random S&H (modulation lanes)
 
-Step chance — Probability each channel resamples on Rand Resample press
-Deja vu 1 — Channel 1 bag walk / re-roll
-Bag size 1 — Channel 1 values (2–8)
-Slew 1 — Channel 1 glide between held values (not a clock) → Random S&H 1
-Deja vu 2 — Channel 2 bag walk / re-roll
-Bag size 2 — Channel 2 values (2–8)
-Slew 2 — Channel 2 glide between held values → Random S&H 2
-Spread — Random channel spread (web v2 row 8)
-Bias — Random channel bias (web v2 row 9)
+Desktop v2 has **no Random S&H module page** — the Step chance / Deja vu / Bag size / Slew / Spread / Bias knobs were deleted. Random S&H 1/2 survive as modulation-lane sources only: fixed Sheaf-style defaults, a ganged random-LFO visualizer on their mod-depth cells, resampled with **Rand Resample**. See the Random S&H 1/2 mod-source entries above.
 
 ## Reverb
 

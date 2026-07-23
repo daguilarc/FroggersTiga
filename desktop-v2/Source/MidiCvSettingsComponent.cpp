@@ -1,6 +1,6 @@
 #include "MidiCvSettingsComponent.h"
 
-#include "V2ParamDisplayNames.hpp"
+#include "V2DesktopPageDisplayNames.hpp"
 #include "control/FroggersV2ControlCore.hpp"
 #include "manifest/FroggersV2AppManifest.hpp"
 
@@ -198,7 +198,7 @@ void MidiCvSettingsComponent::initTargetRows()
             row.row.setTextBoxStyle(juce::Slider::TextBoxRight, false, 36, kRowControlHeight - 4);
             for (uint8_t page = 0; page < froggers_v2::kNumHostPages; ++page)
             {
-                row.page.addItem(V2ParamDisplayNames::forHostPage(page), static_cast<int>(page) + 1);
+                row.page.addItem(V2DesktopPageDisplayNames::forHostPage(page), static_cast<int>(page) + 1);
             }
         }
         else if (row.kind == MidiCvTargetRowKind::Gate)
@@ -521,7 +521,7 @@ void MidiCvSettingsComponent::updateMappingReadbacks()
         const uint8_t page = static_cast<uint8_t>(uiRow.page.getSelectedId() - 1);
         const uint8_t row = static_cast<uint8_t>(uiRow.row.getValue());
         uiRow.readbackLabel.setText(
-            V2ParamDisplayNames::forHostPageRow(page, row), juce::dontSendNotification);
+            V2DesktopPageDisplayNames::forHostPageRow(page, row), juce::dontSendNotification);
         break;
     }
 
@@ -536,7 +536,7 @@ void MidiCvSettingsComponent::updateMappingReadbacks()
         {
             continue;
         }
-        const juce::String product = V2ParamDisplayNames::forHostPageRow(uiRow.targetPage, uiRow.targetRow);
+        const juce::String product = V2DesktopPageDisplayNames::forHostPageRow(uiRow.targetPage, uiRow.targetRow);
         if (uiRow.kind == MidiCvTargetRowKind::EncoderTurn)
         {
             uiRow.readbackLabel.setText(product + " · turn", juce::dontSendNotification);

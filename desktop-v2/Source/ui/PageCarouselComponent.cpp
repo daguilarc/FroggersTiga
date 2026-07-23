@@ -1,7 +1,7 @@
 #include "ui/PageCarouselComponent.hpp"
 
 #include "ui/DesktopV2ChromeLayout.hpp"
-#include "V2ParamDisplayNames.hpp"
+#include "V2DesktopPageDisplayNames.hpp"
 
 PageCarouselComponent::PageCarouselComponent()
 {
@@ -70,7 +70,7 @@ void PageCarouselComponent::advancePage(int delta)
 void PageCarouselComponent::updateTitle()
 {
     const juce::String title =
-        juce::String("Module: ") + V2ParamDisplayNames::forHostPage(m_page);
+        juce::String("Module: ") + V2DesktopPageDisplayNames::forHostPage(m_page);
     m_moduleTitle.setText(title, juce::dontSendNotification);
 }
 
