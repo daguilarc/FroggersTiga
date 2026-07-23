@@ -136,6 +136,34 @@ struct FroggersEngine
     static constexpr float x_pmLfoMaxHz = 20.0f;
     static constexpr float x_pmLfoDepth = 0.15f;
 
+    // D14 zero-off (operator 2026-07-23, "the knob's minimum position = PM
+    // fully OFF"): below/at x_pmLfoFloor the phase-mod depth is exactly zero
+    // (no modulation applied at all, independent of the LFO frequency that
+    // knob value would otherwise map to). From the floor up to
+    // x_pmLfoFloor + x_pmLfoRampWidth, depth ramps 0 -> 1 (smoothstep, for a
+    // click-free transition into audible PM); above that it is the normal
+    // fixed x_pmLfoDepth. FLAGGED FOR OPERATOR TUNING, same as the Hz/depth
+    // constants above -- chosen only to give the knob a real off position.
+    static constexpr float x_pmLfoFloor = 0.02f;
+    static constexpr float x_pmLfoRampWidth = 0.08f;
+
+    // Returns 0 at/below x_pmLfoFloor, 1 at/above x_pmLfoFloor +
+    // x_pmLfoRampWidth, smoothstep-interpolated between.
+    static float PmDepthScale(float pmKnobValue)
+    {
+        if (pmKnobValue <= x_pmLfoFloor)
+        {
+            return 0.0f;
+        }
+        const float rampTop = x_pmLfoFloor + x_pmLfoRampWidth;
+        if (pmKnobValue >= rampTop)
+        {
+            return 1.0f;
+        }
+        const float t = (pmKnobValue - x_pmLfoFloor) / x_pmLfoRampWidth;
+        return t * t * (3.0f - 2.0f * t);
+    }
+
     struct V2ModTapHooks
     {
         void (*processOsc)(float v1, float v2, float v3, void* ctx) = nullptr;
@@ -697,10 +725,12 @@ struct FroggersEngine
         if (m_simIndependentPm)
         {
             // D11/D12/D14 (V2 hosts only): no coupler, zero cross-VCO terms.
-            // Each VCO's phase is modulated by its own dedicated sine LFO.
-            pmOff1 = x_pmLfoDepth * StepIndependentPmLfo(m_pmLfoPh1, pm1d);
-            pmOff2 = x_pmLfoDepth * StepIndependentPmLfo(m_pmLfoPh2, pm2d);
-            pmOff3 = x_pmLfoDepth * StepIndependentPmLfo(m_pmLfoPh3, pm3d);
+            // Each VCO's phase is modulated by its own dedicated sine LFO,
+            // gated to exactly zero depth at/below the knob's zero-off floor
+            // (PmDepthScale) so the knob's minimum position is truly inert.
+            pmOff1 = x_pmLfoDepth * PmDepthScale(pm1d) * StepIndependentPmLfo(m_pmLfoPh1, pm1d);
+            pmOff2 = x_pmLfoDepth * PmDepthScale(pm2d) * StepIndependentPmLfo(m_pmLfoPh2, pm2d);
+            pmOff3 = x_pmLfoDepth * PmDepthScale(pm3d) * StepIndependentPmLfo(m_pmLfoPh3, pm3d);
         }
         else
         {

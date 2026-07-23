@@ -1,6 +1,7 @@
 #include "HostParameterInventoryV2.hpp"
 #include "HostParameterRoutingV2.hpp"
 #include "HostParameterStateEnvelopeV2.hpp"
+#include "manifest/FroggersV2AppManifest.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -185,6 +186,32 @@ bool test_vco_morph_defaults()
     return true;
 }
 
+// Task 7.8 (D13d, operator 2026-07-23): the three VCO waveform-morph controls
+// are labeled "Shape" (desktop-v2-scoped display name only -- the internal
+// VcoMorph axis/stableId ("vco_morph%u") are unchanged, and the shared
+// v1-desktop table (desktop/Source/HostParameterRegistry.cpp) still says
+// "morph", which is correct: that path is out of this task's scope).
+bool test_vco_morph_display_name_is_shape()
+{
+    for (uint8_t i = 0; i < HostParameterInventoryV2::kMorphCount; ++i)
+    {
+        char buffer[64];
+        froggers_v2::manifest::formatInventoryDisplayName(
+            buffer, sizeof(buffer), HostParameterInventoryV2::Axis::VcoMorph, 0, 0, i);
+        const std::string expected = "Global/VCO" + std::to_string(i + 1) + " Shape";
+        if (expected != buffer)
+        {
+            std::printf(
+                "FAIL: VCO morph %u displayName expected \"%s\" got \"%s\"\n",
+                static_cast<unsigned>(i),
+                expected.c_str(),
+                buffer);
+            return false;
+        }
+    }
+    return true;
+}
+
 bool test_no_pair_ar_axis()
 {
     for (size_t i = 0; i < HostParameterInventoryV2::kCount; ++i)
@@ -321,6 +348,7 @@ constexpr NamedTest kTests[] = {
     {"test_pending_coalescing_latest_wins", test_pending_coalescing_latest_wins},
     {"test_global_crunchy_routing", test_global_crunchy_routing},
     {"test_vco_morph_defaults", test_vco_morph_defaults},
+    {"test_vco_morph_display_name_is_shape", test_vco_morph_display_name_is_shape},
     {"test_no_pair_ar_axis", test_no_pair_ar_axis},
     {"test_no_sus_stable_ids", test_no_sus_stable_ids},
     {"test_state_envelope_tail_round_trip_keyed_by_stable_id",

@@ -17,6 +17,10 @@
 //     (Contrast with flag OFF, where the coupler is still what gates PM: at
 //     the default center XCPL knob, PM has zero effect -- unaffected by this
 //     packet, since flag OFF is provably unchanged; see check 1.)
+//  4. Flag ON: PM zero-off (D14, operator 2026-07-23) -- the knob's minimum
+//     position (and a small floor above it) produce EXACTLY zero phase-mod
+//     depth (bit-identical output across the whole sub-floor sweep, not just
+//     "quiet"), and comfortably above the floor PM is clearly active again.
 
 #include "PagedHostIO.hpp"
 
@@ -161,6 +165,99 @@ static bool test_flag_on_coupler_fully_neutralized()
     return true;
 }
 
+// D14 zero-off (operator 2026-07-23): the PM knob's minimum position must be
+// PM fully OFF. Below/at a small floor (mirrors FroggersEngine.hpp's
+// x_pmLfoFloor -- not exposed publicly, so hardcoded here; keep in sync) the
+// phase-mod depth must be EXACTLY zero, regardless of the differing LFO
+// frequency each sub-floor knob value maps to. Proof: sweep PM1A across
+// several distinct sub-floor values (0.0, 0.01, the floor itself) with PM2/PM3
+// held at an audibly-active setting; if depth were merely small instead of
+// exactly zero, differing frequencies would still produce differing output.
+// Identical output across the whole sub-floor sweep is the only way to show
+// depth == 0, not just "quiet."
+static bool test_flag_on_pm_inert_at_knob_minimum()
+{
+    static constexpr float kFloor = 0.02f; // mirrors x_pmLfoFloor
+
+    std::vector<float> input(kBlockV2, 0.0f);
+    std::vector<float> outAtZero(kBlockV2);
+    std::vector<float> outAtNearZero(kBlockV2);
+    std::vector<float> outAtFloor(kBlockV2);
+
+    auto render = [&](float pm1, std::vector<float>& out) {
+        PagedHostIO io;
+        io.m_hostKind = SimHostKind::DesktopV2;
+        io.Init();
+        io.m_pageManager.SetAllParamsTracking(); // see note in test 1 above
+        io.SetSampleRate(44100.0f);
+        io.SetGate(true);
+        seedAudioKnobs(io, 0.5f, pm1, 0.65f, 0.5f);
+        io.ProcessBlock(input.data(), out.data(), kBlockV2);
+    };
+
+    render(0.0f, outAtZero);
+    render(0.01f, outAtNearZero);
+    render(kFloor, outAtFloor);
+
+    bool ok = true;
+    const double diffNearZero = rmsDiff(outAtZero, outAtNearZero);
+    if (diffNearZero > 1.0e-7)
+    {
+        std::printf(
+            "FAIL: PM knob at 0.0 vs 0.01 (both sub-floor) should be bit-identical (depth==0), got diffRms=%.9g\n",
+            diffNearZero);
+        ok = false;
+    }
+    const double diffAtFloor = rmsDiff(outAtZero, outAtFloor);
+    if (diffAtFloor > 1.0e-7)
+    {
+        std::printf(
+            "FAIL: PM knob at 0.0 vs floor (%.3g) should be bit-identical (depth==0), got diffRms=%.9g\n",
+            kFloor,
+            diffAtFloor);
+        ok = false;
+    }
+    return ok;
+}
+
+// Complements test_flag_on_pm_inert_at_knob_minimum: comfortably above the
+// floor, PM must be clearly active again (not stuck at zero forever).
+static bool test_flag_on_pm_active_above_floor()
+{
+    std::vector<float> input(kBlockV2, 0.0f);
+    std::vector<float> outAtFloor(kBlockV2);
+    std::vector<float> outAboveFloor(kBlockV2);
+
+    {
+        PagedHostIO io;
+        io.m_hostKind = SimHostKind::DesktopV2;
+        io.Init();
+        io.m_pageManager.SetAllParamsTracking(); // see note in test 1 above
+        io.SetSampleRate(44100.0f);
+        io.SetGate(true);
+        seedAudioKnobs(io, 0.5f, 0.02f, 0.65f, 0.5f);
+        io.ProcessBlock(input.data(), outAtFloor.data(), kBlockV2);
+    }
+    {
+        PagedHostIO io;
+        io.m_hostKind = SimHostKind::DesktopV2;
+        io.Init();
+        io.m_pageManager.SetAllParamsTracking(); // see note in test 1 above
+        io.SetSampleRate(44100.0f);
+        io.SetGate(true);
+        seedAudioKnobs(io, 0.5f, 0.5f, 0.65f, 0.5f);
+        io.ProcessBlock(input.data(), outAboveFloor.data(), kBlockV2);
+    }
+
+    const double diff = rmsDiff(outAtFloor, outAboveFloor);
+    if (diff < 1.0e-4)
+    {
+        std::printf("FAIL: PM well above the floor should be clearly active vs at-floor, got diffRms=%.9g\n", diff);
+        return false;
+    }
+    return true;
+}
+
 static bool test_flag_on_pm_is_not_inert()
 {
     std::vector<float> input(kBlockV2, 0.0f);
@@ -209,6 +306,14 @@ int main()
         ++fails;
     }
     if (!test_flag_on_pm_is_not_inert())
+    {
+        ++fails;
+    }
+    if (!test_flag_on_pm_inert_at_knob_minimum())
+    {
+        ++fails;
+    }
+    if (!test_flag_on_pm_active_above_floor())
     {
         ++fails;
     }

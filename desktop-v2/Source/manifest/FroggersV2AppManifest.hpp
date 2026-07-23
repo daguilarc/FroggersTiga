@@ -140,7 +140,12 @@ inline void formatInventoryDisplayName(char* buffer,
             std::snprintf(buffer, capacity, "Global/Crunchy");
             break;
         case HostParameterInventoryV2::Axis::VcoMorph:
-            std::snprintf(buffer, capacity, "Global/VCO%u morph", static_cast<unsigned>(index + 1));
+            // Task 7.8 (D13d, operator 2026-07-23): desktop-v2-scoped display
+            // name relabel "morph" -> "Shape". Internal axis/stableId
+            // ("vco_morph%u") unchanged; v1-desktop's own copy of this label
+            // (desktop/Source/HostParameterRegistry.cpp) is out of scope and
+            // intentionally still says "morph".
+            std::snprintf(buffer, capacity, "Global/VCO%u Shape", static_cast<unsigned>(index + 1));
             break;
         case HostParameterInventoryV2::Axis::Sequencer:
             switch (index)

@@ -69,8 +69,10 @@ inline constexpr std::array<std::array<const char*, 3>, 4> kExpansionTailRowLabe
 
 // Audio (UI page 0) only: 7 rows post-D11 (3 pitch + 3 PM + Crispy). The
 // Cross-coupler row is gone; PM1/PM2/PM3/Crispy each moved up one UI row from
-// their pre-7.4 position. (Task 7.8 will label VCO1/2/3 morphs "Shape" -- not
-// done here, per operator scope note.)
+// their pre-7.4 position. (Task 7.8: the VCO1/2/3 waveform-morph controls are
+// a separate VcoMorph axis, not a row in this PageKnob-indexed grid -- they
+// are labeled "Shape" in manifest/FroggersV2AppManifest.hpp's
+// formatInventoryDisplayName(), the display-name authority for that axis.)
 inline constexpr std::array<const char*, 7> kAudioRowLabels{{
     "VCO1", "VCO2", "VCO3", "Phase mod 1", "Phase mod 2", "Phase mod 3", "Crispy",
 }};
