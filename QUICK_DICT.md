@@ -34,7 +34,7 @@ Crunchy — Global fuego on all pages and all Crispy instances (web global strip
 
 Transport / signal band — **Play**, **Stop**, **Record audio**, and the **global oscilloscope** (persistent across carousel and runtime pages)
 Global-command band — **Rand All**, **Rand Mods**, **Rand waveforms**, **Rand Resample**, **Crunchy** label + ring; scene/step scope radio pairs directly below **Rand All** and **Rand Mods**
-Global oscilloscope — Shell-level signal monitor in the transport band; default three color-coded VCO traces; source-group switching for LFO, pair buses, EFs, Random S&H, External Audio when inspected; samples come from the shared fifteen-lane CV history (one GetCvOut push per UI tick); separate from per-row CV LEDs and MOD drill-in
+Global oscilloscope — Shell-level signal monitor in the transport band; default three color-coded VCO traces; source-group switching for LFO EF, pair buses, EFs, Random S&H, External Audio when inspected; samples come from the shared fifteen-lane CV history (one GetCvOut push per UI tick); separate from per-row CV LEDs and MOD drill-in
 Parameter detail underlay — Display-only source-activity waveform under each detail-grid depth encoder (manifest lane color); Target (Back) has none; same history store as the global oscilloscope; does not change ParamTurn / ModDrillIn hit targets
 All Scenes / Current Scene — Randomization scope under **Rand All**: write all three scene slots per row vs only the active scene edit target; preserves L/R endpoint picks and blend slider
 All Steps / Current Step — Randomization scope under **Rand Mods**: all 16 sequencer indices vs playhead (playing) or edit step (stopped)
@@ -57,9 +57,9 @@ VCO 2 EF — VCO 2 envelope follower
 VCO 3 EF — VCO 3 envelope follower
 VCO 1+2 EF — Adjacent-pair envelope follower
 VCO 2+3 EF — Adjacent-pair envelope follower
-LFO 1 — LFO module output 1
-LFO 2 — LFO module output 2
-LFO 3 — LFO module output 3
+LFO EF 1 — Slow (LFO-rate) VCO envelope-follower tap 1
+LFO EF 2 — Slow (LFO-rate) VCO envelope-follower tap 2
+LFO EF 3 — Slow (LFO-rate) VCO envelope-follower tap 3
 Random S&H 1 — Random stepped source 1 (resample with **Rand Resample**; inspired by Mutable Instruments Marbles)
 Random S&H 2 — Random stepped source 2 (resample with **Rand Resample**)
 External Audio (audio rate) — External input audio-rate lane; visible but unavailable when input off

@@ -225,7 +225,7 @@ The global oscilloscope stays visible across carousel modules and runtime pages.
 | **Module carousel** | **Module:** header switches FX blocks: Audio → Reverb → Filter → Drive → Delay → **Pair-AR** (Envelope). Left/right arrows wrap 0↔5. Random S&H has no module page — it is a modulation lane only. Audio/VCO is the default launch page. |
 | **Runtime rail** | Right-side **File**, **Audio**, and **MIDI** buttons toggle setup pages without replacing carousel arrows. **File/Patch** — save/load/revert and patch identity. **Audio** — devices, channels, sample rate, external input, meters. **MIDI** — controller mappings, connection state, fan-out summary. |
 
-**Audio/VCO** exposes VCO1–VCO3 frequency and **waveform morph** controls (click waveform icons), **cross-coupler** routing (product contract: separate VCO 1/2 and VCO 2/3 couplers; legacy single **Cross-coupler** row remains on web), and phase-mod rows.
+**Audio/VCO** exposes VCO1–VCO3 frequency and **waveform morph** controls (click waveform icons) and phase-mod rows. Desktop v2 has **no cross-coupler** — the coupler is removed entirely; each **Phase mod** row is a self-contained sine LFO on its own VCO. The legacy single **Cross-coupler** row remains on **web** (and Daisy/v1).
 
 ### Module vs Scene
 
@@ -262,7 +262,7 @@ Every eligible parameter exposes the same fifteen source lanes in parameter deta
 |------|------|
 | 1–3 | **VCO 1+2**, **VCO 2+3**, **VCO 1+3** (audio-rate pair buses; raw per-VCO audio lanes absent) |
 | 4–8 | **VCO 1 EF**, **VCO 2 EF**, **VCO 3 EF**, **VCO 1+2 EF**, **VCO 2+3 EF** |
-| 9–11 | **LFO 1**, **LFO 2**, **LFO 3** |
+| 9–11 | **LFO EF 1**, **LFO EF 2**, **LFO EF 3** |
 | 12–13 | **Random S&H 1**, **Random S&H 2** |
 | 14–15 | **External Audio (audio rate)**, **External Audio (envelope follower)** — visible but unavailable when external input is off |
 
