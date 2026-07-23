@@ -95,13 +95,32 @@ inline uint8_t pmPageForUiPage(uint8_t page)
     return static_cast<uint8_t>(page + 1);
 }
 
+// Task 7.4 (D11/D14): the Cross-coupler UI row was removed from the desktop-v2
+// Audio page, but its underlying shared-engine XCPL param slot (engine row 3)
+// is kept allocated for Daisy/v1 index stability -- it is only hidden from
+// this V2 UI and neutralized in the flag-gated DSP. That leaves the Audio
+// UI-row numbering (0..6: 3 pitch, 3 PM, Crispy) offset by one engine row
+// from PM1A/PM2A/OLVL(PM3)/FUEG(engine rows 4/5/6/7) once past the pitch
+// rows. This is the single place that translates a desktop-v2 Audio UI row
+// into the engine row it actually reads/writes; every accessor below (and
+// any other direct engine-param access keyed by UI page/row) must route
+// through this so the hidden XCPL slot is skipped consistently.
+inline uint8_t engineRowForUiRow(uint8_t uiPage, uint8_t uiRow)
+{
+    if (uiPage == 0 && uiRow >= 3)
+    {
+        return static_cast<uint8_t>(uiRow + 1);
+    }
+    return uiRow;
+}
+
 inline float readPageKnob(uint8_t uiPage, uint8_t row, DesktopHostIO& host, DelayState& delay)
 {
     if (isDelayUiPage(uiPage))
     {
         return delay.getKnob(row);
     }
-    return host.GetPageParam(pmPageForUiPage(uiPage), row);
+    return host.GetPageParam(pmPageForUiPage(uiPage), engineRowForUiRow(uiPage, row));
 }
 
 inline void applyPageKnob(uint8_t uiPage, uint8_t row, float value, DesktopHostIO& host, DelayState& delay)
@@ -111,7 +130,7 @@ inline void applyPageKnob(uint8_t uiPage, uint8_t row, float value, DesktopHostI
         delay.setKnob(row, value);
         return;
     }
-    host.SetPageKnob(pmPageForUiPage(uiPage), row, value);
+    host.SetPageKnob(pmPageForUiPage(uiPage), engineRowForUiRow(uiPage, row), value);
 }
 
 inline float readPageModDepth(uint8_t uiPage, uint8_t row, DesktopHostIO& host, DelayState& delay)
@@ -120,7 +139,7 @@ inline float readPageModDepth(uint8_t uiPage, uint8_t row, DesktopHostIO& host, 
     {
         return delay.getModDepth(row);
     }
-    return host.GetPageModDepth(pmPageForUiPage(uiPage), row);
+    return host.GetPageModDepth(pmPageForUiPage(uiPage), engineRowForUiRow(uiPage, row));
 }
 
 inline uint8_t readPageModSource(uint8_t uiPage, uint8_t row, DesktopHostIO& host, DelayState* delay)
@@ -129,7 +148,7 @@ inline uint8_t readPageModSource(uint8_t uiPage, uint8_t row, DesktopHostIO& hos
     {
         return delay != nullptr ? delay->getModSource(row) : static_cast<uint8_t>(255);
     }
-    return host.GetPageModSource(pmPageForUiPage(uiPage), row);
+    return host.GetPageModSource(pmPageForUiPage(uiPage), engineRowForUiRow(uiPage, row));
 }
 
 inline void applyPageModSource(uint8_t uiPage,
@@ -146,7 +165,7 @@ inline void applyPageModSource(uint8_t uiPage,
         }
         return;
     }
-    host.SetPageModSource(pmPageForUiPage(uiPage), row, modIndex);
+    host.SetPageModSource(pmPageForUiPage(uiPage), engineRowForUiRow(uiPage, row), modIndex);
 }
 
 inline void applyPageModDepth(uint8_t uiPage, uint8_t row, float value, DesktopHostIO& host, DelayState& delay)
@@ -156,7 +175,7 @@ inline void applyPageModDepth(uint8_t uiPage, uint8_t row, float value, DesktopH
         delay.setModDepth(row, value);
         return;
     }
-    host.SetPageModDepth(pmPageForUiPage(uiPage), row, value);
+    host.SetPageModDepth(pmPageForUiPage(uiPage), engineRowForUiRow(uiPage, row), value);
 }
 
 inline float readValue(const HostParameterInventoryV2::RuntimeDescriptor& entry,

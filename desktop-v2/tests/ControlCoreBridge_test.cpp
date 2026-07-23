@@ -218,7 +218,8 @@ bool test_visible_rows_match_page()
 {
     FroggersV2ControlCore core;
 
-    constexpr uint8_t kAudioRows = 8;
+    // Task 7.4 (D11/D14): Cross-coupler row removed (3 pitch + 3 PM + Crispy).
+    constexpr uint8_t kAudioRows = 7;
     if (core.visibleCount() != kAudioRows)
     {
         std::printf(
@@ -616,7 +617,11 @@ bool test_rand_mod_syncs_host_mod_routes()
 
     for (uint8_t row = 0; row < HostParameterInventoryV2::rowsForUiPage(0); ++row)
     {
-        const uint8_t hostMod = host.GetPageModSource(0, row);
+        // Audio UI row >= 3 skips over the hidden-but-still-allocated engine
+        // XCPL slot (task 7.4 / D11 / D14) -- translate before touching the
+        // raw engine param, same as HostParameterRoutingV2's accessors do.
+        const uint8_t hostMod =
+            host.GetPageModSource(0, HostParameterRoutingV2::engineRowForUiRow(0, row));
         uint8_t expectedInternal = froggers_v2::kNoSelection;
         if (hostMod < froggers_v2::kNumModSources)
         {

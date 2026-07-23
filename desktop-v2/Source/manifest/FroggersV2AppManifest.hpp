@@ -1035,7 +1035,9 @@ inline std::string buildSnapshotJson()
     out << "    \"oscilloscopeTaps\": " << kOscilloscopeTaps.size() << ",\n";
     out << "    \"productContract\": {\n";
     out << "      \"defaultModulePage\": \"audio_vco\",\n";
-    out << "      \"crossCouplers\": [\"vco_12\", \"vco_23\"],\n";
+    // Task 7.4 (D11/D14): the coupler is removed entirely for the V2 host --
+    // no crossCouplers entry is emitted (Daisy/v1 keep it functioning; that
+    // path is untouched shared-engine code the V2-only manifest never described).
     out << "      \"envelopePage\": {\"vcoAttackReleasePairs\": true},\n";
     out << "      \"waveformMorphControls\": true,\n";
     out << "      \"lfoModule\": {\"firstClass\": true, \"firstClassSourceParticipation\": true},\n";

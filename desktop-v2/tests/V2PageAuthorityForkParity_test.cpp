@@ -2,14 +2,19 @@
 //
 // desktop-v2/Source/V2DesktopPageDisplayNames.hpp (6 pages, no Random module page)
 // is a deliberate fork of the shared sim/V2ParamDisplayNames.hpp (7 pages incl.
-// Random), pending the web-v2 reconciliation. The fork is intentional ONLY on the
-// Random page; every OTHER page (Audio + Reverb/Filter/Drive/Delay + Pair-AR) must
-// stay byte-identical across the two tables. This test asserts that agreement so a
-// future edit to one table that forgets the other is caught before web-v2 migration.
+// Random), pending the web-v2 reconciliation. Originally the fork was intentional
+// ONLY on the Random page (D10); task 7.4 (D11/D12/D14, operator 2026-07-23) widened
+// it to Audio too -- desktop-v2 removes the Cross-coupler row from its Audio page
+// (flag-gated to V2 hosts only; the shared engine XCPL param slot is retained, not
+// deleted, for Daisy/v1 index stability), while the shared table + web V2 host keep
+// Cross-coupler unchanged. Every OTHER page (Reverb/Filter/Drive/Delay + Pair-AR)
+// must still stay byte-identical across the two tables. This test asserts that
+// agreement (Audio excluded) so a future edit to one table that forgets the other
+// is caught before web-v2 migration.
 //
 // Page-index mapping (desktop UI page -> shared 7-page index; the shared table has
 // Random at index 1, so everything after Audio is shifted by one):
-//   Audio  desktop 0 <-> shared 0
+//   Audio  desktop 0 <-> shared 0   (EXCLUDED -- Cross-coupler fork, D11/D14)
 //   Reverb desktop 1 <-> shared 2
 //   Filter desktop 2 <-> shared 3
 //   Drive  desktop 3 <-> shared 4
@@ -32,8 +37,9 @@ struct PagePair
     const char* name;
 };
 
+// Audio (desktop 0 <-> shared 0) is deliberately excluded (see file header):
+// task 7.4 forked it too, removing the Cross-coupler row from desktop-v2 only.
 constexpr PagePair kSharedPages[] = {
-    {0, 0, "Audio"},
     {1, 2, "Reverb"},
     {2, 3, "Filter"},
     {3, 4, "Drive"},

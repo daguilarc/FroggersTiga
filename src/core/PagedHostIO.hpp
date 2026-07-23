@@ -70,6 +70,7 @@ struct PagedHostIO
             m_engine.SetVcoAdsrState(nullptr, nullptr);
         }
         m_engine.SetUseV2FilterParallel(UsesV2Fuego(m_hostKind));
+        m_engine.SetSimIndependentPm(UsesV2Fuego(m_hostKind));
         m_engine.SetSimWaveMorph(true);
         m_engine.SetSimDedicatedPm3Knob(true);
         m_pageManager.Finalize();

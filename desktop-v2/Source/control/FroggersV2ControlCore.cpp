@@ -88,7 +88,8 @@ uint8_t FroggersV2ControlCore::crispyRowForPage(uint8_t page)
 {
     if (page == 0)
     {
-        return 7;
+        // Task 7.4 (D11/D14): Cross-coupler row removed, Crispy moved from row 7 to row 6.
+        return 6;
     }
     if (page == 6)
     {
@@ -1185,7 +1186,8 @@ uint8_t FroggersV2ControlCore::rowsForPage(uint8_t page) const
 {
     if (page == 0)
     {
-        return 8;
+        // Task 7.4 (D11/D14): Cross-coupler row removed (3 pitch + 3 PM + Crispy).
+        return 7;
     }
     if (page == 5)
     {

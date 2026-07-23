@@ -19,7 +19,9 @@
 #endif
 
 #ifndef FROGGERS_EXPECT_HOST_PARAM_COUNT_V2
-#define FROGGERS_EXPECT_HOST_PARAM_COUNT_V2 122
+// Task 7.4 (D11/D14): Cross-coupler axes removed from the Audio page (1 page
+// knob + 1 page mod depth), so 122 -> 120.
+#define FROGGERS_EXPECT_HOST_PARAM_COUNT_V2 120
 #endif
 
 namespace

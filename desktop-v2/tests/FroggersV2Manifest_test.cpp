@@ -256,14 +256,22 @@ int main()
         return 1;
     }
     if (!contains(snapshot, "\"defaultModulePage\": \"audio_vco\"")
-        || !contains(snapshot, "\"crossCouplers\"") || !contains(snapshot, "\"vco_12\"")
-        || !contains(snapshot, "\"vco_23\"") || !contains(snapshot, "\"envelopePage\"")
+        || !contains(snapshot, "\"envelopePage\"")
         || !contains(snapshot, "\"vcoAttackReleasePairs\"") || !contains(snapshot, "\"waveformMorphControls\"")
         || !contains(snapshot, "\"lfoModule\"") || !contains(snapshot, "\"globalRandomizationScopes\"")
         || !contains(snapshot, "\"deviceNeutralClearStep\"") || !contains(snapshot, "\"sequencerLocks\"")
         || !contains(snapshot, "\"optionalMidiClockSync\"") || !contains(snapshot, "\"heldGestures\": false"))
     {
         std::printf("FAIL: manifest snapshot is missing required Froggers v2 product contract entries\n");
+        return 1;
+    }
+    // Task 7.4 (D11/D14): the coupler is removed entirely for the V2 host -- the
+    // manifest must NOT emit a crossCouplers declaration (or its vco_12/vco_23 IDs)
+    // any more.
+    if (contains(snapshot, "\"crossCouplers\"") || contains(snapshot, "\"vco_12\"")
+        || contains(snapshot, "\"vco_23\""))
+    {
+        std::printf("FAIL: manifest snapshot still emits removed crossCouplers declaration\n");
         return 1;
     }
     if (!contains(snapshot, "\"validation\"") || !contains(snapshot, "\"duplicateStableIds\"")

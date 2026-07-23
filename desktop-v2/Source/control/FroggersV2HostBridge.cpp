@@ -154,12 +154,13 @@ void FroggersV2HostBridge::syncModRoutes(uint8_t page, uint8_t row, ModRouteDire
     {
         const bool externalAudioAvailable = m_core.externalAudioAvailable();
         const uint8_t pmPage = HostParameterRoutingV2::pmPageForUiPage(page);
+        const uint8_t engineRow = HostParameterRoutingV2::engineRowForUiRow(page, row);
         for (uint8_t lane = 0; lane < PermanentModTapRack::kNumTaps; ++lane)
         {
             const bool assignable = froggers_v2::manifest::isModLaneAssignable(
                 page, row, lane, externalAudioAvailable);
             const float laneDepthValue = assignable ? m_core.laneDepth(page, row, lane) : 0.0f;
-            m_host.SetPageLaneDepth(pmPage, row, lane, laneDepthValue);
+            m_host.SetPageLaneDepth(pmPage, engineRow, lane, laneDepthValue);
         }
     }
 

@@ -319,6 +319,7 @@ struct DesktopHostIO
             m_engine.SetVcoAdsrState(nullptr, nullptr);
         }
         m_engine.SetUseV2FilterParallel(UsesV2Fuego(m_hostKind));
+        m_engine.SetSimIndependentPm(UsesV2Fuego(m_hostKind));
         if (m_delay)
         {
             m_delay->setUseV2Layout(UsesV2Fuego(m_hostKind));

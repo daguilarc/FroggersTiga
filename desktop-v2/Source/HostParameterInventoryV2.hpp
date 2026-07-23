@@ -10,12 +10,17 @@
 #include <cstring>
 
 // VST v2 host parameter inventory (OpenSpec §6.2). Dual stableId + displayName per entry.
-// kCount = 122: 142 (pre-Random-deletion) minus 20 removed Random S&H module-page axes
-// (10 page knobs + 10 page mod depths on the former UI page 1). Random S&H 1/2 survive as
-// modulation lanes only; the shared engine Marbles page is retained (not host-exposed) so
-// the Random S&H mod sources still run at their default knob values (Sheaf-style defaults).
-// Desktop-v2 page labels now come from V2DesktopPageDisplayNames (the D10 fork), not the
-// shared 7-page V2ParamDisplayNames used by the web/wasm V2 host and v1.
+// kCount = 120: 142 (pre-Random-deletion) minus 20 removed Random S&H module-page axes
+// (10 page knobs + 10 page mod depths on the former UI page 1) minus 2 removed Cross-coupler
+// axes (1 page knob + 1 page mod depth on Audio row 3, task 7.4 / D11 / D14, V2-hosts-only).
+// Random S&H 1/2 survive as modulation lanes only; the shared engine Marbles page is retained
+// (not host-exposed) so the Random S&H mod sources still run at their default knob values
+// (Sheaf-style defaults). The shared engine XCPL param slot is likewise retained (not
+// host-exposed here) for Daisy/v1 index stability -- see FroggersEngine.hpp's
+// m_simIndependentPm flag and HostParameterRoutingV2.hpp's engineRowForUiRow().
+// Desktop-v2 page labels now come from V2DesktopPageDisplayNames (the D10 fork, widened by
+// D11/D14 to also drop Audio's Cross-coupler row), not the shared 7-page V2ParamDisplayNames
+// used by the web/wasm V2 host and v1.
 namespace HostParameterInventoryV2
 {
 constexpr uint8_t kNumUiPages = 6;
@@ -33,7 +38,8 @@ constexpr uint8_t rowsForUiPage(uint8_t page)
 {
     if (page == 0)
     {
-        return 8;
+        // Task 7.4 (D11/D14): Cross-coupler row removed (3 pitch + 3 PM + Crispy).
+        return 7;
     }
     if (page == kAdsrUiPage)
     {

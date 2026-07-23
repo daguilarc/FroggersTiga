@@ -112,6 +112,30 @@ struct FroggersEngine
     PairArEnvelope m_pair23;
     bool m_useV2FilterParallel = false;
 
+    // D11/D12/D14 (task 7.4): V2-hosts-only (desktop-v2 + web) flag. Daisy/v1
+    // never set this (default false), so their StepOscillators path is the
+    // untouched, coupler-gated legacy branch below. When true: no XCPL
+    // coupler terms at all (c12/c23 dropped entirely); each VCO's phase is
+    // instead modulated by its own dedicated sine LFO running at a frequency
+    // derived from that VCO's PM knob value, with a fixed modulation index
+    // (see x_pmLfoDepth -- an implementer default, flagged for operator
+    // tuning). No self-feedback, no cross-VCO terms.
+    bool m_simIndependentPm = false;
+    float m_pmLfoPh1 = 0.0f;
+    float m_pmLfoPh2 = 0.0f;
+    float m_pmLfoPh3 = 0.0f;
+
+    // Implementer defaults for the self-contained PM sine LFO (D14 "resolved"
+    // note: "phase-mod index/depth is an implementer default, flag it for
+    // later tuning"). PM knob value (0..1, already ZeroedExp-curved by
+    // ReadParamsBlock) maps exponentially across this Hz range; the sine's
+    // peak phase excursion is x_pmLfoDepth cycles. FLAGGED FOR OPERATOR
+    // TUNING -- untested against the musical target, chosen only to make the
+    // knob audibly effective end-to-end.
+    static constexpr float x_pmLfoMinHz = 0.05f;
+    static constexpr float x_pmLfoMaxHz = 20.0f;
+    static constexpr float x_pmLfoDepth = 0.15f;
+
     struct V2ModTapHooks
     {
         void (*processOsc)(float v1, float v2, float v3, void* ctx) = nullptr;
@@ -201,6 +225,11 @@ struct FroggersEngine
     void SetUseV2FilterParallel(bool enabled)
     {
         m_useV2FilterParallel = enabled;
+    }
+
+    void SetSimIndependentPm(bool enabled)
+    {
+        m_simIndependentPm = enabled;
     }
 
     void SetV2ModTapLayout(bool enabled, V2ModTapHooks hooks)
@@ -630,13 +659,22 @@ struct FroggersEngine
         }
     }
 
+    // D14 self-contained PM (V2-only, flag-on): advances one VCO's dedicated
+    // PM LFO by one sample and returns its current (pre-advance) sine value.
+    // pmKnobValue (0..1, already ZeroedExp-curved) maps exponentially to a
+    // frequency in [x_pmLfoMinHz, x_pmLfoMaxHz]; the LFO phase is completely
+    // independent of the VCO's own phase (no self-feedback, no cross-VCO
+    // terms).
+    float StepIndependentPmLfo(float& lfoPhase, float pmKnobValue)
+    {
+        const float hz = x_pmLfoMinHz * std::pow(x_pmLfoMaxHz / x_pmLfoMinHz, pmKnobValue);
+        const float lfoValue = SDDSine::Evaluate(lfoPhase);
+        lfoPhase = WrapPhase(lfoPhase + hz / m_sampleRate);
+        return lfoValue;
+    }
+
     std::tuple<float, float, float> StepOscillators(float fuegKnob)
     {
-        float xc = m_xcpl.Process();
-        float centered = 2.0f * xc - 1.0f;
-        float c12 = (centered < 0.0f) ? CouplingMagnitude(xc) : 0.0f;
-        float c23 = (0.0f < centered) ? CouplingMagnitude(xc) : 0.0f;
-
         float pm1d = m_pm1.Process();
         float pm2d = m_pm2.Process();
         float pm3d = m_simDedicatedPm3Knob ? m_pm3.Process() : ZeroedExp(fuegKnob);
@@ -653,9 +691,28 @@ struct FroggersEngine
         float u2 = m_simWaveMorph ? EvalWaveMorph(m_ph2, morph2) : EvalWave(m_ph2, m_vco2Wave);
         float u3 = m_simWaveMorph ? EvalWaveMorph(m_ph3, morph3) : SDDSine::Evaluate(m_ph3);
 
-        float pmOff1 = pm1d * c12 * u2;
-        float pmOff2 = pm2d * (c12 * u1 + c23 * u3);
-        float pmOff3 = pm3d * c23 * u2;
+        float pmOff1;
+        float pmOff2;
+        float pmOff3;
+        if (m_simIndependentPm)
+        {
+            // D11/D12/D14 (V2 hosts only): no coupler, zero cross-VCO terms.
+            // Each VCO's phase is modulated by its own dedicated sine LFO.
+            pmOff1 = x_pmLfoDepth * StepIndependentPmLfo(m_pmLfoPh1, pm1d);
+            pmOff2 = x_pmLfoDepth * StepIndependentPmLfo(m_pmLfoPh2, pm2d);
+            pmOff3 = x_pmLfoDepth * StepIndependentPmLfo(m_pmLfoPh3, pm3d);
+        }
+        else
+        {
+            // Legacy Daisy/v1 path (D14 flag-off) -- byte-for-byte unchanged.
+            float xc = m_xcpl.Process();
+            float centered = 2.0f * xc - 1.0f;
+            float c12 = (centered < 0.0f) ? CouplingMagnitude(xc) : 0.0f;
+            float c23 = (0.0f < centered) ? CouplingMagnitude(xc) : 0.0f;
+            pmOff1 = pm1d * c12 * u2;
+            pmOff2 = pm2d * (c12 * u1 + c23 * u3);
+            pmOff3 = pm3d * c23 * u2;
+        }
 
         float ph1 = WrapPhase(m_ph1 + pmOff1);
         float ph2 = WrapPhase(m_ph2 + pmOff2);
