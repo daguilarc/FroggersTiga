@@ -174,7 +174,7 @@ Release 2+3 — Pair-sum release (VCO2+VCO3) — web Audio pair-AR
 
 ## Random S&H (modulation lanes)
 
-Desktop v2 has **no Random S&H module page** — the Step chance / Deja vu / Bag size / Slew / Spread / Bias knobs were deleted. Random S&H 1/2 survive as modulation-lane sources only: fixed Sheaf-style defaults, a ganged random-LFO visualizer on their mod-depth cells, resampled with **Rand Resample**. See the Random S&H 1/2 mod-source entries above.
+Desktop v2 has **no Random S&H module page** — the Step chance / Deja vu / Bag size / Slew / Spread / Bias knobs were deleted. Random S&H 1/2 survive as modulation-lane sources only: fixed Sheaf-style defaults, resampled with **Rand Resample**; a ganged random-LFO visualizer is vendored and attached to their mod-depth cells in a later step. See the Random S&H 1/2 mod-source entries above.
 
 ## Reverb
 

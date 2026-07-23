@@ -386,7 +386,27 @@ bool AudioEngine::shouldDrainPendingUiMutations() const
 
 void AudioEngine::notifyStateRestored()
 {
+    dropDeletedRandomPageAxes();
     m_stateRestoreGeneration.fetch_add(1, std::memory_order_relaxed);
+}
+
+void AudioEngine::dropDeletedRandomPageAxes()
+{
+    // Locked preset-migration policy (design.md "Locked defaults", D5; task 4.4):
+    // silently drop the deleted Random S&H module-page axes on load, no remap.
+    // Desktop-v2 deleted that page, but the C2 seam keeps the shared engine Marbles
+    // page at PM index 1 to drive the surviving Random S&H 1/2 mod lanes. Every
+    // desktop-v2 restore path funnels through notifyStateRestored() right after
+    // SimPresetSnapshot::read, and the shared raw blob restores stale bag values
+    // (Step chance / Deja vu / Bag size / Slew) plus mod routes straight into that
+    // still-live page (which Marbles::UpdateParams reads every block). Reset it back
+    // to Sheaf-style defaults here. The shared SimPresetSnapshot / readBodyCommon are
+    // left untouched so v1 desktop, which keeps the Random page, restores it verbatim.
+    const uint8_t droppedRows = m_host.m_engine.m_marbles.ResetPageToDefaults();
+    juce::Logger::writeToLog(
+        "desktop-v2 preset load: dropped deleted Random S&H module-page axes ("
+        + juce::String(static_cast<int>(droppedRows))
+        + " Marbles rows reset to Sheaf-style defaults)");
 }
 
 uint32_t AudioEngine::stateRestoreGeneration() const

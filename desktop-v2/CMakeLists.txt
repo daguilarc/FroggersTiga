@@ -262,6 +262,35 @@ target_compile_definitions(FroggersV2ProjectionValidators_test PRIVATE
 )
 add_test(NAME FroggersV2ProjectionValidators_test COMMAND FroggersV2ProjectionValidators_test)
 
+# Task 4.4 regression: desktop-v2 preset load silently drops the deleted Random
+# S&H module-page axes back to Marbles Sheaf-style defaults (shared engine keeps
+# the Marbles page at PM index 1; shared SimPresetSnapshot is left unchanged).
+add_executable(PresetRandomPageDrop_test
+    tests/PresetRandomPageDrop_test.cpp
+)
+target_include_directories(PresetRandomPageDrop_test PRIVATE
+    Source
+    "${CORE_DIR}"
+    "${SIM_DIR}"
+)
+target_compile_definitions(PresetRandomPageDrop_test PRIVATE
+    FROGGERS_VST_IS_SYNTH=1
+)
+add_test(NAME PresetRandomPageDrop_test COMMAND PresetRandomPageDrop_test)
+
+# I1 drift-guard: the D10 page-label fork (V2DesktopPageDisplayNames vs shared
+# V2ParamDisplayNames) must agree on every non-Random page until the web-v2
+# reconciliation.
+add_executable(V2PageAuthorityForkParity_test
+    tests/V2PageAuthorityForkParity_test.cpp
+)
+target_include_directories(V2PageAuthorityForkParity_test PRIVATE
+    Source
+    "${CORE_DIR}"
+    "${SIM_DIR}"
+)
+add_test(NAME V2PageAuthorityForkParity_test COMMAND V2PageAuthorityForkParity_test)
+
 add_executable(GlobalOscilloscopeDisplay_test
     tests/GlobalOscilloscopeDisplay_test.cpp
     Source/ui/GlobalOscilloscopeDisplay.cpp

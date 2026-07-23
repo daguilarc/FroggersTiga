@@ -22,12 +22,11 @@ struct Marbles
     Page* m_page;
     float m_sampleRate = 44100.0f;
 
-    void InitPage(PageManager* pageManager, Page* page)
+    // Single source of truth for the Marbles page knob defaults ("Sheaf-style
+    // defaults"). Sets only the seven bag knobs (rows 0-6) that UpdateParams reads;
+    // it does not touch fuego config or the mod routes.
+    void ApplyDefaultKnobs()
     {
-        m_output[0] = &pageManager->m_modMgr.m_mods[5];
-        m_output[1] = &pageManager->m_modMgr.m_mods[6];
-
-        m_page = page;
         m_page->InitParam("PROB", 0, 1.0);
         m_page->InitParam("DJV1", 1, 0.5f);
         m_page->InitParam("SZ1", 2, 1);
@@ -35,8 +34,40 @@ struct Marbles
         m_page->InitParam("DJV2", 4, 0.5f);
         m_page->InitParam("SZ2", 5, 1);
         m_page->InitParam("SLW2", 6, 0.0);
+    }
+
+    void InitPage(PageManager* pageManager, Page* page)
+    {
+        m_output[0] = &pageManager->m_modMgr.m_mods[5];
+        m_output[1] = &pageManager->m_modMgr.m_mods[6];
+
+        m_page = page;
+        ApplyDefaultKnobs();
         m_page->SetFuegoization();
         m_sampleRate = 44100.0f;
+    }
+
+    // Desktop-v2 preset silent-drop (design D5 "Locked defaults", task 4.4).
+    // Desktop-v2 deleted the Random S&H module page but the shared engine keeps this
+    // Marbles page (PM index 1) to drive the surviving Random S&H 1/2 mod lanes. A
+    // pre-deletion preset restores stale bag values / mod routes straight into this
+    // still-live page via the shared raw SimPresetSnapshot blob, so desktop-v2 resets
+    // it back to InitPage defaults after every restore. Returns the number of reset
+    // rows (for logging). Not called by v1 desktop, which legitimately keeps the page.
+    uint8_t ResetPageToDefaults()
+    {
+        if (m_page == nullptr)
+        {
+            return 0;
+        }
+        ApplyDefaultKnobs();
+        constexpr uint8_t kBagRows = 7;
+        for (uint8_t row = 0; row < kBagRows; ++row)
+        {
+            m_page->m_parameters[row].m_modIndex = 255;
+            m_page->m_parameters[row].m_modAmount = 0.0f;
+        }
+        return kBagRows;
     }
 
     void SetSampleRate(float sampleRate)

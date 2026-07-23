@@ -109,7 +109,7 @@ Three oscillators. Click the waveform icon beside VCO1–VCO3 to cycle sine ↔ 
 
 Dual stepped random sample-and-hold — two independent bags of held random values, inspired by Mutable Instruments Marbles (UI labels **Random S&H 1/2**).
 
-On desktop v2 these are **modulation sources only**: there is **no Random S&H module page** and no Step chance / Deja vu / Bag size / Slew / Spread / Bias knobs. The two channels appear in the mod bay as **Random S&H 1** and **Random S&H 2**, run at fixed Sheaf-style defaults, and share a **ganged random-LFO visualizer** on their mod-depth cells. Press **Rand Resample** on the global strip to draw new values from each bag; there is no internal clock — you trigger steps.
+On desktop v2 these are **modulation sources only**: there is **no Random S&H module page** and no Step chance / Deja vu / Bag size / Slew / Spread / Bias knobs. The two channels appear in the mod bay as **Random S&H 1** and **Random S&H 2** and run at fixed Sheaf-style defaults. A **ganged random-LFO visualizer** is vendored for their mod-depth cells and attached in a later step. Press **Rand Resample** on the global strip to draw new values from each bag; there is no internal clock — you trigger steps.
 
 ## Drive
 

@@ -76,6 +76,11 @@ public:
     bool isPluginHosted() const;
     bool shouldDrainPendingUiMutations() const;
     void notifyStateRestored();
+    // Locked preset silent-drop (task 4.4): reset the retained Marbles page to its
+    // Sheaf-style defaults after a preset/host-state restore, so pre-deletion Random
+    // S&H module-page axes never reach the engine. Invoked from notifyStateRestored
+    // (the single post-read choke point); exposed for the regression test.
+    void dropDeletedRandomPageAxes();
     uint32_t stateRestoreGeneration() const;
 
     bool startRecording();
