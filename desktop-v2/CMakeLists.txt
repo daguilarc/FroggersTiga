@@ -493,3 +493,45 @@ set_target_properties(FroggersApp_test PROPERTIES
     CXX_STANDARD_REQUIRED ON
 )
 add_test(NAME FroggersApp_test COMMAND FroggersApp_test)
+
+# FroggersScopePanels_test -- packet 5 (tasks.md 5.1-5.4). Dual-panel smoke
+# coverage for Source/ui/FroggersScopePanels.hpp: the vendored Sheaf
+# ScopeVisualizer/ScopeWriter/GangedRandomLfoVisualizer machinery (the one
+# scope model this product reuses -- no parallel scope stack), fed with
+# synthetic sample data. JUCE-free / no AudioEngine: only manifest headers
+# (Source, CORE_DIR, SIM_DIR) + the vendored Sheaf headers (via
+# SheafRuntimeVendor's PUBLIC include dirs).
+add_executable(FroggersScopePanels_test tests/FroggersScopePanels_test.cpp)
+target_include_directories(FroggersScopePanels_test PRIVATE
+    Source
+    "${CORE_DIR}"
+    "${SIM_DIR}"
+)
+target_link_libraries(FroggersScopePanels_test PRIVATE
+    SheafRuntimeVendor
+)
+set_target_properties(FroggersScopePanels_test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+)
+add_test(NAME FroggersScopePanels_test COMMAND FroggersScopePanels_test)
+
+# FroggersAppSurface_test -- packet 5 (tasks.md 5.1-5.4). Portable-visualizer
+# presence coverage for Source/ui/FroggersAppSurface.hpp: proves the surface's
+# actual synth::ui::Surface::BuildTree() exposes the two dual ScopeVisualizer
+# panels and the GangedRandomLfoVisualizer on the Random S&H mod-depth cells.
+# JUCE-free / no AudioEngine, same as FroggersScopePanels_test above.
+add_executable(FroggersAppSurface_test tests/FroggersAppSurface_test.cpp)
+target_include_directories(FroggersAppSurface_test PRIVATE
+    Source
+    "${CORE_DIR}"
+    "${SIM_DIR}"
+)
+target_link_libraries(FroggersAppSurface_test PRIVATE
+    SheafRuntimeVendor
+)
+set_target_properties(FroggersAppSurface_test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+)
+add_test(NAME FroggersAppSurface_test COMMAND FroggersAppSurface_test)

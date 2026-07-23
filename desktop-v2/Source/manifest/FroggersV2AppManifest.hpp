@@ -588,6 +588,16 @@ inline std::array<HostedParameterEntry, HostParameterInventoryV2::kCount> buildH
     return entries;
 }
 
+// Packet 5 (openspec/changes/desktop-v2-sheaf-runtime-harmonization,
+// tasks.md 5.2; design D3): retired as the product's SOLE oscilloscope
+// source. These 3 taps still feed Source/ui/GlobalOscilloscopeDisplay.cpp
+// (kept running unmodified for the not-yet-cut-over MainComponent shell --
+// shell cutover is tasks.md section 10), but they are no longer the only
+// scope viz: Source/ui/FroggersScopePanels.hpp builds the same 3 stableIds
+// into the FroggersApp portable surface's "VCO outs" ScopeVisualizer panel,
+// permanently paired with a second LFO panel (lfo_1/2/3), replacing the old
+// either/or GlobalOscilloscopeSourceGroup toggle with two simultaneous
+// panels (design D3 "dual ScopeVisualizer panels").
 inline constexpr std::array<OscilloscopeTap, 3> kOscilloscopeTaps{{
     {"oscilloscope_vco_1_ef", "VCO 1 EF", 0, true},
     {"oscilloscope_vco_2_ef", "VCO 2 EF", 1, true},

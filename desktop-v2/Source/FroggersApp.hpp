@@ -12,28 +12,20 @@
 // D2); this file adds only the PortableSurface() hook the full concept
 // requires beyond SynthApplicationCore.
 //
-// The surface returned here is intentionally a minimal stub -- it mirrors the
-// StubSurface precedent already vendored in SheafVendorSmoke_test.cpp
-// (packet 2) rather than inventing real UI content. Building the actual
-// Application surface (dual ScopeVisualizer panels, encoder bank, mod detail
-// grid) is tasks.md section 5+, a later packet; this packet's scope is only
-// the host-boundary type + its headless test (tasks.md 3.3).
+// froggers_v2::FroggersAppSurface (Source/ui/FroggersAppSurface.hpp) started
+// as this packet's minimal stub (mirroring the StubSurface precedent in
+// SheafVendorSmoke_test.cpp) and is now, as of packet 5 (tasks.md 5.1-5.3),
+// the real dual-scope + Random S&H ganged-visualizer surface. It was
+// relocated to its own JUCE-free header so it can be exercised standalone
+// (FroggersAppSurface_test.cpp) without AudioEngine/JUCE. Building the full
+// unified Application surface (encoder bank, per-module sections) is
+// tasks.md section 7, a later packet.
 
 #include "FroggersAppCore.hpp"
+#include "ui/FroggersAppSurface.hpp"
 
 #include "synth/AppConcepts.hpp"
 #include "synth/PortableUI.hpp"
-
-namespace froggers_v2
-{
-class FroggersAppSurface final : public synth::ui::Surface
-{
-public:
-    synth::ui::NodeTree BuildTree() override { return {}; }
-    void SetActionHandler(synth::ui::Surface::ActionHandler) override {}
-    void DispatchAction(const synth::ui::Action&) override {}
-};
-} // namespace froggers_v2
 
 class FroggersApp : public FroggersAppCore
 {
@@ -41,6 +33,35 @@ public:
     // synth::SynthApplication's remaining member beyond
     // SynthApplicationCore.
     synth::ui::Surface& PortableSurface() { return m_surface; }
+
+    // Packet 5 (tasks.md 5.1): after the existing AudioEngine DSP path
+    // (FroggersAppCore::ProcessBlock, untouched -- no DSP rewrite) has
+    // produced this block's audio, pull the same control-rate scalars
+    // Source/ui/GlobalOscilloscopeDisplay.cpp already reads via
+    // DesktopHostIO::GetCvOut and push them into the portable surface's
+    // Sheaf ScopeWriter, giving the dual ScopeVisualizer panels real layer
+    // data. GetCvOut is a const read of already-computed per-block mod
+    // values (DesktopHostIO::updateMarblesScopeAccum reads the same array
+    // the same way, immediately after m_engine.ProcessBlock), so this
+    // cannot perturb FroggersApp's audio output -- see FroggersApp_test.cpp
+    // test_process_block_matches_direct_facade_path, unchanged and still
+    // green after this addition. Hides (does not override; App is used by
+    // concrete type in synth::Engine<App>, not through a Surface-style
+    // pointer/reference) FroggersAppCore::ProcessBlock.
+    void ProcessBlock(synth::AudioBlock& block)
+    {
+        FroggersAppCore::ProcessBlock(block);
+
+        froggers_v2::ui::FroggersScopePanels& panels = m_surface.ScopePanels();
+        DesktopHostIO& host = audioEngine().getHost();
+        panels.PushTick(
+            {host.GetCvOut(panels.VcoModIndex(0)),
+             host.GetCvOut(panels.VcoModIndex(1)),
+             host.GetCvOut(panels.VcoModIndex(2))},
+            {host.GetCvOut(panels.LfoEfModIndex(0)),
+             host.GetCvOut(panels.LfoEfModIndex(1)),
+             host.GetCvOut(panels.LfoEfModIndex(2))});
+    }
 
 private:
     froggers_v2::FroggersAppSurface m_surface;
