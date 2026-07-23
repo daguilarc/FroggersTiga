@@ -78,12 +78,15 @@ bool test_15_lane_rack()
             return false;
         }
     }
-    // LFO 1-3 must be present as first-class source lanes (8,9,10).
-    if (std::string(manifest::kPermanentModulationSources[8].displayName) != "LFO 1"
-        || std::string(manifest::kPermanentModulationSources[9].displayName) != "LFO 2"
-        || std::string(manifest::kPermanentModulationSources[10].displayName) != "LFO 3")
+    // LFO EF 1-3 must be present as first-class source lanes (8,9,10) --
+    // packet 12 (design.md D13): these are the VCO envelope followers at a
+    // slow (LFO-rate) timescale, relabeled from "LFO N" to disambiguate from
+    // the fast "VCO N EF" taps. stableIds stay lfo_1/2/3 (no churn).
+    if (std::string(manifest::kPermanentModulationSources[8].displayName) != "LFO EF 1"
+        || std::string(manifest::kPermanentModulationSources[9].displayName) != "LFO EF 2"
+        || std::string(manifest::kPermanentModulationSources[10].displayName) != "LFO EF 3")
     {
-        std::printf("FAIL: LFO 1-3 not present as manifest source lanes\n");
+        std::printf("FAIL: LFO EF 1-3 not present as manifest source lanes\n");
         return false;
     }
     return true;

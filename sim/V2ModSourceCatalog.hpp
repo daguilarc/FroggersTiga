@@ -26,11 +26,11 @@ inline const char* permanentModSourceDisplayName(uint8_t laneIndex)
         case 7:
             return "VCO 2+3 EF";
         case 8:
-            return "LFO 1";
+            return "LFO EF 1";
         case 9:
-            return "LFO 2";
+            return "LFO EF 2";
         case 10:
-            return "LFO 3";
+            return "LFO EF 3";
         case 11:
             return "Random S&H 1";
         case 12:

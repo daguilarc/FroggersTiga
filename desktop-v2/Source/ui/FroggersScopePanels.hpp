@@ -29,16 +29,19 @@
 //                   per-VCO scalar the control-rate engine tap
 //                   (DesktopHostIO::GetCvOut) publishes, so they are reused
 //                   as-is for the "VCO outs trio" panel.
-//   LFO EF panel -> lfo_1, lfo_2, lfo_3 (group "lfo") -- the same group
-//                   GlobalOscilloscopeDisplay's existing
-//                   GlobalOscilloscopeSourceGroup::Lfo alternate view
-//                   already reads (GlobalOscilloscopeDisplay.cpp
-//                   sourceGroupMatches). The manifest declares no distinct
-//                   LFO-envelope-follower source, so "LFO EF" resolves to
-//                   this raw LFO group; this is exactly what design.md's
-//                   TRACE table cites as "Scope UI ... source groups
-//                   include LFO @55" as the basis for the dual-panel
-//                   replacement.
+//   LFO EF panel -> lfo_1, lfo_2, lfo_3 (group "lfo", manifest display names
+//                   "LFO EF 1/2/3") -- packet 12 (design.md D13/D14): these
+//                   taps are no longer dead. sim/V2EnvelopeFollowerBank.hpp's
+//                   V2SlowEnvelopeFollowerBank feeds taps 8-10 from the same
+//                   three VCO inputs as the VCO EF panel above, just through
+//                   slow (LFO-rate) attack/release coefficients instead of
+//                   the fast envelope-follower ones -- so this panel is a
+//                   live second timescale on the same VCO signal, not a
+//                   distinct oscillator. V2-host-scoped only (D14): the
+//                   populating bank is driven from DesktopHostIO's
+//                   v2OscHook, which only runs when the V2 mod-tap layout is
+//                   enabled (Daisy/v1 never call it, so this tap range stays
+//                   dead for them exactly as before).
 //
 // GangedRandomLfoVisualizer<1> per Random S&H source: Froggers' Random S&H
 // 1/2 (src/core/Marbles.hpp) are each a single step-and-hold scalar output,

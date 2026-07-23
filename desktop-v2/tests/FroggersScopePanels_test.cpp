@@ -61,16 +61,49 @@ bool test_layer_counts_and_stable_id_bindings()
     }
 
     FroggersScopePanels panels;
+    // packet 12 (design.md D13/D14): pin the exact manifest lane each panel
+    // resolves to, not just "some" index -- the LFO EF panel must land on
+    // taps 8-10 (the now-live V2SlowEnvelopeFollowerBank output), not the
+    // fast VCO EF taps 3-5 the VCO panel above already owns.
+    static constexpr std::array<std::uint8_t, 3> kExpectedVcoModIndices{{3, 4, 5}};
+    static constexpr std::array<std::uint8_t, 3> kExpectedLfoEfModIndices{{8, 9, 10}};
     for (std::size_t i = 0; i < 3; ++i)
     {
-        if (panels.VcoModIndex(i) == UINT8_MAX)
+        if (panels.VcoModIndex(i) != kExpectedVcoModIndices[i])
         {
-            std::printf("FAIL: VCO layer %zu did not resolve to a manifest mod index\n", i);
+            std::printf("FAIL: VCO layer %zu resolved to mod index %u, expected %u\n",
+                        i,
+                        static_cast<unsigned>(panels.VcoModIndex(i)),
+                        static_cast<unsigned>(kExpectedVcoModIndices[i]));
             return false;
         }
-        if (panels.LfoEfModIndex(i) == UINT8_MAX)
+        if (panels.LfoEfModIndex(i) != kExpectedLfoEfModIndices[i])
         {
-            std::printf("FAIL: LFO EF layer %zu did not resolve to a manifest mod index\n", i);
+            std::printf("FAIL: LFO EF layer %zu resolved to mod index %u, expected %u "
+                        "(slow-EF tap)\n",
+                        i,
+                        static_cast<unsigned>(panels.LfoEfModIndex(i)),
+                        static_cast<unsigned>(kExpectedLfoEfModIndices[i]));
+            return false;
+        }
+    }
+
+    // The manifest display names must have been relabeled off the old dead
+    // "LFO N" naming onto "LFO EF N" (task 12.2), so mod pages show VCO EF
+    // and LFO EF as distinct families.
+    using froggers_v2::manifest::kPermanentModulationSources;
+    static constexpr std::array<const char*, 3> kExpectedLfoEfDisplayNames{
+        {"LFO EF 1", "LFO EF 2", "LFO EF 3"}};
+    for (std::size_t i = 0; i < 3; ++i)
+    {
+        const char* displayName = kPermanentModulationSources[8 + i].displayName;
+        if (displayName == nullptr
+            || std::strcmp(displayName, kExpectedLfoEfDisplayNames[i]) != 0)
+        {
+            std::printf("FAIL: manifest lane %zu displayName is '%s', expected '%s'\n",
+                        8 + i,
+                        displayName == nullptr ? "(null)" : displayName,
+                        kExpectedLfoEfDisplayNames[i]);
             return false;
         }
     }

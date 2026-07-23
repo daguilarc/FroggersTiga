@@ -86,6 +86,12 @@ struct DesktopHostIO
     MarblesScopeAccum m_marblesScopeAccum[2]{};
     bool m_marblesScopeBlockReady = false;
     V2EnvelopeFollowerBank m_v2EfBank;
+    // packet 12 (D13/D14): slow-timescale companion to m_v2EfBank, feeding
+    // the "LFO EF" taps (8-10) from the same VCO inputs at LFO-rate
+    // coefficients. Only ever driven by v2OscHook below, which itself only
+    // runs when configureV2ModTaps() has enabled the V2 mod-tap layout
+    // (IsV2SimHostKind gate in Init()) -- Daisy/v1 never call it.
+    V2SlowEnvelopeFollowerBank m_v2LfoEfBank;
     PermanentModTapRack m_v2ModTaps;
     V2LaneDepthStore m_v2LaneDepths;
     SequencerState m_sequencer;
@@ -97,6 +103,7 @@ struct DesktopHostIO
     {
         auto* self = static_cast<DesktopHostIO*>(ctx);
         self->m_v2EfBank.Process(v1, v2, v3, self->m_v2ModTaps);
+        self->m_v2LfoEfBank.Process(v1, v2, v3, self->m_v2ModTaps);
     }
 
     static void v2MarblesHook(float marbles1, float marbles2, void* ctx)
@@ -110,6 +117,7 @@ struct DesktopHostIO
     void configureV2ModTaps()
     {
         m_v2EfBank.setSampleRate(m_sampleRate);
+        m_v2LfoEfBank.setSampleRate(m_sampleRate);
         FroggersEngine::V2ModTapHooks hooks{};
         hooks.processOsc = v2OscHook;
         hooks.syncMarbles = v2MarblesHook;
@@ -337,6 +345,7 @@ struct DesktopHostIO
         if (IsV2SimHostKind(m_hostKind))
         {
             m_v2EfBank.setSampleRate(sampleRate);
+            m_v2LfoEfBank.setSampleRate(sampleRate);
         }
     }
 
