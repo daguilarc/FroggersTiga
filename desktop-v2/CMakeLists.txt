@@ -169,6 +169,70 @@ if(APPLE)
     )
 endif()
 
+
+# --- Runtime-hosted entry target (Packet 10 shell cutover, additive step) --
+# Coexists with FroggersTigaDesktopV2 above: boots FroggersApp
+# (Source/FroggersApp.hpp) under the vendored Sheaf Runtime shell
+# (External/Sheaf/runtime/Shell.hpp) instead of MainComponent/Main.cpp. Does
+# NOT retire the legacy target or its sources -- see MainRuntime.cpp's doc
+# comment. Source list mirrors FroggersApp_test's already-proven minimal
+# link set below (the DSP/control-core/manifest sources FroggersTigaDesktopV2
+# compiles, minus Main.cpp/MainComponent.cpp and the JUCE-widget-only files
+# the portable Sheaf surface doesn't use -- DesktopV2HostCallbacks,
+# PageCarouselComponent, GlobalStripV2, PerformanceBandV2,
+# SequencerPanelComponent, EncoderRingComponent, SubmodulePagePanel,
+# AdsrPagePanel, CvScopeDisplay, DesktopV2LookAndFeel, and the MainComponent-
+# specific runtime page components).
+juce_add_gui_app(FroggersTigaDesktopV2Runtime
+    PRODUCT_NAME "FroggersTigaRuntime"
+    COMPANY_NAME "FroggersTiga"
+    BUNDLE_ID "com.froggers.tiga.desktop.v2.runtime"
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "FroggersTiga needs audio input access for external ring-mod (mic, line-in, or interface)."
+)
+
+target_sources(FroggersTigaDesktopV2Runtime PRIVATE
+    Source/MainRuntime.cpp
+    Source/FroggersAppCore.cpp
+    Source/control/FroggersV2AppCoreFacade.cpp
+    Source/control/FroggersV2ControlCore.cpp
+    Source/control/FroggersV2HostBridge.cpp
+    Source/AudioEngine.cpp
+    Source/AudioSettingsComponent.cpp
+    Source/MidiCvSettingsComponent.cpp
+    Source/control/MidiCvAssignmentTable.cpp
+    Source/runtime/FilePatchRuntimeState.cpp
+    Source/runtime/DesktopV2AudioStateProjection.cpp
+    "${V1_DESKTOP_DIR}/Source/AudioRecorder.cpp"
+)
+
+target_include_directories(FroggersTigaDesktopV2Runtime PRIVATE
+    Source
+    "${V1_DESKTOP_DIR}/Source"
+    "${CORE_DIR}"
+    "${SIM_DIR}"
+)
+
+if(MSVC)
+    target_compile_definitions(FroggersTigaDesktopV2Runtime PRIVATE _USE_MATH_DEFINES)
+endif()
+
+target_link_libraries(FroggersTigaDesktopV2Runtime PRIVATE
+    SheafRuntimeVendor
+    juce::juce_audio_utils
+    juce::juce_audio_devices
+    juce::juce_audio_formats
+    juce::juce_gui_extra
+)
+
+# Sheaf's vendored Runtime/Engine headers require C++20 (concepts, std::span)
+# -- same reason FroggersApp_test/FroggersAppSurface_test below are pinned to
+# CXX_STANDARD 20 rather than this project's default CMAKE_CXX_STANDARD (17).
+set_target_properties(FroggersTigaDesktopV2Runtime PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+)
+
 enable_testing()
 
 add_executable(ControlCoreBridge_test
@@ -434,6 +498,14 @@ add_test(NAME RuntimePages_test COMMAND RuntimePages_test)
 
 add_executable(BootSmoke_test tests/BootSmoke_test.cpp)
 add_test(NAME BootSmoke_test COMMAND BootSmoke_test)
+
+# RuntimeBootSmoke_test -- Packet 10 shell cutover. Same fork/exec/poll-alive
+# pattern as BootSmoke_test above, pointed at the new
+# FroggersTigaDesktopV2Runtime binary instead of the legacy one; proves
+# FroggersApp boots under the vendored Sheaf Runtime shell (see
+# MainRuntime.cpp / RuntimeBootSmoke_test.cpp doc comments).
+add_executable(RuntimeBootSmoke_test tests/RuntimeBootSmoke_test.cpp)
+add_test(NAME RuntimeBootSmoke_test COMMAND RuntimeBootSmoke_test)
 
 # SheafVendorSmoke_test -- packet 2 compile gate (tasks 2.1-2.3). Proves the
 # vendored synth::Engine / GridManager / RuntimeUIState / ScopeWriter /
