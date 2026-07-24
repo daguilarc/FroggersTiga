@@ -60,12 +60,12 @@
 // labels were renamed this increment ("Pair-AR" -> "Envelope", "Atk1"/"Rel1"
 // -> "Attack VCO1"/"Release VCO1", etc.); this file only picks that up
 // because BuildModuleGrid() already reads labels from that table, not
-// because anything module-specific was added here. Sustain rows/knobs are
-// NOT added (grid stays 7 slots, unchanged) -- see
-// V2DesktopPageDisplayNames.hpp's file-header note for why: it surfaced a
-// shared-engine gap (src/core/VcoAdsrState.hpp has no sustain-level
-// semantics), which is out of scope for a portable-UI/label increment and is
-// reported separately rather than fixed here.
+// because anything module-specific was added here. Sustain rows/knobs were
+// added same-day (task 7.5 / D15 follow-up): the grid widened from 7 to 10
+// slots (rowsForUiPage(kAdsrUiPage) in HostParameterInventoryV2.hpp), purely
+// by that data-driven widening -- BuildModuleGrid() needed no code change
+// here since it already reads row count and labels from the shared
+// authority tables, not a hardcoded slot count.
 //
 // This is deliberately NOT the full unified Application surface layout yet
 // (mod-detail-grid drill-in swap, transport/global chrome, Envelope content)

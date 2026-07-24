@@ -49,13 +49,16 @@ struct VcoAdsrState
         }
     }
 
-    float apply(size_t voiceIndex, float input, float attackKnob, float releaseKnob)
+    // Task 7.5 (D15): true per-voice ASR. sustainKnob is not a time -- it is
+    // the target level (0..1, clamped) that Attack ramps toward and Hold
+    // holds at, replacing the former hardcoded 1.0f ceiling.
+    float apply(size_t voiceIndex, float input, float attackKnob, float sustainKnob, float releaseKnob)
     {
         if (voiceIndex >= kNumVoices)
         {
             return input;
         }
-        stepVoice(voiceIndex, attackKnob, releaseKnob);
+        stepVoice(voiceIndex, attackKnob, sustainKnob, releaseKnob);
         return input * m_level[voiceIndex];
     }
 
@@ -72,9 +75,16 @@ private:
         return kMinTimeSeconds + clamped * (kMaxReleaseSeconds - kMinTimeSeconds);
     }
 
-    void stepVoice(size_t voiceIndex, float attackKnob, float releaseKnob)
+    void stepVoice(size_t voiceIndex, float attackKnob, float sustainKnob, float releaseKnob)
     {
-        const float attackStep = 1.0f / std::max(mapAttack(attackKnob) * m_sampleRate, 1.0f);
+        const float sustainLevel = std::min(std::max(sustainKnob, 0.0f), 1.0f);
+        // Normalized attack (D15, operator-locked): the Attack-time knob sets
+        // a DURATION, not a slope. A full 0->1 ramp at this attack knob would
+        // take mapAttack(attackKnob) seconds; scaling the per-sample step by
+        // sustainLevel makes reaching sustainLevel take that same duration
+        // regardless of the sustain level, so the Attack-time knob reads the
+        // same regardless of where Sustain is set.
+        const float attackStep = sustainLevel / std::max(mapAttack(attackKnob) * m_sampleRate, 1.0f);
         const float releaseStep = 1.0f / std::max(mapRelease(releaseKnob) * m_sampleRate, 1.0f);
 
         switch (m_stage[voiceIndex])
@@ -83,8 +93,8 @@ private:
                 m_level[voiceIndex] = 0.0f;
                 break;
             case Stage::Attack:
-                m_level[voiceIndex] = std::min(1.0f, m_level[voiceIndex] + attackStep);
-                if (m_level[voiceIndex] >= 1.0f)
+                m_level[voiceIndex] = std::min(sustainLevel, m_level[voiceIndex] + attackStep);
+                if (m_level[voiceIndex] >= sustainLevel)
                 {
                     m_stage[voiceIndex] = Stage::Hold;
                 }
@@ -92,7 +102,7 @@ private:
             case Stage::Hold:
                 if (m_gateHigh)
                 {
-                    m_level[voiceIndex] = 1.0f;
+                    m_level[voiceIndex] = sustainLevel;
                 }
                 else
                 {

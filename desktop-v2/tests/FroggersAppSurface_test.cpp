@@ -390,15 +390,15 @@ bool test_envelope_module_grid_shows_real_labels()
 {
     // Packet 7 increment 3 (tasks.md 7.5): Envelope is now ported to the real
     // reference pattern, same as the other five modules. Rows are per-VCO
-    // Attack/Release using the task 7.5 full-word labels ("Attack VCO1", not
-    // "Atk1") -- Sustain rows are deliberately absent (see
-    // V2DesktopPageDisplayNames.hpp's file-header note: adding them needs a
-    // shared-engine DSP change, out of scope here).
+    // Attack/Sustain/Release triplets using the task 7.5 full-word labels
+    // ("Attack VCO1", not "Atk1"). Sustain rows were added same-day (D15
+    // follow-up) once the shared-engine VcoAdsrState gained real sustain-level
+    // semantics -- see V2DesktopPageDisplayNames.hpp's file-header note.
     return checkModuleGridRealLabels(
         "envelope",
         "envelope",
-        {"Attack VCO1", "Release VCO1", "Attack VCO2", "Release VCO2", "Attack VCO3",
-         "Release VCO3", "Crispy"});
+        {"Attack VCO1", "Sustain VCO1", "Release VCO1", "Attack VCO2", "Sustain VCO2",
+         "Release VCO2", "Attack VCO3", "Sustain VCO3", "Release VCO3", "Crispy"});
 }
 
 bool test_no_pair_ar_label_remains_anywhere_in_the_surface()

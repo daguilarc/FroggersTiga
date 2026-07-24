@@ -1047,7 +1047,7 @@ inline std::string buildSnapshotJson()
     // Task 7.4 (D11/D14): the coupler is removed entirely for the V2 host --
     // no crossCouplers entry is emitted (Daisy/v1 keep it functioning; that
     // path is untouched shared-engine code the V2-only manifest never described).
-    out << "      \"envelopePage\": {\"vcoAttackReleasePairs\": true},\n";
+    out << "      \"envelopePage\": {\"vcoAttackSustainReleaseTriples\": true},\n";
     out << "      \"waveformMorphControls\": true,\n";
     out << "      \"lfoModule\": {\"firstClass\": true, \"firstClassSourceParticipation\": true},\n";
     out << "      \"permanentModulationRack\": {\"lanes\": " << kPermanentModulationSources.size()

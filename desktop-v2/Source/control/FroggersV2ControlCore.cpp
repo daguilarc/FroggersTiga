@@ -1204,7 +1204,8 @@ uint8_t FroggersV2ControlCore::rowsForPage(uint8_t page) const
     }
     if (page == 5)
     {
-        return 7;
+        // Task 7.5 (D15): per-VCO Attack/Sustain/Release triplets x3 + Crispy.
+        return 10;
     }
     if (page < kNumHostPages)
     {

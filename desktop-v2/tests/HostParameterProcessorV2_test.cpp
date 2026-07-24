@@ -22,7 +22,10 @@
 #ifndef FROGGERS_EXPECT_HOST_PARAM_COUNT_V2
 // Task 7.4 (D11/D14): Cross-coupler axes removed from the Audio page (1 page
 // knob + 1 page mod depth), so 122 -> 120.
-#define FROGGERS_EXPECT_HOST_PARAM_COUNT_V2 120
+// Task 7.5 (D15): per-VCO Sustain added to the ADSR/Envelope page (3 new rows
+// -- one per VCO -- each contributing 1 page knob + 1 page mod depth), so
+// 120 -> 126.
+#define FROGGERS_EXPECT_HOST_PARAM_COUNT_V2 126
 #endif
 
 namespace
@@ -226,19 +229,31 @@ bool test_no_pair_ar_axis()
     return true;
 }
 
-bool test_no_sus_stable_ids()
+// Task 7.5 (D15): Sustain is now a real per-VCO control (true ASR) -- this
+// used to be test_no_sus_stable_ids, guarding that Sustain was NOT present
+// while it was still an open "sustain spike" question. Now that D15 landed
+// it, flip the assertion: the Envelope page must expose all three VCOs'
+// Sustain rows in the v2 inventory.
+bool test_sustain_labels_present()
 {
+    bool foundVco1 = false;
+    bool foundVco2 = false;
+    bool foundVco3 = false;
     for (size_t i = 0; i < HostParameterInventoryV2::kCount; ++i)
     {
         const HostParameterInventoryV2::RuntimeDescriptor entry = HostParameterInventoryV2::buildDescriptorAt(i);
-        if (std::strstr(entry.stableId, "Sus") != nullptr
-            || std::strstr(entry.displayName, "Sus") != nullptr)
-        {
-            std::printf("FAIL: Sus parameter present in v2 inventory: %s / %s\n",
-                        entry.stableId,
-                        entry.displayName);
-            return false;
-        }
+        foundVco1 = foundVco1 || std::strstr(entry.displayName, "Sustain VCO1") != nullptr;
+        foundVco2 = foundVco2 || std::strstr(entry.displayName, "Sustain VCO2") != nullptr;
+        foundVco3 = foundVco3 || std::strstr(entry.displayName, "Sustain VCO3") != nullptr;
+    }
+    if (!foundVco1 || !foundVco2 || !foundVco3)
+    {
+        std::printf(
+            "FAIL: expected Sustain VCO1/2/3 displayNames in v2 inventory (found1=%d found2=%d found3=%d)\n",
+            foundVco1,
+            foundVco2,
+            foundVco3);
+        return false;
     }
     return true;
 }
@@ -350,7 +365,7 @@ constexpr NamedTest kTests[] = {
     {"test_vco_morph_defaults", test_vco_morph_defaults},
     {"test_vco_morph_display_name_is_shape", test_vco_morph_display_name_is_shape},
     {"test_no_pair_ar_axis", test_no_pair_ar_axis},
-    {"test_no_sus_stable_ids", test_no_sus_stable_ids},
+    {"test_sustain_labels_present", test_sustain_labels_present},
     {"test_state_envelope_tail_round_trip_keyed_by_stable_id",
      test_state_envelope_tail_round_trip_keyed_by_stable_id},
 };

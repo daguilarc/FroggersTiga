@@ -934,11 +934,11 @@ bool test_pair_ar_gate_policy()
     return true;
 }
 
-bool test_envelope_page_seven_rows()
+bool test_envelope_page_ten_rows()
 {
-    // Task 7.5 renamed this page's carousel label "Pair-AR" -> "Envelope" (row
-    // count/geometry unchanged -- see V2DesktopPageDisplayNames.hpp's file-header
-    // note on why Sustain rows are not added here).
+    // Task 7.5 renamed this page's carousel label "Pair-AR" -> "Envelope".
+    // Row count widened 7 -> 10 same-day (D15 follow-up) when per-VCO Sustain
+    // was added -- see V2DesktopPageDisplayNames.hpp's file-header note.
     FroggersV2ControlCore core;
 
     MessageIn selectEnvelope;
@@ -2696,7 +2696,7 @@ int main()
     {
         return 1;
     }
-    if (!test_envelope_page_seven_rows())
+    if (!test_envelope_page_ten_rows())
     {
         return 1;
     }

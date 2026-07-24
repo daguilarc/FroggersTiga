@@ -257,7 +257,7 @@ int main()
     }
     if (!contains(snapshot, "\"defaultModulePage\": \"audio_vco\"")
         || !contains(snapshot, "\"envelopePage\"")
-        || !contains(snapshot, "\"vcoAttackReleasePairs\"") || !contains(snapshot, "\"waveformMorphControls\"")
+        || !contains(snapshot, "\"vcoAttackSustainReleaseTriples\"") || !contains(snapshot, "\"waveformMorphControls\"")
         || !contains(snapshot, "\"lfoModule\"") || !contains(snapshot, "\"globalRandomizationScopes\"")
         || !contains(snapshot, "\"deviceNeutralClearStep\"") || !contains(snapshot, "\"sequencerLocks\"")
         || !contains(snapshot, "\"optionalMidiClockSync\"") || !contains(snapshot, "\"heldGestures\": false"))

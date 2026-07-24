@@ -26,17 +26,20 @@ inline void configureExpandedModulePages(PageManager& pageManager)
 
 inline void configureAdsrPage(PageManager& pageManager)
 {
+    // Task 7.5 (D15): per-VCO triplet row order -- Attack, Sustain, Release
+    // for VCO1, then VCO2, then VCO3 -- matching FroggersEngine::MixOscVoices'
+    // GetParam(0..8) reads. Crispy lives at row 9 (x_numParameters == 10).
     Page* adsrPage = pageManager.AddPage();
     adsrPage->InitParam("A1", 0, 0.05f);
-    adsrPage->InitParam("A2", 1, 0.05f);
-    adsrPage->InitParam("A3", 2, 0.05f);
-    adsrPage->InitParam("S1", 3, 0.8f);
+    adsrPage->InitParam("S1", 1, 0.8f);
+    adsrPage->InitParam("R1", 2, 0.2f);
+    adsrPage->InitParam("A2", 3, 0.05f);
     adsrPage->InitParam("S2", 4, 0.8f);
-    adsrPage->InitParam("S3", 5, 0.8f);
-    adsrPage->InitParam("R1", 6, 0.2f);
-    adsrPage->InitParam("R2", 7, 0.2f);
+    adsrPage->InitParam("R2", 5, 0.2f);
+    adsrPage->InitParam("A3", 6, 0.05f);
+    adsrPage->InitParam("S3", 7, 0.8f);
     adsrPage->InitParam("R3", 8, 0.2f);
-    adsrPage->SetFuegoization(V2ParamDisplayNames::CrispyRowForPage(6));
+    adsrPage->SetFuegoization(9);
 }
 
 inline void configure(PageManager& pageManager, bool includeAdsrPage)

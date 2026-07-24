@@ -311,7 +311,16 @@ struct DesktopHostIO
         {
             m_vcoAdsr.init(44100.0f);
             m_engine.SetAudioPairArState(nullptr);
-            m_engine.SetVcoAdsrState(&m_vcoAdsr, &m_pageManager.m_pages[6]);
+            // Task 7.5 prerequisite fix: this must be the same PM page the
+            // host writes ADSR knobs to. The shared engine PageManager layout
+            // is Audio=0, Marbles=1, Reverb=2, Filter=3, Drive=4, ADSR=5
+            // (desktop-v2's HostParameterInventoryV2::kPmAdsrPage == 5;
+            // duplicated here as a literal rather than an include because
+            // src/core/ must stay free of desktop-v2/ dependencies for the
+            // Daisy/sim/VCV builds). Page index 6 is never configured, so the
+            // envelope was previously wired to an inert page -- Attack/
+            // Sustain/Release knobs did nothing.
+            m_engine.SetVcoAdsrState(&m_vcoAdsr, &m_pageManager.m_pages[5]);
         }
         else
         {

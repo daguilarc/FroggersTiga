@@ -250,6 +250,16 @@ struct FroggersEngine
         m_adsrParams = adsrPage;
     }
 
+    // Test-only accessor (task 7.5 prerequisite fix): reads back the ADSR
+    // page currently wired via SetVcoAdsrState, so a unit test can drive a
+    // host-param write to the ADSR page and confirm the engine's m_adsrParams
+    // pointer actually targets that same PageManager page. Returns -1.0f if
+    // no page is wired (matches Daisy/v1, where m_adsrParams stays null).
+    float GetAdsrParamForTest(uint8_t position) const
+    {
+        return m_adsrParams ? m_adsrParams->GetParam(position) : -1.0f;
+    }
+
     void SetUseV2FilterParallel(bool enabled)
     {
         m_useV2FilterParallel = enabled;
@@ -763,9 +773,15 @@ struct FroggersEngine
     {
         if (m_vcoAdsr && m_adsrParams)
         {
-            v1 = m_vcoAdsr->apply(0, v1, m_adsrParams->GetParam(0), m_adsrParams->GetParam(1));
-            v2 = m_vcoAdsr->apply(1, v2, m_adsrParams->GetParam(2), m_adsrParams->GetParam(3));
-            v3 = m_vcoAdsr->apply(2, v3, m_adsrParams->GetParam(4), m_adsrParams->GetParam(5));
+            // Task 7.5 (D15): per-VCO triplet row order (Attack, Sustain,
+            // Release) x3, matching V2EngineSetup::configureAdsrPage's
+            // InitParam layout below.
+            v1 = m_vcoAdsr->apply(
+                0, v1, m_adsrParams->GetParam(0), m_adsrParams->GetParam(1), m_adsrParams->GetParam(2));
+            v2 = m_vcoAdsr->apply(
+                1, v2, m_adsrParams->GetParam(3), m_adsrParams->GetParam(4), m_adsrParams->GetParam(5));
+            v3 = m_vcoAdsr->apply(
+                2, v3, m_adsrParams->GetParam(6), m_adsrParams->GetParam(7), m_adsrParams->GetParam(8));
         }
         if (!m_pairAr)
         {

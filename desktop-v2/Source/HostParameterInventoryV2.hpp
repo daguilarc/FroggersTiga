@@ -43,7 +43,8 @@ constexpr uint8_t rowsForUiPage(uint8_t page)
     }
     if (page == kAdsrUiPage)
     {
-        return 7;
+        // Task 7.5 (D15): per-VCO Attack/Sustain/Release triplets x3 + Crispy.
+        return 10;
     }
     return 10;
 }
@@ -135,15 +136,18 @@ constexpr float pageKnobDefault(uint8_t page, uint8_t row)
     }
     if (page == kAdsrUiPage)
     {
-        if (row % 2 == 0)
+        // Task 7.5 (D15): per-VCO triplet row order (Attack, Sustain,
+        // Release) x3 -- rows 0-8; row 9 (Crispy) is handled by the
+        // CrispyRowForPage check above and never reaches here.
+        switch (row % 3)
         {
-            return 0.05f;
+            case 0:
+                return 0.05f;
+            case 1:
+                return 0.8f;
+            default:
+                return 0.2f;
         }
-        if (row <= 5)
-        {
-            return 0.2f;
-        }
-        return 0.0f;
     }
     return 0.5f;
 }

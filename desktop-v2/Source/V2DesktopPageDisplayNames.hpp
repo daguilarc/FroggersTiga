@@ -38,21 +38,17 @@
 // label is renamed "Pair-AR" -> "Envelope" and its per-VCO row labels are expanded
 // to full words (kEnvelopeRowLabels below), matching design.md's "ASR Envelope"
 // section (desktop-v2-sheaf-runtime-harmonization/design.md line 113: "Full ADSR
-// (decay knee) -- ASR only for Envelope"). This table still exposes 7 rows per
-// VCO (Attack, Release) x3 + Crispy) -- it does NOT add Sustain rows. Attempting
-// that surfaced a shared-engine gap: src/core/VcoAdsrState.hpp's Hold stage holds
-// at a hardcoded 1.0f and apply() takes no sustain-level argument at all (the
-// 2026-06-30 archived spec, openspec/changes/archive/2026-07-01-desktop-v2-ux-and-
-// sequencer/specs/desktop-v2-adsr-page/spec.md, deliberately removed
-// Stage::Sustain). Adding a real per-VCO Sustain control needs a shared-engine DSP
-// change (new sustain-level state + knob wiring through VcoAdsrState/FroggersEngine/
-// DesktopHostIO/PagedHostIO), which is exactly the open "Envelope engine" question
-// gating desktop-v2-unified-parameter-layout/design.md's U5 section (Packet 6 sustain
-// spike) -- out of scope here; see the increment-3 report for the full trace. The
-// shared table's page 6 (sim/V2ParamDisplayNames.hpp, used by web/wasm V2 + v1) is
-// untouched and still says "Pair-AR" -- V2PageAuthorityForkParity_test.cpp's
-// byte-identical check now excludes this page from that comparison (same precedent
-// as task 7.4's Audio exclusion for the Cross-coupler fork).
+// (decay knee) -- ASR only for Envelope"). Sustain has since been added (design
+// D15, same-day follow-up): this table now exposes 10 rows per VCO -- Attack,
+// Sustain, Release -- x3 + Crispy at row 9, a true per-VCO ASR envelope.
+// src/core/VcoAdsrState.hpp's Hold stage now holds at a per-voice sustain level
+// (apply()'s sustainKnob argument) instead of a hardcoded 1.0f, with the
+// Attack-time knob normalized so attack DURATION is level-invariant (D15,
+// operator-locked). The shared table's page 6 (sim/V2ParamDisplayNames.hpp, used
+// by web/wasm V2 + v1) is untouched and still says "Pair-AR" with the old AR-pair
+// layout -- V2PageAuthorityForkParity_test.cpp's byte-identical check excludes
+// this page from that comparison (same precedent as task 7.4's Audio exclusion
+// for the Cross-coupler fork).
 namespace V2DesktopPageDisplayNames
 {
 constexpr uint8_t kV2NumHostPages = 6;
@@ -62,9 +58,11 @@ inline uint8_t CrispyRowForPage(uint8_t hostPage)
 {
     // Indexed by desktop-v2 UI page: 0 Audio, 1 Reverb, 2 Filter, 3 Drive, 4 Delay,
     // 5 Envelope. Audio's Crispy moved from row 7 to row 6 when the Cross-coupler row
-    // was removed (task 7.4); the expanded FX pages keep Crispy at row 9; Envelope
-    // at row 6.
-    static constexpr uint8_t kCrispyRow[kV2NumHostPages] = {6, 9, 9, 9, 9, 6};
+    // was removed (task 7.4); the expanded FX pages keep Crispy at row 9; Envelope's
+    // Crispy moved from row 6 to row 9 (task 7.5 / D15) when its per-VCO Sustain rows
+    // widened the page from 7 rows (Attack, Release) x3 + Crispy) to 10 rows
+    // (Attack, Sustain, Release) x3 + Crispy).
+    static constexpr uint8_t kCrispyRow[kV2NumHostPages] = {6, 9, 9, 9, 9, 9};
     if (hostPage >= kV2NumHostPages)
     {
         return kV2ExpandedNumRows;
@@ -78,11 +76,13 @@ inline constexpr std::array<const char*, 5> kHostPageLabels{{
 
 // Task 7.5: full-word per-VCO labels (design.md's "Operator-visible labels use
 // full words (no 'Attk'/'Rel')" requirement), replacing the former "Atk1"/"Rel1"
-// abbreviations. Still Attack/Release only -- see the file-header note above for
-// why Sustain rows are not added here.
-inline constexpr std::array<const char*, 7> kEnvelopeRowLabels{{
-    "Attack VCO1", "Release VCO1", "Attack VCO2", "Release VCO2", "Attack VCO3",
-    "Release VCO3", "Crispy",
+// abbreviations. Widened to include Sustain (D15, same-day follow-up) -- true
+// per-VCO ASR triplets, row order Attack/Sustain/Release per VCO.
+inline constexpr std::array<const char*, 10> kEnvelopeRowLabels{{
+    "Attack VCO1", "Sustain VCO1", "Release VCO1",
+    "Attack VCO2", "Sustain VCO2", "Release VCO2",
+    "Attack VCO3", "Sustain VCO3", "Release VCO3",
+    "Crispy",
 }};
 
 inline constexpr std::array<std::array<const char*, 3>, 4> kExpansionTailRowLabels{{
