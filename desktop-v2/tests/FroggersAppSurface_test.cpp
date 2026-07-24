@@ -441,6 +441,135 @@ bool test_no_pair_ar_label_remains_anywhere_in_the_surface()
     return true;
 }
 
+// Packet 7 increment 4 (tasks.md 7.x, "mod-detail drill-in swap"): the
+// layer-0<->layer-1 choice is driven entirely by FroggersV2ControlCore's own
+// 2-deep gate (m_modView, packet 6's onModDrillIn/onParamPress) -- these
+// tests push the same MessageIn::ModDrillIn / ParamPress messages
+// SubmodulePagePanel::pushModDrillIn/pushPress push today, through the
+// surface's already-exposed AudioControlCore() test accessor, and assert the
+// swap follows without any new surface-owned flag.
+
+bool test_mod_detail_grid_closed_shows_layer0_labels()
+{
+    FroggersAppSurface surface;
+    const synth::ui::NodeTree tree = surface.BuildTree();
+
+    const synth::ui::Node* label0 = findNode(tree, "audio_grid_label_0");
+    if (label0 == nullptr || label0->text != "VCO1")
+    {
+        std::printf("FAIL: audio grid slot 0 should show layer-0 label 'VCO1' while mod view closed\n");
+        return false;
+    }
+    if (findNode(tree, "audio_grid_label_15") != nullptr)
+    {
+        std::printf("FAIL: layer-0 audio grid must not render a 16th slot\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_mod_detail_grid_opens_via_control_core_drill_in()
+{
+    FroggersAppSurface surface;
+    // Drill into Audio's page 0 (kModuleHostPage[kAudioModuleIndex] == 0), row
+    // 0 (VCO1) -- same MessageIn::ModDrillIn the ring's centre-dot hit-zone
+    // pushes via SubmodulePagePanel::pushModDrillIn.
+    surface.AudioControlCore().bus().push(froggers_v2::MessageIn::ModDrillIn(0, 0));
+    surface.AudioControlCore().processBus();
+
+    const synth::ui::NodeTree tree = surface.BuildTree();
+
+    const synth::ui::Node* lane0Label = findNode(tree, "audio_grid_label_0");
+    if (lane0Label == nullptr)
+    {
+        std::printf("FAIL: mod-detail grid slot 0 missing\n");
+        return false;
+    }
+    const char* expectedLane0 = froggers_v2::manifest::kPermanentModulationSources[0].displayName;
+    if (lane0Label->text != expectedLane0)
+    {
+        std::printf("FAIL: mod-detail grid slot 0 should show lane 0's display name ('%s'), got '%s'\n",
+                    expectedLane0,
+                    lane0Label->text.c_str());
+        return false;
+    }
+    const synth::ui::Node* lane0Ring = findNode(tree, "audio_grid_ring_0");
+    if (lane0Ring == nullptr || lane0Ring->kind != synth::ui::NodeKind::Draw || lane0Ring->drawCommands.empty())
+    {
+        std::printf("FAIL: mod-detail grid slot 0 ring drew no commands\n");
+        return false;
+    }
+
+    // kNumModSources (15) permanent lanes precede the dedicated Target/Back
+    // cell, so it lands at slot 15 -- the 16th (and last) of the fixed
+    // kUiSlots (4x4) grid.
+    const synth::ui::Node* targetLabel = findNode(tree, "audio_grid_label_15");
+    if (targetLabel == nullptr || targetLabel->text != std::string("Target (Back)"))
+    {
+        std::printf("FAIL: mod-detail grid slot 15 should be the Target/Back cell\n");
+        return false;
+    }
+    const synth::ui::Node* targetRing = findNode(tree, "audio_grid_ring_15");
+    if (targetRing == nullptr || targetRing->kind != synth::ui::NodeKind::Draw
+        || targetRing->drawCommands.empty())
+    {
+        std::printf("FAIL: mod-detail grid slot 15 (Target/Back) ring drew no commands\n");
+        return false;
+    }
+
+    // Tab selector + scope/chrome band are unaffected by the layer swap.
+    const synth::ui::Node* audioTab = findNode(tree, "tab_audio");
+    if (audioTab == nullptr || !audioTab->checked)
+    {
+        std::printf("FAIL: Audio tab should remain the checked active module while its mod view is open\n");
+        return false;
+    }
+    if (findNode(tree, "vco_scope_panel") == nullptr)
+    {
+        std::printf("FAIL: scope panel must still render while the mod-detail grid is open\n");
+        return false;
+    }
+    return true;
+}
+
+bool test_mod_detail_grid_closes_back_to_layer0_on_target_press()
+{
+    FroggersAppSurface surface;
+    surface.AudioControlCore().bus().push(froggers_v2::MessageIn::ModDrillIn(0, 0));
+    surface.AudioControlCore().processBus();
+
+    const synth::ui::NodeTree treeOpen = surface.BuildTree();
+    if (findNode(treeOpen, "audio_grid_label_15") == nullptr)
+    {
+        std::printf("FAIL: expected mod-detail grid open before Target/Back press\n");
+        return false;
+    }
+
+    // Press the Target/Back cell (slot 15) -- same MessageIn::ParamPress
+    // SubmodulePagePanel::pushPress pushes on a ring's centre-dot press;
+    // onParamPress's isTarget branch is the only way back to layer 0.
+    froggers_v2::MessageIn press;
+    press.type = froggers_v2::MessageIn::Type::ParamPress;
+    press.page = 0;
+    press.slot = 15;
+    surface.AudioControlCore().bus().push(press);
+    surface.AudioControlCore().processBus();
+
+    const synth::ui::NodeTree treeClosed = surface.BuildTree();
+    const synth::ui::Node* label0 = findNode(treeClosed, "audio_grid_label_0");
+    if (label0 == nullptr || label0->text != "VCO1")
+    {
+        std::printf("FAIL: Target/Back press did not return the grid to layer 0\n");
+        return false;
+    }
+    if (findNode(treeClosed, "audio_grid_label_15") != nullptr)
+    {
+        std::printf("FAIL: layer-0 audio grid must not render a 16th slot after closing mod view\n");
+        return false;
+    }
+    return true;
+}
+
 bool test_switching_between_modules_clears_previous_grid_nodes()
 {
     // Tab selection renders each module's grid in turn, and only that
@@ -501,6 +630,9 @@ int main()
     ok = test_envelope_module_grid_shows_real_labels() && ok;
     ok = test_no_pair_ar_label_remains_anywhere_in_the_surface() && ok;
     ok = test_switching_between_modules_clears_previous_grid_nodes() && ok;
+    ok = test_mod_detail_grid_closed_shows_layer0_labels() && ok;
+    ok = test_mod_detail_grid_opens_via_control_core_drill_in() && ok;
+    ok = test_mod_detail_grid_closes_back_to_layer0_on_target_press() && ok;
 
     if (!ok)
     {

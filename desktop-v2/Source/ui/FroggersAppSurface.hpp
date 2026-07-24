@@ -67,13 +67,33 @@
 // here since it already reads row count and labels from the shared
 // authority tables, not a hardcoded slot count.
 //
+// Packet 7 increment 4 (tasks.md 7.x, "mod-detail drill-in swap", design.md
+// D4's 2-deep gate) adds the layer-1 swap: BuildActiveModuleGrid() now
+// branches on m_audioCore.visibleCount() == froggers_v2::kUiSlots (the same
+// test SubmodulePagePanel::detailGridOpen()/AdsrPagePanel::detailGridOpen()
+// use today) and, when true, renders BuildModDetailGrid() instead of
+// BuildModuleGrid() in the identical grid region -- a content swap, not a
+// layout change. BuildModDetailGrid() reads the same already-public
+// FroggersV2ControlCore accessors SubmodulePagePanel::refresh() reads for its
+// own detail grid (visibleSlotIsTarget()/visibleModIndexForSlot(), plus
+// uiState()'s per-slot effective/arcMin/arcMax -- populateUiState()'s
+// slotViewEffective() already resolves target-vs-lane values there) and the
+// manifest's kPermanentModulationSources for lane display names, so there is
+// no parallel mod-view authority: m_modView (packet 6, FroggersV2ControlCore)
+// remains the sole gate, opened by MessageIn::ModDrillIn and closed by
+// pressing the dedicated Target/Back cell (onParamPress's isTarget branch),
+// exactly as SubmodulePagePanel/AdsrPagePanel already drive it. The swap
+// keeps increment 1's id-prefix convention ("<idPrefix>_grid_label_N"/
+// "<idPrefix>_grid_ring_N"), so the same ids carry different content
+// depending on layer -- tests key off text, not presence/absence.
+//
 // This is deliberately NOT the full unified Application surface layout yet
-// (mod-detail-grid drill-in swap, transport/global chrome, Envelope content)
-// -- those are later tasks.md section 7 packets. This file is also not wired
-// into Main.cpp / MainComponent (shell cutover is tasks.md section 10) and
-// does not touch cross-couplers or the DSP/control-core's own authority
-// (packet 8's 16-slot Crunchy/Crispy map is unaffected -- the grid here only
-// reads FroggersV2ControlCore, it does not change its semantics).
+// (transport/global chrome relocate, Envelope content) -- those are later
+// tasks.md section 7 packets. This file is also not wired into Main.cpp /
+// MainComponent (shell cutover is tasks.md section 10) and does not touch
+// cross-couplers or the DSP/control-core's own authority (packet 8's
+// 16-slot Crunchy/Crispy map is unaffected -- the grid here only reads
+// FroggersV2ControlCore, it does not change its semantics).
 
 #include "ui/FroggersScopePanels.hpp"
 
@@ -85,6 +105,7 @@
 #include "synth/PortableUIBuilders.hpp"
 
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -222,7 +243,19 @@ private:
         const std::uint8_t hostPage = kModuleHostPage[m_activeModuleIndex];
         if (hostPage != froggers_v2::kNoSelection)
         {
-            BuildModuleGrid(builder, kModuleIds[m_activeModuleIndex], hostPage);
+            // Layer-0<->layer-1 swap (tasks.md 7.x, D4): m_audioCore's own
+            // visibleCount() reaching kUiSlots (16) IS the control core's
+            // mod-view-open signal (SubmodulePagePanel::detailGridOpen()/
+            // AdsrPagePanel::detailGridOpen() read the exact same condition)
+            // -- no surface-owned flag decides this.
+            if (m_audioCore.visibleCount() == froggers_v2::kUiSlots)
+            {
+                BuildModDetailGrid(builder, kModuleIds[m_activeModuleIndex]);
+            }
+            else
+            {
+                BuildModuleGrid(builder, kModuleIds[m_activeModuleIndex], hostPage);
+            }
             return;
         }
         const std::string stubId = std::string(kModuleIds[m_activeModuleIndex]) + "_grid_stub";
@@ -279,6 +312,56 @@ private:
             voice.value = effective.effective;
             voice.minValue = effective.arcMin;
             voice.maxValue = effective.arcMax;
+            voice.indicatorColor = ring.baseColor;
+            ring.voices.push_back(voice);
+
+            builder.Draw(idPrefix + "_grid_ring_" + std::to_string(slot),
+                        cell,
+                        synth::ui::BuildEncoderDrawCommands(ring, cell));
+        }
+    }
+
+    // Layer-1 mod-detail grid (tasks.md 7.x, D4's 2-deep gate): the fixed
+    // 16-cell (4x4, kUiSlots) parameter-detail layout -- every permanent
+    // modulation lane (manifest order) plus the dedicated Target/Back cell at
+    // slot kNumModSources (15). Reuses GridCellBounds()'s 4-column layout (the
+    // same on-screen region BuildModuleGrid() draws layer 0's <=10-slot grid
+    // into) and increment 1's id-prefix convention, so this is purely a
+    // content swap. Mirrors SubmodulePagePanel::refresh()/layoutDetailGrid()
+    // and AdsrPagePanel's identical detail-grid branch: visibleSlotIsTarget()/
+    // visibleModIndexForSlot() (already-public FroggersV2ControlCore
+    // accessors) pick the label, and uiState()'s per-slot effective/arcMin/
+    // arcMax -- populated by populateUiState()'s slotViewEffective(), which
+    // already resolves target-vs-lane values -- drive the ring, exactly as
+    // EncoderRingComponent::refreshFromState() reads them today. idPrefix is
+    // the active module's id (kModuleIds[m_activeModuleIndex]); the control
+    // core's own m_activePage/m_modView.targetRow (packet 6) are what decide
+    // which row's lanes are shown, not a parameter here.
+    void BuildModDetailGrid(synth::ui::Builder& builder, const std::string& idPrefix)
+    {
+        const froggers_v2::FroggersV2UIState& state = m_audioCore.uiState();
+        const std::uint8_t visible = m_audioCore.visibleCount();
+        for (std::uint8_t slot = 0; slot < visible; ++slot)
+        {
+            const bool isTarget = m_audioCore.visibleSlotIsTarget(slot);
+            const std::uint8_t lane = m_audioCore.visibleModIndexForSlot(slot);
+            const char* label = (isTarget || lane >= froggers_v2::kNumModSources)
+                ? "Target (Back)"
+                : froggers_v2::manifest::kPermanentModulationSources[lane].displayName;
+            const synth::ui::Bounds cell = GridCellBounds(slot);
+
+            builder.Label(idPrefix + "_grid_label_" + std::to_string(slot), label);
+
+            synth::ui::EncoderDrawState ring;
+            ring.connected = true;
+            ring.shortLabel = label;
+            ring.baseColor =
+                isTarget ? synth::Color::Rgb(220, 170, 120) : synth::Color::Rgb(120, 170, 220);
+            ring.voiceCount = 1;
+            synth::ui::EncoderVoiceDrawState voice;
+            voice.value = state.effective[slot].load(std::memory_order_acquire);
+            voice.minValue = state.arcMin[slot].load(std::memory_order_acquire);
+            voice.maxValue = state.arcMax[slot].load(std::memory_order_acquire);
             voice.indicatorColor = ring.baseColor;
             ring.voices.push_back(voice);
 
