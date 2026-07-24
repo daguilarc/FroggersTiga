@@ -516,12 +516,22 @@ set_target_properties(FroggersScopePanels_test PROPERTIES
 )
 add_test(NAME FroggersScopePanels_test COMMAND FroggersScopePanels_test)
 
-# FroggersAppSurface_test -- packet 5 (tasks.md 5.1-5.4). Portable-visualizer
-# presence coverage for Source/ui/FroggersAppSurface.hpp: proves the surface's
-# actual synth::ui::Surface::BuildTree() exposes the two dual ScopeVisualizer
-# panels and the GangedRandomLfoVisualizer on the Random S&H mod-depth cells.
-# JUCE-free / no AudioEngine, same as FroggersScopePanels_test above.
-add_executable(FroggersAppSurface_test tests/FroggersAppSurface_test.cpp)
+# FroggersAppSurface_test -- packet 5 (tasks.md 5.1-5.4), extended by packet 7
+# increment 1 (tasks.md 7.2). Portable-visualizer presence coverage for
+# Source/ui/FroggersAppSurface.hpp: proves the surface's actual
+# synth::ui::Surface::BuildTree() exposes the two dual ScopeVisualizer panels
+# and the GangedRandomLfoVisualizer on the Random S&H mod-depth cells, plus
+# (packet 7 inc 1) the 6-tab module selector and the active module's 4x4
+# grid (Audio ported fully). FroggersV2ControlCore.cpp is compiled in here
+# because the surface now owns one JUCE-free control-core instance to read
+# the Audio module's real params/labels from -- the same authority
+# SubmodulePagePanel reads today (ExternalMidiMod_test above proves this .cpp
+# already builds JUCE-free). Still no AudioEngine, same as
+# FroggersScopePanels_test above.
+add_executable(FroggersAppSurface_test
+    tests/FroggersAppSurface_test.cpp
+    Source/control/FroggersV2ControlCore.cpp
+)
 target_include_directories(FroggersAppSurface_test PRIVATE
     Source
     "${CORE_DIR}"
