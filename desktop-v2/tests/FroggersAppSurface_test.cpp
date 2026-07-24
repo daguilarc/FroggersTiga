@@ -570,6 +570,56 @@ bool test_mod_detail_grid_closes_back_to_layer0_on_target_press()
     return true;
 }
 
+// Mod-view/tab-switch stale-state bug (FroggersV2ControlCore::SelectPage,
+// control/FroggersV2ControlCore.cpp): switching module tabs while a
+// mod-detail view is open used to leave m_modView open, so the newly
+// selected module's grid kept rendering the stale 16-cell detail (with the
+// old page's targetRow) instead of its own layer-0 grid. SelectPage now
+// closes m_modView (open=false, targetRow=kNoSelection) alongside
+// m_activePage, exactly like the dedicated Target/Back press already does.
+bool test_selecting_a_different_tab_closes_stale_mod_detail_view()
+{
+    FroggersAppSurface surface;
+    // Open Audio's mod-detail view (page 0, row 0 -- VCO1), same drill-in
+    // path test_mod_detail_grid_opens_via_control_core_drill_in uses.
+    surface.AudioControlCore().bus().push(froggers_v2::MessageIn::ModDrillIn(0, 0));
+    surface.AudioControlCore().processBus();
+
+    const synth::ui::NodeTree treeOpen = surface.BuildTree();
+    if (findNode(treeOpen, "audio_grid_label_15") == nullptr)
+    {
+        std::printf("FAIL: expected Audio's mod-detail grid open before switching tabs\n");
+        return false;
+    }
+
+    // Switch to Filter (kModuleHostPage[filter] == 2) while the mod view is
+    // still open -- the same tab-selection path
+    // test_selecting_a_different_tab_moves_active_module_and_grid uses.
+    surface.DispatchAction(synth::ui::Action::WithValue("select_module", "filter"));
+    const synth::ui::NodeTree treeAfterSwitch = surface.BuildTree();
+
+    // Without the fix, Filter's grid would still render the stale 16-slot
+    // mod-detail layout (a 16th slot, and/or the Target/Back label) carried
+    // over from Audio's now-irrelevant targetRow, instead of Filter's own
+    // <=10-slot layer-0 grid.
+    if (findNode(treeAfterSwitch, "filter_grid_label_15") != nullptr)
+    {
+        std::printf(
+            "FAIL: Filter must not render a stale 16-slot mod-detail grid after tab switch\n");
+        return false;
+    }
+    const synth::ui::Node* filterLabel0 = findNode(treeAfterSwitch, "filter_grid_label_0");
+    if (filterLabel0 == nullptr || filterLabel0->text != "Comb offset")
+    {
+        std::printf(
+            "FAIL: Filter grid slot 0 should show real layer-0 label 'Comb offset' after tab "
+            "switch, got '%s'\n",
+            filterLabel0 == nullptr ? "<missing>" : filterLabel0->text.c_str());
+        return false;
+    }
+    return true;
+}
+
 bool test_switching_between_modules_clears_previous_grid_nodes()
 {
     // Tab selection renders each module's grid in turn, and only that
@@ -633,6 +683,7 @@ int main()
     ok = test_mod_detail_grid_closed_shows_layer0_labels() && ok;
     ok = test_mod_detail_grid_opens_via_control_core_drill_in() && ok;
     ok = test_mod_detail_grid_closes_back_to_layer0_on_target_press() && ok;
+    ok = test_selecting_a_different_tab_closes_stale_mod_detail_view() && ok;
 
     if (!ok)
     {

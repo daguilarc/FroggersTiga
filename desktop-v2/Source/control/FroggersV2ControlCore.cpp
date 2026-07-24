@@ -566,6 +566,13 @@ void FroggersV2ControlCore::applyMessage(const MessageIn& message)
             if (message.page < kNumHostPages)
             {
                 m_activePage = message.page;
+                // Close any open mod-detail view: it targets a row on the
+                // page being left, so leaving it open would render the
+                // stale 16-cell detail against the newly selected page's
+                // slots (rebuildVisibleSlots() below reads m_modView.open,
+                // FroggersV2ControlCore.cpp:1278-1292).
+                m_modView.open = false;
+                m_modView.targetRow = kNoSelection;
                 rebuildVisibleSlots();
             }
             break;
