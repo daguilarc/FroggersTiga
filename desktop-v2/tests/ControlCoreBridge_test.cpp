@@ -934,27 +934,30 @@ bool test_pair_ar_gate_policy()
     return true;
 }
 
-bool test_pair_ar_page_seven_rows()
+bool test_envelope_page_seven_rows()
 {
+    // Task 7.5 renamed this page's carousel label "Pair-AR" -> "Envelope" (row
+    // count/geometry unchanged -- see V2DesktopPageDisplayNames.hpp's file-header
+    // note on why Sustain rows are not added here).
     FroggersV2ControlCore core;
 
-    MessageIn selectPairAr;
-    selectPairAr.type = MessageIn::Type::SelectPage;
-    selectPairAr.page = 5;
-    pushAndProcess(core, selectPairAr);
+    MessageIn selectEnvelope;
+    selectEnvelope.type = MessageIn::Type::SelectPage;
+    selectEnvelope.page = 5;
+    pushAndProcess(core, selectEnvelope);
 
-    const uint8_t pairArRowCount = HostParameterInventoryV2::rowsForUiPage(5);
-    if (core.visibleCount() != pairArRowCount)
+    const uint8_t envelopeRowCount = HostParameterInventoryV2::rowsForUiPage(5);
+    if (core.visibleCount() != envelopeRowCount)
     {
         std::printf(
-            "FAIL: Pair-AR visibleCount expected %u got %u\n",
-            static_cast<unsigned>(pairArRowCount),
+            "FAIL: Envelope visibleCount expected %u got %u\n",
+            static_cast<unsigned>(envelopeRowCount),
             static_cast<unsigned>(core.visibleCount()));
         return false;
     }
-    if (std::strcmp(V2DesktopPageDisplayNames::forHostPage(5), "Pair-AR") != 0)
+    if (std::strcmp(V2DesktopPageDisplayNames::forHostPage(5), "Envelope") != 0)
     {
-        std::printf("FAIL: page 5 carousel label expected Pair-AR\n");
+        std::printf("FAIL: page 5 carousel label expected Envelope\n");
         return false;
     }
     return true;
@@ -2693,7 +2696,7 @@ int main()
     {
         return 1;
     }
-    if (!test_pair_ar_page_seven_rows())
+    if (!test_envelope_page_seven_rows())
     {
         return 1;
     }

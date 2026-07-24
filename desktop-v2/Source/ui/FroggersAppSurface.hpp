@@ -39,21 +39,33 @@
 // parameterized on id-prefix + FroggersV2ControlCore host-page number.
 // kModuleHostPage below is the one place that reconciles the portable
 // surface's tab order (kModuleIds) with V2DesktopPageDisplayNames.hpp's host
-// page numbering (0 Audio, 1 Reverb, 2 Filter, 3 Drive, 4 Delay, 5 Pair-AR/
-// Envelope) -- the two orders differ, so this table is load-bearing, not
-// cosmetic. DispatchAction now also syncs m_audioCore's *own* shared active
-// page (via a SelectPage MessageIn) when a real module's tab is selected --
-// this is the exact same message the JUCE shell's PageCarouselComponent::
-// onPageChanged -> DesktopV2HostCallbacks::pushSelectPage sends today
+// page numbering (0 Audio, 1 Reverb, 2 Filter, 3 Drive, 4 Delay, 5 Envelope)
+// -- the two orders differ, so this table is load-bearing, not cosmetic.
+// DispatchAction now also syncs m_audioCore's *own* shared active page (via a
+// SelectPage MessageIn) when a real module's tab is selected -- this is the
+// exact same message the JUCE shell's PageCarouselComponent::onPageChanged ->
+// DesktopV2HostCallbacks::pushSelectPage sends today
 // (Source/ui/PageCarouselComponent.cpp, Source/DesktopV2HostCallbacks.cpp),
 // ported here JUCE-free. This is not a second selection authority:
 // m_activeModuleIndex remains the sole reader deciding which grid renders;
 // the SelectPage sync is a one-way projection driven only by that index's
 // writer (DispatchAction), the same "no parallel page-state" shape as
 // increment 1, just extended now that non-Audio modules need real page data.
-// Envelope maps to froggers_v2::kNoSelection in kModuleHostPage and is
-// deliberately NOT synced or ported -- it stays the increment-1 stub (held
-// for the ASR increment).
+//
+// Packet 7 increment 3 (tasks.md 7.5, "ASR Envelope") ports the sixth and
+// last module, Envelope: kModuleHostPage's Envelope entry moves from
+// froggers_v2::kNoSelection to host page 5, so it now runs through the exact
+// same BuildModuleGrid()/SyncAudioCoreHostPage() path as the other five --
+// no special-casing added here. V2DesktopPageDisplayNames.hpp's page-5
+// labels were renamed this increment ("Pair-AR" -> "Envelope", "Atk1"/"Rel1"
+// -> "Attack VCO1"/"Release VCO1", etc.); this file only picks that up
+// because BuildModuleGrid() already reads labels from that table, not
+// because anything module-specific was added here. Sustain rows/knobs are
+// NOT added (grid stays 7 slots, unchanged) -- see
+// V2DesktopPageDisplayNames.hpp's file-header note for why: it surfaced a
+// shared-engine gap (src/core/VcoAdsrState.hpp has no sustain-level
+// semantics), which is out of scope for a portable-UI/label increment and is
+// reported separately rather than fixed here.
 //
 // This is deliberately NOT the full unified Application surface layout yet
 // (mod-detail-grid drill-in swap, transport/global chrome, Envelope content)
@@ -96,13 +108,15 @@ public:
 
     // Reconciles kModuleIds' tab order with FroggersV2ControlCore/
     // V2DesktopPageDisplayNames' host-page numbering (0 Audio, 1 Reverb,
-    // 2 Filter, 3 Drive, 4 Delay, 5 Pair-AR/Envelope) -- the orders differ
+    // 2 Filter, 3 Drive, 4 Delay, 5 Envelope) -- the orders differ
     // (Reverb/Delay in particular), so this table is the single place that
-    // maps one to the other. froggers_v2::kNoSelection marks Envelope: it is
-    // not ported this increment, so neither BuildActiveModuleGrid() nor
-    // DispatchAction() below ever try to read/sync a host page for it.
+    // maps one to the other. Envelope's entry is host page 5 as of increment
+    // 3 (tasks.md 7.5) -- all six modules now resolve to a real host page, so
+    // BuildActiveModuleGrid()'s stub branch below is unreachable via
+    // kModuleHostPage but kept for defensive symmetry with DispatchAction's
+    // no-op-on-kNoSelection guard.
     static constexpr std::array<std::uint8_t, kModuleCount> kModuleHostPage{
-        {0, froggers_v2::kNoSelection, 2, 3, 1, 4}};
+        {0, 5, 2, 3, 1, 4}};
 
     synth::ui::NodeTree BuildTree() override
     {
@@ -234,8 +248,8 @@ private:
     }
 
     // Reference pattern (tasks.md 7.2), shared by every ported module (Audio,
-    // Filter, Drive, Reverb, Delay -- Envelope stays a stub, see
-    // kModuleHostPage): reads the same source SubmodulePagePanel::refresh()
+    // Filter, Drive, Reverb, Delay, Envelope -- all six as of increment 3):
+    // reads the same source SubmodulePagePanel::refresh()
     // reads today (desktop-v2/Source/ui/SubmodulePagePanel.cpp) --
     // visibleCount() / visibleRowForSlot() / effectiveRow() from
     // FroggersV2ControlCore, and V2DesktopPageDisplayNames::forHostPageRow()

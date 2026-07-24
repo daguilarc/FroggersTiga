@@ -22,12 +22,20 @@
 // ported to the same real reference pattern as Audio (same id-prefix
 // convention: "<moduleId>_grid_label_N"/"<moduleId>_grid_ring_N"), reading
 // real labels/values from the same shared FroggersV2ControlCore + manifest
-// source. Envelope is intentionally left untouched (its stub still renders --
-// it is held for the ASR increment).
+// source.
+//
+// Packet 7 increment 3 (tasks.md 7.5, "ASR Envelope") ports the sixth and
+// last module, Envelope, to the same reference pattern (real grid, not a
+// stub) and covers task 7.5's naming retirement: the desktop-v2 page-5 label
+// authority (V2DesktopPageDisplayNames.hpp) no longer says "Pair-AR" anywhere
+// -- test_no_pair_ar_label_remains_anywhere_in_the_surface scans every
+// Label/Draw-text node in the built tree for that substring. Sustain rows are
+// deliberately NOT added (grid stays 7 slots: Attack/Release per VCO +
+// Crispy) -- see V2DesktopPageDisplayNames.hpp's file-header note; that gap
+// is reported, not fixed, in this increment.
 //
 // Does NOT wire into Main.cpp / MainComponent (shell cutover is tasks.md
-// section 10, a later packet). Does not build the Envelope module's real grid
-// yet (a later increment).
+// section 10, a later packet).
 
 #include "ui/FroggersAppSurface.hpp"
 
@@ -378,25 +386,57 @@ bool test_delay_module_grid_shows_real_labels()
          "Color", "Halo", "Crispy"});
 }
 
-bool test_envelope_module_still_renders_stub()
+bool test_envelope_module_grid_shows_real_labels()
 {
-    // Envelope is explicitly out of scope this increment (held for the ASR
-    // increment) -- it must keep rendering the "Coming next" stub exactly as
-    // increment 1 left it, not silently pick up a (wrong) real grid.
-    FroggersAppSurface surface;
-    surface.DispatchAction(synth::ui::Action::WithValue("select_module", "envelope"));
-    const synth::ui::NodeTree tree = surface.BuildTree();
+    // Packet 7 increment 3 (tasks.md 7.5): Envelope is now ported to the real
+    // reference pattern, same as the other five modules. Rows are per-VCO
+    // Attack/Release using the task 7.5 full-word labels ("Attack VCO1", not
+    // "Atk1") -- Sustain rows are deliberately absent (see
+    // V2DesktopPageDisplayNames.hpp's file-header note: adding them needs a
+    // shared-engine DSP change, out of scope here).
+    return checkModuleGridRealLabels(
+        "envelope",
+        "envelope",
+        {"Attack VCO1", "Release VCO1", "Attack VCO2", "Release VCO2", "Attack VCO3",
+         "Release VCO3", "Crispy"});
+}
 
-    const synth::ui::Node* stub = findNode(tree, "envelope_grid_stub");
-    if (stub == nullptr || stub->kind != synth::ui::NodeKind::Label)
+bool test_no_pair_ar_label_remains_anywhere_in_the_surface()
+{
+    // Task 7.5 retires the "Pair-AR" naming in the desktop-v2 surface. Scans
+    // every node's label/text and every Draw node's text draw commands (the
+    // encoder rings' shortLabel is rendered through a Text draw command) for
+    // the substring, across every module tab, not just Envelope's own grid.
+    FroggersAppSurface surface;
+    static constexpr std::array<const char*, 6> kAllModules{
+        {"audio", "envelope", "filter", "drive", "reverb", "delay"}};
+
+    for (const char* moduleId : kAllModules)
     {
-        std::printf("FAIL: Envelope module should still render a labeled stub while active\n");
-        return false;
-    }
-    if (stub->text.find("Envelope") == std::string::npos)
-    {
-        std::printf("FAIL: Envelope stub text does not name the module ('%s')\n", stub->text.c_str());
-        return false;
+        surface.DispatchAction(synth::ui::Action::WithValue("select_module", moduleId));
+        const synth::ui::NodeTree tree = surface.BuildTree();
+        for (const synth::ui::Node& node : tree.nodes)
+        {
+            if (node.label.find("Pair-AR") != std::string::npos ||
+                node.text.find("Pair-AR") != std::string::npos)
+            {
+                std::printf("FAIL: node '%s' still carries a 'Pair-AR' label/text while '%s' active\n",
+                            node.id.value.c_str(),
+                            moduleId);
+                return false;
+            }
+            for (const synth::ui::DrawCommand& command : node.drawCommands)
+            {
+                if (command.text.find("Pair-AR") != std::string::npos)
+                {
+                    std::printf(
+                        "FAIL: node '%s' draw command still carries 'Pair-AR' text while '%s' active\n",
+                        node.id.value.c_str(),
+                        moduleId);
+                    return false;
+                }
+            }
+        }
     }
     return true;
 }
@@ -407,8 +447,8 @@ bool test_switching_between_modules_clears_previous_grid_nodes()
     // module's nodes: single active-module authority means no leftover
     // nodes from a previously active module's grid.
     FroggersAppSurface surface;
-    static constexpr std::array<const char*, 5> kRealModules{
-        {"audio", "filter", "drive", "reverb", "delay"}};
+    static constexpr std::array<const char*, 6> kRealModules{
+        {"audio", "envelope", "filter", "drive", "reverb", "delay"}};
 
     for (const char* moduleId : kRealModules)
     {
@@ -458,7 +498,8 @@ int main()
     ok = test_drive_module_grid_shows_real_labels() && ok;
     ok = test_reverb_module_grid_shows_real_labels() && ok;
     ok = test_delay_module_grid_shows_real_labels() && ok;
-    ok = test_envelope_module_still_renders_stub() && ok;
+    ok = test_envelope_module_grid_shows_real_labels() && ok;
+    ok = test_no_pair_ar_label_remains_anywhere_in_the_surface() && ok;
     ok = test_switching_between_modules_clears_previous_grid_nodes() && ok;
 
     if (!ok)

@@ -119,9 +119,13 @@ inline void formatInventoryDisplayName(char* buffer,
             const char* rowName = productRowDisplayName(page, row);
             if (page == HostParameterInventoryV2::kAdsrUiPage)
             {
+                // Task 7.5 (D-section "ASR Envelope"): desktop-v2-scoped display-name
+                // relabel "Pair-AR" -> "Envelope". Internal axis/stableId
+                // ("page5_row%u_knob"/"_depth", formatInventoryStableId above) is
+                // unchanged -- host automation/preset identity is unaffected.
                 std::snprintf(buffer,
                               capacity,
-                              "Pair-AR/%s%s",
+                              "Envelope/%s%s",
                               rowName,
                               axis == HostParameterInventoryV2::Axis::PageModDepth ? " depth" : "");
             }

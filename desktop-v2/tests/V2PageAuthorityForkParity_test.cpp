@@ -7,19 +7,23 @@
 // it to Audio too -- desktop-v2 removes the Cross-coupler row from its Audio page
 // (flag-gated to V2 hosts only; the shared engine XCPL param slot is retained, not
 // deleted, for Daisy/v1 index stability), while the shared table + web V2 host keep
-// Cross-coupler unchanged. Every OTHER page (Reverb/Filter/Drive/Delay + Pair-AR)
-// must still stay byte-identical across the two tables. This test asserts that
-// agreement (Audio excluded) so a future edit to one table that forgets the other
-// is caught before web-v2 migration.
+// Cross-coupler unchanged. Task 7.5 (operator 2026-07-24) widens it again: desktop-v2
+// page 5 is renamed "Pair-AR" -> "Envelope" with full-word per-VCO row labels
+// (Attack/Release only -- see V2DesktopPageDisplayNames.hpp's file-header note on
+// why Sustain rows are not added), while the shared table's page 6 keeps "Pair-AR"
+// unchanged for the web/wasm V2 host + v1. Every OTHER page (Reverb/Filter/Drive/
+// Delay) must still stay byte-identical across the two tables. This test asserts
+// that agreement (Audio and Envelope excluded) so a future edit to one table that
+// forgets the other is caught before web-v2 migration.
 //
 // Page-index mapping (desktop UI page -> shared 7-page index; the shared table has
 // Random at index 1, so everything after Audio is shifted by one):
-//   Audio  desktop 0 <-> shared 0   (EXCLUDED -- Cross-coupler fork, D11/D14)
-//   Reverb desktop 1 <-> shared 2
-//   Filter desktop 2 <-> shared 3
-//   Drive  desktop 3 <-> shared 4
-//   Delay  desktop 4 <-> shared 5
-//   PairAR desktop 5 <-> shared 6
+//   Audio    desktop 0 <-> shared 0   (EXCLUDED -- Cross-coupler fork, D11/D14)
+//   Reverb   desktop 1 <-> shared 2
+//   Filter   desktop 2 <-> shared 3
+//   Drive    desktop 3 <-> shared 4
+//   Delay    desktop 4 <-> shared 5
+//   Envelope desktop 5 <-> shared 6   (EXCLUDED -- Pair-AR->Envelope fork, task 7.5)
 
 #include "V2DesktopPageDisplayNames.hpp"
 #include "V2ParamDisplayNames.hpp"
@@ -37,14 +41,15 @@ struct PagePair
     const char* name;
 };
 
-// Audio (desktop 0 <-> shared 0) is deliberately excluded (see file header):
-// task 7.4 forked it too, removing the Cross-coupler row from desktop-v2 only.
+// Audio (desktop 0 <-> shared 0) and Envelope (desktop 5 <-> shared 6) are
+// deliberately excluded (see file header): task 7.4 forked Audio (removing the
+// Cross-coupler row from desktop-v2 only), task 7.5 forked Envelope (renaming
+// "Pair-AR" -> "Envelope" with full-word row labels, desktop-v2 only).
 constexpr PagePair kSharedPages[] = {
     {1, 2, "Reverb"},
     {2, 3, "Filter"},
     {3, 4, "Drive"},
     {4, 5, "Delay"},
-    {5, 6, "Pair-AR"},
 };
 
 const char* safe(const char* s)
