@@ -88,6 +88,46 @@ bool test_engine_init_process_block_finite_stereo()
     return true;
 }
 
+// Cross-check for the Config uiWidth/uiHeight crash-gate fix
+// (FroggersAppCore.cpp's Config()): RuntimeMainComponent::ValidateApplicationTree
+// (External/Sheaf/include/synth/RuntimeMainComponent.hpp:378-384) throws on the
+// very first render if the application root's bounds don't equal
+// Config().uiWidth/uiHeight exactly. FroggersAppSurface::BuildTree() always
+// puts the root node first (Builder::Root pushes it at index 0 -- see
+// PortableUIBuilders.hpp), so this asserts against the actual built tree
+// rather than duplicating the surface's private kSurfaceBounds constant,
+// keeping the two from silently drifting apart again.
+bool test_config_ui_bounds_match_surface_root()
+{
+    FroggersApp app;
+    const synth::RuntimeConfig config = FroggersApp::Config();
+    const synth::ui::NodeTree tree = app.PortableSurface().BuildTree();
+
+    if (tree.nodes.empty() || tree.nodes.front().kind != synth::ui::NodeKind::Root)
+    {
+        std::printf("FAIL: surface tree has no root node\n");
+        return false;
+    }
+
+    const synth::ui::Bounds& rootBounds = tree.nodes.front().bounds;
+    if (rootBounds.x != 0.0f || rootBounds.y != 0.0f ||
+        rootBounds.width != static_cast<float>(config.uiWidth) ||
+        rootBounds.height != static_cast<float>(config.uiHeight))
+    {
+        std::printf(
+            "FAIL: Config().uiWidth/uiHeight (%d x %d) does not match surface root bounds "
+            "(%.1f,%.1f %.1fx%.1f)\n",
+            config.uiWidth,
+            config.uiHeight,
+            static_cast<double>(rootBounds.x),
+            static_cast<double>(rootBounds.y),
+            static_cast<double>(rootBounds.width),
+            static_cast<double>(rootBounds.height));
+        return false;
+    }
+    return true;
+}
+
 bool test_process_block_matches_direct_facade_path()
 {
     // Direct facade reference path -- mirrors
@@ -140,6 +180,10 @@ bool test_process_block_matches_direct_facade_path()
 int main()
 {
     if (!test_engine_init_process_block_finite_stereo())
+    {
+        return 1;
+    }
+    if (!test_config_ui_bounds_match_surface_root())
     {
         return 1;
     }

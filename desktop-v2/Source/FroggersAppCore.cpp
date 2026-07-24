@@ -25,6 +25,16 @@ synth::RuntimeConfig FroggersAppCore::Config()
     config.numAudioOutputs = 2;
     config.preferredSampleRate = HostAudioConfig::kDefaultSampleRate;
     config.preferredBlockSize = 512;
+    // Must match froggers_v2::FroggersAppSurface's root bounds
+    // (Source/ui/FroggersAppSurface.hpp's kSurfaceBounds, 1280x920):
+    // RuntimeMainComponent::ValidateApplicationTree throws on the very first
+    // render if the application root's bounds don't equal
+    // Config().uiWidth/uiHeight (RuntimeMainComponent.hpp:378-384). Defaults
+    // (AppContext.hpp) are 900x560, which do not match -- see
+    // FroggersApp_test.cpp's test_config_ui_bounds_match_surface_root for the
+    // cross-check that keeps these from drifting apart again.
+    config.uiWidth = 1280;
+    config.uiHeight = 920;
     return config;
 }
 
