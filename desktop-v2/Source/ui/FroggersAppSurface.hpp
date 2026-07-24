@@ -33,14 +33,35 @@
 // The other five modules render a single labeled stub node while active;
 // they get fully ported in later increments (do not build their grids here).
 //
+// Packet 7 increment 2 (tasks.md 7.2) ports Filter, Drive, Reverb, and Delay
+// to that same reference pattern: BuildModuleGrid() (renamed from increment
+// 1's BuildAudioModuleGrid()) is now shared by all five real modules,
+// parameterized on id-prefix + FroggersV2ControlCore host-page number.
+// kModuleHostPage below is the one place that reconciles the portable
+// surface's tab order (kModuleIds) with V2DesktopPageDisplayNames.hpp's host
+// page numbering (0 Audio, 1 Reverb, 2 Filter, 3 Drive, 4 Delay, 5 Pair-AR/
+// Envelope) -- the two orders differ, so this table is load-bearing, not
+// cosmetic. DispatchAction now also syncs m_audioCore's *own* shared active
+// page (via a SelectPage MessageIn) when a real module's tab is selected --
+// this is the exact same message the JUCE shell's PageCarouselComponent::
+// onPageChanged -> DesktopV2HostCallbacks::pushSelectPage sends today
+// (Source/ui/PageCarouselComponent.cpp, Source/DesktopV2HostCallbacks.cpp),
+// ported here JUCE-free. This is not a second selection authority:
+// m_activeModuleIndex remains the sole reader deciding which grid renders;
+// the SelectPage sync is a one-way projection driven only by that index's
+// writer (DispatchAction), the same "no parallel page-state" shape as
+// increment 1, just extended now that non-Audio modules need real page data.
+// Envelope maps to froggers_v2::kNoSelection in kModuleHostPage and is
+// deliberately NOT synced or ported -- it stays the increment-1 stub (held
+// for the ASR increment).
+//
 // This is deliberately NOT the full unified Application surface layout yet
-// (mod-detail-grid drill-in swap, transport/global chrome, Envelope/Filter/
-// Drive/Reverb/Delay content) -- those are later tasks.md section 7 packets.
-// This file is also not wired into Main.cpp / MainComponent (shell cutover
-// is tasks.md section 10) and does not touch cross-couplers or the DSP/
-// control-core's own authority (packet 8's 16-slot Crunchy/Crispy map is
-// unaffected -- the grid here only reads FroggersV2ControlCore, it does not
-// change its semantics).
+// (mod-detail-grid drill-in swap, transport/global chrome, Envelope content)
+// -- those are later tasks.md section 7 packets. This file is also not wired
+// into Main.cpp / MainComponent (shell cutover is tasks.md section 10) and
+// does not touch cross-couplers or the DSP/control-core's own authority
+// (packet 8's 16-slot Crunchy/Crispy map is unaffected -- the grid here only
+// reads FroggersV2ControlCore, it does not change its semantics).
 
 #include "ui/FroggersScopePanels.hpp"
 
@@ -72,6 +93,16 @@ public:
     static constexpr std::array<const char*, kModuleCount> kModuleLabels{
         {"Audio", "Envelope", "Filter", "Drive", "Reverb", "Delay"}};
     static constexpr std::size_t kAudioModuleIndex = 0;
+
+    // Reconciles kModuleIds' tab order with FroggersV2ControlCore/
+    // V2DesktopPageDisplayNames' host-page numbering (0 Audio, 1 Reverb,
+    // 2 Filter, 3 Drive, 4 Delay, 5 Pair-AR/Envelope) -- the orders differ
+    // (Reverb/Delay in particular), so this table is the single place that
+    // maps one to the other. froggers_v2::kNoSelection marks Envelope: it is
+    // not ported this increment, so neither BuildActiveModuleGrid() nor
+    // DispatchAction() below ever try to read/sync a host page for it.
+    static constexpr std::array<std::uint8_t, kModuleCount> kModuleHostPage{
+        {0, froggers_v2::kNoSelection, 2, 3, 1, 4}};
 
     synth::ui::NodeTree BuildTree() override
     {
@@ -115,6 +146,11 @@ public:
             if (action.value == kModuleIds[i])
             {
                 m_activeModuleIndex = i;
+                const std::uint8_t hostPage = kModuleHostPage[i];
+                if (hostPage != froggers_v2::kNoSelection)
+                {
+                    SyncAudioCoreHostPage(hostPage);
+                }
                 return;
             }
         }
@@ -169,36 +205,57 @@ private:
 
     void BuildActiveModuleGrid(synth::ui::Builder& builder)
     {
-        if (m_activeModuleIndex == kAudioModuleIndex)
+        const std::uint8_t hostPage = kModuleHostPage[m_activeModuleIndex];
+        if (hostPage != froggers_v2::kNoSelection)
         {
-            BuildAudioModuleGrid(builder);
+            BuildModuleGrid(builder, kModuleIds[m_activeModuleIndex], hostPage);
             return;
         }
         const std::string stubId = std::string(kModuleIds[m_activeModuleIndex]) + "_grid_stub";
         builder.Label(stubId, std::string("Coming next: ") + kModuleLabels[m_activeModuleIndex]);
     }
 
-    // Reference pattern (tasks.md 7.2): reads the same source
-    // SubmodulePagePanel::refresh() reads today
-    // (desktop-v2/Source/ui/SubmodulePagePanel.cpp) -- visibleCount() /
-    // visibleRowForSlot() / effectiveRow() from FroggersV2ControlCore, and
-    // V2DesktopPageDisplayNames::forHostPageRow() for labels -- just
-    // JUCE-free and rendered through EncoderDraw.hpp's ring commands instead
-    // of juce::Label / EncoderRingComponent.
-    void BuildAudioModuleGrid(synth::ui::Builder& builder)
+    // Syncs m_audioCore's own shared active page to hostPage before a real
+    // module's grid renders -- the portable equivalent of the JUCE shell's
+    // PageCarouselComponent::onPageChanged -> DesktopV2HostCallbacks::
+    // pushSelectPage (Source/ui/PageCarouselComponent.cpp,
+    // Source/DesktopV2HostCallbacks.cpp). Only DispatchAction calls this (on
+    // tab selection, not on every BuildTree() render), and only
+    // BuildModuleGrid()'s visibleCount()/visibleRowForSlot() calls ever read
+    // the result -- m_activeModuleIndex is still the sole authority deciding
+    // *which* grid renders.
+    void SyncAudioCoreHostPage(std::uint8_t hostPage)
     {
-        constexpr std::uint8_t kAudioPage = 0;
+        froggers_v2::MessageIn message;
+        message.type = froggers_v2::MessageIn::Type::SelectPage;
+        message.page = hostPage;
+        m_audioCore.bus().push(message);
+        m_audioCore.processBus();
+    }
+
+    // Reference pattern (tasks.md 7.2), shared by every ported module (Audio,
+    // Filter, Drive, Reverb, Delay -- Envelope stays a stub, see
+    // kModuleHostPage): reads the same source SubmodulePagePanel::refresh()
+    // reads today (desktop-v2/Source/ui/SubmodulePagePanel.cpp) --
+    // visibleCount() / visibleRowForSlot() / effectiveRow() from
+    // FroggersV2ControlCore, and V2DesktopPageDisplayNames::forHostPageRow()
+    // for labels -- just JUCE-free and rendered through EncoderDraw.hpp's
+    // ring commands instead of juce::Label / EncoderRingComponent. idPrefix
+    // keeps increment 1's id-prefix convention ("<idPrefix>_grid_label_N" /
+    // "<idPrefix>_grid_ring_N") so a later grouping refactor stays mechanical.
+    void BuildModuleGrid(synth::ui::Builder& builder, const std::string& idPrefix, std::uint8_t page)
+    {
         const std::uint8_t visible = m_audioCore.visibleCount();
         for (std::uint8_t slot = 0; slot < visible; ++slot)
         {
             const std::uint8_t row = m_audioCore.visibleRowForSlot(slot);
-            const char* label = V2DesktopPageDisplayNames::forHostPageRow(kAudioPage, row);
+            const char* label = V2DesktopPageDisplayNames::forHostPageRow(page, row);
             const synth::ui::Bounds cell = GridCellBounds(slot);
 
-            builder.Label(std::string("audio_grid_label_") + std::to_string(slot), label);
+            builder.Label(idPrefix + "_grid_label_" + std::to_string(slot), label);
 
             const froggers_v2::FroggersV2ControlCore::EffectiveRow effective =
-                m_audioCore.effectiveRow(kAudioPage, row);
+                m_audioCore.effectiveRow(page, row);
             synth::ui::EncoderDrawState ring;
             ring.connected = true;
             ring.shortLabel = label;
@@ -211,7 +268,7 @@ private:
             voice.indicatorColor = ring.baseColor;
             ring.voices.push_back(voice);
 
-            builder.Draw(std::string("audio_grid_ring_") + std::to_string(slot),
+            builder.Draw(idPrefix + "_grid_ring_" + std::to_string(slot),
                         cell,
                         synth::ui::BuildEncoderDrawCommands(ring, cell));
         }

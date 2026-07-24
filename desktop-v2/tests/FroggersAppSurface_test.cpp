@@ -18,15 +18,23 @@
 // modules a labeled stub while active. Selecting a different tab is the only
 // way the active-module index moves (no parallel page-state).
 //
+// Packet 7 increment 2 extends this: Filter, Drive, Reverb, and Delay are now
+// ported to the same real reference pattern as Audio (same id-prefix
+// convention: "<moduleId>_grid_label_N"/"<moduleId>_grid_ring_N"), reading
+// real labels/values from the same shared FroggersV2ControlCore + manifest
+// source. Envelope is intentionally left untouched (its stub still renders --
+// it is held for the ASR increment).
+//
 // Does NOT wire into Main.cpp / MainComponent (shell cutover is tasks.md
-// section 10, a later packet). Does not build the other five modules' real
-// grids yet (later increments).
+// section 10, a later packet). Does not build the Envelope module's real grid
+// yet (a later increment).
 
 #include "ui/FroggersAppSurface.hpp"
 
 #include <array>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 using froggers_v2::FroggersAppSurface;
 
@@ -268,16 +276,168 @@ bool test_selecting_a_different_tab_moves_active_module_and_grid()
         std::printf("FAIL: Audio grid must not render once Filter is active\n");
         return false;
     }
-    const synth::ui::Node* stub = findNode(tree, "filter_grid_stub");
-    if (stub == nullptr || stub->kind != synth::ui::NodeKind::Label)
+    // Packet 7 increment 2: Filter is now ported to the real reference
+    // pattern, so it must NOT fall back to the "Coming next" stub anymore.
+    if (findNode(tree, "filter_grid_stub") != nullptr)
     {
-        std::printf("FAIL: Filter module should render a labeled stub while active\n");
+        std::printf("FAIL: Filter module must not render the stub placeholder anymore\n");
         return false;
     }
-    if (stub->text.find("Filter") == std::string::npos)
+    const synth::ui::Node* filterLabel0 = findNode(tree, "filter_grid_label_0");
+    if (filterLabel0 == nullptr || filterLabel0->text != "Comb offset")
     {
-        std::printf("FAIL: Filter stub text does not name the module ('%s')\n", stub->text.c_str());
+        std::printf("FAIL: Filter grid slot 0 should show real label 'Comb offset'\n");
         return false;
+    }
+    return true;
+}
+
+// Shared helper: builds the surface, selects moduleId's tab, and checks that
+// every row in expectedLabels shows up as "<idPrefix>_grid_label_N" (text
+// match) with a paired "<idPrefix>_grid_ring_N" Draw node that drew
+// something -- the exact id-prefix convention BuildAudioModuleGrid
+// established in increment 1 (tasks.md 7.2), now mechanically reused for
+// Filter/Drive/Reverb/Delay (tasks.md 7.2 increment 2) reading the same
+// FroggersV2ControlCore + V2DesktopPageDisplayNames source as Audio.
+bool checkModuleGridRealLabels(const char* moduleId,
+                                const char* idPrefix,
+                                const std::vector<const char*>& expectedLabels)
+{
+    FroggersAppSurface surface;
+    surface.DispatchAction(synth::ui::Action::WithValue("select_module", moduleId));
+    const synth::ui::NodeTree tree = surface.BuildTree();
+
+    for (std::size_t slot = 0; slot < expectedLabels.size(); ++slot)
+    {
+        const std::string labelId = std::string(idPrefix) + "_grid_label_" + std::to_string(slot);
+        const std::string ringId = std::string(idPrefix) + "_grid_ring_" + std::to_string(slot);
+        const synth::ui::Node* label = findNode(tree, labelId.c_str());
+        const synth::ui::Node* ring = findNode(tree, ringId.c_str());
+        if (label == nullptr || ring == nullptr)
+        {
+            std::printf("FAIL: %s grid slot %zu missing label or ring node\n", moduleId, slot);
+            return false;
+        }
+        if (label->text != expectedLabels[slot])
+        {
+            std::printf("FAIL: %s grid slot %zu label mismatch ('%s' != '%s')\n",
+                        moduleId,
+                        slot,
+                        label->text.c_str(),
+                        expectedLabels[slot]);
+            return false;
+        }
+        if (ring->kind != synth::ui::NodeKind::Draw || ring->drawCommands.empty())
+        {
+            std::printf("FAIL: %s grid slot %zu ring drew no commands\n", moduleId, slot);
+            return false;
+        }
+    }
+
+    const std::string stubId = std::string(idPrefix) + "_grid_stub";
+    if (findNode(tree, stubId.c_str()) != nullptr)
+    {
+        std::printf("FAIL: %s module must not render a stub placeholder\n", moduleId);
+        return false;
+    }
+    return true;
+}
+
+bool test_filter_module_grid_shows_real_labels()
+{
+    return checkModuleGridRealLabels(
+        "filter",
+        "filter",
+        {"Comb offset", "Peak freq", "Peak gain", "Peak Q", "Comb delay", "Comb feedback",
+         "Comb LP", "Comb/Peak", "Scoop", "Crispy"});
+}
+
+bool test_drive_module_grid_shows_real_labels()
+{
+    return checkModuleGridRealLabels(
+        "drive",
+        "drive",
+        {"Drive", "Shape", "SRR 1", "SRR 2", "XOR", "Bit depth", "Fuzz", "Blend", "Phase", "Crispy"});
+}
+
+bool test_reverb_module_grid_shows_real_labels()
+{
+    return checkModuleGridRealLabels(
+        "reverb",
+        "reverb",
+        {"Wet/dry", "Room size", "Decay", "Pre-delay", "Damping", "Stereo width", "Diffusion",
+         "Mod depth", "Hold", "Crispy"});
+}
+
+bool test_delay_module_grid_shows_real_labels()
+{
+    return checkModuleGridRealLabels(
+        "delay",
+        "delay",
+        {"Delay time", "Send", "Feedback", "Stereo width", "Detune", "Mod depth", "Wet mix",
+         "Color", "Halo", "Crispy"});
+}
+
+bool test_envelope_module_still_renders_stub()
+{
+    // Envelope is explicitly out of scope this increment (held for the ASR
+    // increment) -- it must keep rendering the "Coming next" stub exactly as
+    // increment 1 left it, not silently pick up a (wrong) real grid.
+    FroggersAppSurface surface;
+    surface.DispatchAction(synth::ui::Action::WithValue("select_module", "envelope"));
+    const synth::ui::NodeTree tree = surface.BuildTree();
+
+    const synth::ui::Node* stub = findNode(tree, "envelope_grid_stub");
+    if (stub == nullptr || stub->kind != synth::ui::NodeKind::Label)
+    {
+        std::printf("FAIL: Envelope module should still render a labeled stub while active\n");
+        return false;
+    }
+    if (stub->text.find("Envelope") == std::string::npos)
+    {
+        std::printf("FAIL: Envelope stub text does not name the module ('%s')\n", stub->text.c_str());
+        return false;
+    }
+    return true;
+}
+
+bool test_switching_between_modules_clears_previous_grid_nodes()
+{
+    // Tab selection renders each module's grid in turn, and only that
+    // module's nodes: single active-module authority means no leftover
+    // nodes from a previously active module's grid.
+    FroggersAppSurface surface;
+    static constexpr std::array<const char*, 5> kRealModules{
+        {"audio", "filter", "drive", "reverb", "delay"}};
+
+    for (const char* moduleId : kRealModules)
+    {
+        surface.DispatchAction(synth::ui::Action::WithValue("select_module", moduleId));
+        const synth::ui::NodeTree tree = surface.BuildTree();
+
+        const std::string ownFirstLabelId = std::string(moduleId) + "_grid_label_0";
+        if (findNode(tree, ownFirstLabelId.c_str()) == nullptr)
+        {
+            std::printf("FAIL: expected '%s' present once '%s' tab is active\n",
+                        ownFirstLabelId.c_str(),
+                        moduleId);
+            return false;
+        }
+        for (const char* otherModuleId : kRealModules)
+        {
+            if (otherModuleId == moduleId)
+            {
+                continue;
+            }
+            const std::string otherFirstLabelId = std::string(otherModuleId) + "_grid_label_0";
+            if (findNode(tree, otherFirstLabelId.c_str()) != nullptr)
+            {
+                std::printf("FAIL: '%s' still present while '%s' tab is active\n",
+                            otherFirstLabelId.c_str(),
+                            moduleId);
+                return false;
+            }
+        }
     }
     return true;
 }
@@ -294,6 +454,12 @@ int main()
     ok = test_surface_exposes_six_module_tabs() && ok;
     ok = test_default_active_module_grid_shows_real_audio_labels() && ok;
     ok = test_selecting_a_different_tab_moves_active_module_and_grid() && ok;
+    ok = test_filter_module_grid_shows_real_labels() && ok;
+    ok = test_drive_module_grid_shows_real_labels() && ok;
+    ok = test_reverb_module_grid_shows_real_labels() && ok;
+    ok = test_delay_module_grid_shows_real_labels() && ok;
+    ok = test_envelope_module_still_renders_stub() && ok;
+    ok = test_switching_between_modules_clears_previous_grid_nodes() && ok;
 
     if (!ok)
     {
