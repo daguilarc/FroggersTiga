@@ -19,8 +19,15 @@ constexpr uint8_t kMorphCount = 3;
 
 constexpr size_t kPageKnobCount = static_cast<size_t>(kNumPageManagerPages) * kNumRows;
 constexpr size_t kPageModDepthCount = kPageKnobCount;
-constexpr size_t kDelayKnobCount = DelayState::kNumRows;
-constexpr size_t kDelayModDepthCount = DelayState::kNumRows;
+// v1 host contract: the delay host page exposes a fixed 8-row grid, matching the
+// authored kDescriptors table below (delay_row0..delay_row7). This is intentionally
+// decoupled from the shared engine's DelayState::kNumRows, which grew to 10 rows in
+// commit 4e3d0a3 for the richer engine / desktop-v2 without adding v1 host parameters
+// for the extra rows. Wiring this to DelayState::kNumRows over-counted kCount to 111
+// and left indices 107..110 as zero-initialized (nullptr stableKey) phantom descriptors.
+constexpr size_t kDelayHostRowCount = 8;
+constexpr size_t kDelayKnobCount = kDelayHostRowCount;
+constexpr size_t kDelayModDepthCount = kDelayHostRowCount;
 constexpr size_t kPairArKnobCount = kPairArCount;
 constexpr size_t kPairArModDepthCount = kPairArCount;
 constexpr size_t kMorphKnobCount = kMorphCount;
