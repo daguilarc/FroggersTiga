@@ -614,26 +614,3 @@ set_target_properties(FroggersAppSurface_test PROPERTIES
     CXX_STANDARD_REQUIRED ON
 )
 add_test(NAME FroggersAppSurface_test COMMAND FroggersAppSurface_test)
-
-# SheafParamSpike_test -- tasks.md §13.1 bounded spike (PROOF OF SHAPE,
-# additive only). Proves a Sheaf-native synth::ParameterManager /
-# synth::ParameterGroup / synth::Bank can drive the existing Froggers DSP
-# through the existing (unmodified) DesktopHostIO::SetPageKnob boundary via
-# a small new glue header (Source/control/SheafParamBridgeSpike.hpp). Does
-# NOT touch FroggersV2ControlCore / FroggersV2HostBridge or any live bridge
-# path -- headless like FroggersScopePanels_test above, just Sheaf's vendored
-# ParameterModulation.hpp/.cpp plus the read-only src/core DSP headers.
-add_executable(SheafParamSpike_test tests/SheafParamSpike_test.cpp)
-target_include_directories(SheafParamSpike_test PRIVATE
-    Source
-    "${CORE_DIR}"
-    "${SIM_DIR}"
-)
-target_link_libraries(SheafParamSpike_test PRIVATE
-    SheafRuntimeVendor
-)
-set_target_properties(SheafParamSpike_test PROPERTIES
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED ON
-)
-add_test(NAME SheafParamSpike_test COMMAND SheafParamSpike_test)
