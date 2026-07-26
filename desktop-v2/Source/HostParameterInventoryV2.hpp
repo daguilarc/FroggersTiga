@@ -2,7 +2,6 @@
 
 #include "V2DesktopPageDisplayNames.hpp"
 #include "V2ParamDisplayNames.hpp"
-#include "SequencerState.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -31,8 +30,6 @@ constexpr uint8_t kAdsrUiPage = 5;
 // remains PM page 5 even though its desktop-v2 UI page dropped from 6 to 5.
 constexpr uint8_t kPmAdsrPage = 5;
 constexpr uint8_t kMorphCount = 3;
-constexpr uint8_t kSequencerCount = 5;
-constexpr uint8_t kGestureLaneCount = 2;
 
 constexpr uint8_t rowsForUiPage(uint8_t page)
 {
@@ -63,10 +60,9 @@ constexpr size_t kPageModDepthCount = kPageRowCount;
 constexpr size_t kGlobalCrunchyCount = 1;
 constexpr size_t kMorphKnobCount = kMorphCount;
 constexpr size_t kSceneBlendCount = 1;
-constexpr size_t kGestureWeightCount = kGestureLaneCount;
 
 constexpr size_t kCount = kPageKnobCount + kPageModDepthCount + kGlobalCrunchyCount + kMorphKnobCount
-                        + kSequencerCount + kSceneBlendCount + kGestureWeightCount;
+                        + kSceneBlendCount;
 
 enum class Axis : uint8_t
 {
@@ -74,9 +70,7 @@ enum class Axis : uint8_t
     PageModDepth = 1,
     GlobalCrunchy = 2,
     VcoMorph = 3,
-    Sequencer = 4,
-    SceneBlend = 5,
-    GestureWeight = 6,
+    SceneBlend = 4,
 };
 
 enum class Id : uint16_t
@@ -164,14 +158,8 @@ constexpr size_t axisOffset(Axis axis)
             return kPageKnobCount + kPageModDepthCount;
         case Axis::VcoMorph:
             return kPageKnobCount + kPageModDepthCount + kGlobalCrunchyCount;
-        case Axis::Sequencer:
-            return kPageKnobCount + kPageModDepthCount + kGlobalCrunchyCount + kMorphKnobCount;
         case Axis::SceneBlend:
-            return kPageKnobCount + kPageModDepthCount + kGlobalCrunchyCount + kMorphKnobCount
-                   + kSequencerCount;
-        case Axis::GestureWeight:
-            return kPageKnobCount + kPageModDepthCount + kGlobalCrunchyCount + kMorphKnobCount
-                   + kSequencerCount + kSceneBlendCount;
+            return kPageKnobCount + kPageModDepthCount + kGlobalCrunchyCount + kMorphKnobCount;
     }
     return 0;
 }

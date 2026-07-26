@@ -60,11 +60,7 @@ GlobalStripV2::GlobalStripV2()
         m_core->processBus();
     };
 
-    // Rand Mods randomizes LIVE mod depths on the control core (and, per
-    // scope, captures into written sequencer step snapshots); this is
-    // distinct from the sequencer panel's Rand-seq dice, which randomizes
-    // step scene slots. See SequencerPanelComponent's dice tooltip.
-    m_randMods.setTooltip("Randomize live mod depths (not step scene slots)");
+    m_randMods.setTooltip("Randomize live mod depths");
 
     m_randAll.onClick = [this]() { pushRandAll(); };
     m_randMods.onClick = [this]() { pushRandMods(); };
@@ -82,12 +78,9 @@ GlobalStripV2::GlobalStripV2()
     };
 
     wireScopePair(m_scopeAllScenes, m_scopeCurrentScene, 9101, m_allScenesScope);
-    wireScopePair(m_scopeAllSteps, m_scopeCurrentStep, 9102, m_allStepsScope);
 
     m_scopeAllScenes.setToggleState(true, juce::dontSendNotification);
     m_scopeCurrentScene.setToggleState(false, juce::dontSendNotification);
-    m_scopeAllSteps.setToggleState(false, juce::dontSendNotification);
-    m_scopeCurrentStep.setToggleState(true, juce::dontSendNotification);
 
     for (juce::Component* c : {static_cast<juce::Component*>(&m_randAll),
                                static_cast<juce::Component*>(&m_randMods),
@@ -96,9 +89,7 @@ GlobalStripV2::GlobalStripV2()
                                static_cast<juce::Component*>(&m_crunchyLabel),
                                static_cast<juce::Component*>(&m_crunchyRing),
                                static_cast<juce::Component*>(&m_scopeAllScenes),
-                               static_cast<juce::Component*>(&m_scopeCurrentScene),
-                               static_cast<juce::Component*>(&m_scopeAllSteps),
-                               static_cast<juce::Component*>(&m_scopeCurrentStep)})
+                               static_cast<juce::Component*>(&m_scopeCurrentScene)})
     {
         addAndMakeVisible(c);
     }
@@ -120,7 +111,7 @@ void GlobalStripV2::pushRandAll()
     const uint8_t sceneScope = m_allScenesScope ? froggers_v2::kRandSceneScopeAll
                                                  : froggers_v2::kRandSceneScopeCurrent;
     m_core->executeRandomization(
-        froggers_v2::FroggersV2ControlCore::RandomizationCommand::RandAll, sceneScope, 0);
+        froggers_v2::FroggersV2ControlCore::RandomizationCommand::RandAll, sceneScope);
 }
 
 void GlobalStripV2::pushRandMods()
@@ -129,17 +120,7 @@ void GlobalStripV2::pushRandMods()
     {
         return;
     }
-    uint8_t stepScope = froggers_v2::kRandSeqScopeStep;
-    if (m_allStepsScope)
-    {
-        stepScope = froggers_v2::kRandSeqScopePattern;
-    }
-    else if (resolveRandSeqScope != nullptr)
-    {
-        stepScope = resolveRandSeqScope();
-    }
-    m_core->executeRandomization(
-        froggers_v2::FroggersV2ControlCore::RandomizationCommand::RandMods, 0, stepScope);
+    m_core->executeRandomization(froggers_v2::FroggersV2ControlCore::RandomizationCommand::RandMods, 0);
 }
 
 void GlobalStripV2::refresh()
@@ -202,16 +183,12 @@ void GlobalStripV2::resized()
     juce::ToggleButton* const scopeButtons[] = {
         &m_scopeAllScenes,
         &m_scopeCurrentScene,
-        &m_scopeAllSteps,
-        &m_scopeCurrentStep,
     };
     const int scopeMinW[] = {
         kGlobalScopeSceneAllW,
         kGlobalScopeSceneCurrentW,
-        kGlobalScopeStepAllW,
-        kGlobalScopeStepCurrentW,
     };
-    constexpr int kScopeCount = 4;
+    constexpr int kScopeCount = 2;
     int scopeMinTotal = 0;
     for (int i = 0; i < kScopeCount; ++i)
     {

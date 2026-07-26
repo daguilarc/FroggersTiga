@@ -25,7 +25,11 @@
 // Task 7.5 (D15): per-VCO Sustain added to the ADSR/Envelope page (3 new rows
 // -- one per VCO -- each contributing 1 page knob + 1 page mod depth), so
 // 120 -> 126.
-#define FROGGERS_EXPECT_HOST_PARAM_COUNT_V2 126
+// Task 13.0.1d: sequencer + gesture-weight features removed (Axis::Sequencer
+// and Axis::GestureWeight axes deleted from HostParameterInventoryV2), so
+// 126 -> 119 (57 page knob + 57 page mod depth + 1 global crunchy + 3 VCO
+// morph + 1 scene blend).
+#define FROGGERS_EXPECT_HOST_PARAM_COUNT_V2 119
 #endif
 
 namespace
@@ -259,24 +263,27 @@ bool test_sustain_labels_present()
 }
 
 // 11.2: plugin state round-trip for the manifest-owned host parameters that the legacy
-// SimPresetSnapshot payload never serializes (GlobalCrunchy, VcoMorph, Sequencer, SceneBlend,
-// GestureWeight — see HostParameterStateEnvelopeV2.hpp for why PageKnob/PageModDepth are
-// intentionally excluded here: those already round-trip correctly through SimPresetSnapshot's
-// raw-value copy, and re-checking them via HostParameterRoutingV2::readValue would fail because
-// several page rows are read back through the musical "Fuego" curve, whose output is not its own
-// inverse). Simulates a real DAW save/reload: values are applied on one
-// (host/delay/sequencer/core) instance, serialized via HostParameterStateEnvelopeV2 (the tail
-// PluginProcessorV2::getStateInformation/setStateInformation append after the legacy
-// SimPresetSnapshot payload — see PluginProcessorV2.cpp), then deserialized into a *fresh*,
-// default-constructed instance standing in for a newly created plugin instance. Every covered
-// stable ID is looked up by name (via a stableId -> expected-value map) rather than assumed to
-// stay at the same index, so a hypothetical future reordering of the inventory axes would still
-// be caught if stable-ID identity broke.
+// SimPresetSnapshot payload never serializes (GlobalCrunchy, VcoMorph, SceneBlend — see
+// HostParameterStateEnvelopeV2.hpp for why PageKnob/PageModDepth are intentionally excluded
+// here: those already round-trip correctly through SimPresetSnapshot's raw-value copy, and
+// re-checking them via HostParameterRoutingV2::readValue would fail because several page rows
+// are read back through the musical "Fuego" curve, whose output is not its own inverse).
+// Task 13.0.1d: the Sequencer and GestureWeight axes that used to widen this tail (12 entries)
+// were removed from HostParameterInventoryV2, so the tail now covers only GlobalCrunchy (1) +
+// VcoMorph (3) + SceneBlend (1) = 5 entries. Simulates a real DAW save/reload: values are
+// applied on one (host/delay/sequencer/core) instance, serialized via
+// HostParameterStateEnvelopeV2 (the tail PluginProcessorV2::getStateInformation/
+// setStateInformation append after the legacy SimPresetSnapshot payload — see
+// PluginProcessorV2.cpp), then deserialized into a *fresh*, default-constructed instance
+// standing in for a newly created plugin instance. Every covered stable ID is looked up by name
+// (via a stableId -> expected-value map) rather than assumed to stay at the same index, so a
+// hypothetical future reordering of the inventory axes would still be caught if stable-ID
+// identity broke.
 bool test_state_envelope_tail_round_trip_keyed_by_stable_id()
 {
-    if (HostParameterStateEnvelopeV2::kEntryCount != 12)
+    if (HostParameterStateEnvelopeV2::kEntryCount != 5)
     {
-        std::printf("FAIL: expected HostParameterStateEnvelopeV2 to cover 12 non-page stable IDs, got %zu\n",
+        std::printf("FAIL: expected HostParameterStateEnvelopeV2 to cover 5 non-page stable IDs, got %zu\n",
                     HostParameterStateEnvelopeV2::kEntryCount);
         return false;
     }

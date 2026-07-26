@@ -195,24 +195,8 @@ inline float readValue(const HostParameterInventoryV2::RuntimeDescriptor& entry,
             return host.GetGlobalCrunchy();
         case Axis::VcoMorph:
             return host.GetVcoMorph(entry.index);
-        case Axis::Sequencer:
-            switch (entry.index)
-            {
-                case 0:
-                    return sequencerBpmToNorm(sequencer.m_bpm);
-                case 1:
-                    return sequencerDirectionToNorm(sequencer.m_direction);
-                case 2:
-                    return sequencer.m_playing ? 1.0f : 0.0f;
-                case 3:
-                    return sequencer.m_writeSeqArm ? 1.0f : 0.0f;
-                default:
-                    return sequencerSpeedToNorm(sequencer.m_speedChoice);
-            }
         case Axis::SceneBlend:
             return core.sceneBlend();
-        case Axis::GestureWeight:
-            return core.gestureWeight(entry.index);
     }
     return entry.defaultNorm;
 }
@@ -241,31 +225,8 @@ inline void applyValue(const HostParameterInventoryV2::RuntimeDescriptor& entry,
         case Axis::VcoMorph:
             host.SetVcoMorph(entry.index, value);
             break;
-        case Axis::Sequencer:
-            switch (entry.index)
-            {
-                case 0:
-                    sequencer.setBpm(sequencerNormToBpm(value));
-                    break;
-                case 1:
-                    sequencer.setDirection(sequencerNormToDirection(value));
-                    break;
-                case 2:
-                    sequencer.m_playing = value >= 0.5f;
-                    break;
-                case 3:
-                    sequencer.m_writeSeqArm = value >= 0.5f;
-                    break;
-                default:
-                    sequencer.setSpeedChoice(sequencerNormToSpeed(value));
-                    break;
-            }
-            break;
         case Axis::SceneBlend:
             core.setSceneBlend(value);
-            break;
-        case Axis::GestureWeight:
-            core.setGestureWeight(entry.index, value);
             break;
     }
 }

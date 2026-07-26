@@ -1,7 +1,6 @@
 #pragma once
 
 #include "manifest/FroggersV2AppManifest.hpp"
-#include "SequencerState.hpp"
 
 #include <array>
 #include <atomic>
@@ -13,16 +12,12 @@ namespace froggers_v2
 constexpr uint8_t kNumHostPages = 6;
 constexpr uint8_t kNumRows = 10;
 constexpr uint8_t kNumScenes = 3;
-constexpr uint8_t kNumGestures = 2;
 constexpr uint8_t kNumModSources =
     static_cast<uint8_t>(manifest::kPermanentModulationSources.size());
 constexpr int kMenuModMidiCcA = 15;
 constexpr int kMenuModMidiCcB = 16;
 constexpr uint8_t kNoSelection = 255;
 
-constexpr uint8_t kRandSeqScopeStep = 0;
-constexpr uint8_t kRandSeqScopePattern = 1;
-constexpr uint8_t kRandSeqScopeFullStep = 2;
 // kRandSceneScopeAll == 0 matches MessageIn's default-constructed `page`
 // field so a RandAll message pushed without an explicit scope (legacy
 // call sites, and FroggersV2AppCoreFacade_test.cpp /
@@ -48,16 +43,11 @@ struct MessageIn
         ModDrillIn,
         SceneSelect,
         SceneBlend,
-        GestureSelect,
-        GestureWeight,
         ModSourceAssign,
         SelectPage,
         RandAll,
         RandMods,
         RandPage,
-        ResetSequencerStep,
-        RandSequencerStep,
-        RandSequencerMods,
         Clock,
     };
 
@@ -86,14 +76,6 @@ struct MessageIn
         return m;
     }
 
-    static MessageIn SequencerStepClock(uint8_t playheadStep)
-    {
-        MessageIn m;
-        m.type = Type::Clock;
-        m.slot = playheadStep;
-        m.index = kNoSelection;
-        return m;
-    }
 };
 
 class MessageInBus
@@ -120,14 +102,12 @@ struct FroggersV2UIState
     std::atomic<uint8_t> leftSceneOrdinal{0};
     std::atomic<uint8_t> rightSceneOrdinal{1};
     std::atomic<float> sceneBlend{0.5f};
-    std::atomic<uint8_t> activeGesture{kNoSelection};
     std::array<std::atomic<float>, kUiSlots> sceneLeft{};
     std::array<std::atomic<float>, kUiSlots> sceneRight{};
     std::array<std::atomic<float>, kUiSlots> effective{};
     std::array<std::atomic<float>, kUiSlots> arcMin{};
     std::array<std::atomic<float>, kUiSlots> arcMax{};
     std::array<std::atomic<uint16_t>, kUiSlots> modulatorsMask{};
-    std::array<std::atomic<uint8_t>, kUiSlots> gesturesMask{};
     std::atomic<float> crunchySceneLeft{0.0f};
     std::atomic<float> crunchySceneRight{0.0f};
     std::atomic<float> crunchyEffective{0.0f};
@@ -157,7 +137,6 @@ public:
         float arcMin = 0.0f;
         float arcMax = 1.0f;
         uint16_t modulatorsMask = 0;
-        uint8_t gesturesMask = 0;
     };
 
     FroggersV2ControlCore();
@@ -190,9 +169,7 @@ public:
     float globalCrunchy() const;
     void setGlobalCrunchy(float value);
     float sceneBlend() const;
-    float gestureWeight(uint8_t lane) const;
     void setSceneBlend(float value);
-    void setGestureWeight(uint8_t lane, float value);
     uint8_t assignedModSource(uint8_t page, uint8_t row) const;
     float assignedModDepth(uint8_t page, uint8_t row) const;
     // Packet 15.2a: ParamState collapsed to lane identity -- modDepth[i] IS
@@ -212,22 +189,14 @@ public:
     bool consumeContentMutated();
     void compute();
     void populateUiState();
-    void setSequencerState(SequencerState* sequencer);
-    void applySequencerSlotPayload(const SequencerSlotPayload& snapshot);
-    void captureSequencerSlotPayload(SequencerSlotPayload& out) const;
-    void captureFactorySlotPayload(SequencerSlotPayload& out) const;
-    void randomizeFullSlotPayload(SequencerSlotPayload& out);
-    void randomizeSceneSlotsInto(SequencerSlotPayload& snapshot);
     void setExternalMidiMod(uint8_t slot, float value);
     float externalMidiMod(uint8_t slot) const;
     EffectiveRow effectiveRow(uint8_t page, uint8_t row) const;
 
     // The sole randomization mutator entry point for UI callers. sceneScope is
-    // consulted for RandAll (kRandSceneScopeAll / kRandSceneScopeCurrent);
-    // stepScope is consulted for RandMods (kRandSeqScopeStep /
-    // kRandSeqScopePattern). Unused scope arguments are ignored by the
-    // relevant command.
-    void executeRandomization(RandomizationCommand command, uint8_t sceneScope, uint8_t stepScope);
+    // consulted for RandAll (kRandSceneScopeAll / kRandSceneScopeCurrent) and
+    // ignored by RandMods.
+    void executeRandomization(RandomizationCommand command, uint8_t sceneScope);
 
 private:
     struct ParamState
@@ -240,7 +209,6 @@ private:
         // a row's live modulation state (the parallel modSource[] identity
         // array this used to carry alongside it is retired).
         float modDepth[kNumModSources]{0.0f};
-        float gestureDepth[kNumGestures]{0.0f, 0.0f};
     };
 
     struct VisibleSlot
@@ -258,7 +226,6 @@ private:
 
     static float clamp01(float value);
     static float clampSigned(float value);
-    static bool isAdsrPage(uint8_t page);
     static uint8_t crispyRowForPage(uint8_t page);
 
     void applyMessage(const MessageIn& message);
@@ -268,12 +235,8 @@ private:
     void onSceneSelect(uint8_t sceneOrdinal);
     void onModSourceAssign(uint8_t page, uint8_t row, uint8_t source);
     void onRandAll(uint8_t sceneScope);
-    void onRandMods(uint8_t stepScope);
+    void onRandMods();
     void onRandPage(uint8_t page);
-    void onResetSequencerStep(uint8_t step);
-    void onRandSequencerStep(uint8_t step, uint8_t scope);
-    void onRandSequencerMods(uint8_t scope);
-    void randomizeModIntoSnapshot(SequencerSlotPayload& snapshot);
     void randomizeSceneSlotValues(float (&scenes)[kNumScenes]);
     void randomizeSceneSlotValues(std::array<float, kNumScenes>& scenes);
     void randomizeSceneSlotValues(ParamState& param, uint8_t sceneScope);
@@ -284,9 +247,7 @@ private:
     // two callers, instead of duplicating the per-row/per-source loop.
     void randomizeLiveModDepths(uint8_t page);
     void randomizeLiveModDepths();
-    void captureModRoutesIntoSnapshot(SequencerSlotPayload& snapshot) const;
     void randomizeSceneEndpointsAndBlend();
-    void zeroStepGestures(SequencerSlotPayload& snapshot);
     void resetCrunchy();
     uint8_t activeSceneOrdinal() const;
     void advanceRandState();
@@ -305,13 +266,11 @@ private:
     EffectiveRow slotViewEffective(const VisibleSlot& visible) const;
     void storeSlotState(uint8_t slot, const EffectiveRow& row);
 
-    SequencerState* m_sequencer = nullptr;
     MessageInBus m_bus;
     FroggersV2UIState m_uiState;
     std::array<std::array<ParamState, kNumRows>, kNumHostPages> m_params{};
     std::array<float, kNumModSources> m_sourceValues{};
     std::array<float, 2> m_externalMidiMods{};
-    std::array<float, kNumGestures> m_gestureWeights{};
     std::array<VisibleSlot, kUiSlots> m_visibleSlots{};
     ModViewState m_modView{};
     uint8_t m_activePage = 0;
@@ -319,7 +278,6 @@ private:
     uint8_t m_sceneLeftOrdinal = 0;
     uint8_t m_sceneRightOrdinal = 1;
     uint8_t m_sceneSelectFlip = 0;
-    uint8_t m_activeGestureLane = kNoSelection;
     float m_sceneBlend = 0.5f;
     ParamState m_crunchy{};
     std::atomic<bool> m_contentMutated{false};

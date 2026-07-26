@@ -2,7 +2,6 @@
 
 #include "HostParameterInventoryV2.hpp"
 #include "V2DesktopPageDisplayNames.hpp"
-#include "SequencerState.hpp"
 
 #include <algorithm>
 #include <array>
@@ -19,10 +18,6 @@ namespace froggers_v2::manifest
 {
 constexpr uint32_t kSchemaVersion = 1;
 constexpr const char* kAuthority = "cpp";
-constexpr uint8_t kSequencerSlotCount = 16;
-constexpr uint8_t kDirectionChoiceCount = 3;
-constexpr uint8_t kSpeedChoiceCount = 5;
-inline constexpr const char* kSequencerWrittenState = "written-unwritten";
 inline constexpr std::array<const char*, 2> kRandomizationScopes{{"scene", "step"}};
 
 // Desktop-v2 page/row display name authority is V2DesktopPageDisplayNames.hpp
@@ -68,31 +63,8 @@ inline void formatInventoryStableId(char* buffer,
         case HostParameterInventoryV2::Axis::VcoMorph:
             std::snprintf(buffer, capacity, "vco_morph%u", static_cast<unsigned>(index));
             break;
-        case HostParameterInventoryV2::Axis::Sequencer:
-            switch (index)
-            {
-                case 0:
-                    std::snprintf(buffer, capacity, "sequencer_bpm");
-                    break;
-                case 1:
-                    std::snprintf(buffer, capacity, "sequencer_direction");
-                    break;
-                case 2:
-                    std::snprintf(buffer, capacity, "sequencer_playing");
-                    break;
-                case 3:
-                    std::snprintf(buffer, capacity, "sequencer_record_arm");
-                    break;
-                default:
-                    std::snprintf(buffer, capacity, "sequencer_speed");
-                    break;
-            }
-            break;
         case HostParameterInventoryV2::Axis::SceneBlend:
             std::snprintf(buffer, capacity, "global_scene_blend");
-            break;
-        case HostParameterInventoryV2::Axis::GestureWeight:
-            std::snprintf(buffer, capacity, "global_gesture_weight_%u", static_cast<unsigned>(index));
             break;
     }
 }
@@ -151,31 +123,8 @@ inline void formatInventoryDisplayName(char* buffer,
             // intentionally still says "morph".
             std::snprintf(buffer, capacity, "Global/VCO%u Shape", static_cast<unsigned>(index + 1));
             break;
-        case HostParameterInventoryV2::Axis::Sequencer:
-            switch (index)
-            {
-                case 0:
-                    std::snprintf(buffer, capacity, "Sequencer/BPM");
-                    break;
-                case 1:
-                    std::snprintf(buffer, capacity, "Sequencer/Direction");
-                    break;
-                case 2:
-                    std::snprintf(buffer, capacity, "Sequencer/Playing");
-                    break;
-                case 3:
-                    std::snprintf(buffer, capacity, "Sequencer/Write Seq.");
-                    break;
-                default:
-                    std::snprintf(buffer, capacity, "Sequencer/Speed");
-                    break;
-            }
-            break;
         case HostParameterInventoryV2::Axis::SceneBlend:
             std::snprintf(buffer, capacity, "Global/SceneBlend");
-            break;
-        case HostParameterInventoryV2::Axis::GestureWeight:
-            std::snprintf(buffer, capacity, "Global/Gesture%u", static_cast<unsigned>(index + 1));
             break;
     }
 }
@@ -228,12 +177,11 @@ inline constexpr const char* kBindingRoleExternalModA = "external mod A";
 inline constexpr const char* kBindingRoleExternalModB = "external mod B";
 inline constexpr const char* kBindingRoleSceneSelect = "scene select";
 inline constexpr const char* kBindingRoleVirtualKeyboard = "virtual keyboard";
-inline constexpr const char* kBindingRoleSequencerSync = "sequencer sync";
 inline constexpr const char* kBindingRoleEncoderTurn = "encoder turn";
 inline constexpr const char* kBindingRoleEncoderModDrillIn = "encoder mod drill-in";
 
 inline constexpr uint8_t kControllerTargetNoPageRow = 0xFFu;
-inline constexpr size_t kBaseControllerTargetCount = 9;
+inline constexpr size_t kBaseControllerTargetCount = 8;
 inline constexpr size_t kEncoderParamCount = HostParameterInventoryV2::kPageRowCount;
 inline constexpr size_t kEncoderControllerTargetCount = kEncoderParamCount * 2;
 inline constexpr size_t kControllerTargetCount = kBaseControllerTargetCount + kEncoderControllerTargetCount;
@@ -292,14 +240,6 @@ struct RandomizationScopeControl
     bool consumedByRandomizeMod;
 };
 
-struct SequencerSlot
-{
-    uint8_t index;
-    const char* writtenStateField;
-    bool sequencerPersistent;
-    bool sequencerLockable;
-};
-
 struct ValidationSummary
 {
     bool duplicateStableIds;
@@ -310,9 +250,6 @@ struct ValidationSummary
     bool invalidProjectionOverlays;
     bool missingOscilloscopeTaps;
     bool invalidRandomizationScopes;
-    bool invalidSequencerStepCounts;
-    bool missingWrittenUnwrittenState;
-    bool invalidSequencerDirectionSpeed;
     bool invalidSourceLaneCounts;
     bool duplicateSourceIds;
     bool missingSourceColorsGroups;
@@ -326,38 +263,12 @@ inline constexpr std::array<Projection, 4> kProjections{{
     {"vcv", "VCV Reserved", true, true, false, true},
 }};
 
-inline constexpr std::array<const char*, kDirectionChoiceCount> kSequencerDirectionChoices{{"<", ">", "RND"}};
-inline constexpr std::array<const char*, kSpeedChoiceCount> kSequencerSpeedChoices{{"/2", "/1.5", "1", "x1.5", "x2"}};
-inline constexpr std::array<RandomizationScopeControl, 2> kRandomizationScopeControls{{
+inline constexpr std::array<RandomizationScopeControl, 1> kRandomizationScopeControls{{
     {"scene",
      "Scene",
      {{{"All Scenes", true}, {"Current Scene", false}}},
      true,
      true},
-    {"step",
-     "Step",
-     {{{"All Steps", true}, {"Current Step", false}}},
-     true,
-     true},
-}};
-
-inline constexpr std::array<SequencerSlot, kSequencerSlotCount> kSequencerSlots{{
-    {0, "slot_0_written_unwritten_state", true, true},
-    {1, "slot_1_written_unwritten_state", true, true},
-    {2, "slot_2_written_unwritten_state", true, true},
-    {3, "slot_3_written_unwritten_state", true, true},
-    {4, "slot_4_written_unwritten_state", true, true},
-    {5, "slot_5_written_unwritten_state", true, true},
-    {6, "slot_6_written_unwritten_state", true, true},
-    {7, "slot_7_written_unwritten_state", true, true},
-    {8, "slot_8_written_unwritten_state", true, true},
-    {9, "slot_9_written_unwritten_state", true, true},
-    {10, "slot_10_written_unwritten_state", true, true},
-    {11, "slot_11_written_unwritten_state", true, true},
-    {12, "slot_12_written_unwritten_state", true, true},
-    {13, "slot_13_written_unwritten_state", true, true},
-    {14, "slot_14_written_unwritten_state", true, true},
-    {15, "slot_15_written_unwritten_state", true, true},
 }};
 
 inline constexpr std::array<ControllerTargetDeclaration, kBaseControllerTargetCount> kBaseControllerTargetDeclarations{{
@@ -369,7 +280,6 @@ inline constexpr std::array<ControllerTargetDeclaration, kBaseControllerTargetCo
     {"midi_scene_2", "Scene S2", "MIDI In", kBindingRoleSceneSelect, kControllerTargetNoPageRow, kControllerTargetNoPageRow},
     {"midi_scene_3", "Scene S3", "MIDI In", kBindingRoleSceneSelect, kControllerTargetNoPageRow, kControllerTargetNoPageRow},
     {"midi_qwerty_virtual", "QWERTY virtual MIDI", "MIDI In", kBindingRoleVirtualKeyboard, kControllerTargetNoPageRow, kControllerTargetNoPageRow},
-    {"midi_external_clock", "External MIDI clock", "MIDI In", kBindingRoleSequencerSync, kControllerTargetNoPageRow, kControllerTargetNoPageRow},
 }};
 
 struct ControllerTargetStringStorage
@@ -818,9 +728,6 @@ inline ValidationSummary buildValidationSummary()
     summary.invalidProjectionOverlays = false;
     summary.missingOscilloscopeTaps = kOscilloscopeTaps.size() != 3;
     summary.invalidRandomizationScopes = false;
-    summary.invalidSequencerStepCounts = kSequencerSlots.size() != kSequencerSlotCount;
-    summary.missingWrittenUnwrittenState = false;
-    summary.invalidSequencerDirectionSpeed = (kDirectionChoiceCount != 3 || kSpeedChoiceCount != 5);
     summary.invalidSourceLaneCounts = kPermanentModulationSources.size() != 15;
     summary.duplicateSourceIds = hasDuplicateStableIds(kPermanentModulationSources,
                                                         [](const ModulationSource& source) { return source.stableId; });
@@ -881,60 +788,24 @@ inline ValidationSummary buildValidationSummary()
             }
         }
     }
-    if (kRandomizationScopeControls.size() != 2)
+    if (kRandomizationScopeControls.size() != 1)
     {
         summary.invalidRandomizationScopes = true;
     }
     else
     {
-        for (size_t i = 0; i < kRandomizationScopeControls.size(); ++i)
+        const RandomizationScopeControl& control = kRandomizationScopeControls[0];
+        if (control.stableId == nullptr || std::string(control.stableId) != "scene"
+            || control.displayName == nullptr || std::string(control.displayName) != "Scene"
+            || control.choices.size() != 2 || control.choices[0].displayName == nullptr
+            || std::string(control.choices[0].displayName) != "All Scenes"
+            || control.choices[1].displayName == nullptr
+            || std::string(control.choices[1].displayName) != "Current Scene"
+            || !control.choices[0].selectedByDefault || control.choices[1].selectedByDefault
+            || !control.consumedByRandomizeAll || !control.consumedByRandomizeMod)
         {
-            const RandomizationScopeControl& control = kRandomizationScopeControls[i];
-            const bool isScene = i == 0;
-            const char* expectedStableId = isScene ? "scene" : "step";
-            const char* expectedDisplayName = isScene ? "Scene" : "Step";
-            const char* expectedFirstChoice = isScene ? "All Scenes" : "All Steps";
-            const char* expectedSecondChoice = isScene ? "Current Scene" : "Current Step";
-            if (control.stableId == nullptr || std::string(control.stableId) != expectedStableId
-                || control.displayName == nullptr || std::string(control.displayName) != expectedDisplayName
-                || control.choices.size() != 2 || control.choices[0].displayName == nullptr
-                || std::string(control.choices[0].displayName) != expectedFirstChoice
-                || control.choices[1].displayName == nullptr
-                || std::string(control.choices[1].displayName) != expectedSecondChoice
-                || !control.choices[0].selectedByDefault || control.choices[1].selectedByDefault
-                || !control.consumedByRandomizeAll || !control.consumedByRandomizeMod)
-            {
-                summary.invalidRandomizationScopes = true;
-            }
+            summary.invalidRandomizationScopes = true;
         }
-    }
-    if (kSequencerSlots.size() != kSequencerSlotCount)
-    {
-        summary.invalidSequencerStepCounts = true;
-        summary.missingWrittenUnwrittenState = true;
-    }
-    else
-    {
-        for (size_t i = 0; i < kSequencerSlots.size(); ++i)
-        {
-            const SequencerSlot& slot = kSequencerSlots[i];
-            if (slot.index != i)
-            {
-                summary.invalidSequencerStepCounts = true;
-            }
-            if (slot.writtenStateField == nullptr || slot.writtenStateField[0] == '\0' || !slot.sequencerPersistent
-                || !slot.sequencerLockable)
-            {
-                summary.missingWrittenUnwrittenState = true;
-            }
-        }
-    }
-    if (kDirectionChoiceCount != 3 || kSpeedChoiceCount != 5 || std::string(kSequencerDirectionChoices[2]) != "RND"
-        || std::string(kSequencerSpeedChoices[2]) != "1" || std::string(kSequencerWrittenState) != "written-unwritten"
-        || kRandomizationScopes.size() != 2 || std::string(kRandomizationScopes[0]) != "scene"
-        || std::string(kRandomizationScopes[1]) != "step")
-    {
-        summary.invalidSequencerDirectionSpeed = true;
     }
     if (kPermanentModulationSources.size() != 15)
     {
@@ -997,10 +868,6 @@ inline std::string buildSnapshotJson()
         out << (i + 1 == kProjections.size() ? "\n" : ",\n");
     }
     out << "    },\n";
-    out << "    \"runtimeControls\": {\n";
-    out << "      \"sequencer\": {\"slots\": " << static_cast<unsigned>(kSequencerSlotCount)
-        << ", \"defaultDirection\": \">\", \"defaultSpeed\": \"1\"}\n";
-    out << "    },\n";
     out << "    \"randomizationScopeControls\": [\n";
     for (size_t i = 0; i < kRandomizationScopeControls.size(); ++i)
     {
@@ -1054,19 +921,7 @@ inline std::string buildSnapshotJson()
         << ", \"externalAudioLaneAvailable\": true},\n";
     out << "      \"globalRandomizationScopes\": {\"randomizeAll\": [\"" << kRandomizationScopes[0]
         << "\", \"" << kRandomizationScopes[1] << "\"], \"randomizeMod\": [\"" << kRandomizationScopes[0]
-        << "\", \"" << kRandomizationScopes[1] << "\"]},\n";
-    out << "      \"sequencer\": {\n";
-    out << "        \"slots\": " << static_cast<unsigned>(kSequencerSlotCount) << ",\n";
-    out << "        \"writtenState\": \"" << kSequencerWrittenState << "\",\n";
-    out << "        \"deviceNeutralClearStep\": {\"longPress\": true},\n";
-    out << "        \"sequencerLocks\": true,\n";
-    out << "        \"directionChoices\": [\"<\", \">\", \"RND\"],\n";
-    out << "        \"defaultDirection\": \">\",\n";
-    out << "        \"speedChoices\": [\"/2\", \"/1.5\", \"1\", \"x1.5\", \"x2\"],\n";
-    out << "        \"defaultSpeed\": \"1\",\n";
-    out << "        \"optionalMidiClockSync\": true,\n";
-    out << "        \"heldGestures\": false\n";
-    out << "      }\n";
+        << "\", \"" << kRandomizationScopes[1] << "\"]}\n";
     out << "    },\n";
     out << "    \"layoutGroups\": {\n";
     out << "      \"pages\": " << static_cast<unsigned>(HostParameterInventoryV2::kNumUiPages) << "\n";
@@ -1081,8 +936,7 @@ inline std::string buildSnapshotJson()
     out << "    \"productRows\": " << productRowCount() << ",\n";
     out << "    \"hostParameters\": " << HostParameterInventoryV2::kCount << ",\n";
     out << "    \"modulationSources\": " << kPermanentModulationSources.size() << ",\n";
-    out << "    \"oscilloscopeTaps\": " << kOscilloscopeTaps.size() << ",\n";
-    out << "    \"sequencerSlots\": " << static_cast<unsigned>(kSequencerSlotCount) << "\n";
+    out << "    \"oscilloscopeTaps\": " << kOscilloscopeTaps.size() << "\n";
     out << "  },\n";
 
     out << "  \"oscilloscopeTaps\": [\n";
@@ -1119,18 +973,6 @@ inline std::string buildSnapshotJson()
     }
     out << "  ],\n";
 
-    out << "  \"sequencerSlots\": [\n";
-    for (size_t i = 0; i < kSequencerSlots.size(); ++i)
-    {
-        const SequencerSlot& slot = kSequencerSlots[i];
-        out << "    {\"index\": " << static_cast<unsigned>(slot.index) << ", \"writtenStateField\": \""
-            << jsonEscape(slot.writtenStateField) << "\", \"sequencerPersistent\": "
-            << (slot.sequencerPersistent ? "true" : "false") << ", \"sequencerLockable\": "
-            << (slot.sequencerLockable ? "true" : "false") << "}";
-        out << (i + 1 == kSequencerSlots.size() ? "\n" : ",\n");
-    }
-    out << "  ],\n";
-
     const ValidationSummary validation = buildValidationSummary();
     out << "  \"validation\": {\n";
     out << "    \"duplicateStableIds\": " << (validation.duplicateStableIds ? "true" : "false") << ",\n";
@@ -1144,12 +986,6 @@ inline std::string buildSnapshotJson()
         << ",\n";
     out << "    \"invalidRandomizationScopes\": " << (validation.invalidRandomizationScopes ? "true" : "false")
         << ",\n";
-    out << "    \"invalidSequencerStepCounts\": " << (validation.invalidSequencerStepCounts ? "true" : "false")
-        << ",\n";
-    out << "    \"missingWrittenUnwrittenState\": "
-        << (validation.missingWrittenUnwrittenState ? "true" : "false") << ",\n";
-    out << "    \"invalidSequencerDirectionSpeed\": "
-        << (validation.invalidSequencerDirectionSpeed ? "true" : "false") << ",\n";
     out << "    \"invalidSourceLaneCounts\": " << (validation.invalidSourceLaneCounts ? "true" : "false")
         << ",\n";
     out << "    \"duplicateSourceIds\": " << (validation.duplicateSourceIds ? "true" : "false") << ",\n";
@@ -1233,11 +1069,8 @@ inline std::string buildSnapshotJson()
             << "\", \"defaultNorm\": " << entry.defaultNorm << "}";
         out << (i + 1 == hostParameterIndices.size() ? "\n" : ",\n");
     }
-    out << "  ],\n";
+    out << "  ]\n";
 
-    out << "  \"sequencer\": {\"slots\": " << static_cast<unsigned>(kSequencerSlotCount)
-        << ", \"directionChoices\": [\"<\", \">\", \"RND\"], \"defaultDirection\": \">\", "
-           "\"speedChoices\": [\"/2\", \"/1.5\", \"1\", \"x1.5\", \"x2\"], \"defaultSpeed\": \"1\"}\n";
     out << "}\n";
     return out.str();
 }
@@ -1249,8 +1082,7 @@ inline std::string buildReviewerReportMarkdown()
     out << "- Authority: C++ declarations\n";
     out << "- Product rows: " << productRowCount() << "\n";
     out << "- Host parameters: " << HostParameterInventoryV2::kCount << "\n";
-    out << "- Permanent modulation sources: " << kPermanentModulationSources.size() << "\n";
-    out << "- Sequencer slots: " << static_cast<unsigned>(kSequencerSlotCount) << "\n\n";
+    out << "- Permanent modulation sources: " << kPermanentModulationSources.size() << "\n\n";
     out << "## Validation Summary\n\n";
     const ValidationSummary validation = buildValidationSummary();
     out << "| Check | Value |\n";
@@ -1263,11 +1095,6 @@ inline std::string buildReviewerReportMarkdown()
     out << "| invalidProjectionOverlays | " << (validation.invalidProjectionOverlays ? "true" : "false") << " |\n";
     out << "| missingOscilloscopeTaps | " << (validation.missingOscilloscopeTaps ? "true" : "false") << " |\n";
     out << "| invalidRandomizationScopes | " << (validation.invalidRandomizationScopes ? "true" : "false") << " |\n";
-    out << "| invalidSequencerStepCounts | " << (validation.invalidSequencerStepCounts ? "true" : "false") << " |\n";
-    out << "| missingWrittenUnwrittenState | " << (validation.missingWrittenUnwrittenState ? "true" : "false")
-        << " |\n";
-    out << "| invalidSequencerDirectionSpeed | "
-        << (validation.invalidSequencerDirectionSpeed ? "true" : "false") << " |\n";
     out << "| invalidSourceLaneCounts | " << (validation.invalidSourceLaneCounts ? "true" : "false") << " |\n";
     out << "| duplicateSourceIds | " << (validation.duplicateSourceIds ? "true" : "false") << " |\n";
     out << "| missingSourceColorsGroups | " << (validation.missingSourceColorsGroups ? "true" : "false")
@@ -1277,7 +1104,6 @@ inline std::string buildReviewerReportMarkdown()
     out << "## Manifest Family Schema\n\n";
     out << "- Product controls\n";
     out << "- Projection overlays\n";
-    out << "- Runtime controls\n";
     out << "- Host parameter mapping\n";
     out << "- Hardware controls\n";
     out << "- Layout groups\n";
@@ -1301,15 +1127,6 @@ inline std::string buildReviewerReportMarkdown()
         out << control.choices[0].displayName << " / " << control.choices[1].displayName << " | ";
         out << (control.consumedByRandomizeAll ? "yes" : "no") << " | "
             << (control.consumedByRandomizeMod ? "yes" : "no") << " |\n";
-    }
-    out << "\n## Sequencer Slots\n\n";
-    out << "| Index | Written State Field | Persistent | Lockable |\n";
-    out << "|---|---|---|---|\n";
-    for (const SequencerSlot& slot : kSequencerSlots)
-    {
-        out << "| " << static_cast<unsigned>(slot.index) << " | `" << slot.writtenStateField << "` | "
-            << (slot.sequencerPersistent ? "yes" : "no") << " | "
-            << (slot.sequencerLockable ? "yes" : "no") << " |\n";
     }
     out << "\n";
     out << "## Projections\n\n";
@@ -1406,43 +1223,10 @@ inline RuntimeDescriptor buildDescriptorAt(size_t index)
         entry.index = static_cast<uint8_t>(index - (kPageKnobCount + kPageModDepthCount + kGlobalCrunchyCount));
         entry.defaultNorm = vcoMorphDefault(entry.index);
     }
-    else if (index < kPageKnobCount + kPageModDepthCount + kGlobalCrunchyCount + kMorphKnobCount + kSequencerCount)
-    {
-        entry.axis = Axis::Sequencer;
-        entry.index = static_cast<uint8_t>(
-            index - (kPageKnobCount + kPageModDepthCount + kGlobalCrunchyCount + kMorphKnobCount));
-        switch (entry.index)
-        {
-            case 0:
-                entry.defaultNorm = (120.0f - 20.0f) / (300.0f - 20.0f);
-                break;
-            case 1:
-                entry.defaultNorm = static_cast<float>(SequencerState::kDefaultDirection)
-                    / static_cast<float>(SequencerState::kDirectionChoiceCount - 1u);
-                break;
-            case 2:
-            case 3:
-                entry.defaultNorm = 0.0f;
-                break;
-            default:
-                entry.defaultNorm = static_cast<float>(SequencerState::kDefaultSpeed)
-                    / static_cast<float>(SequencerState::kSpeedChoiceCount - 1u);
-                break;
-        }
-    }
-    else if (index < kPageKnobCount + kPageModDepthCount + kGlobalCrunchyCount + kMorphKnobCount + kSequencerCount
-                        + kSceneBlendCount)
+    else
     {
         entry.axis = Axis::SceneBlend;
         entry.defaultNorm = 0.5f;
-    }
-    else
-    {
-        entry.axis = Axis::GestureWeight;
-        entry.index = static_cast<uint8_t>(
-            index - (kPageKnobCount + kPageModDepthCount + kGlobalCrunchyCount + kMorphKnobCount + kSequencerCount
-                     + kSceneBlendCount));
-        entry.defaultNorm = 0.0f;
     }
 
     froggers_v2::manifest::formatInventoryStableId(

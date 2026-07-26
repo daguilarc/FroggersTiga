@@ -94,12 +94,6 @@ AudioEngine::AudioEngine(bool pluginHosted)
         m_host.SetPageKnob(page, row, value);
     });
     m_midiCvTable.setHostGateCallback([this](bool high) { m_host.SetGate(high); });
-    m_midiCvTable.setSequencerAdvanceHook([this]() {
-        if (m_transportChangedCallback)
-        {
-            juce::MessageManager::callAsync(m_transportChangedCallback);
-        }
-    });
     if (m_pluginHosted)
     {
         m_host.SetSampleRate(m_hostSampleRate);
@@ -144,30 +138,6 @@ void AudioEngine::handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMe
 
 void AudioEngine::routeMidiMessage(const juce::MidiMessage& message, bool fromQwerty)
 {
-    if (message.isMidiClock())
-    {
-        m_midiCvTable.onMidiClockTick(m_host.m_sequencer);
-        return;
-    }
-    if (message.isMidiStart())
-    {
-        m_host.m_sequencer.m_playing = true;
-        notifyTransportChanged();
-        return;
-    }
-    if (message.isMidiStop())
-    {
-        m_host.m_sequencer.m_playing = false;
-        notifyTransportChanged();
-        return;
-    }
-    if (message.isMidiContinue())
-    {
-        m_host.m_sequencer.m_playing = true;
-        notifyTransportChanged();
-        return;
-    }
-
     const uint8_t channel = static_cast<uint8_t>(message.getChannel());
     const uint8_t* raw = message.getRawData();
     if (raw == nullptr || message.getRawDataSize() < 1)

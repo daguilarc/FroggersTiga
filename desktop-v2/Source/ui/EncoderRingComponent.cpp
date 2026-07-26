@@ -58,7 +58,6 @@ void EncoderRingComponent::refreshFromState(const froggers_v2::FroggersV2UIState
     m_arcMin = state.arcMin[m_slot].load(std::memory_order_acquire);
     m_arcMax = state.arcMax[m_slot].load(std::memory_order_acquire);
     m_modMask = state.modulatorsMask[m_slot].load(std::memory_order_acquire);
-    m_gestureMask = state.gesturesMask[m_slot].load(std::memory_order_acquire);
     repaint();
 }
 
@@ -102,19 +101,6 @@ void EncoderRingComponent::paintBadges(juce::Graphics& g, juce::Rectangle<float>
         g.fillEllipse(x, modY, badgeR * 2.0f, badgeR * 2.0f);
         x += badgeR * 2.0f + 2.0f;
     }
-
-    x = bounds.getX() + 4.0f;
-    const float gestureY = bounds.getBottom() - badgeR * 2.0f - 3.0f;
-    for (uint8_t lane = 0; lane < froggers_v2::kNumGestures; ++lane)
-    {
-        if ((m_gestureMask & static_cast<uint8_t>(1u << lane)) == 0)
-        {
-            continue;
-        }
-        g.setColour(lane == 0 ? juce::Colour(0xffd2a8ff) : juce::Colour(0xfff778ba));
-        g.fillEllipse(x, gestureY, badgeR * 2.0f, badgeR * 2.0f);
-        x += badgeR * 2.0f + 2.0f;
-    }
 }
 
 void EncoderRingComponent::refreshFromCrunchyState(const froggers_v2::FroggersV2UIState& state)
@@ -125,7 +111,6 @@ void EncoderRingComponent::refreshFromCrunchyState(const froggers_v2::FroggersV2
     m_arcMin = state.crunchyArcMin.load(std::memory_order_acquire);
     m_arcMax = state.crunchyArcMax.load(std::memory_order_acquire);
     m_modMask = 0;
-    m_gestureMask = 0;
     repaint();
 }
 

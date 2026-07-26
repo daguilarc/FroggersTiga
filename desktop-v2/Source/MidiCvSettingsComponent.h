@@ -20,7 +20,6 @@ enum class MidiCvTargetRowKind : uint8_t
     CcBinding,
     ButtonBinding,
     QwertyChannel,
-    ExternalClock,
     EncoderTurn,
     EncoderDrillIn
 };

@@ -35,12 +35,6 @@ constexpr int kGlobalCommandBandH = gridPx(7);
 constexpr int kGlobalStripH = kGlobalCommandBandH;
 constexpr int kPerformanceBandH = gridPx(7);
 constexpr int kCarouselHeaderH = gridPx(3);
-// The sequencer toolbar + single step row only need ~gridPx(7) of vertical
-// space (kSequencerToolbarH + kChromePad + one kSequencerStepCellSize row);
-// gridPx(11) keeps a comfortable margin while returning the rest of the
-// vertical budget to the module carousel so pages (notably the Audio page)
-// fit their encoder/mod rows without a viewport scrollbar at 1280x920.
-constexpr int kSequencerH = gridPx(11);
 constexpr int kTextButtonH = gridPx(3);
 constexpr int kArrowButtonSize = gridPx(2);
 constexpr int kRandomizeButtonW = gridPx(11);
@@ -93,8 +87,6 @@ constexpr int kSequencerStepCellSize = gridPx(3);
 constexpr int kSequencerDirectionSpeedStripH = gridPx(6);
 constexpr int kPerfBlendEndpointLabelW = gridPx(3);
 constexpr int kPerfSceneBlendW = gridPx(8);
-constexpr int kPerfGestureToggleW = gridPx(9);
-constexpr int kPerfGestureWeightW = gridPx(7);
 constexpr int kPerfSeqTransportW = 108;
 constexpr int kPerfSeqRecordW = gridPx(6);
 constexpr int kPerfBpmLabelW = gridPx(3);

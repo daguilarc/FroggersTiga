@@ -23,19 +23,13 @@ public:
     juce::Rectangle<int> sceneLabelBoundsForTest() const { return m_sceneLabel.getBounds(); }
     juce::Rectangle<int> blendLabelLBoundsForTest() const { return m_blendLabelL.getBounds(); }
     juce::Rectangle<int> blendLabelRBoundsForTest() const { return m_blendLabelR.getBounds(); }
-    juce::Rectangle<int> gesture1BoundsForTest() const { return m_gesture1.getBounds(); }
-    juce::Rectangle<int> gesture2BoundsForTest() const { return m_gesture2.getBounds(); }
     juce::Rectangle<int> marblesLabel1BoundsForTest() const { return m_marblesLabel1.getBounds(); }
     juce::Rectangle<int> marblesLabel2BoundsForTest() const { return m_marblesLabel2.getBounds(); }
     juce::Rectangle<int> scene1BoundsForTest() const { return m_scene1.getBounds(); }
     juce::Rectangle<int> sceneBlendBoundsForTest() const { return m_sceneBlend.getBounds(); }
-    juce::Rectangle<int> gestureWeight1BoundsForTest() const { return m_gestureWeight1.getBounds(); }
-    juce::Rectangle<int> gestureWeight2BoundsForTest() const { return m_gestureWeight2.getBounds(); }
 
 private:
     void pushScene(uint8_t ordinal);
-    void pushGesture(uint8_t lane);
-    void pushGestureWeight(uint8_t lane, float value);
     void paintMarblesLed(juce::Graphics& g, juce::Rectangle<int> area, float level, bool active) const;
     void updateSceneButtonLabels(uint8_t leftOrdinal, uint8_t rightOrdinal);
 
@@ -51,10 +45,6 @@ private:
     juce::Label m_blendLabelL;
     juce::Slider m_sceneBlend;
     juce::Label m_blendLabelR;
-    juce::ToggleButton m_gesture1;
-    juce::Slider m_gestureWeight1;
-    juce::ToggleButton m_gesture2;
-    juce::Slider m_gestureWeight2;
     juce::Label m_marblesLabel1;
     juce::Label m_marblesLabel2;
 };

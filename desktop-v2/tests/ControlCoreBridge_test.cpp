@@ -123,7 +123,7 @@ bool test_scene_centers_seeded_from_defaults()
     return true;
 }
 
-bool test_scene_blend_gesture_shift_semantics()
+bool test_scene_blend_semantics()
 {
     FroggersV2ControlCore core;
 
@@ -148,24 +148,6 @@ bool test_scene_blend_gesture_shift_semantics()
     if (!(withBlend.sceneRight > withBlend.sceneLeft))
     {
         std::printf("FAIL: scene right did not diverge from scene left\n");
-        return false;
-    }
-
-    MessageIn selectGesture;
-    selectGesture.type = MessageIn::Type::GestureSelect;
-    selectGesture.index = 0;
-    pushAndProcess(core, selectGesture);
-
-    MessageIn gestureWeight;
-    gestureWeight.type = MessageIn::Type::GestureWeight;
-    gestureWeight.index = 0;
-    gestureWeight.value = 1.0f;
-    pushAndProcess(core, gestureWeight);
-    pushAndProcess(core, MessageIn::ParamTurn(0, 0, 1.0f));
-    const auto withGesture = core.effectiveRow(0, 0);
-    if ((withGesture.gesturesMask & 0x1u) == 0)
-    {
-        std::printf("FAIL: gesture mask not set\n");
         return false;
     }
     return true;
@@ -363,22 +345,12 @@ bool test_bridge_sync_and_rand_all_scope()
         return false;
     }
 
-    MessageIn selectGesture;
-    selectGesture.type = MessageIn::Type::GestureSelect;
-    selectGesture.index = 1;
-    pushAndProcess(core, selectGesture);
-
     const uint8_t leftBefore = core.uiState().leftSceneOrdinal.load(std::memory_order_acquire);
     const uint8_t rightBefore = core.uiState().rightSceneOrdinal.load(std::memory_order_acquire);
     const float blendBefore = core.uiState().sceneBlend.load(std::memory_order_acquire);
     MessageIn randAll;
     randAll.type = MessageIn::Type::RandAll;
     pushAndProcess(core, randAll);
-    if (core.uiState().activeGesture.load(std::memory_order_acquire) != froggers_v2::kNoSelection)
-    {
-        std::printf("FAIL: rand all did not clear gesture selection\n");
-        return false;
-    }
     const uint8_t leftAfter = core.uiState().leftSceneOrdinal.load(std::memory_order_acquire);
     const uint8_t rightAfter = core.uiState().rightSceneOrdinal.load(std::memory_order_acquire);
     const float blendAfter = core.uiState().sceneBlend.load(std::memory_order_acquire);
@@ -542,44 +514,6 @@ bool test_crunchy_scene_encoder_parity()
     return true;
 }
 
-bool test_sequencer_clock_recall_and_bridge_sync()
-{
-    FroggersV2ControlCore core;
-    DesktopHostIO host;
-    DelayState delay;
-    host.setDelayState(&delay);
-    host.m_hostKind = SimHostKind::DesktopV2;
-    host.Init();
-    host.SetSampleRate(44100.0f);
-
-    FroggersV2HostBridge bridge(core, host);
-    core.setSequencerState(&host.m_sequencer);
-
-    SequencerSlotPayload stepOne{};
-    stepOne.sceneCenter[0][0][0] = 0.8f;
-    stepOne.sceneCenter[0][0][1] = 0.2f;
-    stepOne.sceneCenter[0][0][2] = 0.5f;
-    stepOne.gestureWeight[0] = 1.0f;
-    
-    host.m_sequencer.captureStep(1, stepOne);
-    host.m_sequencer.m_playhead = 1;
-
-    bridge.onSequencerStepAdvance();
-
-    const auto recalled = core.effectiveRow(0, 0);
-    if (!nearlyEqual(recalled.sceneLeft, 0.8f, 2.0e-3f))
-    {
-        std::printf("FAIL: sequencer recall scene left expected 0.8 got %f\n", recalled.sceneLeft);
-        return false;
-    }
-    if (!nearlyEqual(host.GetPageParam(0, 0), recalled.effective, 1.0e-2f))
-    {
-        std::printf("FAIL: sequencer recall did not sync to host\n");
-        return false;
-    }
-    return true;
-}
-
 bool test_rand_mod_syncs_host_mod_routes()
 {
     extern uint32_t RGen_s_state_probe;
@@ -637,241 +571,6 @@ bool test_rand_mod_syncs_host_mod_routes()
                 static_cast<unsigned>(hostMod));
             return false;
         }
-    }
-    return true;
-}
-
-bool test_sequencer_clock_via_host_callback()
-{
-    FroggersV2ControlCore core;
-    DesktopHostIO host;
-    DelayState delay;
-    host.setDelayState(&delay);
-    host.m_hostKind = SimHostKind::DesktopV2;
-    host.Init();
-    host.SetSampleRate(44100.0f);
-    host.m_sequencer.setBpm(120.0f);
-    host.m_sequencer.m_playing = true;
-
-    SequencerSlotPayload stepOne{};
-    stepOne.sceneCenter[0][0][0] = 0.75f;
-    stepOne.sceneCenter[0][0][1] = 0.75f;
-    stepOne.sceneCenter[0][0][2] = 0.75f;
-    
-    host.m_sequencer.captureStep(1, stepOne);
-
-    FroggersV2HostBridge bridge(core, host);
-    core.setSequencerState(&host.m_sequencer);
-
-    if (!host.m_sequencer.advanceOnSamples(22050, 44100.0f))
-    {
-        std::printf("FAIL: sequencer did not advance on samples\n");
-        return false;
-    }
-    if (!host.m_onSequencerStepAdvance)
-    {
-        std::printf("FAIL: host sequencer callback not registered\n");
-        return false;
-    }
-    host.m_onSequencerStepAdvance();
-    if (host.m_sequencer.m_playhead != 1)
-    {
-        std::printf("FAIL: playhead expected 1 after advance\n");
-        return false;
-    }
-    if (!nearlyEqual(core.effectiveRow(0, 0).sceneLeft, 0.75f, 2.0e-3f))
-    {
-        std::printf("FAIL: host callback did not recall snapshot\n");
-        return false;
-    }
-    return true;
-}
-
-bool test_sequencer_snapshot_round_trip()
-{
-    FroggersV2ControlCore core;
-    core.setGestureWeight(0, 0.6f);
-    pushAndProcess(core, MessageIn::ParamTurn(0, 0, 5.0f));
-
-    SequencerSlotPayload captured;
-    core.captureSequencerSlotPayload(captured);
-    if (!captured.gate)
-    {
-        std::printf("FAIL: capture did not set hasData\n");
-        return false;
-    }
-
-    pushAndProcess(core, MessageIn::ParamTurn(0, 0, -5.0f));
-    core.applySequencerSlotPayload(captured);
-
-    const auto row = core.effectiveRow(0, 0);
-    if (!nearlyEqual(row.sceneLeft, captured.sceneCenter[0][0][0], 2.0e-3f))
-    {
-        std::printf("FAIL: snapshot round-trip scene mismatch\n");
-        return false;
-    }
-    if (!nearlyEqual(core.gestureWeight(0), 0.6f, 2.0e-3f))
-    {
-        std::printf("FAIL: snapshot round-trip gesture mismatch\n");
-        return false;
-    }
-    return true;
-}
-
-bool test_sequencer_factory_reset()
-{
-    FroggersV2ControlCore core;
-    SequencerState seq;
-    core.setSequencerState(&seq);
-
-    seq.m_slots[3].payload.sceneCenter[0][0][0] = 0.99f;
-    seq.m_slots[3].payload.gate = true;
-    seq.m_slots[3].written = true;
-
-    MessageIn reset;
-    reset.type = MessageIn::Type::ResetSequencerStep;
-    reset.slot = 3;
-    pushAndProcess(core, reset);
-
-    const float expected = HostParameterInventoryV2::pageKnobDefault(0, 0);
-    if (!nearlyEqual(seq.m_slots[3].payload.sceneCenter[0][0][0], expected, 2.0e-3f))
-    {
-        std::printf("FAIL: factory reset scene center\n");
-        return false;
-    }
-    if (seq.m_slots[3].payload.gate)
-    {
-        std::printf("FAIL: factory reset gate expected false\n");
-        return false;
-    }
-    if (!seq.m_slots[3].written)
-    {
-        std::printf("FAIL: factory reset hasData expected true\n");
-        return false;
-    }
-    return true;
-}
-
-bool test_sequencer_full_step_randomize()
-{
-    FroggersV2ControlCore core;
-    SequencerState seq;
-    core.setSequencerState(&seq);
-
-    const float blendBefore = core.sceneBlend();
-    seq.m_slots[2].payload.sceneCenter[0][0][0] = 0.11f;
-    seq.m_slots[2].written = true;
-
-    MessageIn rand;
-    rand.type = MessageIn::Type::RandSequencerStep;
-    rand.slot = 2;
-    rand.page = froggers_v2::kRandSeqScopeFullStep;
-    pushAndProcess(core, rand);
-
-    if (!seq.m_slots[2].written)
-    {
-        std::printf("FAIL: full-step randomize hasData\n");
-        return false;
-    }
-    if (nearlyEqual(seq.m_slots[2].payload.sceneCenter[0][0][0], 0.11f, 1.0e-4f))
-    {
-        std::printf("FAIL: full-step randomize did not change scene slot\n");
-        return false;
-    }
-    if (!nearlyEqual(core.sceneBlend(), blendBefore, 1.0e-4f))
-    {
-        std::printf("FAIL: full-step randomize changed live scene blend\n");
-        return false;
-    }
-    return true;
-}
-
-bool test_sequencer_dice_step_and_pattern()
-{
-    FroggersV2ControlCore core;
-    SequencerState seq;
-    core.setSequencerState(&seq);
-
-    seq.m_editStep = 1;
-    seq.m_slots[1].written = false;
-    seq.m_slots[2].written = false;
-    seq.m_slots[3].written = true;
-    seq.m_slots[3].payload.sceneCenter[0][0][0] = 0.42f;
-
-    MessageIn stepDice;
-    stepDice.type = MessageIn::Type::RandSequencerStep;
-    stepDice.slot = 1;
-    stepDice.page = froggers_v2::kRandSeqScopeStep;
-    pushAndProcess(core, stepDice);
-
-    if (!seq.m_slots[1].written)
-    {
-        std::printf("FAIL: step dice did not write edit step\n");
-        return false;
-    }
-    if (seq.m_slots[2].written)
-    {
-        std::printf("FAIL: step dice wrote non-edit step\n");
-        return false;
-    }
-
-    MessageIn patternDice;
-    patternDice.type = MessageIn::Type::RandSequencerStep;
-    patternDice.page = froggers_v2::kRandSeqScopePattern;
-    pushAndProcess(core, patternDice);
-
-    // Packet 5 / "All Steps randomization writes all written steps": Pattern
-    // scope must only touch already-written steps. Step 2 is still blank at
-    // this point (the earlier step-dice wrote step 1, not step 2), so it must
-    // stay unwritten rather than being silently filled in.
-    if (seq.m_slots[2].written)
-    {
-        std::printf("FAIL: pattern dice wrote into previously-unwritten step 2\n");
-        return false;
-    }
-    if (nearlyEqual(seq.m_slots[3].payload.sceneCenter[0][0][0], 0.42f, 1.0e-4f))
-    {
-        std::printf("FAIL: pattern dice did not overwrite already-written step 3\n");
-        return false;
-    }
-    return true;
-}
-
-bool test_rand_seq_all_steps_scope_targets_only_written_steps()
-{
-    // Dedicated regression coverage for the onRandSequencerStep Pattern-scope
-    // fix (desktop-v2-sequencer-operator-loop "All Steps randomization writes
-    // all written steps"): unwritten slots must be skipped entirely -- not
-    // randomized and not marked written -- while already-written slots are
-    // re-randomized in place.
-    FroggersV2ControlCore core;
-    SequencerState seq;
-    core.setSequencerState(&seq);
-
-    seq.m_slots[0].written = true;
-    seq.m_slots[0].payload.sceneCenter[0][0][0] = 0.33f;
-    seq.m_slots[1].written = false;
-    seq.m_slots[1].payload.sceneCenter[0][0][0] = 0.77f;
-
-    MessageIn patternDice;
-    patternDice.type = MessageIn::Type::RandSequencerStep;
-    patternDice.page = froggers_v2::kRandSeqScopePattern;
-    pushAndProcess(core, patternDice);
-
-    if (nearlyEqual(seq.m_slots[0].payload.sceneCenter[0][0][0], 0.33f, 1.0e-4f))
-    {
-        std::printf("FAIL: All Steps rand-seq did not re-randomize written step 0\n");
-        return false;
-    }
-    if (seq.m_slots[1].written)
-    {
-        std::printf("FAIL: All Steps rand-seq marked an unwritten step written\n");
-        return false;
-    }
-    if (!nearlyEqual(seq.m_slots[1].payload.sceneCenter[0][0][0], 0.77f, 1.0e-4f))
-    {
-        std::printf("FAIL: All Steps rand-seq mutated payload of an unwritten step\n");
-        return false;
     }
     return true;
 }
@@ -963,484 +662,6 @@ bool test_envelope_page_ten_rows()
     return true;
 }
 
-bool test_sequencer_record_capture()
-{
-    FroggersV2ControlCore core;
-    DesktopHostIO host;
-    DelayState delay;
-    host.setDelayState(&delay);
-    host.m_hostKind = SimHostKind::DesktopV2;
-    host.Init();
-    host.SetSampleRate(44100.0f);
-    host.m_sequencer.m_writeSeqArm = true;
-    host.m_sequencer.m_playhead = 1;
-
-    pushAndProcess(core, MessageIn::ParamTurn(0, 0, 8.0f));
-    FroggersV2HostBridge bridge(core, host);
-    core.setSequencerState(&host.m_sequencer);
-    const float expectedScene = core.effectiveRow(0, 0).sceneLeft;
-
-    bridge.onSequencerStepAdvance();
-
-    if (!host.m_sequencer.m_slots[0].written)
-    {
-        std::printf("FAIL: record capture did not set hasData on step left\n");
-        return false;
-    }
-    if (!nearlyEqual(host.m_sequencer.m_slots[0].payload.sceneCenter[0][0][0], expectedScene, 2.0e-3f))
-    {
-        std::printf("FAIL: record capture scene mismatch on step left\n");
-        return false;
-    }
-    return true;
-}
-
-bool test_write_seq_step_zero_on_first_beat()
-{
-    FroggersV2ControlCore core;
-    DesktopHostIO host;
-    DelayState delay;
-    host.setDelayState(&delay);
-    host.m_hostKind = SimHostKind::DesktopV2;
-    host.Init();
-    host.SetSampleRate(44100.0f);
-    host.m_sequencer.m_writeSeqArm = true;
-    host.m_sequencer.m_playhead = 1;
-
-    pushAndProcess(core, MessageIn::ParamTurn(0, 0, 6.0f));
-    FroggersV2HostBridge bridge(core, host);
-    core.setSequencerState(&host.m_sequencer);
-    const float expectedScene = core.effectiveRow(0, 0).sceneLeft;
-
-    bridge.onSequencerStepAdvance();
-
-    if (!host.m_sequencer.m_slots[0].written)
-    {
-        std::printf("FAIL: first beat did not capture step 0\n");
-        return false;
-    }
-    const float captured = host.m_sequencer.m_slots[0].payload.sceneCenter[0][0][0];
-    if (!nearlyEqual(captured, expectedScene, 2.0e-3f))
-    {
-        std::printf("FAIL: first beat step 0 capture expected %f got %f\n", expectedScene, captured);
-        return false;
-    }
-    return true;
-}
-
-bool test_write_seq_step_zero_on_start_sequence()
-{
-    FroggersV2ControlCore core;
-    DesktopHostIO host;
-    DelayState delay;
-    host.setDelayState(&delay);
-    host.m_hostKind = SimHostKind::DesktopV2;
-    host.Init();
-    host.SetSampleRate(44100.0f);
-    host.m_sequencer.m_writeSeqArm = true;
-    host.m_sequencer.m_playhead = 0;
-    host.m_sequencer.m_playing = false;
-
-    pushAndProcess(core, MessageIn::ParamTurn(0, 0, 7.0f));
-    FroggersV2HostBridge bridge(core, host);
-    core.setSequencerState(&host.m_sequencer);
-    const float expectedScene = core.effectiveRow(0, 0).sceneLeft;
-
-    bridge.captureLiveToSequencerStep(host.m_sequencer.m_playhead);
-
-    if (!host.m_sequencer.m_slots[0].written)
-    {
-        std::printf("FAIL: Start Sequence capture did not set hasData on step 0\n");
-        return false;
-    }
-    if (!nearlyEqual(host.m_sequencer.m_slots[0].payload.sceneCenter[0][0][0], expectedScene, 2.0e-3f))
-    {
-        std::printf("FAIL: Start Sequence capture scene mismatch on step 0\n");
-        return false;
-    }
-    return true;
-}
-
-bool test_write_seq_stopped_navigate_save()
-{
-    FroggersV2ControlCore core;
-    DesktopHostIO host;
-    DelayState delay;
-    host.setDelayState(&delay);
-    host.m_hostKind = SimHostKind::DesktopV2;
-    host.Init();
-    host.SetSampleRate(44100.0f);
-    host.m_sequencer.m_writeSeqArm = true;
-    host.m_sequencer.m_editStep = 2;
-    host.m_sequencer.m_playing = false;
-
-    host.m_sequencer.m_slots[3].payload.sceneCenter[0][0][0] = 0.25f;
-    host.m_sequencer.m_slots[3].written = true;
-
-    pushAndProcess(core, MessageIn::ParamTurn(0, 0, 8.0f));
-    FroggersV2HostBridge bridge(core, host);
-    core.setSequencerState(&host.m_sequencer);
-    const float expectedScene = core.effectiveRow(0, 0).sceneLeft;
-
-    bridge.captureLiveToSequencerStep(2);
-    host.m_sequencer.m_editStep = 3;
-    bridge.recallSequencerStep(3);
-
-    if (!host.m_sequencer.m_slots[2].written)
-    {
-        std::printf("FAIL: stopped navigate did not save previous edit step\n");
-        return false;
-    }
-    if (!nearlyEqual(host.m_sequencer.m_slots[2].payload.sceneCenter[0][0][0], expectedScene, 2.0e-3f))
-    {
-        std::printf(
-            "FAIL: stopped navigate saved scene expected %f got %f\n",
-            expectedScene,
-            host.m_sequencer.m_slots[2].payload.sceneCenter[0][0][0]);
-        return false;
-    }
-    if (!nearlyEqual(core.effectiveRow(0, 0).sceneLeft, 0.25f, 2.0e-3f))
-    {
-        std::printf("FAIL: stopped navigate did not recall new edit step\n");
-        return false;
-    }
-    return true;
-}
-
-bool test_write_seq_three_beats_steps_without_duplicate_step0()
-{
-    FroggersV2ControlCore core;
-    DesktopHostIO host;
-    DelayState delay;
-    host.setDelayState(&delay);
-    host.m_hostKind = SimHostKind::DesktopV2;
-    host.Init();
-    host.SetSampleRate(44100.0f);
-    host.m_sequencer.m_writeSeqArm = true;
-    host.m_sequencer.m_playing = true;
-    host.m_sequencer.m_playhead = 0;
-
-    pushAndProcess(core, MessageIn::ParamTurn(0, 0, 5.0f));
-    FroggersV2HostBridge bridge(core, host);
-    core.setSequencerState(&host.m_sequencer);
-    const float expectedStep0 = core.effectiveRow(0, 0).sceneLeft;
-
-    bridge.captureLiveToSequencerStep(0);
-    host.m_sequencer.m_writeSeqJustStarted = true;
-
-    for (int beat = 0; beat < 3; ++beat)
-    {
-        host.m_sequencer.m_playhead = static_cast<uint8_t>((host.m_sequencer.m_playhead + 1u) % 16u);
-        bridge.onSequencerStepAdvance();
-    }
-
-    for (uint8_t step = 0; step < 3; ++step)
-    {
-        if (!host.m_sequencer.m_slots[step].written)
-        {
-            std::printf("FAIL: three-beat write seq step %u missing hasData\n", static_cast<unsigned>(step));
-            return false;
-        }
-    }
-    if (!nearlyEqual(host.m_sequencer.m_slots[0].payload.sceneCenter[0][0][0], expectedStep0, 2.0e-3f))
-    {
-        std::printf("FAIL: step 0 capture overwritten on first beat\n");
-        return false;
-    }
-    return true;
-}
-
-bool test_unwritten_step_noop_on_advance()
-{
-    FroggersV2ControlCore core;
-    DesktopHostIO host;
-    DelayState delay;
-    host.setDelayState(&delay);
-    host.m_hostKind = SimHostKind::DesktopV2;
-    host.Init();
-    host.SetSampleRate(44100.0f);
-    host.m_sequencer.m_playhead = 2;
-    host.m_sequencer.m_slots[2].written = false;
-
-    pushAndProcess(core, MessageIn::ParamTurn(0, 0, 8.0f));
-    const float liveBefore = core.effectiveRow(0, 0).sceneLeft;
-
-    FroggersV2HostBridge bridge(core, host);
-    core.setSequencerState(&host.m_sequencer);
-    bridge.onSequencerStepAdvance();
-
-    if (host.m_sequencer.m_slots[2].written)
-    {
-        std::printf("FAIL: unwritten step should stay unwritten on advance\n");
-        return false;
-    }
-    if (!nearlyEqual(core.effectiveRow(0, 0).sceneLeft, liveBefore, 2.0e-3f))
-    {
-        std::printf("FAIL: unwritten step advance changed live audio state\n");
-        return false;
-    }
-    return true;
-}
-
-bool test_playback_skips_unwritten_steps()
-{
-    // desktop-v2-sequencing "Cleared steps are skipped by playback" /
-    // "Written-step mask creates odd effective lengths": with Write Seq. not
-    // armed, the playhead ring must skip past unwritten slots and land on
-    // the next written one, applying that step's snapshot.
-    FroggersV2ControlCore core;
-    DesktopHostIO host;
-    DelayState delay;
-    host.setDelayState(&delay);
-    host.m_hostKind = SimHostKind::DesktopV2;
-    host.Init();
-    host.SetSampleRate(44100.0f);
-    host.m_sequencer.m_playing = true;
-    host.m_sequencer.m_playhead = 0;
-
-    SequencerSlotPayload stepFive{};
-    stepFive.sceneCenter[0][0][0] = 0.6f;
-    stepFive.sceneCenter[0][0][1] = 0.6f;
-    stepFive.sceneCenter[0][0][2] = 0.6f;
-    host.m_sequencer.captureStep(5, stepFive);
-
-    FroggersV2HostBridge bridge(core, host);
-    core.setSequencerState(&host.m_sequencer);
-
-    bridge.onSequencerStepAdvance();
-
-    if (host.m_sequencer.m_playhead != 5)
-    {
-        std::printf(
-            "FAIL: playback did not skip unwritten steps, playhead expected 5 got %u\n",
-            static_cast<unsigned>(host.m_sequencer.m_playhead));
-        return false;
-    }
-    if (!nearlyEqual(core.effectiveRow(0, 0).sceneLeft, 0.6f, 2.0e-3f))
-    {
-        std::printf("FAIL: playback did not apply the written step landed on after skipping\n");
-        return false;
-    }
-    return true;
-}
-
-bool test_empty_pattern_playback_is_transport_noop()
-{
-    // desktop-v2-sequencing "Empty written-step mask is transport no-op":
-    // with every one of the 16 slots unwritten, playback SHALL emit no
-    // snapshot recalls/gates/resets and MUST NOT hang trying to find a
-    // written step that does not exist.
-    FroggersV2ControlCore core;
-    DesktopHostIO host;
-    DelayState delay;
-    host.setDelayState(&delay);
-    host.m_hostKind = SimHostKind::DesktopV2;
-    host.Init();
-    host.SetSampleRate(44100.0f);
-    host.m_sequencer.m_playing = true;
-    host.m_sequencer.m_playhead = 0;
-
-    pushAndProcess(core, MessageIn::ParamTurn(0, 0, 8.0f));
-    const float liveBefore = core.effectiveRow(0, 0).sceneLeft;
-
-    FroggersV2HostBridge bridge(core, host);
-    core.setSequencerState(&host.m_sequencer);
-
-    for (int beat = 0; beat < 3; ++beat)
-    {
-        bridge.onSequencerStepAdvance();
-    }
-
-    for (uint8_t step = 0; step < SequencerState::kSlotCount; ++step)
-    {
-        if (host.m_sequencer.m_slots[step].written)
-        {
-            std::printf("FAIL: empty pattern playback wrote step %u\n", static_cast<unsigned>(step));
-            return false;
-        }
-    }
-    if (!nearlyEqual(core.effectiveRow(0, 0).sceneLeft, liveBefore, 2.0e-3f))
-    {
-        std::printf("FAIL: empty pattern playback changed live audio state\n");
-        return false;
-    }
-    return true;
-}
-
-bool test_sequencer_16_slot_snapshot_and_lock_round_trip()
-{
-    // Task 5.4: exercises snapshot/lock round-trip across all 16 fixed
-    // slots -- a mix of written and unwritten steps, plus a locked written
-    // step -- rather than spot-checking one or two indices. desktop-v2-
-    // sequencing "Fixed sixteen-step ring" / "Cleared steps are skipped by
-    // playback" / lock-gated recall (FroggersV2HostBridge::onSequencerStepAdvance).
-    FroggersV2ControlCore core;
-    DesktopHostIO host;
-    DelayState delay;
-    host.setDelayState(&delay);
-    host.m_hostKind = SimHostKind::DesktopV2;
-    host.Init();
-    host.SetSampleRate(44100.0f);
-    FroggersV2HostBridge bridge(core, host);
-    core.setSequencerState(&host.m_sequencer);
-
-    // Even slots written with distinct, deterministic values; odd slots left
-    // unwritten. Slot 6 is additionally locked.
-    for (uint8_t step = 0; step < SequencerState::kSlotCount; step += 2)
-    {
-        SequencerSlotPayload payload{};
-        const float value = 0.05f * static_cast<float>(step + 1);
-        payload.sceneCenter[0][0][0] = value;
-        payload.sceneCenter[0][0][1] = value;
-        payload.sceneCenter[0][0][2] = value;
-        host.m_sequencer.captureStep(step, payload);
-    }
-    host.m_sequencer.m_slots[6].locked = true;
-
-    for (uint8_t step = 0; step < SequencerState::kSlotCount; ++step)
-    {
-        const bool expectedWritten = (step % 2 == 0);
-        if (host.m_sequencer.slotWritten(step) != expectedWritten)
-        {
-            std::printf(
-                "FAIL: step %u written state expected %d got %d\n",
-                static_cast<unsigned>(step),
-                expectedWritten,
-                host.m_sequencer.slotWritten(step));
-            return false;
-        }
-    }
-
-    host.m_sequencer.m_playing = true;
-    host.m_sequencer.m_playhead = 15;
-
-    std::array<bool, SequencerState::kSlotCount> visited{};
-    for (int i = 0; i < SequencerState::kSlotCount; ++i)
-    {
-        // Manually perform the one-step base advance that advanceOnSamples()
-        // would normally do before invoking the callback (matches the
-        // existing test_write_seq_three_beats_steps_without_duplicate_step0
-        // convention for driving onSequencerStepAdvance directly).
-        host.m_sequencer.advancePlayhead();
-        bridge.onSequencerStepAdvance();
-
-        const uint8_t ph = host.m_sequencer.m_playhead;
-        if (ph % 2 != 0)
-        {
-            std::printf("FAIL: playback landed on unwritten (odd) step %u\n", static_cast<unsigned>(ph));
-            return false;
-        }
-        visited[ph] = true;
-
-        if (ph == 6)
-        {
-            if (nearlyEqual(core.effectiveRow(0, 0).sceneLeft, 0.05f * 7.0f, 1.0e-4f))
-            {
-                std::printf("FAIL: locked step 6 was recalled despite being locked\n");
-                return false;
-            }
-        }
-        else
-        {
-            const float expected = 0.05f * static_cast<float>(ph + 1);
-            if (!nearlyEqual(core.effectiveRow(0, 0).sceneLeft, expected, 2.0e-3f))
-            {
-                std::printf(
-                    "FAIL: step %u recall mismatch expected %f got %f\n",
-                    static_cast<unsigned>(ph),
-                    expected,
-                    core.effectiveRow(0, 0).sceneLeft);
-                return false;
-            }
-        }
-    }
-
-    for (uint8_t step = 0; step < SequencerState::kSlotCount; step += 2)
-    {
-        if (!visited[step])
-        {
-            std::printf(
-                "FAIL: written step %u never visited across a full ring loop\n",
-                static_cast<unsigned>(step));
-            return false;
-        }
-    }
-    if (!host.m_sequencer.m_slots[6].written || !host.m_sequencer.m_slots[6].locked)
-    {
-        std::printf("FAIL: locked step 6 lost its written/locked state\n");
-        return false;
-    }
-    if (!nearlyEqual(host.m_sequencer.m_slots[6].payload.sceneCenter[0][0][0], 0.05f * 7.0f, 1.0e-4f))
-    {
-        std::printf("FAIL: locked step 6 snapshot payload mutated by playback\n");
-        return false;
-    }
-    return true;
-}
-
-bool test_rand_seq_playhead_target_while_playing()
-{
-    FroggersV2ControlCore core;
-    SequencerState seq;
-    seq.m_playing = true;
-    seq.m_playhead = 3;
-    seq.m_editStep = 0;
-    core.setSequencerState(&seq);
-
-    MessageIn stepDice;
-    stepDice.type = MessageIn::Type::RandSequencerStep;
-    stepDice.slot = 0;
-    stepDice.page = froggers_v2::kRandSeqScopeStep;
-    pushAndProcess(core, stepDice);
-
-    if (!seq.m_slots[3].written)
-    {
-        std::printf("FAIL: playing rand-seq did not target playhead step\n");
-        return false;
-    }
-    if (seq.m_slots[0].written)
-    {
-        std::printf("FAIL: playing rand-seq wrote edit step instead of playhead\n");
-        return false;
-    }
-    return true;
-}
-
-bool test_rand_mods_per_step_snapshots()
-{
-    FroggersV2ControlCore core;
-    SequencerState seq;
-    seq.m_editStep = 2;
-    core.setSequencerState(&seq);
-
-    seq.m_slots[2].payload.modSource[0][0] = froggers_v2::kNoSelection;
-    seq.m_slots[2].payload.modDepth[0][0] = 0.0f;
-
-    MessageIn randMods;
-    randMods.type = MessageIn::Type::RandSequencerMods;
-    randMods.page = froggers_v2::kRandSeqScopeStep;
-    pushAndProcess(core, randMods);
-
-    if (!seq.m_slots[2].written)
-    {
-        std::printf("FAIL: rand mods did not mark step hasData\n");
-        return false;
-    }
-    if (seq.m_slots[2].payload.modSource[0][0] == froggers_v2::kNoSelection
-        && nearlyEqual(seq.m_slots[2].payload.modDepth[0][0], 0.0f))
-    {
-        std::printf("FAIL: rand mods did not write mod route into snapshot\n");
-        return false;
-    }
-    return true;
-}
-
-// 4.8: single-authority randomization tests covering the executeRandomization
-// adapter that GlobalStripV2 now routes through (see spec scenarios "Global
-// Rand Mods randomizes live mod depths", "Global Rand Mods is not
-// sequencer-only", "Rand All respects scene scope", "Rand Mods respects step
-// scope").
-
 bool test_rand_mods_changes_live_depths_without_sequencer()
 {
     FroggersV2ControlCore core;
@@ -1468,8 +689,7 @@ bool test_rand_mods_changes_live_depths_without_sequencer()
     const float audioDepthBefore = core.assignedModDepth(0, 0);
     const float delayDepthBefore = core.assignedModDepth(4, 0);
 
-    core.executeRandomization(
-        FroggersV2ControlCore::RandomizationCommand::RandMods, 0, froggers_v2::kRandSeqScopeStep);
+    core.executeRandomization(FroggersV2ControlCore::RandomizationCommand::RandMods, 0);
 
     const float audioDepthAfterFirst = core.assignedModDepth(0, 0);
     const float delayDepthAfterFirst = core.assignedModDepth(4, 0);
@@ -1488,102 +708,11 @@ bool test_rand_mods_changes_live_depths_without_sequencer()
     // the live depth again. A hardcoded return value or a "randomize the
     // snapshot only, leave live state as a copy" stub would produce the same
     // depth on both calls.
-    core.executeRandomization(
-        FroggersV2ControlCore::RandomizationCommand::RandMods, 0, froggers_v2::kRandSeqScopeStep);
+    core.executeRandomization(FroggersV2ControlCore::RandomizationCommand::RandMods, 0);
     const float audioDepthAfterSecond = core.assignedModDepth(0, 0);
     if (nearlyEqual(audioDepthAfterSecond, audioDepthAfterFirst))
     {
         std::printf("FAIL: second Rand Mods call did not move the live depth again (looks gamed/cached)\n");
-        return false;
-    }
-    return true;
-}
-
-bool test_rand_mods_step_scope_writes_only_written_steps()
-{
-    FroggersV2ControlCore core;
-    SequencerState seq;
-    seq.m_editStep = 2;
-    core.setSequencerState(&seq);
-
-    seq.m_slots[2].written = true;
-    seq.m_slots[3].written = false;
-    seq.m_slots[3].payload.modSource[0][0] = froggers_v2::kNoSelection;
-
-    MessageIn assign;
-    assign.type = MessageIn::Type::ModSourceAssign;
-    assign.page = 0;
-    assign.slot = 0;
-    assign.index = 4;
-    pushAndProcess(core, assign);
-
-    core.executeRandomization(
-        FroggersV2ControlCore::RandomizationCommand::RandMods, 0, froggers_v2::kRandSeqScopeStep);
-
-    // Packet 15.2a retired the single-route identity model: randomizeLiveModDepths
-    // now randomizes all kNumModSources lanes on the row (not just the one
-    // ModSourceAssign(index=4) touched above), so the captured representative
-    // lane (assignedModSource = first lane with a non-zero depth) is no longer
-    // guaranteed to be lane 4 -- asserting "!= 4" here encodes the retired
-    // model. What still matters, and is asserted below, is that *some* live
-    // route got captured into the written edit step with a non-zero depth.
-    if (seq.m_slots[2].payload.modSource[0][0] == froggers_v2::kNoSelection)
-    {
-        std::printf(
-            "FAIL: Rand Mods (Current Step) did not capture the live mod route into the written edit step\n");
-        return false;
-    }
-    if (nearlyEqual(seq.m_slots[2].payload.modDepth[0][0], 0.0f))
-    {
-        std::printf(
-            "FAIL: Rand Mods (Current Step) captured a zero depth for the written edit step\n");
-        return false;
-    }
-    if (seq.m_slots[3].written || seq.m_slots[3].payload.modSource[0][0] != froggers_v2::kNoSelection)
-    {
-        std::printf("FAIL: Rand Mods (Current Step) touched an unwritten step\n");
-        return false;
-    }
-    return true;
-}
-
-bool test_rand_mods_all_steps_scope_targets_only_written_steps()
-{
-    FroggersV2ControlCore core;
-    SequencerState seq;
-    core.setSequencerState(&seq);
-
-    seq.m_slots[0].written = true;
-    seq.m_slots[1].written = false;
-    seq.m_slots[1].payload.modSource[0][0] = froggers_v2::kNoSelection;
-
-    MessageIn assign;
-    assign.type = MessageIn::Type::ModSourceAssign;
-    assign.page = 0;
-    assign.slot = 0;
-    assign.index = 5;
-    pushAndProcess(core, assign);
-
-    core.executeRandomization(
-        FroggersV2ControlCore::RandomizationCommand::RandMods, 0, froggers_v2::kRandSeqScopePattern);
-
-    // Packet 15.2a retired the single-route identity model (see the matching
-    // comment in test_rand_mods_step_scope_writes_only_written_steps): the
-    // captured representative lane is no longer guaranteed to be lane 5, only
-    // that a live route with a non-zero depth was captured.
-    if (seq.m_slots[0].payload.modSource[0][0] == froggers_v2::kNoSelection)
-    {
-        std::printf("FAIL: All Steps Rand Mods did not write the live mod route into written step 0\n");
-        return false;
-    }
-    if (nearlyEqual(seq.m_slots[0].payload.modDepth[0][0], 0.0f))
-    {
-        std::printf("FAIL: All Steps Rand Mods captured a zero depth for written step 0\n");
-        return false;
-    }
-    if (seq.m_slots[1].written || seq.m_slots[1].payload.modSource[0][0] != froggers_v2::kNoSelection)
-    {
-        std::printf("FAIL: All Steps Rand Mods wrote into (or marked written) an unwritten step\n");
         return false;
     }
     return true;
@@ -1603,7 +732,7 @@ bool test_rand_all_respects_scene_scope()
     const float activeSceneBefore = core.effectiveRow(0, 0).sceneRight;
 
     core.executeRandomization(
-        FroggersV2ControlCore::RandomizationCommand::RandAll, froggers_v2::kRandSceneScopeCurrent, 0);
+        FroggersV2ControlCore::RandomizationCommand::RandAll, froggers_v2::kRandSceneScopeCurrent);
 
     const uint8_t leftAfter = core.uiState().leftSceneOrdinal.load(std::memory_order_acquire);
     const uint8_t rightAfter = core.uiState().rightSceneOrdinal.load(std::memory_order_acquire);
@@ -1630,7 +759,7 @@ bool test_rand_all_respects_scene_scope()
     // endpoints/blend, proving the scope radio genuinely changes behavior
     // rather than being decorative.
     core.executeRandomization(
-        FroggersV2ControlCore::RandomizationCommand::RandAll, froggers_v2::kRandSceneScopeAll, 0);
+        FroggersV2ControlCore::RandomizationCommand::RandAll, froggers_v2::kRandSceneScopeAll);
     const uint8_t leftAfterAll = core.uiState().leftSceneOrdinal.load(std::memory_order_acquire);
     const uint8_t rightAfterAll = core.uiState().rightSceneOrdinal.load(std::memory_order_acquire);
     const float blendAfterAll = core.uiState().sceneBlend.load(std::memory_order_acquire);
@@ -2061,8 +1190,7 @@ bool test_rand_mods_gates_ineligible_lanes()
     constexpr uint8_t kPage = 0;
     constexpr uint8_t kRow = 0;
 
-    core.executeRandomization(
-        FroggersV2ControlCore::RandomizationCommand::RandMods, 0, froggers_v2::kRandSeqScopeStep);
+    core.executeRandomization(FroggersV2ControlCore::RandomizationCommand::RandMods, 0);
 
     // After randomization:
     // Lane 0 (VCO pair-bus, ineligible for page 0 row 0) must be 0.0f
@@ -2292,51 +1420,6 @@ bool test_unavailable_lane_refuses_param_turn_and_press()
     return true;
 }
 
-bool test_rand_seq_mods_picks_only_eligible_sources()
-{
-    // Packet 15.5 / 15.9: randomizeModIntoSnapshot eligibility-gates the
-    // single-route pick (no multi-lane sequencer payload expansion).
-    FroggersV2ControlCore core;
-    SequencerState seq;
-    seq.m_editStep = 0;
-    core.setSequencerState(&seq);
-
-    MessageIn randMods;
-    randMods.type = MessageIn::Type::RandSequencerMods;
-    randMods.page = froggers_v2::kRandSeqScopeStep;
-    pushAndProcess(core, randMods);
-
-    if (!seq.m_slots[0].written)
-    {
-        std::printf("FAIL: RandSequencerMods did not mark step written\n");
-        return false;
-    }
-
-    constexpr uint8_t kPage = 0;
-    constexpr uint8_t kRow = 0;
-    const uint8_t source = seq.m_slots[0].payload.modSource[kPage][kRow];
-    if (source == froggers_v2::kNoSelection)
-    {
-        std::printf("FAIL: expected an eligible rand-seq source on page 0 row 0\n");
-        return false;
-    }
-    if (!froggers_v2::manifest::isModSourceEligibleForRow(kPage, kRow, source, false))
-    {
-        std::printf(
-            "FAIL: rand-seq picked ineligible source %u for page 0 row 0\n",
-            static_cast<unsigned>(source));
-        return false;
-    }
-    // Pair-bus lanes 0 and 2 are ineligible on VCO row 0 — never picked.
-    if (source == 0 || source == 2)
-    {
-        std::printf("FAIL: rand-seq picked blocked VCO pair-bus lane %u\n",
-                    static_cast<unsigned>(source));
-        return false;
-    }
-    return true;
-}
-
 bool test_vco_pair_bus_lane_refuses_edit()
 {
     // Packet 15.9: VCO pair-bus self-feedback lanes refuse detail edits.
@@ -2516,7 +1599,7 @@ int main()
     {
         return 1;
     }
-    if (!test_scene_blend_gesture_shift_semantics())
+    if (!test_scene_blend_semantics())
     {
         return 1;
     }
@@ -2552,75 +1635,15 @@ int main()
     {
         return 1;
     }
-    if (!test_sequencer_clock_recall_and_bridge_sync())
+    if (!test_rand_mod_syncs_host_mod_routes())
     {
         return 1;
     }
-    if (!test_sequencer_clock_via_host_callback())
+    if (!test_pair_ar_gate_policy())
     {
         return 1;
     }
-    if (!test_sequencer_snapshot_round_trip())
-    {
-        return 1;
-    }
-    if (!test_sequencer_factory_reset())
-    {
-        return 1;
-    }
-    if (!test_sequencer_full_step_randomize())
-    {
-        return 1;
-    }
-    if (!test_sequencer_dice_step_and_pattern())
-    {
-        return 1;
-    }
-    if (!test_rand_seq_all_steps_scope_targets_only_written_steps())
-    {
-        return 1;
-    }
-    if (!test_sequencer_record_capture())
-    {
-        return 1;
-    }
-    if (!test_write_seq_step_zero_on_first_beat())
-    {
-        return 1;
-    }
-    if (!test_write_seq_step_zero_on_start_sequence())
-    {
-        return 1;
-    }
-    if (!test_write_seq_stopped_navigate_save())
-    {
-        return 1;
-    }
-    if (!test_write_seq_three_beats_steps_without_duplicate_step0())
-    {
-        return 1;
-    }
-    if (!test_unwritten_step_noop_on_advance())
-    {
-        return 1;
-    }
-    if (!test_playback_skips_unwritten_steps())
-    {
-        return 1;
-    }
-    if (!test_empty_pattern_playback_is_transport_noop())
-    {
-        return 1;
-    }
-    if (!test_sequencer_16_slot_snapshot_and_lock_round_trip())
-    {
-        return 1;
-    }
-    if (!test_rand_seq_playhead_target_while_playing())
-    {
-        return 1;
-    }
-    if (!test_rand_mods_per_step_snapshots())
+    if (!test_envelope_page_ten_rows())
     {
         return 1;
     }
@@ -2628,11 +1651,31 @@ int main()
     {
         return 1;
     }
-    if (!test_rand_mods_step_scope_writes_only_written_steps())
+    if (!test_rand_all_respects_scene_scope())
     {
         return 1;
     }
-    if (!test_rand_mods_all_steps_scope_targets_only_written_steps())
+    if (!test_v2_lane_depth_store_places_each_row_at_its_own_lane())
+    {
+        return 1;
+    }
+    if (!test_v2_lane_depth_store_zeros_ineligible_lane())
+    {
+        return 1;
+    }
+    if (!test_v2_lane_depth_additive_sum_reaches_engine())
+    {
+        return 1;
+    }
+    if (!test_multiple_lanes_active_simultaneously_on_one_row())
+    {
+        return 1;
+    }
+    if (!test_press_clears_one_lane_leaves_sibling_lane_active())
+    {
+        return 1;
+    }
+    if (!test_v2_lane_depth_store_and_engine_sum_two_simultaneous_lanes())
     {
         return 1;
     }
@@ -2649,10 +1692,6 @@ int main()
         return 1;
     }
     if (!test_unavailable_lane_refuses_param_turn_and_press())
-    {
-        return 1;
-    }
-    if (!test_rand_seq_mods_picks_only_eligible_sources())
     {
         return 1;
     }
@@ -2681,46 +1720,6 @@ int main()
         return 1;
     }
     if (!test_target_back_exits_to_layer_zero_from_nonzero_row())
-    {
-        return 1;
-    }
-    if (!test_rand_all_respects_scene_scope())
-    {
-        return 1;
-    }
-    if (!test_rand_mod_syncs_host_mod_routes())
-    {
-        return 1;
-    }
-    if (!test_pair_ar_gate_policy())
-    {
-        return 1;
-    }
-    if (!test_envelope_page_ten_rows())
-    {
-        return 1;
-    }
-    if (!test_v2_lane_depth_store_places_each_row_at_its_own_lane())
-    {
-        return 1;
-    }
-    if (!test_v2_lane_depth_store_zeros_ineligible_lane())
-    {
-        return 1;
-    }
-    if (!test_v2_lane_depth_additive_sum_reaches_engine())
-    {
-        return 1;
-    }
-    if (!test_multiple_lanes_active_simultaneously_on_one_row())
-    {
-        return 1;
-    }
-    if (!test_press_clears_one_lane_leaves_sibling_lane_active())
-    {
-        return 1;
-    }
-    if (!test_v2_lane_depth_store_and_engine_sum_two_simultaneous_lanes())
     {
         return 1;
     }

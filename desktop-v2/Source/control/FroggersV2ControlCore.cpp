@@ -14,15 +14,6 @@ constexpr float kTurnStep = 0.04f;
 constexpr uint8_t kEncoderCount = 10;
 constexpr uint8_t kCrunchyPage = kNumHostPages;
 constexpr uint8_t kClockSourceStart = 6;
-
-uint8_t engineModFromInternal(uint8_t internal)
-{
-    if (internal == kNoSelection || internal >= kNumModSources)
-    {
-        return 255;
-    }
-    return internal;
-}
 } // namespace
 
 bool MessageInBus::push(const MessageIn& message)
@@ -79,20 +70,11 @@ float FroggersV2ControlCore::clampSigned(float value)
     return std::min(std::max(value, -1.0f), 1.0f);
 }
 
-bool FroggersV2ControlCore::isAdsrPage(uint8_t page)
-{
-    return page == 6;
-}
-
 uint8_t FroggersV2ControlCore::crispyRowForPage(uint8_t page)
 {
     if (page == 0)
     {
         // Task 7.4 (D11/D14): Cross-coupler row removed, Crispy moved from row 7 to row 6.
-        return 6;
-    }
-    if (page == 6)
-    {
         return 6;
     }
     return 9;
@@ -153,29 +135,9 @@ float FroggersV2ControlCore::sceneBlend() const
     return m_sceneBlend;
 }
 
-float FroggersV2ControlCore::gestureWeight(uint8_t lane) const
-{
-    if (lane >= kNumGestures)
-    {
-        return 0.0f;
-    }
-    return m_gestureWeights[lane];
-}
-
 void FroggersV2ControlCore::setSceneBlend(float value)
 {
     m_sceneBlend = clamp01(value);
-    compute();
-    populateUiState();
-}
-
-void FroggersV2ControlCore::setGestureWeight(uint8_t lane, float value)
-{
-    if (lane >= kNumGestures)
-    {
-        return;
-    }
-    m_gestureWeights[lane] = clampSigned(value);
     compute();
     populateUiState();
 }
@@ -266,9 +228,7 @@ void FroggersV2ControlCore::replaceHostModRoute(uint8_t page,
     param.modDepth[engineModIndex] = clampSigned(depth);
 }
 
-void FroggersV2ControlCore::executeRandomization(RandomizationCommand command,
-                                                  uint8_t sceneScope,
-                                                  uint8_t stepScope)
+void FroggersV2ControlCore::executeRandomization(RandomizationCommand command, uint8_t sceneScope)
 {
     MessageIn message;
     switch (command)
@@ -279,7 +239,6 @@ void FroggersV2ControlCore::executeRandomization(RandomizationCommand command,
             break;
         case RandomizationCommand::RandMods:
             message.type = MessageIn::Type::RandMods;
-            message.page = stepScope;
             break;
     }
     m_bus.push(message);
@@ -295,17 +254,12 @@ bool messageMutatesPatchContent(MessageIn::Type type)
         case MessageIn::Type::ParamIncDec:
         case MessageIn::Type::ParamPress:
         case MessageIn::Type::ModSourceAssign:
-        case MessageIn::Type::GestureWeight:
         case MessageIn::Type::RandAll:
         case MessageIn::Type::RandMods:
         case MessageIn::Type::RandPage:
-        case MessageIn::Type::ResetSequencerStep:
-        case MessageIn::Type::RandSequencerStep:
-        case MessageIn::Type::RandSequencerMods:
             return true;
         case MessageIn::Type::SceneSelect:
         case MessageIn::Type::SceneBlend:
-        case MessageIn::Type::GestureSelect:
         case MessageIn::Type::SelectPage:
         case MessageIn::Type::ModDrillIn:
         case MessageIn::Type::Clock:
@@ -348,7 +302,6 @@ void FroggersV2ControlCore::storeSlotState(uint8_t slot, const EffectiveRow& row
     m_uiState.arcMin[slot].store(row.arcMin, std::memory_order_release);
     m_uiState.arcMax[slot].store(row.arcMax, std::memory_order_release);
     m_uiState.modulatorsMask[slot].store(row.modulatorsMask, std::memory_order_release);
-    m_uiState.gesturesMask[slot].store(row.gesturesMask, std::memory_order_release);
 }
 
 FroggersV2ControlCore::EffectiveRow
@@ -409,7 +362,6 @@ void FroggersV2ControlCore::populateUiState()
     m_uiState.leftSceneOrdinal.store(m_sceneLeftOrdinal, std::memory_order_release);
     m_uiState.rightSceneOrdinal.store(m_sceneRightOrdinal, std::memory_order_release);
     m_uiState.sceneBlend.store(m_sceneBlend, std::memory_order_release);
-    m_uiState.activeGesture.store(m_activeGestureLane, std::memory_order_release);
 
     // Crunchy has no page/row eligibility context — ungated sum so lanes are
     // not falsely zeroed by host-row manifest rules.
@@ -426,109 +378,6 @@ void FroggersV2ControlCore::populateUiState()
 FroggersV2ControlCore::EffectiveRow FroggersV2ControlCore::effectiveRow(uint8_t page, uint8_t row) const
 {
     return computeEffective(m_params[page][row], page, row);
-}
-
-void FroggersV2ControlCore::setSequencerState(SequencerState* sequencer)
-{
-    m_sequencer = sequencer;
-}
-
-void FroggersV2ControlCore::applySequencerSlotPayload(const SequencerSlotPayload& snapshot)
-{
-    for (uint8_t page = 0; page < kNumHostPages; ++page)
-    {
-        const uint8_t rowLimit = rowsForPage(page);
-        for (uint8_t row = 0; row < rowLimit; ++row)
-        {
-            ParamState& param = m_params[page][row];
-            for (uint8_t scene = 0; scene < kNumScenes; ++scene)
-            {
-                param.sceneCenter[scene] =
-                    clamp01(snapshot.sceneCenter[page][row][scene]);
-            }
-            replaceHostModRoute(
-                page,
-                row,
-                engineModFromInternal(snapshot.modSource[page][row]),
-                snapshot.modDepth[page][row]);
-        }
-    }
-    for (uint8_t scene = 0; scene < kNumScenes; ++scene)
-    {
-        m_crunchy.sceneCenter[scene] = clamp01(snapshot.crunchySceneCenter[scene]);
-    }
-    for (uint8_t lane = 0; lane < kNumGestures; ++lane)
-    {
-        m_gestureWeights[lane] = clamp01(snapshot.gestureWeight[lane]);
-    }
-    compute();
-    populateUiState();
-}
-
-void FroggersV2ControlCore::captureSequencerSlotPayload(SequencerSlotPayload& out) const
-{
-    for (uint8_t page = 0; page < kNumHostPages; ++page)
-    {
-        const uint8_t rowLimit = rowsForPage(page);
-        for (uint8_t row = 0; row < rowLimit; ++row)
-        {
-            const ParamState& param = m_params[page][row];
-            for (uint8_t scene = 0; scene < kNumScenes; ++scene)
-            {
-                out.sceneCenter[page][row][scene] = param.sceneCenter[scene];
-            }
-            out.modSource[page][row] = assignedModSource(page, row);
-            out.modDepth[page][row] = assignedModDepth(page, row);
-        }
-    }
-    for (uint8_t scene = 0; scene < kNumScenes; ++scene)
-    {
-        out.crunchySceneCenter[scene] = m_crunchy.sceneCenter[scene];
-    }
-    for (uint8_t lane = 0; lane < kNumGestures; ++lane)
-    {
-        out.gestureWeight[lane] = m_gestureWeights[lane];
-    }
-    out.gate = true;
-}
-
-void FroggersV2ControlCore::captureFactorySlotPayload(SequencerSlotPayload& out) const
-{
-    for (uint8_t page = 0; page < kNumHostPages; ++page)
-    {
-        const uint8_t rowLimit = rowsForPage(page);
-        for (uint8_t row = 0; row < rowLimit; ++row)
-        {
-            const float center = HostParameterInventoryV2::pageKnobDefault(page, row);
-            for (uint8_t scene = 0; scene < kNumScenes; ++scene)
-            {
-                out.sceneCenter[page][row][scene] = center;
-            }
-            out.modSource[page][row] = kNoSelection;
-            out.modDepth[page][row] = 0.0f;
-        }
-    }
-    out.crunchySceneCenter.fill(0.0f);
-    out.gestureWeight.fill(0.0f);
-    out.gate = false;
-    out.gate = false;
-}
-
-void FroggersV2ControlCore::zeroStepGestures(SequencerSlotPayload& snapshot)
-{
-    snapshot.gestureWeight.fill(0.0f);
-}
-
-void FroggersV2ControlCore::randomizeFullSlotPayload(SequencerSlotPayload& out)
-{
-    randomizeSceneSlotsInto(out);
-    for (uint8_t lane = 0; lane < kNumGestures; ++lane)
-    {
-        advanceRandState();
-        out.gestureWeight[lane] = static_cast<float>(m_randState & 1023u) / 1023.0f;
-    }
-    advanceRandState();
-    out.gate = (m_randState & 1u) != 0u;
 }
 
 void FroggersV2ControlCore::applyMessage(const MessageIn& message)
@@ -549,15 +398,6 @@ void FroggersV2ControlCore::applyMessage(const MessageIn& message)
             break;
         case MessageIn::Type::SceneBlend:
             m_sceneBlend = clamp01(message.value);
-            break;
-        case MessageIn::Type::GestureSelect:
-            m_activeGestureLane = message.index < kNumGestures ? message.index : kNoSelection;
-            break;
-        case MessageIn::Type::GestureWeight:
-            if (message.index < kNumGestures)
-            {
-                m_gestureWeights[message.index] = clamp01(message.value);
-            }
             break;
         case MessageIn::Type::ModSourceAssign:
             onModSourceAssign(message.page, message.slot, message.index);
@@ -580,19 +420,10 @@ void FroggersV2ControlCore::applyMessage(const MessageIn& message)
             onRandAll(message.page);
             break;
         case MessageIn::Type::RandMods:
-            onRandMods(message.page);
+            onRandMods();
             break;
         case MessageIn::Type::RandPage:
             onRandPage(message.page);
-            break;
-        case MessageIn::Type::ResetSequencerStep:
-            onResetSequencerStep(message.slot);
-            break;
-        case MessageIn::Type::RandSequencerStep:
-            onRandSequencerStep(message.slot, message.page);
-            break;
-        case MessageIn::Type::RandSequencerMods:
-            onRandSequencerMods(message.page);
             break;
         case MessageIn::Type::Clock:
             if (message.index == kNoSelection)
@@ -667,12 +498,6 @@ void FroggersV2ControlCore::onParamTurn(uint8_t page, uint8_t slot, float delta)
         return;
     }
     ParamState& param = m_params[page][activeRow];
-    if (m_activeGestureLane < kNumGestures)
-    {
-        param.gestureDepth[m_activeGestureLane] =
-            clampSigned(param.gestureDepth[m_activeGestureLane] + delta * kTurnStep);
-        return;
-    }
     const uint8_t scene = activeSceneOrdinal();
     param.sceneCenter[scene] = clamp01(param.sceneCenter[scene] + delta * kTurnStep);
 }
@@ -887,36 +712,6 @@ void FroggersV2ControlCore::randomizeLiveModDepths()
     }
 }
 
-void FroggersV2ControlCore::captureModRoutesIntoSnapshot(SequencerSlotPayload& snapshot) const
-{
-    for (uint8_t page = 0; page < kNumHostPages; ++page)
-    {
-        const uint8_t rowLimit = rowsForPage(page);
-        for (uint8_t row = 0; row < rowLimit; ++row)
-        {
-            snapshot.modSource[page][row] = assignedModSource(page, row);
-            snapshot.modDepth[page][row] = assignedModDepth(page, row);
-        }
-    }
-}
-
-void FroggersV2ControlCore::randomizeSceneSlotsInto(SequencerSlotPayload& snapshot)
-{
-    for (uint8_t page = 0; page < kNumHostPages; ++page)
-    {
-        const uint8_t rowLimit = rowsForPage(page);
-        for (uint8_t row = 0; row < rowLimit; ++row)
-        {
-            if (row == crispyRowForPage(page))
-            {
-                continue;
-            }
-            randomizeSceneSlotValues(snapshot.sceneCenter[page][row]);
-        }
-    }
-    randomizeSceneSlotValues(snapshot.crunchySceneCenter);
-}
-
 void FroggersV2ControlCore::randomizeSceneEndpointsAndBlend()
 {
     advanceRandState();
@@ -956,177 +751,14 @@ void FroggersV2ControlCore::onRandPage(uint8_t page)
     randomizeSceneSlotsInto(page);
 }
 
-void FroggersV2ControlCore::onResetSequencerStep(uint8_t step)
-{
-    if (!m_sequencer || step >= manifest::kSequencerSlotCount)
-    {
-        return;
-    }
-    captureFactorySlotPayload(m_sequencer->m_slots[step].payload);
-    m_sequencer->m_slots[step].written = true;
-}
-
-void FroggersV2ControlCore::onRandSequencerStep(uint8_t step, uint8_t scope)
-{
-    if (!m_sequencer)
-    {
-        return;
-    }
-    if (scope == kRandSeqScopeFullStep)
-    {
-        if (step >= manifest::kSequencerSlotCount)
-        {
-            return;
-        }
-        randomizeFullSlotPayload(m_sequencer->m_slots[step].payload);
-        m_sequencer->m_slots[step].written = true;
-        return;
-    }
-
-    randomizeSceneEndpointsAndBlend();
-
-    if (scope == kRandSeqScopeStep)
-    {
-        const uint8_t targetStep =
-            m_sequencer->m_playing ? m_sequencer->m_playhead : m_sequencer->m_editStep;
-        if (targetStep >= manifest::kSequencerSlotCount)
-        {
-            return;
-        }
-        randomizeSceneSlotsInto(m_sequencer->m_slots[targetStep].payload);
-        zeroStepGestures(m_sequencer->m_slots[targetStep].payload);
-        m_sequencer->m_slots[targetStep].written = true;
-        return;
-    }
-
-    if (scope != kRandSeqScopePattern)
-    {
-        return;
-    }
-    // desktop-v2-sequencer-operator-loop "All Steps randomization writes all
-    // written steps": Pattern/All-Steps scope SHALL only affect steps that
-    // are already written, not silently write previously-blank slots.
-    for (uint8_t i = 0; i < manifest::kSequencerSlotCount; ++i)
-    {
-        if (!m_sequencer->m_slots[i].written)
-        {
-            continue;
-        }
-        randomizeSceneSlotsInto(m_sequencer->m_slots[i].payload);
-        zeroStepGestures(m_sequencer->m_slots[i].payload);
-    }
-}
-
-void FroggersV2ControlCore::randomizeModIntoSnapshot(SequencerSlotPayload& snapshot)
-{
-    for (uint8_t page = 0; page < kNumHostPages; ++page)
-    {
-        const uint8_t rowLimit = rowsForPage(page);
-        for (uint8_t row = 0; row < rowLimit; ++row)
-        {
-            if (row == crispyRowForPage(page))
-            {
-                snapshot.modSource[page][row] = kNoSelection;
-                snapshot.modDepth[page][row] = 0.0f;
-                continue;
-            }
-            // Packet 15.5: single-route sequencer payload still picks one
-            // source, but only from eligibility-gated lanes. Do not expand
-            // SequencerSlotPayload to multi-lane depths here.
-            uint8_t eligible[kNumModSources];
-            uint8_t eligibleCount = 0;
-            for (uint8_t source = 0; source < kNumModSources; ++source)
-            {
-                if (manifest::isModSourceEligibleForRow(
-                        page, row, source, m_externalAudioAvailable))
-                {
-                    eligible[eligibleCount++] = source;
-                }
-            }
-            if (eligibleCount == 0)
-            {
-                snapshot.modSource[page][row] = kNoSelection;
-                snapshot.modDepth[page][row] = 0.0f;
-                continue;
-            }
-            advanceRandState();
-            snapshot.modSource[page][row] =
-                eligible[static_cast<uint8_t>(m_randState % eligibleCount)];
-            advanceRandState();
-            snapshot.modDepth[page][row] = clampSigned(
-                static_cast<float>(static_cast<int32_t>(m_randState & 1023u) - 512) / 512.0f);
-        }
-    }
-}
-
-void FroggersV2ControlCore::onRandSequencerMods(uint8_t scope)
-{
-    if (!m_sequencer)
-    {
-        return;
-    }
-
-    if (scope == kRandSeqScopeStep)
-    {
-        const uint8_t targetStep =
-            m_sequencer->m_playing ? m_sequencer->m_playhead : m_sequencer->m_editStep;
-        if (targetStep >= manifest::kSequencerSlotCount)
-        {
-            return;
-        }
-        randomizeModIntoSnapshot(m_sequencer->m_slots[targetStep].payload);
-        m_sequencer->m_slots[targetStep].written = true;
-        if (m_sequencer->m_playing && targetStep == m_sequencer->m_playhead
-            && m_sequencer->slotWritten(targetStep)
-            && !(m_sequencer->slotLocked(targetStep)))
-        {
-            applySequencerSlotPayload(m_sequencer->m_slots[targetStep].payload);
-        }
-        return;
-    }
-
-    if (scope != kRandSeqScopePattern)
-    {
-        return;
-    }
-    for (uint8_t i = 0; i < manifest::kSequencerSlotCount; ++i)
-    {
-        randomizeModIntoSnapshot(m_sequencer->m_slots[i].payload);
-        m_sequencer->m_slots[i].written = true;
-        if (m_sequencer->m_playing && i == m_sequencer->m_playhead && m_sequencer->slotWritten(i)
-            && !m_sequencer->slotLocked(i))
-        {
-            applySequencerSlotPayload(m_sequencer->m_slots[i].payload);
-        }
-    }
-}
-
 void FroggersV2ControlCore::onRandAll(uint8_t sceneScope)
 {
-    m_activeGestureLane = kNoSelection;
-    for (uint8_t lane = 0; lane < kNumGestures; ++lane)
-    {
-        m_gestureWeights[lane] = 0.0f;
-    }
     for (uint8_t page = 0; page < kNumHostPages; ++page)
     {
         randomizeSceneSlotsInto(page, sceneScope);
         // Mod portion of Rand All goes through the same live-mod-depth
         // authority Rand Mods uses (4.4) instead of a second inline copy.
         randomizeLiveModDepths(page);
-        const uint8_t rowLimit = rowsForPage(page);
-        for (uint8_t row = 0; row < rowLimit; ++row)
-        {
-            if (row == crispyRowForPage(page))
-            {
-                continue;
-            }
-            ParamState& param = m_params[page][row];
-            for (uint8_t lane = 0; lane < kNumGestures; ++lane)
-            {
-                param.gestureDepth[lane] = 0.0f;
-            }
-        }
     }
     randomizeSceneSlotValues(m_crunchy, sceneScope);
     if (sceneScope == kRandSceneScopeAll)
@@ -1137,42 +769,12 @@ void FroggersV2ControlCore::onRandAll(uint8_t sceneScope)
     }
 }
 
-void FroggersV2ControlCore::onRandMods(uint8_t stepScope)
+void FroggersV2ControlCore::onRandMods()
 {
     // Global Rand Mods is not sequencer-only: it always randomizes the live
-    // mod depths on the control core regardless of sequencer play state or
-    // which carousel page is visible.
+    // mod depths on the control core regardless of which carousel page is
+    // visible.
     randomizeLiveModDepths();
-
-    if (!m_sequencer)
-    {
-        return;
-    }
-
-    if (stepScope == kRandSeqScopeStep)
-    {
-        const uint8_t targetStep =
-            m_sequencer->m_playing ? m_sequencer->m_playhead : m_sequencer->m_editStep;
-        if (targetStep < manifest::kSequencerSlotCount && m_sequencer->m_slots[targetStep].written)
-        {
-            // Snapshot changes only for written steps in scope; the live
-            // state (already randomized above) is what gets captured.
-            captureModRoutesIntoSnapshot(m_sequencer->m_slots[targetStep].payload);
-        }
-        return;
-    }
-
-    if (stepScope != kRandSeqScopePattern)
-    {
-        return;
-    }
-    for (uint8_t i = 0; i < manifest::kSequencerSlotCount; ++i)
-    {
-        if (m_sequencer->m_slots[i].written)
-        {
-            captureModRoutesIntoSnapshot(m_sequencer->m_slots[i].payload);
-        }
-    }
 }
 
 float FroggersV2ControlCore::sourceValue(uint8_t source) const
@@ -1270,10 +872,6 @@ void FroggersV2ControlCore::resetParameter(uint8_t page, uint8_t row)
     {
         param.modDepth[source] = HostParameterInventoryV2::modDepthDefault();
     }
-    for (uint8_t lane = 0; lane < kNumGestures; ++lane)
-    {
-        param.gestureDepth[lane] = 0.0f;
-    }
 }
 
 void FroggersV2ControlCore::rebuildVisibleSlots()
@@ -1349,18 +947,7 @@ FroggersV2ControlCore::EffectiveRow FroggersV2ControlCore::computeEffective(cons
         out.modulatorsMask |= static_cast<uint16_t>(1u << i);
     }
 
-    float gesture = 0.0f;
-    for (uint8_t lane = 0; lane < kNumGestures; ++lane)
-    {
-        if (std::abs(state.gestureDepth[lane]) < 1.0e-6f || m_gestureWeights[lane] <= 0.0f)
-        {
-            continue;
-        }
-        out.gesturesMask |= static_cast<uint8_t>(1u << lane);
-        gesture += state.gestureDepth[lane] * m_gestureWeights[lane];
-    }
-
-    out.effective = clamp01(center + (sum + gesture) * modulationScale);
+    out.effective = clamp01(center + sum * modulationScale);
     out.arcMin = clamp01(center + minSum * modulationScale);
     out.arcMax = clamp01(center + maxSum * modulationScale);
     return out;

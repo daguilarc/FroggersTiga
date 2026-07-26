@@ -61,7 +61,6 @@ private:
     float m_arcMin = 0.0f;
     float m_arcMax = 1.0f;
     uint16_t m_modMask = 0;
-    uint8_t m_gestureMask = 0;
     float m_dragStartY = 0.0f;
     bool m_dragging = false;
     bool m_laneAvailable = true;

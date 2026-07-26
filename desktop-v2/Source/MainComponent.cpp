@@ -55,21 +55,11 @@ MainComponent::MainComponent()
     m_carousel.adsrPanel().bindLaneHistory(&m_cvLaneHistory);
     m_performanceBand.bind(&m_facade.controlCore());
     m_performanceBand.bindHost(&m_facade.host());
-    m_globalStrip.resolveRandSeqScope = [this]() {
-        return m_sequencerPanel.getRandSeqScope();
-    };
-    // Carryover C1: let the sequencer's Rand-seq dice read the global
-    // All Steps / Current Step scope so it can resolve Pattern scope instead
-    // of being stuck at Step (mirrors resolveRandSeqScope above).
-    m_sequencerPanel.resolveAllStepsScope = [this]() { return m_globalStrip.allStepsScope(); };
-    m_sequencerPanel.bind(
-        &m_audio->getSequencer(), &m_facade.controlCore(), &m_facade.hostBridge());
 
     addAndMakeVisible(m_globalOscilloscope);
     addAndMakeVisible(m_globalStrip);
     addAndMakeVisible(m_performanceBand);
     addAndMakeVisible(m_carousel);
-    addAndMakeVisible(m_sequencerPanel);
 
     m_play.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2ea043));
     m_play.onClick = [this]() {
@@ -364,7 +354,6 @@ void MainComponent::timerCallback()
     m_carousel.submodulePanel().refresh();
     m_carousel.adsrPanel().refresh();
     m_performanceBand.refreshMarbles(running);
-    m_sequencerPanel.refresh();
 }
 
 void MainComponent::resized()
@@ -382,12 +371,6 @@ void MainComponent::resized()
     area.removeFromTop(kSectionGap);
     m_globalStrip.setBounds(area.removeFromTop(kGlobalCommandBandH));
     area.removeFromTop(kSectionGap);
-
-    if (m_sequencerVisible)
-    {
-        m_sequencerPanel.setBounds(area.removeFromBottom(kSequencerH));
-        area.removeFromBottom(kSectionGap);
-    }
 
     if (m_activeRuntimePage == RuntimePageKind::None)
     {

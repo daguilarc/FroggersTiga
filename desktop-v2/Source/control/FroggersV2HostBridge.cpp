@@ -25,87 +25,15 @@ FroggersV2HostBridge::FroggersV2HostBridge(FroggersV2ControlCore& core, DesktopH
     : m_core(core)
     , m_host(host)
 {
-    m_host.m_onSequencerStepAdvance = [this]() { onSequencerStepAdvance(); };
 }
 
 FroggersV2HostBridge::~FroggersV2HostBridge()
 {
-    m_host.m_onSequencerStepAdvance = nullptr;
 }
 
 void FroggersV2HostBridge::setOnStepCaptured(std::function<void(uint8_t step)> callback)
 {
     m_onStepCaptured = std::move(callback);
-}
-
-void FroggersV2HostBridge::captureLiveToSequencerStep(uint8_t step)
-{
-    SequencerSlotPayload captured;
-    m_core.captureSequencerSlotPayload(captured);
-    m_host.m_sequencer.captureStep(step, captured);
-    if (m_onStepCaptured)
-    {
-        m_onStepCaptured(step);
-    }
-}
-
-void FroggersV2HostBridge::recallSequencerStep(uint8_t step)
-{
-    if (step >= SequencerState::kSlotCount || !m_host.m_sequencer.slotWritten(step))
-    {
-        return;
-    }
-    m_core.applySequencerSlotPayload(m_host.m_sequencer.m_slots[step].payload);
-    syncModRoutesToHost();
-    syncToHost();
-}
-
-void FroggersV2HostBridge::onSequencerStepAdvance()
-{
-    SequencerState& seq = m_host.m_sequencer;
-    if (seq.m_writeSeqArm)
-    {
-        if (seq.m_writeSeqJustStarted)
-        {
-            seq.m_writeSeqJustStarted = false;
-        }
-        else
-        {
-            const uint8_t playhead = seq.m_playhead;
-            const uint8_t stepLeft =
-                static_cast<uint8_t>((playhead + SequencerState::kSlotCount - 1u) % SequencerState::kSlotCount);
-            captureLiveToSequencerStep(stepLeft);
-        }
-        seq.m_editStep = seq.m_playhead;
-    }
-    else
-    {
-        // desktop-v2-sequencing "Cleared steps are skipped by playback": the
-        // fixed 16-slot ring SHALL skip unwritten slots during playback
-        // instead of applying silence/reset/default values. Write Seq.
-        // recording must NOT skip -- it needs to visit every step in order to
-        // fill blanks one beat at a time (see "Write while playing advances
-        // capture" / "three beats produce three distinct captures") -- so
-        // this only runs while Write Seq. is not armed. Bounded to
-        // kSlotCount attempts so an all-unwritten pattern falls through as a
-        // transport no-op instead of spinning forever.
-        for (uint8_t attempts = 0;
-             attempts < SequencerState::kSlotCount && !seq.slotWritten(seq.m_playhead);
-             ++attempts)
-        {
-            seq.advancePlayhead();
-        }
-    }
-
-    if (seq.slotWritten(seq.m_playhead) && !(seq.slotLocked(seq.m_playhead)))
-    {
-        m_core.applySequencerSlotPayload(seq.currentStep());
-        syncModRoutesToHost();
-    }
-
-    m_core.bus().push(MessageIn::SequencerStepClock(seq.m_playhead));
-    m_core.processBus();
-    syncToHost();
 }
 
 void FroggersV2HostBridge::syncModRoutesToHost()

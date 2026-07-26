@@ -2,7 +2,6 @@
 #include "control/FroggersV2ControlCore.hpp"
 #include "control/FroggersV2HostBridge.hpp"
 #include "HostParameterInventoryV2.hpp"
-#include "SequencerState.hpp"
 
 #include <cmath>
 #include <cstdio>
@@ -108,12 +107,6 @@ bool uiStateEquivalent(const FroggersV2UIState& reference, const FroggersV2UISta
     {
         return false;
     }
-    if (reference.activeGesture.load(std::memory_order_acquire)
-        != candidate.activeGesture.load(std::memory_order_acquire))
-    {
-        return false;
-    }
-
     const uint8_t visible = reference.visibleCount.load(std::memory_order_acquire);
     for (uint8_t slot = 0; slot < visible && slot < froggers_v2::kUiSlots; ++slot)
     {
@@ -149,11 +142,6 @@ bool uiStateEquivalent(const FroggersV2UIState& reference, const FroggersV2UISta
         }
         if (reference.modulatorsMask[slot].load(std::memory_order_acquire)
             != candidate.modulatorsMask[slot].load(std::memory_order_acquire))
-        {
-            return false;
-        }
-        if (reference.gesturesMask[slot].load(std::memory_order_acquire)
-            != candidate.gesturesMask[slot].load(std::memory_order_acquire))
         {
             return false;
         }
@@ -228,8 +216,6 @@ bool test_audio_equivalence()
     referenceHost.SetSampleRate(44100.0f);
 
     FroggersV2ControlCore referenceCore;
-    SequencerState referenceSequencer;
-    referenceCore.setSequencerState(&referenceSequencer);
     FroggersV2HostBridge referenceBridge(referenceCore, referenceHost);
 
     MessageIn selectPage;
@@ -334,11 +320,6 @@ bool test_rand_all_immediate_command()
     FroggersV2AppCoreFacade facade(audio, config);
     facade.initialize();
 
-    MessageIn selectGesture;
-    selectGesture.type = MessageIn::Type::GestureSelect;
-    selectGesture.index = 1;
-    facade.ingestMessage(selectGesture);
-
     const uint8_t leftBefore = facade.uiState().leftSceneOrdinal.load(std::memory_order_acquire);
     const uint8_t rightBefore = facade.uiState().rightSceneOrdinal.load(std::memory_order_acquire);
     const float blendBefore = facade.uiState().sceneBlend.load(std::memory_order_acquire);
@@ -346,12 +327,6 @@ bool test_rand_all_immediate_command()
     MessageIn randAll;
     randAll.type = MessageIn::Type::RandAll;
     facade.ingestMessage(randAll);
-
-    if (facade.uiState().activeGesture.load(std::memory_order_acquire) != froggers_v2::kNoSelection)
-    {
-        std::printf("FAIL: RandAll left gesture selection active\n");
-        return false;
-    }
 
     const uint8_t leftAfter = facade.uiState().leftSceneOrdinal.load(std::memory_order_acquire);
     const uint8_t rightAfter = facade.uiState().rightSceneOrdinal.load(std::memory_order_acquire);
@@ -366,33 +341,6 @@ bool test_rand_all_immediate_command()
     if (nearlyEqual(facade.controlCore().globalCrunchy(), 0.0f))
     {
         std::printf("FAIL: RandAll did not randomize crunchy scene slots\n");
-        return false;
-    }
-    return true;
-}
-
-bool test_rand_mod_reads_scope_and_preserves_scene_sliders()
-{
-    FroggersV2AppCoreConfig config;
-    config.pluginHosted = true;
-    AudioEngine audio(true);
-    FroggersV2AppCoreFacade facade(audio, config);
-    facade.initialize();
-
-    const uint8_t leftBefore = facade.uiState().leftSceneOrdinal.load(std::memory_order_acquire);
-    const uint8_t rightBefore = facade.uiState().rightSceneOrdinal.load(std::memory_order_acquire);
-    const float blendBefore = facade.uiState().sceneBlend.load(std::memory_order_acquire);
-
-    MessageIn randMods;
-    randMods.type = MessageIn::Type::RandSequencerMods;
-    randMods.page = froggers_v2::kRandSeqScopeStep;
-    facade.ingestMessage(randMods);
-
-    if (facade.uiState().leftSceneOrdinal.load(std::memory_order_acquire) != leftBefore
-        || facade.uiState().rightSceneOrdinal.load(std::memory_order_acquire) != rightBefore
-        || !nearlyEqual(facade.uiState().sceneBlend.load(std::memory_order_acquire), blendBefore))
-    {
-        std::printf("FAIL: RandSequencerMods changed scene slider selections\n");
         return false;
     }
     return true;
@@ -431,42 +379,6 @@ bool test_rand_page_preserves_scene_sliders()
     return true;
 }
 
-bool test_sequencer_lock_preservation()
-{
-    FroggersV2AppCoreConfig config;
-    config.pluginHosted = true;
-    AudioEngine audio(true);
-    FroggersV2AppCoreFacade facade(audio, config);
-    facade.initialize();
-
-    SequencerState& seq = audio.getSequencer();
-    seq.m_slots[0].written = true;
-    seq.m_slots[0].locked = true;
-    seq.m_slots[0].payload.sceneCenter[0][0][0] = 0.33f;
-
-    const float lockedValue = seq.m_slots[0].payload.sceneCenter[0][0][0];
-
-    MessageIn randAll;
-    randAll.type = MessageIn::Type::RandAll;
-    facade.ingestMessage(randAll);
-
-    if (!seq.m_slots[0].written)
-    {
-        std::printf("FAIL: RandAll cleared written sequencer step\n");
-        return false;
-    }
-    if (!seq.m_slots[0].locked)
-    {
-        std::printf("FAIL: RandAll cleared sequencer step lock\n");
-        return false;
-    }
-    if (!nearlyEqual(seq.m_slots[0].payload.sceneCenter[0][0][0], lockedValue, 1.0e-4f))
-    {
-        std::printf("FAIL: RandAll mutated locked sequencer parameter value\n");
-        return false;
-    }
-    return true;
-}
 } // namespace
 
 int main()
@@ -487,15 +399,7 @@ int main()
     {
         return 1;
     }
-    if (!test_rand_mod_reads_scope_and_preserves_scene_sliders())
-    {
-        return 1;
-    }
     if (!test_rand_page_preserves_scene_sliders())
-    {
-        return 1;
-    }
-    if (!test_sequencer_lock_preservation())
     {
         return 1;
     }

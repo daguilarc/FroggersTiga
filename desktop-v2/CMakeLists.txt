@@ -118,7 +118,6 @@ target_sources(FroggersTigaDesktopV2 PRIVATE
     Source/ui/GlobalOscilloscopeDisplay.cpp
     Source/ui/GlobalStripV2.cpp
     Source/ui/PerformanceBandV2.cpp
-    Source/ui/SequencerPanelComponent.cpp
     Source/ui/CvScopeDisplay.cpp
     Source/ui/DesktopV2LookAndFeel.cpp
     Source/AudioSettingsComponent.cpp
@@ -402,7 +401,6 @@ set(DESKTOP_V2_LAYOUT_TEST_SOURCES
     Source/ui/GlobalOscilloscopeDisplay.cpp
     Source/ui/CvScopeDisplay.cpp
     Source/ui/PerformanceBandV2.cpp
-    Source/ui/SequencerPanelComponent.cpp
 )
 
 add_executable(LayoutBounds_test
@@ -422,7 +420,6 @@ add_executable(GlobalControlParity_test
     tests/GlobalControlParity_test.cpp
     Source/ui/GlobalStripV2.cpp
     Source/ui/EncoderRingComponent.cpp
-    Source/ui/SequencerPanelComponent.cpp
     Source/control/FroggersV2ControlCore.cpp
     Source/control/FroggersV2HostBridge.cpp
 )
@@ -617,3 +614,26 @@ set_target_properties(FroggersAppSurface_test PROPERTIES
     CXX_STANDARD_REQUIRED ON
 )
 add_test(NAME FroggersAppSurface_test COMMAND FroggersAppSurface_test)
+
+# SheafParamSpike_test -- tasks.md §13.1 bounded spike (PROOF OF SHAPE,
+# additive only). Proves a Sheaf-native synth::ParameterManager /
+# synth::ParameterGroup / synth::Bank can drive the existing Froggers DSP
+# through the existing (unmodified) DesktopHostIO::SetPageKnob boundary via
+# a small new glue header (Source/control/SheafParamBridgeSpike.hpp). Does
+# NOT touch FroggersV2ControlCore / FroggersV2HostBridge or any live bridge
+# path -- headless like FroggersScopePanels_test above, just Sheaf's vendored
+# ParameterModulation.hpp/.cpp plus the read-only src/core DSP headers.
+add_executable(SheafParamSpike_test tests/SheafParamSpike_test.cpp)
+target_include_directories(SheafParamSpike_test PRIVATE
+    Source
+    "${CORE_DIR}"
+    "${SIM_DIR}"
+)
+target_link_libraries(SheafParamSpike_test PRIVATE
+    SheafRuntimeVendor
+)
+set_target_properties(SheafParamSpike_test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+)
+add_test(NAME SheafParamSpike_test COMMAND SheafParamSpike_test)

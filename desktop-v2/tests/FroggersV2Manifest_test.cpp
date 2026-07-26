@@ -37,12 +37,11 @@ int main()
     if (validation.duplicateStableIds || validation.invalidPageRowRefs || validation.missingDisplayNames
         || validation.invalidRanges || validation.invalidDefaults || validation.invalidProjectionOverlays
         || validation.missingOscilloscopeTaps || validation.invalidRandomizationScopes
-        || validation.invalidSequencerStepCounts || validation.missingWrittenUnwrittenState
-        || validation.invalidSequencerDirectionSpeed || validation.invalidSourceLaneCounts
+        || validation.invalidSourceLaneCounts
         || validation.duplicateSourceIds || validation.missingSourceColorsGroups
         || validation.invalidExternalAudioAvailability)
     {
-        std::printf("FAIL: validation flags dup=%d page=%d names=%d ranges=%d defaults=%d proj=%d osc=%d rand=%d seq=%d write=%d dir=%d lanes=%d dupsrc=%d colors=%d ext=%d\n",
+        std::printf("FAIL: validation flags dup=%d page=%d names=%d ranges=%d defaults=%d proj=%d osc=%d rand=%d lanes=%d dupsrc=%d colors=%d ext=%d\n",
                     validation.duplicateStableIds,
                     validation.invalidPageRowRefs,
                     validation.missingDisplayNames,
@@ -51,9 +50,6 @@ int main()
                     validation.invalidProjectionOverlays,
                     validation.missingOscilloscopeTaps,
                     validation.invalidRandomizationScopes,
-                    validation.invalidSequencerStepCounts,
-                    validation.missingWrittenUnwrittenState,
-                    validation.invalidSequencerDirectionSpeed,
                     validation.invalidSourceLaneCounts,
                     validation.duplicateSourceIds,
                     validation.missingSourceColorsGroups,
@@ -71,14 +67,9 @@ int main()
         std::printf("FAIL: permanent modulation source catalog is not 15 lanes\n");
         return 1;
     }
-    if (froggers_v2::manifest::kSequencerSlotCount != 16)
+    if (froggers_v2::manifest::kRandomizationScopeControls.size() != 1)
     {
-        std::printf("FAIL: manifest sequencer slot count is not fixed at 16\n");
-        return 1;
-    }
-    if (froggers_v2::manifest::kRandomizationScopeControls.size() != 2)
-    {
-        std::printf("FAIL: manifest does not declare the two global randomization scope controls\n");
+        std::printf("FAIL: manifest does not declare the global randomization scope control\n");
         return 1;
     }
     if (!contains(froggers_v2::manifest::kRandomizationScopeControls[0].stableId, "scene")
@@ -88,20 +79,6 @@ int main()
         || !froggers_v2::manifest::kRandomizationScopeControls[0].consumedByRandomizeMod)
     {
         std::printf("FAIL: scene randomization scope control is not fully declared\n");
-        return 1;
-    }
-    if (!contains(froggers_v2::manifest::kRandomizationScopeControls[1].stableId, "step")
-        || !contains(froggers_v2::manifest::kRandomizationScopeControls[1].choices[0].displayName, "All Steps")
-        || !contains(froggers_v2::manifest::kRandomizationScopeControls[1].choices[1].displayName, "Current Step")
-        || !froggers_v2::manifest::kRandomizationScopeControls[1].consumedByRandomizeAll
-        || !froggers_v2::manifest::kRandomizationScopeControls[1].consumedByRandomizeMod)
-    {
-        std::printf("FAIL: step randomization scope control is not fully declared\n");
-        return 1;
-    }
-    if (froggers_v2::manifest::kSequencerSlots.size() != froggers_v2::manifest::kSequencerSlotCount)
-    {
-        std::printf("FAIL: manifest does not declare all fixed sequencer slots\n");
         return 1;
     }
     {
@@ -181,17 +158,6 @@ int main()
             return 1;
         }
     }
-    for (size_t i = 0; i < froggers_v2::manifest::kSequencerSlots.size(); ++i)
-    {
-        const auto& slot = froggers_v2::manifest::kSequencerSlots[i];
-        if (slot.index != i || slot.writtenStateField == nullptr || slot.writtenStateField[0] == '\0'
-            || !slot.sequencerPersistent || !slot.sequencerLockable)
-        {
-            std::printf("FAIL: manifest sequencer slot %zu lacks written/snapshot/lock declaration\n", i);
-            return 1;
-        }
-    }
-
     const std::string snapshot = froggers_v2::manifest::buildSnapshotJson();
     if (hasInvalidJsonControlCharacter(snapshot))
     {
@@ -205,12 +171,9 @@ int main()
         return 1;
     }
     if (!contains(snapshot, "\"randomizationScopeControls\"") || !contains(snapshot, "\"All Scenes\"")
-        || !contains(snapshot, "\"Current Scene\"") || !contains(snapshot, "\"All Steps\"")
-        || !contains(snapshot, "\"Current Step\"") || !contains(snapshot, "\"sequencerSlots\"")
-        || !contains(snapshot, "\"writtenStateField\"") || !contains(snapshot, "\"sequencerPersistent\"")
-        || !contains(snapshot, "\"sequencerLockable\""))
+        || !contains(snapshot, "\"Current Scene\""))
     {
-        std::printf("FAIL: generated manifest snapshot is missing declaration-driven scope/slot sections\n");
+        std::printf("FAIL: generated manifest snapshot is missing declaration-driven scope sections\n");
         return 1;
     }
     if (contains(snapshot, "\"vco_1_audio\"") || contains(snapshot, "\"vco_2_audio\"")
@@ -221,7 +184,6 @@ int main()
         return 1;
     }
     if (!appearsBefore(snapshot, "\"vco_pair_13\"", "\"vco_pair_23\"")
-        || !appearsBefore(snapshot, "\"global_crunchy\"", "\"global_gesture_weight_0\"")
         || !appearsBefore(snapshot, "\"vco_1_ef\"", "\"vco_pair_12\""))
     {
         std::printf("FAIL: generated manifest snapshot entries are not sorted by group/stable ID inside projection groups\n");
@@ -235,7 +197,7 @@ int main()
         return 1;
     }
     if (!contains(snapshot, "\"schema\"") || !contains(snapshot, "\"productControls\"")
-        || !contains(snapshot, "\"projectionOverlays\"") || !contains(snapshot, "\"runtimeControls\"")
+        || !contains(snapshot, "\"projectionOverlays\"") || !contains(snapshot, "\"productContract\"")
         || !contains(snapshot, "\"hostParameterMapping\"") || !contains(snapshot, "\"hardwareControls\"")
         || !contains(snapshot, "\"layoutGroups\"") || !contains(snapshot, "\"reservedSchemaOnly\""))
     {
@@ -258,9 +220,7 @@ int main()
     if (!contains(snapshot, "\"defaultModulePage\": \"audio_vco\"")
         || !contains(snapshot, "\"envelopePage\"")
         || !contains(snapshot, "\"vcoAttackSustainReleaseTriples\"") || !contains(snapshot, "\"waveformMorphControls\"")
-        || !contains(snapshot, "\"lfoModule\"") || !contains(snapshot, "\"globalRandomizationScopes\"")
-        || !contains(snapshot, "\"deviceNeutralClearStep\"") || !contains(snapshot, "\"sequencerLocks\"")
-        || !contains(snapshot, "\"optionalMidiClockSync\"") || !contains(snapshot, "\"heldGestures\": false"))
+        || !contains(snapshot, "\"lfoModule\"") || !contains(snapshot, "\"globalRandomizationScopes\""))
     {
         std::printf("FAIL: manifest snapshot is missing required Froggers v2 product contract entries\n");
         return 1;
@@ -278,8 +238,7 @@ int main()
         || !contains(snapshot, "\"invalidPageRowRefs\"") || !contains(snapshot, "\"missingDisplayNames\"")
         || !contains(snapshot, "\"invalidRanges\"") || !contains(snapshot, "\"invalidDefaults\"")
         || !contains(snapshot, "\"invalidProjectionOverlays\"") || !contains(snapshot, "\"missingOscilloscopeTaps\"")
-        || !contains(snapshot, "\"invalidRandomizationScopes\"") || !contains(snapshot, "\"invalidSequencerStepCounts\"")
-        || !contains(snapshot, "\"missingWrittenUnwrittenState\"") || !contains(snapshot, "\"invalidSequencerDirectionSpeed\"")
+        || !contains(snapshot, "\"invalidRandomizationScopes\"")
         || !contains(snapshot, "\"invalidSourceLaneCounts\"") || !contains(snapshot, "\"duplicateSourceIds\"")
         || !contains(snapshot, "\"missingSourceColorsGroups\"") || !contains(snapshot, "\"invalidExternalAudioAvailability\""))
     {

@@ -86,7 +86,6 @@ const MidiCvControllerTargetIds& midiCvControllerTargetIds()
         froggers_v2::manifest::kBaseControllerTargetDeclarations[5].stableId,
         froggers_v2::manifest::kBaseControllerTargetDeclarations[6].stableId,
         froggers_v2::manifest::kBaseControllerTargetDeclarations[7].stableId,
-        froggers_v2::manifest::kBaseControllerTargetDeclarations[8].stableId,
     };
     return ids;
 }
@@ -666,15 +665,6 @@ std::vector<ControllerTargetMappingRow> MidiCvAssignmentTable::buildTargetMappin
                     qwertyVirtualChannelEnabled ? "Active" : "Off");
             continue;
         }
-        if (std::strcmp(target.stableId, ids.externalClock) == 0)
-        {
-            ControllerMappingEvent clockEvent;
-            clockEvent.kind = MidiCvTriggerKind::Cc;
-            clockEvent.number = 0xF8;
-            pushRow(ids.externalClock, target.displayName, true, clockEvent, "Sequencer sync");
-            continue;
-        }
-
         if (!froggers_v2::manifest::controllerTargetHasPageRow(target))
         {
             continue;
@@ -796,11 +786,6 @@ bool MidiCvAssignmentTable::applyMappingRecord(const ControllerMappingRecord& re
         }
         return true;
     }
-    if (record.targetId == ids.externalClock)
-    {
-        return true;
-    }
-
     if (!froggers_v2::manifest::controllerTargetHasPageRow(target))
     {
         rejectReason = "unsupported target binding";

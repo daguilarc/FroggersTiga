@@ -22,8 +22,6 @@ void FroggersV2AppCoreFacade::initialize()
         return;
     }
 
-    m_core.setSequencerState(&m_audio.getSequencer());
-
     MessageIn selectPage;
     selectPage.type = MessageIn::Type::SelectPage;
     selectPage.page = m_config.defaultPage;

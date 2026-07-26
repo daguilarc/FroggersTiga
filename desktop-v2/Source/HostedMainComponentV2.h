@@ -8,7 +8,6 @@
 #include "ui/GlobalStripV2.hpp"
 #include "ui/GlobalOscilloscopeDisplay.hpp"
 #include "ui/CvLaneHistoryStore.hpp"
-#include "ui/SequencerPanelComponent.hpp"
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
@@ -34,9 +33,7 @@ private:
     GlobalStripV2 m_globalStrip;
     PerformanceBandV2 m_performanceBand;
     PageCarouselComponent m_carousel;
-    SequencerPanelComponent m_sequencerPanel;
     HostedRuntimeStatusPanel m_hostedStatusPanel;
-    bool m_sequencerVisible = true;
     uint32_t m_lastUiVersion = 0;
     uint32_t m_lastModRoutesVersion = 0;
     desktop_v2::HostCallbackContext m_hostCallbacks;

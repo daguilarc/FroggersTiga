@@ -3,7 +3,6 @@
 #include "V2DesktopPageDisplayNames.hpp"
 #include "V2ParamDisplayNames.hpp"
 #include "control/MidiCvAssignmentTable.hpp"
-#include "SequencerState.hpp"
 
 #include <algorithm>
 #include <array>
@@ -323,45 +322,6 @@ CheckResult checkModSourceAuthority()
     return result;
 }
 
-CheckResult checkSequencerAuthority()
-{
-    CheckResult result{"2.4", "Fixed 16 sequencer snapshots and lock fields", false, {}};
-    const bool manifestCountIsFixed = froggers_v2::manifest::kSequencerSlotCount == 16;
-    const bool manifestSlotsComplete = froggers_v2::manifest::kSequencerSlots.size() == froggers_v2::manifest::kSequencerSlotCount;
-    const std::string sequencerState = readTextFile("sim/SequencerState.hpp");
-    const std::string hostInventory = readTextFile("desktop-v2/Source/HostParameterInventoryV2.hpp");
-    const std::string sequencerPanel = readTextFile("desktop-v2/Source/ui/SequencerPanelComponent.hpp");
-
-    if (!manifestCountIsFixed || !manifestSlotsComplete)
-    {
-        result.detail = "manifest sequencer slot declarations are incomplete.";
-        return result;
-    }
-
-    const bool currentStateStillVariable = contains(sequencerState, "kMaxSteps = 64")
-                                        || contains(sequencerState, "m_patternLength = 16")
-                                        || contains(hostInventory, "sequencer_pattern_length")
-                                        || contains(hostInventory, "sequencer_playhead")
-                                        || contains(sequencerPanel, "PatternLength")
-                                        || contains(sequencerPanel, "m_patternScope")
-                                        || contains(sequencerState, "SequencerStepSnapshot")
-                                        || !contains(sequencerState, "kSlotCount = 16")
-                                        || !contains(sequencerState, "bool written")
-                                        || !contains(sequencerState, "bool locked");
-
-    if (currentStateStillVariable)
-    {
-        result.detail = "current sequencer consumer state still exposes variable-length / playhead-led authority "
-                        "(`SequencerState::kMaxSteps = 64`, `sequencer_pattern_length`, and no explicit lock-field "
-                        "surface yet).";
-        return result;
-    }
-
-    result.passed = true;
-    result.detail = "validated 16 manifest slots and current sequencer fields";
-    return result;
-}
-
 CheckResult checkControllerTargets()
 {
     CheckResult result{"2.5", "Desktop MIDI/controller target declarations", false, {}};
@@ -379,8 +339,7 @@ CheckResult checkControllerTargets()
         ids.scene1,
         ids.scene2,
         ids.scene3,
-        ids.qwertyVirtual,
-        ids.externalClock}};
+        ids.qwertyVirtual}};
 
     std::vector<std::string> missingTargetLabels;
     std::vector<std::string> mismatchedTargetIds;
@@ -439,7 +398,6 @@ CheckResult checkControllerTargets()
                                    && contains(midiCvSettingsText, "MIDI CC A")
                                    && contains(midiCvSettingsText, "MIDI CC B")
                                    && contains(midiCvSettingsText, "QWERTY virtual MIDI")
-                                   && contains(midiCvSettingsText, "External MIDI clock")
                                    && contains(midiCvSettingsCpp, "controllerTargetDeclarations")
                                    && contains(midiCvSettingsCpp, "rowKindForBindingRole")
                                    && contains(midiCvSettingsCpp, "manifestTargetIdForBindingRole")
@@ -501,8 +459,7 @@ CheckResult checkHostedProjectionOverlay()
                                                     && !contains(hostedMainCpp, "RecordButton");
     const bool hostedShellKeepsReadOnlyStatus = contains(hostedMainH, "GlobalOscilloscopeDisplay")
                                              && contains(hostedMainH, "PerformanceBandV2")
-                                             && contains(hostedMainH, "PageCarouselComponent")
-                                             && contains(hostedMainH, "SequencerPanelComponent");
+                                             && contains(hostedMainH, "PageCarouselComponent");
 
     if (!pluginUsesHostedShell || !hostedShellAvoidsStandaloneHardwareUi || !hostedShellKeepsReadOnlyStatus)
     {
@@ -520,12 +477,11 @@ CheckResult checkHostedProjectionOverlay()
     return result;
 }
 
-std::array<CheckResult, 6> runChecks()
+std::array<CheckResult, 5> runChecks()
 {
     return {checkHostedParameterInventory(),
             checkCarouselPageRows(),
             checkModSourceAuthority(),
-            checkSequencerAuthority(),
             checkControllerTargets(),
             checkHostedProjectionOverlay()};
 }

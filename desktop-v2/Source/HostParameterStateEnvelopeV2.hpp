@@ -16,15 +16,14 @@
 // The legacy SimPresetSnapshot payload (sim/SimPresetSnapshot.hpp) only captures the
 // PageManager knob/mod-depth axes (HostParameterInventoryV2::Axis::PageKnob / PageModDepth),
 // DelayState, and AudioPairArState — by copying each Parameter's raw pre-processing
-// m_knobValue. It never captures Axis::GlobalCrunchy, VcoMorph, Sequencer, SceneBlend, or
-// GestureWeight. Left alone, those manifest-owned host parameters would silently reset to their
-// construction defaults every time a DAW closes and reopens a saved project (a fresh
-// FroggersTigaAudioProcessorV2 + AudioEngine instance is constructed, then setStateInformation
-// replays only the legacy blob).
+// m_knobValue. It never captures Axis::GlobalCrunchy, VcoMorph, or SceneBlend. Left alone,
+// those manifest-owned host parameters would silently reset to their construction defaults
+// every time a DAW closes and reopens a saved project (a fresh FroggersTigaAudioProcessorV2 +
+// AudioEngine instance is constructed, then setStateInformation replays only the legacy blob).
 //
-// This header adds a small, additive, versioned tail that serializes exactly those five
+// This header adds a small, additive, versioned tail that serializes exactly those
 // currently-unsaved axes (indices [kFirstNonPageIndex, kCount) — GlobalCrunchy, VcoMorph x3,
-// Sequencer x5, SceneBlend, GestureWeight x2 = 12 stable IDs), by inventory index, which is a
+// SceneBlend = 5 stable IDs), by inventory index, which is a
 // pure/deterministic function of each entry's stable ID (see FroggersV2AppManifest.hpp
 // buildDescriptorAt / formatInventoryStableId — the single authority). Consuming only:
 // HostParameterInventoryV2::buildDescriptorAt and HostParameterRoutingV2::readValue/applyValue.
@@ -36,7 +35,7 @@
 // DesktopHostIO::GetPageParam -> Page::GetParamV2), which folds in GlobalCrunchy and the page's
 // "crispy" row value. That read-time transform is not its own inverse, so re-applying a
 // Fuego-transformed read as if it were a raw knob position would drift the stored value on every
-// save/reload cycle. Restricting this tail to the five axes with no such read-time transform
+// save/reload cycle. Restricting this tail to the axes with no such read-time transform
 // keeps every entry it touches a clean, exact round trip.
 namespace HostParameterStateEnvelopeV2
 {

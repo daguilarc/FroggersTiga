@@ -119,7 +119,6 @@ MidiCvTargetRowKind rowKindForBindingRole(const char* bindingRole)
     using froggers_v2::manifest::kBindingRoleGate;
     using froggers_v2::manifest::kBindingRolePitch;
     using froggers_v2::manifest::kBindingRoleSceneSelect;
-    using froggers_v2::manifest::kBindingRoleSequencerSync;
     using froggers_v2::manifest::kBindingRoleVirtualKeyboard;
 
     if (bindingRoleEquals(bindingRole, kBindingRolePitch))
@@ -142,10 +141,6 @@ MidiCvTargetRowKind rowKindForBindingRole(const char* bindingRole)
     if (bindingRoleEquals(bindingRole, kBindingRoleVirtualKeyboard))
     {
         return MidiCvTargetRowKind::QwertyChannel;
-    }
-    if (bindingRoleEquals(bindingRole, kBindingRoleSequencerSync))
-    {
-        return MidiCvTargetRowKind::ExternalClock;
     }
     if (bindingRoleEquals(bindingRole, kBindingRoleEncoderTurn))
     {
@@ -257,10 +252,6 @@ void MidiCvSettingsComponent::initTargetRows()
             configureChannelSlider(row.channel);
             row.channel.setRange(1, 16, 1);
         }
-        else if (row.kind == MidiCvTargetRowKind::ExternalClock)
-        {
-            row.enable.setButtonText("External MIDI clock");
-        }
     }
 }
 
@@ -327,13 +318,6 @@ void MidiCvSettingsComponent::wireTargetRowCallbacks()
         if (row.kind == MidiCvTargetRowKind::QwertyChannel)
         {
             row.channel.onValueChange = syncOnChange;
-        }
-        if (row.kind == MidiCvTargetRowKind::ExternalClock)
-        {
-            row.enable.onClick = [this, &row]() {
-                m_engine.getSequencer().m_externalClock = row.enable.getToggleState();
-                updateMappingReadbacks();
-            };
         }
     }
 }
@@ -455,7 +439,6 @@ int MidiCvSettingsComponent::estimatedRowHeight(const TargetRowUi& row) const
         case MidiCvTargetRowKind::CcBinding:
         case MidiCvTargetRowKind::EncoderTurn:
         case MidiCvTargetRowKind::QwertyChannel:
-        case MidiCvTargetRowKind::ExternalClock:
             return 32;
     }
     return 32;
@@ -597,12 +580,6 @@ void MidiCvSettingsComponent::syncUiFromTable()
         {
             uiRow.enable.setToggleState(table.qwertyVirtualChannelEnabled, juce::dontSendNotification);
             uiRow.channel.setValue(table.qwertyMidiChannel, juce::dontSendNotification);
-            continue;
-        }
-        if (std::strcmp(uiRow.targetId, ids.externalClock) == 0)
-        {
-            uiRow.enable.setToggleState(
-                m_engine.getSequencer().m_externalClock, juce::dontSendNotification);
             continue;
         }
         if (uiRow.kind == MidiCvTargetRowKind::EncoderTurn
@@ -944,13 +921,6 @@ void MidiCvSettingsComponent::layoutTargetRow(juce::Rectangle<int>& area, Target
         return;
     }
 
-    if (row.kind == MidiCvTargetRowKind::ExternalClock)
-    {
-        auto clockLine = area.removeFromTop(24);
-        row.enable.setBounds(clockLine.removeFromLeft(220));
-        row.readbackLabel.setBounds(clockLine);
-        area.removeFromTop(4);
-    }
 }
 
 void MidiCvSettingsComponent::resized()

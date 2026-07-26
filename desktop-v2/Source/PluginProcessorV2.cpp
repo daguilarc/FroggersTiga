@@ -14,7 +14,7 @@ namespace
 constexpr uint8_t kLegacyPluginStateEnvelopeVersionV5 = 5;
 // v6: appends a HostParameterStateEnvelopeV2 tail after the legacy SimPresetSnapshot payload so
 // the manifest-owned host parameters SimPresetSnapshot never serializes (GlobalCrunchy, VcoMorph,
-// Sequencer, SceneBlend, GestureWeight) survive a DAW project save/reload instead of silently
+// SceneBlend) survive a DAW project save/reload instead of silently
 // resetting to construction defaults. v5-tagged states (no tail present) still load correctly;
 // the tail is only applied when the byte count indicates it is present.
 constexpr uint8_t kPluginStateEnvelopeVersion = 6;
@@ -220,8 +220,8 @@ void FroggersTigaAudioProcessorV2::setStateInformation(const void* data, int siz
                                        snapshotData,
                                        snapshotBytes))
         {
-            // v6 only: replay the full-inventory tail (GlobalCrunchy/VcoMorph/Sequencer/
-            // SceneBlend/GestureWeight) if present. v5 states have no tail; those axes simply
+            // v6 only: replay the full-inventory tail (GlobalCrunchy/VcoMorph/
+            // SceneBlend) if present. v5 states have no tail; those axes simply
             // keep whatever this AudioEngine instance already holds (construction defaults on a
             // freshly-created processor), matching the pre-existing v5 behavior exactly.
             const size_t tailOffset = 1 + SimPresetSnapshot::serializedSize();

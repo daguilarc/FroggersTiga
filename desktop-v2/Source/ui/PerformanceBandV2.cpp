@@ -46,14 +46,6 @@ juce::String labelTailAfterSlash(const char* fullName)
     const int slash = full.lastIndexOfChar('/');
     return slash >= 0 ? full.substring(slash + 1) : full;
 }
-
-juce::String gestureDisplayName(uint8_t lane)
-{
-    char buffer[64];
-    froggers_v2::manifest::formatInventoryDisplayName(
-        buffer, sizeof(buffer), HostParameterInventoryV2::Axis::GestureWeight, 0, 0, lane);
-    return juce::String(buffer);
-}
 } // namespace
 
 PerformanceBandV2::PerformanceBandV2()
@@ -83,22 +75,6 @@ PerformanceBandV2::PerformanceBandV2()
         m_core->processBus();
     };
 
-    for (uint8_t lane = 0; lane < froggers_v2::kNumGestures; ++lane)
-    {
-        juce::ToggleButton* toggle = lane == 0 ? &m_gesture1 : &m_gesture2;
-        juce::Slider* weight = lane == 0 ? &m_gestureWeight1 : &m_gestureWeight2;
-        const juce::String fullName = gestureDisplayName(lane);
-        toggle->setButtonText(labelTailAfterSlash(fullName.toRawUTF8()));
-        toggle->setTooltip(fullName);
-        toggle->onClick = [this, lane]() { pushGesture(lane); };
-        weight->setSliderStyle(juce::Slider::LinearHorizontal);
-        weight->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-        weight->setRange(0.0, 1.0, 0.001);
-        weight->onValueChange = [this, lane, weight]() {
-            pushGestureWeight(lane, static_cast<float>(weight->getValue()));
-        };
-    }
-
     m_scene1.onClick = [this]() { pushScene(0); };
     m_scene2.onClick = [this]() { pushScene(1); };
     m_scene3.onClick = [this]() { pushScene(2); };
@@ -123,10 +99,6 @@ PerformanceBandV2::PerformanceBandV2()
           static_cast<juce::Component*>(&m_blendLabelL),
           static_cast<juce::Component*>(&m_sceneBlend),
           static_cast<juce::Component*>(&m_blendLabelR),
-          static_cast<juce::Component*>(&m_gesture1),
-          static_cast<juce::Component*>(&m_gestureWeight1),
-          static_cast<juce::Component*>(&m_gesture2),
-          static_cast<juce::Component*>(&m_gestureWeight2),
           static_cast<juce::Component*>(&m_marblesLabel1),
           static_cast<juce::Component*>(&m_marblesLabel2)})
     {
@@ -154,34 +126,6 @@ void PerformanceBandV2::pushScene(uint8_t ordinal)
     froggers_v2::MessageIn message;
     message.type = froggers_v2::MessageIn::Type::SceneSelect;
     message.index = ordinal;
-    m_core->bus().push(message);
-    m_core->processBus();
-}
-
-void PerformanceBandV2::pushGesture(uint8_t lane)
-{
-    if (!m_core)
-    {
-        return;
-    }
-    const uint8_t current = m_core->uiState().activeGesture.load(std::memory_order_acquire);
-    froggers_v2::MessageIn message;
-    message.type = froggers_v2::MessageIn::Type::GestureSelect;
-    message.index = current == lane ? froggers_v2::kNoSelection : lane;
-    m_core->bus().push(message);
-    m_core->processBus();
-}
-
-void PerformanceBandV2::pushGestureWeight(uint8_t lane, float value)
-{
-    if (!m_core)
-    {
-        return;
-    }
-    froggers_v2::MessageIn message;
-    message.type = froggers_v2::MessageIn::Type::GestureWeight;
-    message.index = lane;
-    message.value = value;
     m_core->bus().push(message);
     m_core->processBus();
 }
@@ -254,11 +198,6 @@ void PerformanceBandV2::refresh()
     const uint8_t leftOrdinal = state.leftSceneOrdinal.load(std::memory_order_acquire);
     const uint8_t rightOrdinal = state.rightSceneOrdinal.load(std::memory_order_acquire);
     updateSceneButtonLabels(leftOrdinal, rightOrdinal);
-    const uint8_t activeGesture = state.activeGesture.load(std::memory_order_acquire);
-    m_gesture1.setToggleState(activeGesture == 0, juce::dontSendNotification);
-    m_gesture2.setToggleState(activeGesture == 1, juce::dontSendNotification);
-    m_gestureWeight1.setValue(m_core->gestureWeight(0), juce::dontSendNotification);
-    m_gestureWeight2.setValue(m_core->gestureWeight(1), juce::dontSendNotification);
 }
 
 void PerformanceBandV2::resized()
@@ -270,24 +209,20 @@ void PerformanceBandV2::resized()
     const int h = area.getHeight();
     const int gap = kSectionGap;
 
-    // Packet 17 (D14): fixed minima for labeled controls; leftover width
-    // goes into the three flexible sliders so nothing overlaps and no empty
-    // gap sits past the marbles columns.
+    // Packet 17 (D14, re-derived after §13.0.1a gesture removal): fixed
+    // minima for labeled controls; leftover width goes into the single
+    // flexible scene-blend slider so nothing overlaps and no empty gap sits
+    // past the marbles columns.
     const int sceneLabelW = kPerfSceneLabelW;
     const int sceneW = kSceneButtonMinWidth;
     const int blendEndW = kPerfBlendEndpointLabelW;
-    const int gestureW = kPerfGestureToggleW;
     const int marblesW = kPerfMarblesColW;
     const int blendMinW = kPerfSceneBlendW;
-    const int weightMinW = kPerfGestureWeightW;
-    constexpr int kGapCount = 10;
-    const int fixedW = sceneLabelW + 3 * sceneW + 2 * blendEndW + 2 * gestureW + 2 * marblesW;
-    const int flexibleMinW = blendMinW + 2 * weightMinW;
-    int extra = juce::jmax(0, area.getWidth() - fixedW - flexibleMinW - kGapCount * gap);
-    const int weightExtra = extra / 3;
-    const int blendExtra = extra - 2 * weightExtra;
-    const int blendW = blendMinW + blendExtra;
-    const int weightW = weightMinW + weightExtra;
+    constexpr int kGapCount = 6;
+    const int fixedW = sceneLabelW + 3 * sceneW + 2 * blendEndW + 2 * marblesW;
+    const int flexibleMinW = blendMinW;
+    const int extra = juce::jmax(0, area.getWidth() - fixedW - flexibleMinW - kGapCount * gap);
+    const int blendW = blendMinW + extra;
 
     int x = area.getX();
     m_sceneLabel.setBounds(x, y, sceneLabelW, h);
@@ -308,15 +243,6 @@ void PerformanceBandV2::resized()
     x += blendW;
     m_blendLabelR.setBounds(x, y, blendEndW, h);
     x += blendEndW + gap;
-
-    m_gesture1.setBounds(x, y, gestureW, h);
-    x += gestureW + gap;
-    m_gestureWeight1.setBounds(x, y, weightW, h);
-    x += weightW + gap;
-    m_gesture2.setBounds(x, y, gestureW, h);
-    x += gestureW + gap;
-    m_gestureWeight2.setBounds(x, y, weightW, h);
-    x += weightW + gap;
 
     const int marblesLabelY = y + (h - kPerfMarblesLabelH) / 2;
     m_marblesLabel1.setBounds(x, marblesLabelY, marblesW, kPerfMarblesLabelH);

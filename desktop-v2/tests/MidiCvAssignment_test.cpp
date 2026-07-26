@@ -12,58 +12,6 @@ bool nearlyEqual(float a, float b)
     return std::fabs(a - b) < 1.0e-4f;
 }
 
-bool test_midi_clock_advances_external_sequencer()
-{
-    SequencerState sequencer;
-    sequencer.m_playing = true;
-    sequencer.m_externalClock = true;
-
-    bool hookFired = false;
-    MidiCvAssignmentTable table;
-    table.setSequencerAdvanceHook([&hookFired]() { hookFired = true; });
-
-    table.onMidiClockTick(sequencer);
-    if (sequencer.m_playhead != 1)
-    {
-        std::printf("FAIL: external clock did not advance playhead\n");
-        return false;
-    }
-    if (!hookFired)
-    {
-        std::printf("FAIL: sequencer advance hook did not fire\n");
-        return false;
-    }
-
-    sequencer.m_playing = false;
-    hookFired = false;
-    table.onMidiClockTick(sequencer);
-    if (hookFired)
-    {
-        std::printf("FAIL: hook fired while transport stopped\n");
-        return false;
-    }
-    return true;
-}
-
-bool test_midi_clock_ignored_without_external_mode()
-{
-    SequencerState sequencer;
-    sequencer.m_playing = true;
-    sequencer.m_externalClock = false;
-
-    bool hookFired = false;
-    MidiCvAssignmentTable table;
-    table.setSequencerAdvanceHook([&hookFired]() { hookFired = true; });
-    table.onMidiClockTick(sequencer);
-
-    if (sequencer.m_playhead != 0 || hookFired)
-    {
-        std::printf("FAIL: internal clock mode should ignore MIDI clock tick\n");
-        return false;
-    }
-    return true;
-}
-
 bool test_note_on_sets_pitch_gate_and_note_off_clears()
 {
     MidiCvAssignmentTable table;
@@ -390,8 +338,7 @@ bool test_controller_target_ids_match_manifest()
                             ids.scene1,
                             ids.scene2,
                             ids.scene3,
-                            ids.qwertyVirtual,
-                            ids.externalClock};
+                            ids.qwertyVirtual};
     static_assert(std::size(actual) == froggers_v2::manifest::kBaseControllerTargetCount);
     const auto& targets = froggers_v2::manifest::controllerTargetDeclarations();
     if (targets.size() != froggers_v2::manifest::kControllerTargetCount)
@@ -557,14 +504,6 @@ bool test_encoder_mapping_round_trip_by_stable_id()
 
 int main()
 {
-    if (!test_midi_clock_advances_external_sequencer())
-    {
-        return 1;
-    }
-    if (!test_midi_clock_ignored_without_external_mode())
-    {
-        return 1;
-    }
     if (!test_note_on_sets_pitch_gate_and_note_off_clears())
     {
         return 1;

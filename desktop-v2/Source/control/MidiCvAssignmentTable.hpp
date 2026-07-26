@@ -1,6 +1,5 @@
 #pragma once
 
-#include "SequencerState.hpp"
 #include "manifest/FroggersV2AppManifest.hpp"
 
 #include <array>
@@ -71,7 +70,6 @@ struct MidiCvControllerTargetIds
     const char* scene2;
     const char* scene3;
     const char* qwertyVirtual;
-    const char* externalClock;
 };
 
 const MidiCvControllerTargetIds& midiCvControllerTargetIds();
@@ -121,7 +119,6 @@ struct ControllerMappingRecord
 
 struct MidiCvAssignmentTable
 {
-    using SequencerAdvanceHook = std::function<void()>;
     using HostPitchFn = std::function<void(uint8_t page, uint8_t row, float value)>;
     using HostGateFn = std::function<void(bool high)>;
     using UiSceneFn = std::function<void(uint8_t ordinal)>;
@@ -142,11 +139,6 @@ struct MidiCvAssignmentTable
     std::array<MidiCvEncoderDrillInBinding, froggers_v2::manifest::kEncoderParamCount> encoderDrillIns{};
     bool qwertyVirtualChannelEnabled = true;
     uint8_t qwertyMidiChannel = 1;
-
-    void setSequencerAdvanceHook(SequencerAdvanceHook hook)
-    {
-        m_sequencerAdvanceHook = std::move(hook);
-    }
 
     void setHostPitchCallback(HostPitchFn callback)
     {
@@ -171,19 +163,6 @@ struct MidiCvAssignmentTable
     void setModDrillInEmitCallback(ModDrillInEmitFn callback)
     {
         m_modDrillInEmit = std::move(callback);
-    }
-
-    void onMidiClockTick(SequencerState& sequencer)
-    {
-        if (!sequencer.m_playing || !sequencer.m_externalClock)
-        {
-            return;
-        }
-        sequencer.advanceOnExternalClock();
-        if (m_sequencerAdvanceHook)
-        {
-            m_sequencerAdvanceHook();
-        }
     }
 
     void processIncomingMessage(uint8_t channel1Based,
@@ -240,7 +219,6 @@ private:
     std::atomic<bool> m_scenePendingFlag{false};
     std::atomic<uint8_t> m_scenePendingOrdinal{0};
 
-    SequencerAdvanceHook m_sequencerAdvanceHook;
     HostPitchFn m_hostPitch;
     HostGateFn m_hostGate;
     UiSceneFn m_uiScene;

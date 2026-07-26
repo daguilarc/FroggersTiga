@@ -19,21 +19,11 @@ HostedMainComponentV2::HostedMainComponentV2(froggers_v2::FroggersV2AppCoreFacad
     m_carousel.adsrPanel().bindLaneHistory(&m_cvLaneHistory);
     m_performanceBand.bind(&m_facade.controlCore());
     m_performanceBand.bindHost(&m_facade.host());
-    m_globalStrip.resolveRandSeqScope = [this]() {
-        return m_sequencerPanel.getRandSeqScope();
-    };
-    // Carryover C1: let the sequencer's Rand-seq dice read the global
-    // All Steps / Current Step scope so it can resolve Pattern scope instead
-    // of being stuck at Step (mirrors resolveRandSeqScope above).
-    m_sequencerPanel.resolveAllStepsScope = [this]() { return m_globalStrip.allStepsScope(); };
-    m_sequencerPanel.bind(
-        &m_facade.audioEngine().getSequencer(), &m_facade.controlCore(), &m_facade.hostBridge());
 
     addAndMakeVisible(m_globalOscilloscope);
     addAndMakeVisible(m_globalStrip);
     addAndMakeVisible(m_performanceBand);
     addAndMakeVisible(m_carousel);
-    addAndMakeVisible(m_sequencerPanel);
     addAndMakeVisible(m_hostedStatusPanel);
 
     wireCallbacks();
@@ -106,7 +96,6 @@ void HostedMainComponentV2::timerCallback()
     m_carousel.submodulePanel().refresh();
     m_carousel.adsrPanel().refresh();
     m_performanceBand.refreshMarbles(true);
-    m_sequencerPanel.refresh();
 }
 
 void HostedMainComponentV2::resized()
@@ -121,12 +110,6 @@ void HostedMainComponentV2::resized()
     area.removeFromTop(kSectionGap);
     m_globalStrip.setBounds(area.removeFromTop(kGlobalCommandBandH));
     area.removeFromTop(kSectionGap);
-
-    if (m_sequencerVisible)
-    {
-        m_sequencerPanel.setBounds(area.removeFromBottom(kSequencerH));
-        area.removeFromBottom(kSectionGap);
-    }
 
     m_performanceBand.setBounds(area.removeFromTop(kPerformanceBandH));
     area.removeFromTop(kSectionGap);
