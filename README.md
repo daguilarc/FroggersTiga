@@ -1,14 +1,51 @@
 # FroggersTiga
 
-Firmware for **Daisy Field**: three loosely coupled oscillators with phase modulation and cross-coupling, polynomial drive / digital reshaping, comb filter and resonant bump, algorithmic reverb, CV modulation routing, and Marbles-style random modulation sources.
+Frogg3rs: three loosely coupled oscillators with phase modulation and cross-coupling, polynomial drive / digital reshaping, comb filter and resonant bump, algorithmic reverb, CV modulation routing, and Marbles-style random modulation sources.
+
+**Current development is the Sheaf-based app under [`app/`](app/README.md)** — see
+[Frogg3rs — Sheaf app](#frogg3rs--sheaf-app-current-development) below. The original **Daisy Field**
+hardware firmware and the pre-Sheaf desktop/browser simulators (`desktop/`, `desktop-v2/`, `sim/`,
+`src/`, `wasm/`, `vcv/`, `web/`) are **frozen** — kept in the tree, byte-identical, not under active
+development — while that work continues.
+
+- **Sheaf app docs:** [`app/README.md`](app/README.md) — build instructions, Sheaf submodule pin, status
+- **Daisy Field operator docs:** [`MANUAL.md`](MANUAL.md) — pages, buttons, modulation workflow, safe flash sequence
+- **Quick Dict:** [`QUICK_DICT.md`](QUICK_DICT.md) — abbreviated parameter glossary
+- **License:** MIT — see [`LICENSE`](LICENSE) (copyright JoYoFresh and Diego Aguilar-Canabal)
+
+## Frogg3rs — Sheaf app (current development)
+
+The active line of development: Froggers' DSP ported onto [Sheaf](https://github.com/jvictor0/Sheaf)
+(`External/Sheaf`, a pinned submodule — see [`app/README.md`](app/README.md) for the exact commit and
+why). This is a from-scratch app on Sheaf's parameter/UI framework, not a continuation of the Daisy
+Field firmware or the `desktop-v2` bridge spike (`desktop-v2` was cleared of that spike and frozen
+once this app superseded it).
+
+Build and test from the repo root:
+
+```sh
+./app/build-launcher.sh
+```
+
+```sh
+cd app && make test
+```
+
+`make test` has no `-k` and stops at the first failing binary of ten — check that all ten ran before
+reading "green" into a partial result.
+
+Planning and design history for this app live under [`openspec/`](openspec/) (change proposals,
+specs, design docs, handoffs) — see [Local Planning And Hygiene](#local-planning-and-hygiene) below.
+
+## Daisy Field firmware (frozen)
+
+The original target: Eurorack-format Daisy Field hardware. Not under active development — see the
+note at the top of this file. Kept in the tree and buildable; the sections below describe that build
+as it exists today, unchanged by the Sheaf app work.
 
 This repository ships **self-contained** Daisy tooling (`External/libDaisy`, DaisySP optional): synth sources and boot workflow live **in-tree**—you do not need `~/DaisyExamples`.
 
-- **Operator docs:** [`MANUAL.md`](MANUAL.md) — pages, buttons, modulation workflow, safe flash sequence  
-- **Quick Dict:** [`QUICK_DICT.md`](QUICK_DICT.md) — abbreviated parameter glossary  
-- **License:** MIT — see [`LICENSE`](LICENSE) (copyright JoYoFresh and Diego Aguilar-Canabal)
-
-## Vendored Dependencies
+### Vendored Dependencies
 
 - `External/libDaisy`
   - pinned to `v8.1.0`
@@ -19,7 +56,7 @@ This repository ships **self-contained** Daisy tooling (`External/libDaisy`, Dai
 - `External/DaisySP/DaisySP-LGPL`
   - included with DaisySP for optional LGPL modules
 
-## Host Requirements
+### Host Requirements
 
 The repo is self-contained for Daisy sources, linker scripts, libraries, and bootloader binaries, but it still expects a few host tools to be installed:
 
@@ -39,7 +76,7 @@ The build requires **Arm GNU Toolchain 14.3.rel1** installed under:
 
 `make` looks for `arm-none-eabi-g++` in `14.3.rel1/bin` or `14.3.rel1/arm-none-eabi/bin`. It does not use Homebrew or other versions from `PATH`.
 
-## Repo Layout
+### Repo Layout
 
 - `Makefile`
   - root convenience targets for building vendored libraries and flashing the bootloader
@@ -52,7 +89,7 @@ The build requires **Arm GNU Toolchain 14.3.rel1** installed under:
 - `src/FroggersTiga/`
   - **`FroggersTiga` firmware:** [`Makefile`](src/FroggersTiga/Makefile), [`FroggersTiga.hpp`](src/FroggersTiga/FroggersTiga.hpp), [`FroggersTiga.cpp`](src/FroggersTiga/FroggersTiga.cpp)
 
-## Build Flow
+### Build Flow
 
 Each app makefile sets a target name and source file, then includes `src/mk/daisy.mk`.
 
@@ -72,7 +109,7 @@ The shared Daisy library artifacts are built in:
   - only needed when `USE_DAISYSP=1` or `USE_DAISYSP_LGPL=1`
 - `External/DaisySP/DaisySP-LGPL/build/libdaisysp-lgpl.a`
 
-## Common Commands
+### Common Commands
 
 Build the vendored libraries:
 
@@ -151,7 +188,7 @@ When `APP_TYPE=BOOT_NONE`, DFU writes to internal flash at `0x08000000`.
 
 When `APP_TYPE=BOOT_SRAM` or `APP_TYPE=BOOT_QSPI`, DFU writes to the bootloader-managed QSPI application address at `0x90040000`.
 
-## Bootloader Update
+### Bootloader Update
 
 The latest vendored bootloader binary is:
 
@@ -173,7 +210,7 @@ Before running `make program-boot`, put the Daisy into the STM32 ROM DFU mode us
 
 For a Daisy Field connected over the normal Seed USB port, the vendored `intdfu` bootloader binary is the correct variant.
 
-## App Types
+### App Types
 
 All app builds in this repo now use `APP_TYPE=BOOT_NONE`.
 
@@ -202,7 +239,7 @@ Repo rule:
 - plain `make` is the supported way to build app targets
 - do not use `APP_TYPE=BOOT_SRAM` or `APP_TYPE=BOOT_QSPI` for this repo unless the build system is intentionally redesigned
 
-## Optional LGPL Modules
+### Optional LGPL Modules
 
 If an app needs DaisySP LGPL modules, build it with:
 
@@ -217,7 +254,7 @@ That adds:
 - `External/DaisySP/DaisySP-LGPL/Source` to include paths
 - `libdaisysp-lgpl.a` to the link step
 
-## Verified State
+### Verified State
 
 The vendored Daisy SDK build path was verified by:
 
@@ -230,6 +267,9 @@ With the repo-wide `BOOT_NONE` policy, larger programs may not fit in internal f
 `src/TestControl` still has existing compile errors in project code and external dependencies that are unrelated to the vendoring change.
 
 ## Browser simulator (GitHub Pages)
+
+**Frozen** along with the rest of the pre-Sheaf tree — see the note at the top of this file. Kept
+buildable; not receiving new feature work while the Sheaf app is active.
 
 **Release v1.0.4** — static WASM + Web Audio sim at repo `docs/` (published from `main`).
 
@@ -269,6 +309,11 @@ cd web && npm run build:wasm    # verifies exports after copy
 
 ## Desktop simulator (JUCE)
 
+**Frozen** along with the rest of the pre-Sheaf tree — see the note at the top of this file. This is
+`desktop/`, not `desktop-v2/`: `desktop-v2/` was a separate, later spike toward migrating this same
+app onto Sheaf's parameter model in place; that spike was cleared and frozen once the from-scratch
+[Sheaf app](#frogg3rs--sheaf-app-current-development) under `app/` superseded it.
+
 **Release v1.0.4** — standalone desktop app. The public simulator manual covers the launched desktop app and web sim.
 
 Native app with **five adjacent sub-module panels** (Audio → Drive), **mod rack + patch cables**, and shared global strip. No page switching. **MIDI Settings** exposes two hardware CC→CV pairs (CC 1 on by default, CC 2 off); QWERTY drives CC 1 only.
@@ -303,7 +348,11 @@ Parameter and host UX reference: [`SIM_MANUAL.md`](SIM_MANUAL.md) and [`QUICK_DI
 
 ## Local Planning And Hygiene
 
-OpenSpec artifacts under `openspec/` are local-only planning state for this workspace. They are useful for coordinating implementation, but they are not a git-backed source of truth and OpenSpec helpers should not perform git operations.
+OpenSpec artifacts under `openspec/` are planning state for this workspace: change proposals, specs,
+design docs, and handoffs. They are git-tracked (as of the commit that removed the prior
+`.git/info/exclude` entry) but OpenSpec helpers should still not perform git operations themselves —
+committing planning-doc edits is handled the same way as any other change, by the primary agent when
+explicitly requested.
 
 Subagents are not allowed to run git commands. Any git inspection, staging, committing, branching, worktree setup, or pushing is handled only by the primary agent when explicitly requested.
 
