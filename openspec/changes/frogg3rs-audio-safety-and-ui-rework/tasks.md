@@ -13,6 +13,9 @@
 - **Do not add user-visible behaviour the operator did not ask for.** Propose first.
 - **An implementer may not close a task whose spec requires the operator to see or hear it.**
   The predecessor did this and cost the operator a wasted test session.
+- **`screencapture` works and the resulting PNG is readable** — GUI claims can be verified directly.
+  Scope captures to the app window; a full-screen capture catches the operator's other windows.
+- **The operator's runtime data root is `~/Library/Sheaf/synth/sheaf-patch/`.**
 
 ---
 
@@ -200,12 +203,15 @@ real, unlike the divisor clamps §2.6 refused.
 
 ### Preflight gate — all must hold before any dispatch
 
-- [ ] The four call sites re-enumerated against the current file, not this list.
-- [ ] The distribution table in A6 reproduced in the brief verbatim (median 3, `P(1)=P(>=5)`,
+- [x] The four call sites re-enumerated against the current file, not this list.
+- [x] The distribution table in A6 reproduced in the brief verbatim (median 3, `P(1)=P(>=5)`,
       30/30 tie, geometric r=0.7 tail) — an implementer must not re-derive it.
-- [ ] Brief states explicitly that parameter-VALUE randomization is OUT of scope and must not be
+- [x] Brief states explicitly that parameter-VALUE randomization is OUT of scope and must not be
       touched.
-- [ ] Brief forbids reimplementing `RandomizeVisibleValue` (D14).
+- [x] Brief forbids reimplementing `RandomizeVisibleValue` (D14).
+
+**Executed. See `git log d6298f2` — "Fix modulation randomize distribution and drill-in
+navigation", 2026-07-30. Full suite green, 156 tests across 10 binaries.**
 
 ### Execution rules for these dispatches
 
@@ -228,85 +234,39 @@ untouched, and did the suite run all ten binaries.
 
 ---
 
-## §E Outstanding — analysed 2026-07-29, NOT yet implemented
+## §E — DONE, committed `d6298f2` (2026-07-30)
 
-Analysis in `design.md` A6/A7. **Nothing here has been started.** An earlier attempt at E.1 was
-stopped mid-edit for skipping the proposal step (OMNI §7/§13 — scattered call-site edits with no
-written analysis behind them); the dead helper it produced was removed and the tree is clean.
+Analysis in `design.md` A6/A7. Implemented per the §E-PLAN proposal above. An earlier attempt at
+E.1 was stopped mid-edit for skipping the proposal step (OMNI §7/§13 — scattered call-site edits
+with no written analysis behind them); the dead helper it produced was removed before this
+implementation started.
 
-- [x] E.1 **Randomize-depth count distribution (design A6).** Sheaf's own loop is geometric from
-  ZERO — P(0)=50% — so Randomize Page on a modulation page does nothing half the time. Replace the
-  count selection **app-side**; Sheaf still performs every write, which is the D14 split.
-  **Target: MEDIAN 3, P(1) == P(>=5), tail plausible to the full source count** (operator,
-  2026-07-29). Weighted table 10/30/30/20 for n=1..4 and 10% spread uniformly over 5..N, where N is
-  the connected-source count (13 external-off, 15 on). Explicit table, NOT a coin loop — a
-  geometric tail dies long before 13 and the operator wants high MAD up there.
-  **Do not tune for the mean** (~3.1); ruled out twice. The earlier "z score" phrasing is
-  withdrawn. Design A6 has the table, the checks, and the code sketch.
-  **All required API is public and verified** (A6 lists each with line numbers) — including
-  `ParameterManager::Scene()` for the live scene, which is what an earlier attempt wrongly believed
-  was unavailable.
-  Also fix the duplicate-source draw: Sheaf's loop can pick the same source twice; pick distinct
-  ones. **Keep** the `connected` filter.
-  Note (not a blocker, no decision needed): removing the 50% zero mass roughly doubles the
-  source->parameter connections Randomize All makes. Inherent to "never 0"; the operator has seen
-  this and chosen the median spec anyway. Same depth LEVEL as before — more sources per parameter
-  at level 1, not modulation-of-modulation.
-  **Do NOT touch parameter-VALUE randomization** — it has no coin, moves all nine knobs every
-  time, and the operator has confirmed it is correct.
-  **DONE 2026-07-29.** New `RandomizeParameterModulationDepths(manager, parameter)` in
-  `app/FroggersModulation.hpp`, the exact table from A6 reproduced verbatim (10/30/30/20 for
-  n=1..4, geometric r=0.7 tail over 5..N, tie preserved, no mean-tuning). Distinct-source partial
-  Fisher-Yates fixes the double-draw bug too. All four `Modifier::RandomMod` call sites re-enumerated
-  against the live file (still exactly four, same lines as the preflight check) and rewired to call
-  the helper directly on the target `Parameter&` — no press, no modifier-hold, matching D14.
-  Parameter-value randomization untouched and its own tests still pass unmodified.
-  Tests: `randomize_page_mod_detail_is_never_a_no_op_across_500_trials` (0 no-ops/500, was the
-  reported bug); `randomize_depth_helper_draws_distinct_sources_even_from_an_adversarial_index_feed`
-  (injects a hostile `SetRandomSource` mock — always top-of-range — to prove the Fisher-Yates is
-  structurally distinct rather than merely usually-distinct); `randomize_depth_helper_median_count_is_three_across_1000_trials`.
-  Suite green 154/154 (151 + 3 new), all ten binaries confirmed by name, zero warnings.
-  **Postflight (§14) found two things the brief didn't ask for and the lead fixed directly**, both
-  genuine dead code the rewiring produced: `kFroggersTargetBackEncoder` (no remaining reference
-  anywhere in `app/`) and the `Modifier::RandomMod` branch inside the value-randomize press helper
-  (only ever called with `Modifier::Random` now) — the helper was narrowed from
-  `PressBankWithModifier(..., Modifier)` to `PressBankWithRandomValue(...)` rather than left
-  accepting a value nothing passes. Re-verified green after the cleanup, all stale comment
-  references to the old name fixed too.
-- [x] E.2 **Back from level 2 returns to level 1, not level 0 (design A7a).** `Back()` is a full
-  `Deselect()`. Remember the level-1 parameter and re-open it. App-side; no Sheaf change.
-  **DONE 2026-07-29.** `FroggersModulationDrillIn` gained a private `level1Encoder_` member, set
-  by `PressEncoder` only on the 0→1 transition (left untouched on 1→2, so it survives the level-2
-  round trip). `Back()` now checks `wasLevelTwo` before resetting and, if true, re-presses
-  `level1Encoder_` to land back on the same level-1 parameter. Level 1→0 unchanged.
-  **Caught in postflight, before the lead needed to:** `RandomizeAll`'s level-1 branch had its own
-  hand-rolled "Back then re-press `originalEncoderId`" after each level-2 excursion, written when
-  `Back()` was always a full exit. With `Back()` now auto-reopening level 1, that manual re-press
-  would have fired a stray press *inside* the just-reopened L1 view (a modulation-source grid, not
-  the top-level parameter grid `originalEncoderId` indexes into) — a real regression E.2 would have
-  silently introduced into unrelated code. Removed; one `Back()` now does both the exit and the
-  reopen. Lead re-traced this independently rather than taking the report's word for it.
-- [x] E.3 **Clicking the active bank exits a drilldown (design A7b).** `RequestBankSelect`'s
-  `!= activeBankIx_` guard makes re-selecting the current bank a no-op, which is exactly the case
-  the operator needs to escape a drilldown. Reset the drill-in when the bank matches and level > 0;
-  keep the no-op when level is already 0 so identical state is not rebuilt on every click.
-  **DONE 2026-07-29.** Same-bank branch in `FroggersAppCore::ProcessFrame` now loops
-  `while (drillIn_->Level() > 0) drillIn_->Back();` (bounded to 2 iterations by the level cap) when
-  the request matches the active bank and level > 0 — reusing E.2's now-correct `Back()` rather
-  than adding a second reset primitive. Same-bank-at-level-0 branch is unchanged: nothing executes,
-  true no-op preserved.
-- [x] E.4 **Test the navigation, not just the state.** E.2/E.3 are behavioural; assert level
-  transitions (2→1 on Back, N→0 on same-bank click) rather than that a function was called.
-  **DONE 2026-07-29.** `back_from_level_two_returns_to_the_same_level_one_parameter_then_back_again_exits_to_grid`
-  asserts pointer-identity of `SelectedParameter()` across the 2→1 pop (not merely "some" parameter),
-  then a second `Back()` reaching level 0.
-  `clicking_the_active_bank_while_drilled_in_exits_to_the_top_level_grid` drives the real
-  `FroggersApp` through UI actions (`kBankSelect`/`kEncoderPress`), asserting `Level()` goes 2→0 on
-  a same-bank reselect, and that a same-bank click already at level 0 leaves `ActiveBankIndex()`,
-  `Level()`, and `SelectedParameter()` all unchanged.
-  Suite green **156/156** (154 + net 2), all ten binaries confirmed by name independently by the
-  lead, zero warnings. A stale header comment claiming "no one-level pop... matching the design's
-  resolved choice" — the exact staleness design A7a flagged — was also fixed.
+- [x] E.1 **Randomize-depth count distribution (design A6).** Implemented in
+  `detail::RandomizeParameterModulationDepths` (`app/FroggersModulation.hpp:798-880`), the exact
+  10/30/30/20 + geometric-r=0.7-tail table, used by all four `Modifier::RandomMod` call sites.
+  Distinct-source draws via partial Fisher-Yates (fixes Sheaf's own same-source-twice bug).
+  Parameter-VALUE randomization confirmed untouched. Tests:
+  `randomize_depth_helper_median_count_is_three_across_1000_trials`,
+  `randomize_depth_helper_draws_distinct_sources_even_from_an_adversarial_index_feed`,
+  `randomize_page_mod_detail_is_never_a_no_op_across_500_trials` (`app/FroggersModulationTests.cpp`).
+- [x] E.2 **Back from level 2 returns to level 1, not level 0 (design A7a).** Implemented in
+  `FroggersModulationDrillIn::Back()` (`app/FroggersModulation.hpp:712-729`) — remembers
+  `level1Encoder_` and re-opens it after a full `Deselect()`. Fixing this surfaced a latent bug in
+  `RandomizeAll`'s own hand-rolled level-2 exit-and-reopen (written when `Back()` was always a full
+  exit); removed, since one `Back()` call now does both. Test:
+  `back_from_level_two_returns_to_the_same_level_one_parameter_then_back_again_exits_to_grid`
+  (`app/FroggersModulationTests.cpp:250`).
+- [x] E.3 **Clicking the active bank exits a drilldown (design A7b).** Implemented in
+  `FroggersAppCore.hpp:415-442` — resets the drill-in via `Back()`-until-zero when the bank matches
+  and level > 0; the pre-existing no-op is preserved at level 0.
+- [x] E.4 **Test the navigation, not just the state.** Behavioural tests assert level transitions
+  directly — see E.1/E.2 test names above, plus existing coverage in
+  `app/FroggersModulationTests.cpp`.
+
+**Commit `d6298f2`, full suite green, 156 tests across 10 binaries.** Also: Randomize All no longer
+randomizes local Crispy on any bank (all-six-banks equivalent to randomizing global Crunchy, which
+this app never does); Randomize Page still does, since one page's own Crispy is that page's
+business.
 
 ## §D Carried open from the predecessor
 
