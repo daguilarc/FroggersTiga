@@ -1,0 +1,83 @@
+From: FroggersTiga downstream user
+Subject: [PATCH] synth: add persistent captions for the Audio page's device dropdowns
+
+On the Audio config page (projects/synth/runtime/AudioConfigPage.hpp,
+which is an alias for AudioPageHost<App>, built from
+BuildAudioPageTree() in projects/synth/include/synth/RuntimePages.hpp),
+there are two ComboBox controls that let the user pick the audio output
+device and (when the app has inputs) the audio input device.
+
+Each combo already sets `.label` ("Audio output" / "Audio input"), but
+the JUCE backend (projects/synth/juce/PortableJuceBackend.hpp) only
+consumes ComboBox::label as juce::ComboBox::setTextWhenNothingSelected(),
+i.e. placeholder text shown only when nothing is selected. Since these
+combos always have a selection (defaulting to "System Default"), that
+text never actually renders, so the two dropdowns appear with no visible
+caption distinguishing input from output.
+
+This patch adds a small persistent text label (ui::NodeKind::Label, the
+same node kind already used elsewhere in this file for static captions,
+e.g. the "Versions" / patch-name labels on the File page and the
+name/kind labels on the Controllers page) above each combo, reading
+"Output device" and "Input device". This is a minimal, additive change:
+two new NodeIds constants, one new Layout row-height constant, and the
+two label nodes inserted just before the existing combo nodes; no
+existing behavior, IDs, or layout of other controls is touched.
+
+Verified projects/synth/include/synth/RuntimePages.hpp still parses
+cleanly against the existing portable_ui_tests.cpp translation unit
+(clang++ -std=c++20 -fsyntax-only) after this change.
+
+Patch generated against External/Sheaf commit 1940ddcbe135a5d850ab4f7b3ea54e8d7568d257.
+Apply from the repo root of Sheaf with: git apply <this file>
+
+---
+
+diff --git a/projects/synth/include/synth/RuntimePages.hpp b/projects/synth/include/synth/RuntimePages.hpp
+index d74dc69a..88ee5104 100644
+--- a/projects/synth/include/synth/RuntimePages.hpp
++++ b/projects/synth/include/synth/RuntimePages.hpp
+@@ -36,7 +36,9 @@ inline constexpr const char* kSidebarDeadline = "runtime.sidebar.deadline";
+
+ inline constexpr const char* kAudioRoot = "runtime.audio.root";
+ inline constexpr const char* kAudioBack = "runtime.audio.back";
++inline constexpr const char* kAudioOutputLabel = "runtime.audio.output_label";
+ inline constexpr const char* kAudioOutput = "runtime.audio.output";
++inline constexpr const char* kAudioInputLabel = "runtime.audio.input_label";
+ inline constexpr const char* kAudioInput = "runtime.audio.input";
+ inline constexpr const char* kAudioDeviceLine = "runtime.audio.device_line";
+ inline constexpr const char* kAudioStatusLine = "runtime.audio.status_line";
+@@ -252,6 +254,7 @@ inline constexpr float kBackRowHeight = 32.0f;
+ inline constexpr float kBackButtonWidth = 80.0f;
+ inline constexpr float kRowGap = 4.0f;
+ inline constexpr float kComboRowHeight = 32.0f;
++inline constexpr float kComboLabelRowHeight = 18.0f;
+ inline constexpr float kStatusRowHeight = 32.0f;
+ inline constexpr float kPatchButtonWidth = 82.0f;
+ inline constexpr float kPatchRowHeight = 34.0f;
+@@ -556,6 +559,25 @@ inline ui::NodeTree BuildAudioPageTree(const AudioPageSnapshot& snapshot, ui::Bo
+     const float comboWidth = contentWidth / 4.0f > 120.0f ? contentWidth / 4.0f : 120.0f;
+     float comboX = contentX;
+
++    ui::Node outputLabel;
++    outputLabel.id = NodeIds::kAudioOutputLabel;
++    outputLabel.kind = ui::NodeKind::Label;
++    outputLabel.text = "Output device";
++    outputLabel.bounds = {comboX, y, comboWidth, Layout::kComboLabelRowHeight};
++    appendChild(std::move(outputLabel));
++
++    if (snapshot.showInputCombo)
++    {
++        ui::Node inputLabel;
++        inputLabel.id = NodeIds::kAudioInputLabel;
++        inputLabel.kind = ui::NodeKind::Label;
++        inputLabel.text = "Input device";
++        inputLabel.bounds = {comboX + comboWidth, y, comboWidth, Layout::kComboLabelRowHeight};
++        appendChild(std::move(inputLabel));
++    }
++
++    y += Layout::kComboLabelRowHeight;
++
+     ui::Node outputCombo;
+     outputCombo.id = NodeIds::kAudioOutput;
+     outputCombo.kind = ui::NodeKind::ComboBox;

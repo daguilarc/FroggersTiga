@@ -1,0 +1,102 @@
+#pragma once
+
+// synth_froggers::dsp -- shared math substrate for packet 3 (DSP port).
+// openspec/changes/froggers-sheaf-app/tasks.md section "3. DSP port"; design
+// D3 ("copy the Froggers DSP; do not share src/core/"). This header is a
+// **copy**, not an include, of four small frozen-tree utility headers that
+// several ported units (Vco.hpp, RandomShLane.hpp, FilterFx.hpp) all need.
+// It must never #include anything under src/, sim/, or desktop-v2/ -- see
+// check_no_frozen_includes.sh, which enforces that mechanically for every
+// file under app/.
+//
+// Sources copied (read directly, not from memory):
+//   - src/core/SDDSine.hpp              (Sine01, below)
+//   - src/core/PhaseUtils.hpp:49-52,87-90 (ExpMapCompute, ZeroedExpCompute)
+//   - src/core/OPLowPassFilter.hpp      (OnePoleLowPass)
+//   - src/core/BiquadSection.hpp:30-38  (BiquadDf1::Process only; the port
+//     needs no highpass path, so SetCoefficients's isHighPass branch is not
+//     carried -- ResonantBump only ever uses the peaking-EQ coefficient math
+//     in FilterFx.hpp, computed there directly)
+
+#include <algorithm>
+#include <cassert>
+#include <cmath>
+
+namespace synth_froggers::dsp {
+
+// -- src/core/SDDSine.hpp, verbatim formula -------------------------------
+inline float Sine01(float phase)
+{
+    const float wrappedPhase = phase - std::floor(phase);
+    constexpr float kTwoPi = 6.28318530717958647692f;
+    return std::sin(kTwoPi * wrappedPhase);
+}
+
+// -- src/core/FroggersEngine.hpp:177-179 (WrapPhase) ----------------------
+inline float WrapPhase(float p)
+{
+    return p - std::floor(p);
+}
+
+// -- src/core/PhaseUtils.hpp:49-52 (ExpParam::Compute) --------------------
+// min * (max/min)^value
+inline float ExpMapCompute(float min, float max, float value)
+{
+    return min * std::pow(max / min, value);
+}
+
+// -- src/core/PhaseUtils.hpp:87-90 (ZeroedExpParam::Compute) --------------
+// (base^value - 1) / (base - 1)
+inline float ZeroedExpCompute(float base, float value)
+{
+    return (std::pow(base, value) - 1.0f) / (base - 1.0f);
+}
+
+// -- src/core/OPLowPassFilter.hpp, verbatim formula -----------------------
+struct OnePoleLowPass
+{
+    static constexpr float kMaxCutoff = 0.499f;
+
+    float alpha = 0.0f;
+    float output = 0.0f;
+
+    float Process(float input)
+    {
+        output = alpha * input + (1.0f - alpha) * output;
+        return output;
+    }
+
+    void SetAlphaFromNatFreq(float cyclesPerSample)
+    {
+        cyclesPerSample = std::min(kMaxCutoff, cyclesPerSample);
+        assert(cyclesPerSample > 0.0f);
+        constexpr float kTwoPi = 6.28318530717958647692f;
+        alpha = 1.0f - std::exp(-kTwoPi * cyclesPerSample);
+    }
+};
+
+// -- src/core/BiquadSection.hpp:30-38 (Process only, Direct Form 1) -------
+struct BiquadDf1
+{
+    float b0 = 1.0f;
+    float b1 = 0.0f;
+    float b2 = 0.0f;
+    float a1 = 0.0f;
+    float a2 = 0.0f;
+    float x1 = 0.0f;
+    float x2 = 0.0f;
+    float y1 = 0.0f;
+    float y2 = 0.0f;
+
+    float Process(float input)
+    {
+        const float out = b0 * input + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+        x2 = x1;
+        x1 = input;
+        y2 = y1;
+        y1 = out;
+        return out;
+    }
+};
+
+}  // namespace synth_froggers::dsp

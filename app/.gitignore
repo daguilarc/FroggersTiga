@@ -1,0 +1,6 @@
+# Build output (object files, libsynth.a copies, and the linked binary) is
+# reproducible from source via `nice make -j2 all` and must never be
+# tracked — this repo already carries real pain from tracked build
+# artifacts under src/FroggersTiga/build/ (see tasks.md 12.4); do not repeat
+# it here.
+build/
