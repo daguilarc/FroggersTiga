@@ -437,6 +437,62 @@ TEST_CASE(drill_in_swaps_grid_in_place_scope_and_chrome_stay_put) {
     REQUIRE_TRUE(!rig.UIState().slots[0].showingModulationView.load());
 }
 
+// E.3 (design A7b, operator override 2026-07-29): "clicking on the page bank
+// for the page we are on is the way the user should always be able to get to
+// that page, even when they are in a modulation drilldown for a parameter on
+// that page." `FroggersAppCore::ProcessFrame`'s RequestBankSelect handling
+// used to guard the whole branch on `bankRequest != activeBankIx_`, making a
+// same-bank click while drilled in a complete no-op. Fixed by resetting the
+// drill-in (Back()-until-zero) when the requested bank equals the active
+// bank AND the drill-in level is above 0, while still doing nothing at all
+// when the requested bank equals the active bank and level is ALREADY 0 (the
+// pre-existing, still-desired no-op).
+TEST_CASE(clicking_the_active_bank_while_drilled_in_exits_to_the_top_level_grid) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("bank_select_exits_drilldown"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+    const std::size_t activeBank = rig.Application().ActiveBankIndex();
+    REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 0);
+
+    // Drill to level 2 on the active bank via the surface's own action
+    // routing -- same bridge (kEncoderPress -> ProcessFrame() ->
+    // FroggersModulationDrillIn::PressEncoder) as the drill-in-swap test
+    // above.
+    surface.DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kEncoderPress, "0"));
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 1);
+    surface.DispatchAction(synth::ui::Action::WithValue(
+        synth_froggers::FroggersActions::kEncoderPress,
+        std::to_string(static_cast<std::size_t>(synth_froggers::kModSlotVco1Audio))));
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 2);
+
+    // Click the SAME (already-active) bank button -- must exit the
+    // drilldown back to the top-level parameter grid, not no-op.
+    surface.DispatchAction(synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBankSelect,
+                                                          std::to_string(activeBank)));
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 0);
+    REQUIRE_TRUE(rig.Application().ActiveBankIndex() == activeBank);  // still the same bank, just exited
+
+    // Existing no-op MUST be preserved: clicking the same bank while ALREADY
+    // at level 0 must not disturb anything. There is no direct "was
+    // drillIn_ reconstructed" observable, so this checks every state this
+    // request path can touch: activeBankIx_, the drill-in's level, and its
+    // selected parameter (null at level 0 either way) all stay exactly as
+    // they were.
+    REQUIRE_TRUE(rig.Application().ActiveDrillIn().BankRef().SelectedParameter() == nullptr);
+    surface.DispatchAction(synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBankSelect,
+                                                          std::to_string(activeBank)));
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().ActiveBankIndex() == activeBank);
+    REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 0);
+    REQUIRE_TRUE(rig.Application().ActiveDrillIn().BankRef().SelectedParameter() == nullptr);
+}
+
 // --- 10.5: the encoder ring renders the fuegoized value, never rawKnobValue --
 
 // D9a (resolved decision 3): the ring matches Braid -- processed value only.

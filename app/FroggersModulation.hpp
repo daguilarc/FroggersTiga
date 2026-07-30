@@ -89,9 +89,14 @@
 // below is the app-side level counter (0 = parameter grid, 1 = level-1
 // mod-detail grid, 2 = level-2 depth grid) that refuses to forward a press
 // that would open a third level, and otherwise defers entirely to Bank's
-// native behavior (including `Deselect()`'s full-exit-from-any-level
-// semantics -- no one-level pop is implemented, matching the design's
-// resolved choice).
+// native behavior for PRESSES (including `Deselect()`'s own
+// full-exit-from-any-level semantics, unchanged and un-changeable -- it is
+// Sheaf's, not this app's). REVISED by E.2 (design A7a, operator override
+// 2026-07-29): `FroggersModulationDrillIn::Back()` no longer simply forwards
+// that raw `Deselect()` call for every level -- from level 2 it now
+// synthesizes a one-level pop app-side (`Deselect()` then re-press the
+// remembered level-1 encoder id), landing back on the level-1 view instead
+// of a full exit. See `Back()`'s own comment for the exact mechanism.
 //
 // ============================================================================
 // 6.7-6.11 -- randomize (design D14): Sheaf remains the only mutator
@@ -134,12 +139,15 @@
 #include "synth/NoiseWaveformVisualizer.hpp"
 #include "synth/ParameterModulation.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <utility>
+#include <vector>
 
 namespace synth_froggers {
 
@@ -164,14 +172,6 @@ enum FroggersModulatorSlot : std::size_t {
 };
 
 inline constexpr std::size_t kFroggersNumRandomShLanes = 5;  // sources 1-5; #6 is the GangedRandomLfo
-
-// The Target/Back cell is always physicalLayout.back() -- but see
-// FullPhysicalLayout()'s comment below for why that is NOT simply "encoder
-// 15" here: this bank's own topLevel_ is sparse (only 11 of 16 physical
-// positions are registered, D5a's deliberate sparse-grid), so a caller must
-// pass the BankSlot's FULL 16-wide physical layout explicitly.
-inline constexpr synth::PhysicalEncoderId kFroggersTargetBackEncoder =
-    static_cast<synth::PhysicalEncoderId>(kFroggersSlotsPerBank - 1);
 
 // 0.5 + 0.5*clamp(x,-1,1): the same renormalization apps/braid-4 uses for its
 // own bipolar audio/LFO modulation sources (Braid4Core.hpp:420-422), so a
@@ -689,6 +689,18 @@ public:
         if (selectedAfter == nullptr) {
             level_ = 0;
         } else if (selectedAfter != selectedBefore) {
+            // E.2 (design A7a, operator override 2026-07-29): remember the
+            // PARAMETER-GRID encoder id that opens the level-1 view, so
+            // Back() from level 2 can re-open the SAME level-1 parameter
+            // (Sheaf's Bank has no one-level pop of its own -- Deselect() is
+            // always a full exit -- so the app synthesizes one by
+            // Deselect()-then-re-press). `level_` is read here BEFORE the
+            // increment below, so this only fires on the 0->1 transition and
+            // is left untouched on the 1->2 transition, meaning it survives
+            // the level-2 round trip.
+            if (level_ == 0) {
+                level1Encoder_ = encoderId;
+            }
             level_ += 1;
         }
         // else: selection identity unchanged -- either a held modifier was
@@ -697,46 +709,68 @@ public:
         // an empty cell. Level stays exactly where it was either way.
     }
 
-    // task 6.4: "Back exits to the parameter grid from any level" -- native
-    // Deselect(), no one-level pop.
+    // task 6.4, REVISED by E.2 (design A7a, operator override 2026-07-29):
+    // "Back exits to the parameter grid from any level" is no longer true.
+    // From level 2, Back now pops exactly ONE level, landing back on the
+    // level-1 parameter that was open before the level-2 press: Sheaf's
+    // Bank::Deselect() is still a full, unconditional exit (no Sheaf change,
+    // no one-level pop added there), so the one-level pop is synthesized
+    // app-side by Deselect()-ing fully and then re-pressing the remembered
+    // level-1 encoder id (`level1Encoder_`, set by PressEncoder above).
+    // From level 1 (or level 0, where this is a no-op/unreachable), Back is
+    // unchanged: a full Deselect() straight to level 0.
     void Back() {
+        const bool wasLevelTwo = (level_ == 2);
         bank_->Deselect();
         level_ = 0;
+        if (wasLevelTwo) {
+            PressEncoder(level1Encoder_);  // re-open the level-1 view
+        }
     }
 
 private:
     synth::Bank* bank_;
     std::size_t level_ = 0;
+    // E.2 (design A7a): parameter-grid encoder id of the current/most-recent
+    // level-1 view; see PressEncoder's own comment for when it is set.
+    synth::PhysicalEncoderId level1Encoder_ = 0;
 };
 
 // ============================================================================
 // task 6.7-6.11 -- randomize (design D14)
 // ============================================================================
-// task 6.10 -- documenting the per-call randomize bias, for future
-// maintainers who want more or fewer depth changes per press:
-//
-// Every "randomize this parameter's depths" operation below (RandomizeAll,
-// RandomizePage, RandomizeBankLevel1Depths) ultimately routes through a held
-// Modifier::RandomMod press into Bank::HandlePress, which calls the private
-// Bank::RandomizeModulationDepths (src/ParameterModulation.cpp:2881-2913).
-// That function's own loop is:
+// E.1 (design A6, 2026-07-29) -- REVISED from task 6.10's original note
+// below, which documented a bug: every "randomize this parameter's depths"
+// operation used to route through a held Modifier::RandomMod press into
+// Bank::HandlePress, which calls the PRIVATE Bank::RandomizeModulationDepths
+// (src/ParameterModulation.cpp:2881-2913). That function's own loop --
 //     while (manager_->NextRandomCoin() < 0.5f) { ... one depth touched ... }
-// (:2894) -- a geometric distribution over the count of depths touched per
-// call: P(k) = 0.5^(k+1) for k = 0, 1, 2, ..., mean 1.0. This means a SINGLE
-// press typically changes only ~1 depth (and is a complete no-op, touching
-// zero depths, exactly 50% of the time) -- NOT "all 15" and not "a fixed
-// count."
+// (:2894) -- is a geometric distribution over the count of depths touched
+// STARTING AT ZERO: P(k) = 0.5^(k+1) for k = 0, 1, 2, ..., mean 1.0. A single
+// press typically changed only ~1 depth, and was a complete no-op exactly
+// 50% of the time. That constant is Sheaf's, private, and out of scope to
+// change upstream (src/ParameterModulation.cpp:2894).
 //
-// THIS CONSTANT (the 0.5 coin threshold) IS SHEAF'S, not this app's --
-// changing the per-call bias itself is an upstream change to
-// src/ParameterModulation.cpp:2894, out of scope for this app. The knob
-// this app DOES own is the TARGET-SET SELECTION: Randomize All's aggregate
-// reach comes from how many parameters it presses (61 for the parameter-
-// page case, task 6.8), not from how many depths each individual press
-// touches. A future maintainer who wants Randomize All to feel like "more"
-// or "fewer" changes should widen or narrow the set of parameters
-// RandomizeAll/RandomizeBankLevel1Depths iterates over -- not touch Sheaf's
-// coin-flip constant.
+// `detail::RandomizeParameterModulationDepths` below (used by all four call
+// sites: RandomizeBankLevel1Depths, RandomizePage's drill-in branch, and
+// both RandomizeAll drill-in branches) replaces this with an APP-SIDE count/
+// source selection -- design A6's weighted table (median 3, P(1)==P(>=5),
+// 10/30/30/20 for n=1..4, geometric r=0.7 tail for n=5..N) -- while Sheaf
+// still performs every actual write (`Parameter::EnsureModulationDepth` +
+// `Parameter::RandomizeVisibleValue`, the same two calls
+// `Bank::RandomizeModulationDepths` itself makes internally). This is design
+// D14's "app chooses the target set, Sheaf does every write" split, not a
+// violation of it -- see that function's own header comment for the full
+// derivation. NEVER a no-op (at least 1 connected source is always touched
+// when one exists), and never re-draws the same source twice (Sheaf's own
+// loop could; this one uses a partial Fisher-Yates over the connected set).
+//
+// The OTHER knob this app owns, unchanged by E.1: Randomize All's aggregate
+// reach also comes from how many PARAMETERS it presses (61 for the
+// parameter-page case, task 6.8) -- a future maintainer who wants Randomize
+// All to feel like "more" or "fewer" changes has two independent levers now
+// (the per-parameter count table above, or the parameter set
+// RandomizeAll/RandomizeBankLevel1Depths iterates over).
 struct FroggersRandomizeResult {
     // task 6.8: EnsureModulationDepthParameter's CanAllocate() failure must
     // surface as a detectable partial randomize, not fail silently. True
@@ -761,46 +795,117 @@ inline bool CapacityExhausted(const synth::ParameterGroup& group) {
     return !group.CanAllocate();
 }
 
+// E.1 (design A6) -- the shared count/source-selection helper used by all
+// four RandomMod dispatch sites in this file (RandomizeBankLevel1Depths,
+// RandomizePage's drill-in branch, and both RandomizeAll drill-in branches).
+// Chooses a COUNT of `parameter`'s connected modulation sources using A6's
+// exact distribution (median 3, P(1)==P(n>=5), weighted 10/30/30/20 for
+// n=1..4, geometric r=0.7 tail for n=5..N where N is the connected-source
+// count), draws that many DISTINCT sources (partial Fisher-Yates -- Sheaf's
+// own private Bank::RandomizeModulationDepths loop can independently redraw
+// the same source twice, which this does not reproduce, per A6's "two
+// properties Sheaf's loop has that the replacement should not inherit"), and
+// for each chosen source calls the exact same two public calls Sheaf's own
+// loop makes internally: `Parameter::EnsureModulationDepth` then
+// `Parameter::RandomizeVisibleValue` (ParameterModulation.cpp:2896-2911).
+// Sheaf performs every write; only the count and the source set are chosen
+// here (design D14's split). Does NOT dispatch through Bank::HandlePress at
+// all -- no press, no modifier-hold, no selection/level state touched -- so
+// callers do not need `parameter` to be the bank's currently selected/open
+// one.
+//
+// Returns true (a "partial" randomize, matching CapacityExhausted's meaning
+// everywhere else in this file) when storage was already exhausted before
+// this call, OR when `EnsureModulationDepth` returns null mid-loop (storage
+// ran out while this call was materializing depths) -- the same "stop and
+// report partial" convention `ApplyFroggersDefaultPatch`'s `applyDetent`
+// lambda already uses for the identical null-return case.
+inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager, synth::Parameter& parameter) {
+    synth::ParameterGroup& group = parameter.Group();
+    bool partial = CapacityExhausted(group);
+
+    // Built once per call (not cached across calls: `connected` changes at
+    // runtime, e.g. external-audio cabling) and reserved to the modulator
+    // count -- O(15), trivial even at Randomize All's 54 calls.
+    const std::span<const synth::ModulatorMetadata> metadata = group.GetModulators().Metadata();
+    std::vector<std::size_t> eligible;
+    eligible.reserve(metadata.size());
+    for (std::size_t modIx = 0; modIx < metadata.size(); ++modIx) {
+        if (metadata[modIx].connected) {
+            eligible.push_back(modIx);
+        }
+    }
+    if (eligible.empty()) {
+        return partial;
+    }
+
+    // Design A6's exact draw -- reproduced verbatim, not re-derived. Do NOT
+    // tune for the resulting mean (~3.1); A6 records that as a consequence,
+    // not a target, and rules out reshaping toward it. Do not break the
+    // deliberate 30/30 tie between n=2 and n=3 toward a single peak.
+    const float u = manager.NextRandomCoin();
+    std::size_t count;
+    if (u < 0.10f) {
+        count = 1;
+    } else if (u < 0.40f) {
+        count = 2;
+    } else if (u < 0.70f) {
+        count = 3;
+    } else if (u < 0.90f) {
+        count = 4;
+    } else {
+        count = 5;
+        while (count < eligible.size() && manager.NextRandomCoin() < 0.7f) {
+            ++count;
+        }
+    }
+    count = std::min(count, eligible.size());
+
+    // Partial Fisher-Yates over `eligible`: draws `count` DISTINCT source
+    // indices (see this function's header comment on why "distinct" matters
+    // here, unlike Sheaf's own loop).
+    for (std::size_t i = 0; i < count; ++i) {
+        const std::size_t remaining = eligible.size() - i;
+        const std::size_t pick = i + manager.NextRandomIndex(remaining);
+        std::swap(eligible[i], eligible[pick]);
+
+        synth::Parameter* depth = parameter.EnsureModulationDepth(eligible[i]);
+        if (depth == nullptr) {
+            partial = true;
+            break;  // storage exhausted mid-call -- partial, not a silent short-count.
+        }
+        depth->RandomizeVisibleValue(manager.Scene(), manager.NextRandomValue());
+    }
+    return partial;
+}
+
 // Presses `encoderId` directly on `bank` (bypassing any BankSlot -- confirmed
 // safe: Bank::HandlePress/FindVisibleCell/topLevel_/visible_ are entirely
 // Bank-owned state, with no dependency on whether this Bank is the slot's
-// currently *selected* one) while `modifier` is held, then clears it. Used
-// for both value-randomize (Modifier::Random) and depth-randomize
-// (Modifier::RandomMod) single-cell presses. Calling this directly on a
-// `Bank&` (rather than through a level-tracking FroggersModulationDrillIn)
-// is safe here specifically because a held modifier makes
-// Bank::HandlePress's modifier branch (ParameterModulation.cpp:2633-2642)
-// return before ever touching `selected_`/showing-modulation state, so no
-// level bookkeeping can be disturbed by these presses.
-inline void PressBankWithModifier(synth::ParameterManager& manager, synth::Bank& bank,
-                                  synth::PhysicalEncoderId encoderId, synth::Modifier modifier) {
-    if (modifier == synth::Modifier::Random) {
-        manager.SetRandomHeld(true);
-    } else if (modifier == synth::Modifier::RandomMod) {
-        manager.SetRandomModHeld(true);
-    }
+// currently *selected* one) while `Modifier::Random` is held, then clears
+// it -- i.e. a single-cell VALUE randomize. Narrowed from a generic
+// `Modifier` parameter (E.1, design A6): depth-randomize
+// (`Modifier::RandomMod`) no longer routes through a press at all --
+// `RandomizeParameterModulationDepths` above is called directly on the
+// target `Parameter&` instead -- so a parameter accepting a modifier this
+// function never receives would itself have been misleading. Calling this
+// directly on a `Bank&` (rather than through a level-tracking
+// FroggersModulationDrillIn) is safe here specifically because a held
+// modifier makes Bank::HandlePress's modifier branch
+// (ParameterModulation.cpp:2633-2642) return before ever touching
+// `selected_`/showing-modulation state, so no level bookkeeping can be
+// disturbed by these presses.
+inline void PressBankWithRandomValue(synth::ParameterManager& manager, synth::Bank& bank,
+                                     synth::PhysicalEncoderId encoderId) {
+    manager.SetRandomHeld(true);
     bank.HandlePress(encoderId, FullPhysicalLayout(bank));
     manager.SetRandomHeld(false);
-    manager.SetRandomModHeld(false);
-}
-
-// Same as PressBankWithModifier, but dispatched through a drill-in's OWN
-// bound bank (used for the level-1/2 cases below, where the press is the
-// Target/Back cell of whichever view is currently open).
-inline void PressWithModifier(synth::ParameterManager& manager, FroggersModulationDrillIn& drillIn,
-                              synth::PhysicalEncoderId encoderId, synth::Modifier modifier) {
-    PressBankWithModifier(manager, drillIn.BankRef(), encoderId, modifier);
-    // PressBankWithModifier calls Bank::HandlePress directly rather than
-    // drillIn.PressEncoder -- for a held-modifier press this is equivalent
-    // (see PressBankWithModifier's comment: selected_ never changes), and
-    // going through the raw Bank& keeps this one helper shared by both the
-    // per-bank (Bank&) and per-view (drill-in) callers below.
 }
 
 // Randomizes one bank's 9 page-parameter values plus its Crispy (encoder 14)
 // -- NEVER Crunchy (encoder 15) -- matching D14's "include per-bank Crispy,
 // exclude global Crunchy" rule shared by Randomize All and Randomize Page's
-// parameter-page cases. Presses `bank` directly (see PressBankWithModifier);
+// parameter-page cases. Presses `bank` directly (see PressBankWithRandomValue);
 // no level state is touched or required.
 // `includeCrispy` (operator decision 2026-07-29) exists because the two
 // callers must differ on it:
@@ -814,24 +919,31 @@ inline void PressWithModifier(synth::ParameterManager& manager, FroggersModulati
 inline void RandomizeBankValues(synth::ParameterManager& manager, synth::Bank& bank,
                                 bool includeCrispy) {
     for (synth::PhysicalEncoderId e = 0; e < kFroggersParamsPerBank; ++e) {
-        PressBankWithModifier(manager, bank, e, synth::Modifier::Random);
+        PressBankWithRandomValue(manager, bank, e);
     }
     if (includeCrispy) {
-        PressBankWithModifier(manager, bank, kFroggersCrispySlot, synth::Modifier::Random);
+        PressBankWithRandomValue(manager, bank, kFroggersCrispySlot);
     }
 }
 
 // Randomizes one bank's 9 page parameters' + Crispy's LEVEL-1 depths --
-// again never Crunchy. `group` is checked for exhaustion (task 6.8) BEFORE
-// each press that could need to materialize a new depth parameter -- every
-// parameter here shares the SAME group (FroggersParameterModel's one mono
-// ParameterGroup), so this one group reference covers all of them.
-inline bool RandomizeBankLevel1Depths(synth::ParameterManager& manager, synth::Bank& bank,
-                                      synth::ParameterGroup& group) {
+// again never Crunchy.
+// E.1 (design A6): no longer presses through Bank::HandlePress at all --
+// `bank.VisibleParameter(paramIx)` reads the top-level parameter directly
+// (this bank is never drilled into here, so `visible_ == topLevel_`, per
+// PressBankWithRandomValue's own header comment on Bank-owned state), and
+// RandomizeParameterModulationDepths is called on it directly (it derives
+// the parameter's group itself via `parameter.Group()`, which is every page
+// parameter's SAME group -- FroggersParameterModel's one mono
+// ParameterGroup -- so no separate group parameter is needed here anymore).
+inline bool RandomizeBankLevel1Depths(synth::ParameterManager& manager, synth::Bank& bank) {
     bool partial = false;
     for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
-        partial = CapacityExhausted(group) || partial;
-        PressBankWithModifier(manager, bank, static_cast<synth::PhysicalEncoderId>(paramIx), synth::Modifier::RandomMod);
+        synth::Parameter* param = bank.VisibleParameter(static_cast<synth::PhysicalEncoderId>(paramIx));
+        if (param == nullptr) {
+            continue;  // defensive: every page-parameter slot is always registered in practice.
+        }
+        partial = RandomizeParameterModulationDepths(manager, *param) || partial;
     }
     // Crispy's DEPTHS are excluded here for the same reason its value is
     // (operator 2026-07-29): this function runs once per bank from Randomize
@@ -846,10 +958,10 @@ inline bool RandomizeBankLevel1Depths(synth::ParameterManager& manager, synth::B
 // task 6.9: Randomize Page -- "randomize exactly what is displayed."
 //   - parameter page (drillIn.Level()==0): this bank's 9 values + Crispy,
 //     excluding Crunchy; no depths.
-//   - level-1 grid (Level()==1): one RandomizeModulationDepths call on the
-//     selected parameter (the L1 parameter's own 15 depths).
-//   - level-2 grid (Level()==2): one RandomizeModulationDepths call on the
-//     selected (depth) parameter's own 15 depths.
+//   - level-1 grid (Level()==1): one RandomizeParameterModulationDepths call
+//     on the selected parameter (the L1 parameter's own 15 depths).
+//   - level-2 grid (Level()==2): one RandomizeParameterModulationDepths call
+//     on the selected (depth) parameter's own 15 depths.
 inline FroggersRandomizeResult RandomizePage(synth::ParameterManager& manager, FroggersModulationDrillIn& drillIn) {
     if (drillIn.Level() == 0) {
         // Randomize Page: this page's own Crispy IS included -- see the flag's
@@ -857,11 +969,12 @@ inline FroggersRandomizeResult RandomizePage(synth::ParameterManager& manager, F
         detail::RandomizeBankValues(manager, drillIn.BankRef(), /*includeCrispy=*/true);
         return {};
     }
-    // Level 1 or 2: exactly one RandomizeModulationDepths call on whichever
-    // parameter is currently selected, via the Target/Back cell (encoder 15).
-    synth::ParameterGroup& group = drillIn.BankRef().SelectedParameter()->Group();
-    const bool partial = detail::CapacityExhausted(group);
-    detail::PressWithModifier(manager, drillIn, kFroggersTargetBackEncoder, synth::Modifier::RandomMod);
+    // Level 1 or 2: one RandomizeParameterModulationDepths call (design A6's
+    // count/source-selection helper) on whichever parameter is currently
+    // selected. E.1: no longer a Target/Back-cell press -- the helper is
+    // called on the selected parameter directly.
+    synth::Parameter& selected = *drillIn.BankRef().SelectedParameter();
+    const bool partial = detail::RandomizeParameterModulationDepths(manager, selected);
     return {partial};
 }
 
@@ -869,7 +982,7 @@ inline FroggersRandomizeResult RandomizePage(synth::ParameterManager& manager, F
 //   - parameter page (Level()==0): every top-level parameter ACROSS ALL SIX
 //     BANKS -- value + level-1 depths, Crispy included, Crunchy excluded.
 //     Never descends to level 2. Each bank is pressed directly via its own
-//     `Bank&` (PressBankWithModifier), independent of which bank the
+//     `Bank&` (PressBankWithRandomValue), independent of which bank the
 //     BankSlot currently displays, so the active/displayed bank is left
 //     completely undisturbed by this global operation.
 //   - level-1 grid (Level()==1): that ONE parameter's 15 depths (as
@@ -886,23 +999,25 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
             synth::Bank& bank = model.BankAt(bankId);
             // Randomize All: Crispy EXCLUDED on every bank (operator 2026-07-29).
             detail::RandomizeBankValues(manager, bank, /*includeCrispy=*/false);
-            partial = detail::RandomizeBankLevel1Depths(manager, bank, model.Group()) || partial;
+            partial = detail::RandomizeBankLevel1Depths(manager, bank) || partial;
         }
         return {partial};
     }
 
     if (drillIn.Level() == 1) {
         synth::Parameter& originalParam = *drillIn.BankRef().SelectedParameter();
-        synth::ParameterGroup& group = originalParam.Group();
 
         // Step 1: the L1 parameter's own 15 depths (same op RandomizePage
-        // does at level 1) -- target/back + RandomMod, stays at level 1.
-        bool partial = detail::CapacityExhausted(group);
-        detail::PressWithModifier(manager, drillIn, kFroggersTargetBackEncoder, synth::Modifier::RandomMod);
+        // does at level 1). E.1: RandomizeParameterModulationDepths is
+        // called directly on originalParam -- no press, level stays at 1.
+        bool partial = detail::RandomizeParameterModulationDepths(manager, originalParam);
 
-        // Step 2: find originalParam's own encoder id in the PARAMETER GRID
-        // (needed to re-enter its L1 view after each level-2 excursion
-        // below, since Deselect() always exits fully -- no one-level pop).
+        // Step 2: find originalParam's own encoder id in the PARAMETER GRID.
+        // Level() is 1 on entry to this branch, so this Back() is still the
+        // unchanged (E.2) full exit to level 0 -- needed here regardless,
+        // since the PARAMETER GRID's own encoder layout (what this loop
+        // below scans) only exists at level 0, not inside originalParam's
+        // L1 view.
         drillIn.Back();
         synth::PhysicalEncoderId originalEncoderId = 0;
         for (synth::PhysicalEncoderId e = 0; e < kFroggersSlotsPerBank; ++e) {
@@ -924,10 +1039,24 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
                 continue;  // not connected, or step 1 already hit CanAllocate()==false
             }
             drillIn.PressEncoder(static_cast<synth::PhysicalEncoderId>(modIx));  // -> level 2
-            partial = detail::CapacityExhausted(group) || partial;
-            detail::PressWithModifier(manager, drillIn, kFroggersTargetBackEncoder, synth::Modifier::RandomMod);
-            drillIn.Back();                        // -> parameter grid (full exit)
-            drillIn.PressEncoder(originalEncoderId);  // reopen L1 view for the next iteration
+            // E.1: RandomizeParameterModulationDepths on depthParam directly
+            // (design A6's count/source-selection helper) -- the PressEncoder
+            // above still does its usual eager view-open materialization of
+            // ALL of depthParam's own connected sub-depths (Bank::OpenModulationView,
+            // unrelated to randomize selection), matching the pre-existing
+            // 15+15*15=240 ceiling this comment block already describes.
+            partial = detail::RandomizeParameterModulationDepths(manager, *depthParam) || partial;
+            // E.2 (design A7a): Back() from level 2 now pops to level 1 on
+            // its own, re-opening originalParam's L1 view via the SAME
+            // remembered `level1Encoder_` this loop set at Step 2 above (it
+            // survives the level-2 excursion by construction -- PressEncoder
+            // only overwrites it on a 0->1 transition, never on 1->2). A
+            // second manual `PressEncoder(originalEncoderId)` here would now
+            // be a stray press INSIDE the just-reopened L1 view (wrong grid
+            // -- that view's cells are modulation sources, not top-level
+            // parameters), so it is no longer needed and has been removed;
+            // this single Back() call is both the exit and the reopen.
+            drillIn.Back();
         }
         drillIn.Back();
         return {partial};

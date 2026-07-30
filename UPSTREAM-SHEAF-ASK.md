@@ -12,6 +12,28 @@ the features below, so everything here is an ask rather than a patch we carry.
 Items 1 and 2 block us. Items 3 and 4 are general Sheaf UX bugs that affect Braid 4
 and the Miniapp identically — we hit them, but they are not ours.
 
+## SENT STATUS (track this — not tracking it caused a duplicate-numbering mixup)
+
+| Item | Topic | Sent to jvictor0? |
+|---|---|---|
+| 1 | Plain-click dispatch for `Draw` nodes | **sent** |
+| 2 | `DrawCommand::Image` | **sent** |
+| 3 | Selected buttons invert background, not text | **sent** |
+| 4 | `AudioConfigPage` dropdowns unlabelled | **sent** |
+| 5 | `Slider` always shows a numeric text box | **sent** |
+| 6 | `Slider` labels never drawn | **sent** |
+| 7 | Unlabelled percentage in runtime chrome | **sent** |
+| 8 | Can't tell input-channel-exists from user-routed | **sent** |
+| 9 | Parameter timing silently wrong off 48 kHz | **sent** |
+| 10 | `RandomizeModulationDepths` draws same source twice | **sent** |
+| 11 | No one-level pop of a modulation drill-in | **sent** |
+
+**All 11 items have now been sent (2026-07-29).** Email numbering differs from this file's numbering. The first email sent covered file items
+9, 10, 11, 8 as its own items 1-4. The second email (`upstream-email-jvictor0-2-draft.md`) covers
+file items 6, 5, 3, 7 as items **5-8**, continuing the sequence he has already seen. File items 1,
+2 and 4 were sent by Diego outside those two emails. When adding
+a new item here, give it the next FILE number and note separately which email carried it.
+
 ---
 
 ## 1. Plain-click dispatch for `Draw` nodes — **the code already exists, on a branch**
@@ -222,6 +244,71 @@ restart. Full write-up in `upstream-email-external-audio-draft.md`.
 
 Not urgent for us. Flagged because any app doing external-audio modulation on a laptop hits this
 identically, and the failure is quiet — the sources look connected, they are just wired to noise.
+
+## 9. Parameter timing is silently wrong unless an app knows to call one method
+
+**This is the one we'd most like you to look at** — it is a silent-wrongness footgun, not a
+missing feature, and we only found it by accident.
+
+`ParameterConfig`'s smoothing constants are defined against a **48 kHz reference**:
+`kDefaultProcessLiteAlpha` is commented "1 kHz one-pole cutoff at 48 kHz",
+`kDefaultUiDisplayCenterAlpha` "about 10 Hz at 48 kHz"
+(`include/synth/ParameterModulation.hpp:170-173`), and `ParameterConfig` initialises to exactly
+those values (`:199-202`).
+
+`ParameterGroup::ConfigureProcessingTiming` (`src/ParameterModulation.cpp:859-865`) is the only
+thing that replaces them, and **nothing in Sheaf calls it for the app.** Grepping the tree, the
+only callers are `apps/braid-4/Braid4Core.hpp:218-220`, your own tests, and the definition. So an
+app that does not know to call it runs knob glide, modulation-depth smoothing and UI-display slew
+at the wrong real-time rate at any host rate other than 48 kHz — ~9% off at 44.1 kHz, **2x off at
+96 kHz**, 4x at 192 kHz.
+
+We shipped that bug for months. Nothing surfaced it: no warning, no assert, and it sounds
+plausible-but-slightly-off rather than broken. We only caught it by running a differential sweep of
+every Sheaf API Braid 4 calls against every one we call, specifically hunting for dropped call
+sites — i.e. by methodology, not by noticing.
+
+**The ask:** have `Prepare()` (or whatever already knows the prepared sample rate) apply the
+conversion by default, so the constants mean what their comments say at any rate.
+`ConfigureProcessingTiming` would remain for apps wanting something custom — including Braid 4,
+which converts against its own oversampled internal rate rather than the host rate, so the default
+must not fight that. Failing that, an assert or a log line when a group is processed at a rate it
+was never configured for would have saved us entirely.
+
+## 10. `Bank::RandomizeModulationDepths` can draw the same source twice
+
+Small, and separable from taste.
+
+```cpp
+while (manager_->NextRandomCoin() < 0.5f) {
+    std::size_t ordinal = manager_->NextRandomIndex(connectedCount);
+    ...
+}
+```
+(`src/ParameterModulation.cpp:2894-2895`)
+
+Each iteration draws an ordinal independently with no exclusion, so a loop that runs three times
+can land on the same source twice and randomize it twice. The effective number of sources touched
+is therefore lower than the nominal count, in a way that is invisible from outside. A partial
+Fisher-Yates over the connected set, or just rejecting a repeat, would fix it.
+
+**Separately, and NOT an ask:** the same loop's count distribution is geometric from **zero** —
+`P(0) = 50%`, mean 1 — so a single press does nothing half the time. That is very visible on a
+per-parameter randomize button. We are overriding the distribution app-side rather than asking you
+to change it, because the right shape is a taste call and ours (median 3, tail out to the full
+source count) is unlikely to be yours. Mentioning it only so the behaviour is on your radar if
+other apps report the same "button does nothing" symptom.
+
+## 11. No way to pop one level of a modulation drill-in
+
+`Bank` has no level concept — one `Parameter* selected_` plus a bool derived from it — and
+`Deselect()` is a full exit from any depth. There is no "go up one level".
+
+Our operator drills parameter -> modulation source -> depth, and expects Back to step back one
+level; today it drops them all the way to the parameter grid. We can work around it app-side (track
+the level-1 parameter, `Deselect()`, then re-open it), so this is **not blocking** — but a native
+one-level pop would be less fragile than an app re-deriving the intermediate state, and any app
+with multi-level drill-in will want it.
 
 ## What we are NOT asking for
 

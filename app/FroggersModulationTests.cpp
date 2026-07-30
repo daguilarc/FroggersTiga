@@ -20,6 +20,7 @@
 #error "Froggers modulation tests must not see JUCE headers"
 #endif
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -226,23 +227,46 @@ TEST_CASE(third_level_drill_in_is_refused) {
     REQUIRE_TRUE(drillIn.BankRef().SelectedParameter() == levelTwoSelected);  // selection unchanged
 }
 
-TEST_CASE(back_exits_to_parameter_grid_from_any_level) {
+TEST_CASE(back_exits_to_parameter_grid_from_level_one) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);
 
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
 
-    // From level 1.
     drillIn.PressEncoder(0);
     REQUIRE_TRUE(drillIn.Level() == 1);
     drillIn.Back();
     REQUIRE_TRUE(drillIn.Level() == 0);
     REQUIRE_TRUE(!drillIn.BankRef().ShowingModulation());
+}
 
-    // From level 2 -- still a full exit, no one-level pop.
-    drillIn.PressEncoder(0);
-    drillIn.PressEncoder(static_cast<synth::PhysicalEncoderId>(kModSlotVco1Audio));
+// E.2 (design A7a, operator override 2026-07-29): REVISED from this file's
+// old "back exits to the parameter grid from any level" claim, which the
+// operator has now overruled for level 2 specifically -- from level 2, Back
+// must step to level 1 (the level-1 parameter's own modulation-source view),
+// landing on the SAME parameter that was open before the level-2 press, not
+// a full exit to the parameter grid. A second Back() from that level-1 state
+// still goes all the way to level 0 (level 1's Back is unchanged).
+TEST_CASE(back_from_level_two_returns_to_the_same_level_one_parameter_then_back_again_exits_to_grid) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/true);
+
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+
+    drillIn.PressEncoder(0);  // -> level 1, Reverb param 0
+    REQUIRE_TRUE(drillIn.Level() == 1);
+    synth::Parameter* const levelOneParam = drillIn.BankRef().SelectedParameter();
+    REQUIRE_TRUE(levelOneParam != nullptr);
+
+    drillIn.PressEncoder(static_cast<synth::PhysicalEncoderId>(kModSlotVco1Audio));  // -> level 2
     REQUIRE_TRUE(drillIn.Level() == 2);
+
+    drillIn.Back();
+    REQUIRE_TRUE(drillIn.Level() == 1);
+    // Identity check, not just "some" level-1 parameter: the exact same
+    // Parameter* that was selected before the level-2 press.
+    REQUIRE_TRUE(drillIn.BankRef().SelectedParameter() == levelOneParam);
+
     drillIn.Back();
     REQUIRE_TRUE(drillIn.Level() == 0);
     REQUIRE_TRUE(!drillIn.BankRef().ShowingModulation());
@@ -472,6 +496,149 @@ TEST_CASE(randomize_page_on_mod_detail_grid_changes_only_that_parameters_own_dep
     for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
         REQUIRE_TRUE(sibling.ModulationDepthParameter(modIx) == nullptr);
     }
+}
+
+// ============================================================================
+// E.1 (design A6) -- randomize-depth count distribution
+// ============================================================================
+// Sheaf's own private Bank::RandomizeModulationDepths coin loop is geometric
+// FROM ZERO (P(0)=50%), so a single RandomizePage call at drill-in level 1/2
+// used to be a no-op half the time. detail::RandomizeParameterModulationDepths
+// (FroggersModulation.hpp) replaces the count/source selection app-side
+// (design D14's split -- Sheaf still performs every write). All three
+// properties below are statistical, not single-sample: a probability
+// distribution cannot be verified from one draw.
+
+TEST_CASE(randomize_page_mod_detail_is_never_a_no_op_across_500_trials) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/true);  // 15 connected sources
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+    drillIn.PressEncoder(0);  // -> level 1; eagerly materializes all 15 depth cells (Bank::OpenModulationView)
+    synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
+
+    constexpr int kTrials = 500;
+    for (int trial = 0; trial < kTrials; ++trial) {
+        std::array<float, FroggersParameterModel::kNumModulators> before{};
+        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+            synth::Parameter* depth = focused.ModulationDepthParameter(modIx);
+            before[modIx] = depth != nullptr ? depth->SceneCenter(0) : 0.0f;
+        }
+        RandomizePage(fx.manager, drillIn);
+        // `ParameterManager::ComputeAllParameters()` (ParameterModulation.cpp:3165-3173):
+        // hard-syncs every registered parameter's targetCenter_ to its
+        // current SceneCenter (smoothTargetCenter=false at ComputeAtDepth,
+        // :2201-2213). Modulation-depth parameters are NOT visited by the
+        // per-sample audio loop (ParameterGroup::ProcessSamplePhase1 walks
+        // only topLevelParameters_), so in the real app countless audio
+        // samples settle a TOP-LEVEL parameter's targetCenter_ between any
+        // two UI presses, but a DEPTH parameter's targetCenter_ only ever
+        // moves via its own local (smoothed, targetCenterAlpha-slewed)
+        // Compute() call inside RandomizeVisibleValue itself. Hammering
+        // RandomizePage on the same parameter hundreds of times with zero
+        // settling in between (this loop) starves that smoothing of the
+        // convergence real usage gets for free, which can occasionally walk
+        // a depth's SceneCenter to a range boundary and leave it stuck
+        // there for one draw -- a pre-existing Sheaf smoothing property of
+        // repeatedly-randomized depth parameters, unrelated to and not
+        // introduced by this helper (confirmed by reproducing it with a
+        // fixed-seed trace: FroggersModulation.hpp's
+        // RandomizeParameterModulationDepths always drew a fresh distinct
+        // value; ComputeAtDepth's un-synced smoothing accumulated the
+        // discrepancy). Calling this here stands in for that real-app
+        // settling between presses.
+        fx.manager.ComputeAllParameters();
+        bool anyChanged = false;
+        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+            synth::Parameter* depth = focused.ModulationDepthParameter(modIx);
+            if (depth != nullptr && depth->SceneCenter(0) != before[modIx]) {
+                anyChanged = true;
+            }
+        }
+        // ZERO no-ops across all 500 trials -- this is the exact bug A6
+        // reports (Sheaf's coin loop was a complete no-op 50% of the time).
+        REQUIRE_TRUE(anyChanged);
+    }
+}
+
+TEST_CASE(randomize_depth_helper_draws_distinct_sources_even_from_an_adversarial_index_feed) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/true);
+    // Shrink the eligible set to exactly 5 (modulators 0-4) so it is fully
+    // enumerable -- disconnect everything else. ModulatorMetadata::connected
+    // is a public field (Modulators::Metadata(modIx) returns a mutable ref).
+    for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+        fx.model.Group().GetModulators().Metadata(modIx).connected = (modIx < 5);
+    }
+    synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
+
+    // Force count = 4 (a single NextRandomCoin() landing in the [0.70,0.90)
+    // bucket) and feed an ADVERSARIAL NextRandomIndex that always returns the
+    // LAST valid index of whatever range it's asked -- a "draw with
+    // replacement, no exclusion" loop (Sheaf's own private
+    // Bank::RandomizeModulationDepths, design A6's "two properties... the
+    // replacement should not inherit") would pick a fixed relative position
+    // on every one of its independent draws under a feed like this; a
+    // correct partial Fisher-Yates cannot, because each pick's search window
+    // shrinks and is offset by the picks already made, so it is forced to
+    // exercise real swaps here rather than degenerating to a no-op permutation.
+    fx.manager.SetRandomSource(
+        []() { return 0.3f; },                                       // NextRandomValue (irrelevant to selection)
+        []() { return 0.75f; },                                      // NextRandomCoin -> count=4
+        [](std::size_t exclusiveMax) { return exclusiveMax - 1; });  // NextRandomIndex: always top-of-range
+
+    detail::RandomizeParameterModulationDepths(fx.manager, focused);
+
+    std::size_t touchedCount = 0;
+    for (std::size_t modIx = 0; modIx < 5; ++modIx) {
+        if (focused.ModulationDepthParameter(modIx) != nullptr) {
+            ++touchedCount;
+        }
+    }
+    // 4 DISTINCT sources materialized -- a double-draw would leave this < 4.
+    REQUIRE_TRUE(touchedCount == 4);
+}
+
+TEST_CASE(randomize_depth_helper_median_count_is_three_across_1000_trials) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/true);  // 15 connected sources -- N for the tail
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+    drillIn.PressEncoder(0);  // -> level 1; eagerly materializes all 15 depth cells
+    synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
+
+    constexpr int kTrials = 1000;
+    std::vector<int> counts;
+    counts.reserve(kTrials);
+    std::array<float, FroggersParameterModel::kNumModulators> before{};
+    for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+        before[modIx] = focused.ModulationDepthParameter(modIx)->SceneCenter(0);
+    }
+    for (int trial = 0; trial < kTrials; ++trial) {
+        RandomizePage(fx.manager, drillIn);
+        // See the "never a no-op" test above for why this is here: it
+        // hard-syncs depth parameters' targetCenter_ to their SceneCenter
+        // between presses, standing in for the settling real audio-thread
+        // ticks give top-level parameters for free.
+        fx.manager.ComputeAllParameters();
+        int changed = 0;
+        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+            const float now = focused.ModulationDepthParameter(modIx)->SceneCenter(0);
+            if (now != before[modIx]) {
+                ++changed;
+            }
+            before[modIx] = now;
+        }
+        counts.push_back(changed);
+    }
+
+    std::sort(counts.begin(), counts.end());
+    const int median = counts[counts.size() / 2];
+    // Design A6 specifies median 3 exactly (P(n<=2)=0.40 < 0.5 <= P(n<=3)=0.70).
+    // At 1000 trials the sample median should land on exactly 3 essentially
+    // every run; a tolerance of +-1 absorbs ordinary sampling noise near that
+    // 0.40/0.70 boundary without silently accepting a badly-shifted
+    // distribution (a regression back toward Sheaf's mean-1.0 shape would
+    // land the median at 0 or 1, well outside this band).
+    REQUIRE_TRUE(median >= 2 && median <= 4);
 }
 
 // ============================================================================

@@ -411,20 +411,42 @@ public:
         }
 
         const int bankRequest = pendingBankSelect_.exchange(-1, std::memory_order_acq_rel);
-        if (bankRequest >= 0 && static_cast<std::size_t>(bankRequest) < kFroggersBankCount &&
-            static_cast<std::size_t>(bankRequest) != activeBankIx_) {
-            activeBankIx_ = static_cast<std::size_t>(bankRequest);
-            parameters_.Slot().SelectBank(&parameters_.BankAt(activeBankIx_));
-            // `BankSlot::SelectBank` Deselect()s the OUTGOING bank
-            // (src/ParameterModulation.cpp:2924-2932 in External/Sheaf), so
-            // a freshly-constructed drillIn_ (level_ starts at 0) for the
-            // INCOMING bank is always consistent with that bank's real
-            // state: either it was never drilled into, or it was
-            // Deselect()ed the last time it was left active -- both are
-            // real level 0. This is why exactly one drillIn_ instance,
-            // reconstructed on every switch, never desyncs from six
-            // persistent per-bank instances would risk.
-            drillIn_.emplace(parameters_.BankAt(activeBankIx_));
+        if (bankRequest >= 0 && static_cast<std::size_t>(bankRequest) < kFroggersBankCount) {
+            if (static_cast<std::size_t>(bankRequest) != activeBankIx_) {
+                activeBankIx_ = static_cast<std::size_t>(bankRequest);
+                parameters_.Slot().SelectBank(&parameters_.BankAt(activeBankIx_));
+                // `BankSlot::SelectBank` Deselect()s the OUTGOING bank
+                // (src/ParameterModulation.cpp:2924-2932 in External/Sheaf), so
+                // a freshly-constructed drillIn_ (level_ starts at 0) for the
+                // INCOMING bank is always consistent with that bank's real
+                // state: either it was never drilled into, or it was
+                // Deselect()ed the last time it was left active -- both are
+                // real level 0. This is why exactly one drillIn_ instance,
+                // reconstructed on every switch, never desyncs from six
+                // persistent per-bank instances would risk.
+                drillIn_.emplace(parameters_.BankAt(activeBankIx_));
+            } else if (drillIn_->Level() > 0) {
+                // E.3 (design A7b, operator override 2026-07-29): clicking
+                // the bank you are ALREADY viewing must still be able to
+                // back a modulation drilldown all the way out to that bank's
+                // top-level parameter grid -- "clicking on the page bank for
+                // the page we are on is the way the user should always be
+                // able to get to that page, even when they are in a
+                // modulation drilldown for a parameter on that page."
+                // Back()-until-zero reaches the same "full Deselect(),
+                // level 0" state a genuine bank switch produces above,
+                // without reconstructing drillIn_ (same Bank&, no need) --
+                // bounded to at most 2 iterations (design D5's level cap).
+                // The `Level() > 0` guard is what keeps the pre-existing
+                // no-op preserved for a same-bank click that is ALREADY at
+                // level 0: nothing in this branch runs, so activeBankIx_/
+                // drillIn_ are left completely undisturbed, same as before
+                // this fix (rebuilding identical state would be wasted work
+                // for no behavior change).
+                while (drillIn_->Level() > 0) {
+                    drillIn_->Back();
+                }
+            }
         }
 
         const int pressRequest = pendingEncoderPress_.exchange(-1, std::memory_order_acq_rel);
