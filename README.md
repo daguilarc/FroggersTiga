@@ -1,6 +1,6 @@
-# FroggersTiga
+# Frogg3rs
 
-Frogg3rs: three loosely coupled oscillators with phase modulation and cross-coupling, polynomial drive / digital reshaping, comb filter and resonant bump, algorithmic reverb, CV modulation routing, and Marbles-style random modulation sources.
+Three loosely coupled oscillators with phase modulation and cross-coupling, polynomial drive / digital reshaping, comb filter and resonant bump, algorithmic reverb, CV modulation routing, and Marbles-style random modulation sources.
 
 **Current development is the Sheaf-based app under [`app/`](app/README.md)** — see
 [Frogg3rs — Sheaf app](#frogg3rs--sheaf-app-current-development) below. The original **Daisy Field**
