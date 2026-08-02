@@ -43,6 +43,15 @@ such.
 
 ### 3. Re-check all 11 items in `/UPSTREAM-SHEAF-ASK.md` against the new Sheaf
 
+**Assume every ask has a workaround behind it, including the ones not tabulated below.** The table
+lists the workarounds whose location is already known — it is a starting point, not the full set.
+Ask 7 (the unlabelled CPU percentage) and ask 6 (undrawn slider labels) are both the kind of thing
+an app can paper over, and there may be others nobody wrote down. So at **every** step: before
+implementing anything, check whether the workaround it depends on is still necessary, and delete it
+if not. A workaround left in place after its cause is fixed is worse than the original bug — it is
+invisible, it constrains the design around a limitation that no longer exists, and the next person
+has no way to tell it apart from a deliberate choice.
+
 For each ask that landed upstream, the app almost certainly carries a **workaround that should now
 be deleted**, not left in place:
 
@@ -53,7 +62,8 @@ be deleted**, not left in place:
 | 5 — slider numeric text box | Scene blend still shows a raw float the operator explicitly did not want. Spec `froggers-app-surface-layout` currently declares this **outside the app's control** — if it landed, amend that requirement back. |
 | 6 — slider labels never drawn | Every slider carries a separate adjacent `Label` node — two nodes to say one thing. `kSceneBlendLabel`/`kBpmLabel` exist only for this. |
 | 8 — input-channel vs user-routed | `kExternalAudioOptedIn = false` is hardcoded in `FroggersAppCore::ProcessBlock`, so the Audio config page **cannot re-enable external audio at all**. Deliberate, operator accepted the cost — but it is the workaround most worth undoing. |
-| 11 — one-level drill-in pop | `FroggersModulationDrillIn::Back()` synthesizes a pop by `Deselect()`-then-re-press using a remembered `level1Encoder_`. |
+| 11 — one-level drill-in pop | `FroggersModulationDrillIn::Back()` synthesizes a pop by `Deselect()`-then-re-press using a remembered `level1Encoder_`. Note this one is now **required behaviour**, not just a workaround — the operator wants the one-level pop regardless. If the framework gains a native pop, switch to it; do not remove the behaviour. |
+| 7 — unlabelled CPU percentage | No app-side workaround exists today (it is the framework's own chrome), but if it landed, check nothing in our surface duplicates or compensates for it. |
 
 ### 4. D.6 unblocks if ask 1 landed
 
@@ -68,6 +78,13 @@ only because positioned controls required `Draw` nodes, which were double-click.
 Several §B items are marked `[x]·` meaning **code landed, pixels unseen**. Do not close any visual
 item without the operator seeing it. `screencapture` works and the PNG is readable, so you can
 verify some of it yourself — but audio and voicing are the operator's call.
+
+### A spec that disagrees with shipped code is stale, not authoritative
+
+If you find the code and a requirement in conflict, **the shipped behaviour is probably right and
+the spec was never updated** — that is exactly what happened to three requirements in
+`froggers-modulation-slate`, fixed by the delta now in this change's `specs/`. Check the code and
+the operator's stated intent before assuming the spec wins. Then fix the spec.
 
 ### Supersede rather than patch
 

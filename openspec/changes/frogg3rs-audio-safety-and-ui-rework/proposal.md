@@ -64,10 +64,25 @@ exists so that anything unforeseen is attenuated instead of squared off.
 **5. The UI rework the operator specified** after seeing the running app: the scope band is
 grotesquely tall-and-narrow and must become at most a third of its current size and wider than
 tall; VCO traces become cyan / pink / yellow (the existing red/orange/yellow is unreadable with
-red-green colour blindness); Play/Stop return as visible controls using `▶`/`■` glyph labels on
-`Button` nodes — icons *and* single click, with no dependency on upstream; the scope stops
-animating while nothing is sounding; and the unrequested "(no effect while stopped)" BPM annotation
-is removed.
+red-green colour blindness); Play/Stop return as visible controls using `▶️`/`🟥` **emoji** glyph
+labels on `Button` nodes — icons *and* single click, with no dependency on upstream (`🟥` was chosen
+over a text glyph because an emoji carries its own colour, and `Node` has no colour field); the
+scope stops animating while nothing is sounding; and the unrequested "(no effect while stopped)"
+BPM annotation is removed.
+
+**5b. Modulation randomize and drill-in navigation** (added 2026-07-29/31, after the operator used
+the running build):
+   - **Randomize-depth count.** The framework's own draw is geometric from zero — half of all calls
+     touched nothing. Invisible inside a bank-wide randomize, but a single deliberate press on a
+     modulation page was a coin flip. The app now selects the count itself: never zero, **median 3**,
+     sharp falloff above 4, geometric tail reaching the full connected-source count, and distinct
+     sources within a call. The framework still performs every write.
+   - **Randomize All no longer touches local Crispy.** Randomizing it on all six banks is
+     effectively randomizing global Crunchy, which this app never randomizes. Randomize Page still
+     does its own page's Crispy.
+   - **Back from the second modulation level pops one level** instead of exiting to the parameter
+     grid, and **selecting the bank you are already viewing** now escapes a drilldown instead of
+     being a no-op.
 
 **6. Everything the predecessor finished is carried, not redone.** See `SUPERSESSION-RECORD.md`.
 
@@ -96,6 +111,10 @@ Each is falsifiable and names who checks it.
 5. **The scope band is wider than tall, at most a third of its former area**, traces cyan/pink/
    yellow, and flat when the instrument is silent. Confirmed by looking.
 6. **Play and Stop are visible glyph controls that respond to one click.** Confirmed by clicking.
+6b. **A randomize press always does something.** No modulation-depth randomize call affects zero
+   sources; the median count is 3.
+6c. **Back from the second modulation level returns to the first**, and clicking the active bank
+   escapes a drilldown. Confirmed by clicking.
 7. Frozen trees intact; `External/Sheaf` still `1940ddcb` and clean.
 8. **No task in this change is closed by the agent that implemented it if its spec says the
    operator must see or hear it.** The predecessor violated this and it is why the operator spent a
