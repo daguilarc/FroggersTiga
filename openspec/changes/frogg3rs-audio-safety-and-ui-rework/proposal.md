@@ -88,8 +88,10 @@ the running build):
 
 ## Out of scope
 
-- **`External/Sheaf` modifications.** Still pinned at `1940ddcb`. Items needing Sheaf changes go to
-  `UPSTREAM-SHEAF-ASK.md`.
+- **`External/Sheaf` modifications.** Pinned at **`77a3019e`** (bumped from `1940ddcb` on
+  2026-08-01, operator-approved; 424 upstream commits). We still do not patch Sheaf — items needing
+  Sheaf changes go to `UPSTREAM-SHEAF-ASK.md`, whose RE-CHECK section records which asks the bump
+  delivered.
 - **The frozen trees** `desktop-v2/ desktop/ src/ sim/ wasm/ vcv/ web/` stay byte-identical. Note
   this change alters `app/dsp/` ranges **only** — the frozen sources they were ported from are not
   touched, so "the port diverges from the frozen firmware" is now an intended, recorded property
@@ -115,7 +117,7 @@ Each is falsifiable and names who checks it.
    sources; the median count is 3.
 6c. **Back from the second modulation level returns to the first**, and clicking the active bank
    escapes a drilldown. Confirmed by clicking.
-7. Frozen trees intact; `External/Sheaf` still `1940ddcb` and clean.
+7. Frozen trees intact; `External/Sheaf` at `77a3019e`, clean, and unpatched.
 8. **No task in this change is closed by the agent that implemented it if its spec says the
    operator must see or hear it.** The predecessor violated this and it is why the operator spent a
    session testing unfinished work.

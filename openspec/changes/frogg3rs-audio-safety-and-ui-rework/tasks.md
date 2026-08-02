@@ -5,7 +5,8 @@
 - **Subagents: Sonnet or Haiku, never Opus.** Model set explicitly on every dispatch (OMNI §4, §15).
 - **`nice make -j2`, never higher** (8-core/16 GB). Launcher only via `./app/build-launcher.sh`.
 - **Build/test runs go through a subagent**, reporting counts and failure tails only (OMNI §16.1).
-- **`External/Sheaf` stays pinned at `1940ddcb` and clean.** Sheaf-side needs → `UPSTREAM-SHEAF-ASK.md`.
+- **`External/Sheaf` is pinned at `77a3019e` and stays clean** (bumped from `1940ddcb` 2026-08-01,
+  operator-approved). We do not patch Sheaf; Sheaf-side needs → `UPSTREAM-SHEAF-ASK.md`.
 - **Frozen trees stay byte-identical:** `desktop-v2/ desktop/ src/ sim/ wasm/ vcv/ web/`.
 - **No AI attribution on commits.**
 - **Code changes are sequential.** No parallel implementation dispatches (operator directive,

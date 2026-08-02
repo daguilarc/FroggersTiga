@@ -30,10 +30,11 @@ that to you. So everything in these artifacts describes the app as of pin `1940d
 for that pin only. **Treat every "blocked on upstream" claim as stale until you re-check it
 yourself.**
 
-### 1. Bump `External/Sheaf`
+### 1. Bump `External/Sheaf` — **DONE 2026-08-01, `1940ddcb` → `77a3019e`**
 
-Operator approval for the bump is already given. Record the new SHA in `proposal.md` (Out of scope
-still says "pinned at `1940ddcb`"), `tasks.md` §0, and the Traps section below.
+Operator approval was already given. The new SHA is recorded in `proposal.md` (Out of scope and
+success criterion 7), `tasks.md` §0, `UPSTREAM-SHEAF-ASK.md`, and the Traps section below. The
+submodule working tree is clean and unpatched.
 
 ### 2. Rebuild and run the suite before changing anything else
 
@@ -132,8 +133,12 @@ Do not invent work to fill this list.
 
 ## Traps
 
-- **`M External/Sheaf` in `git status` is expected** — the sanctioned gitlink pin bump. The
-  submodule working tree is clean. A previous agent misdiagnosed this as submodule dirt.
+- **`M External/Sheaf` in `git status` is expected** — the sanctioned gitlink pin bump to
+  `77a3019e`. The submodule working tree is clean. A previous agent misdiagnosed this as submodule
+  dirt. *(Audit note, 2026-08-01: this trap was **stale** when the audit read it — the earlier bump
+  it described had already been committed, so `git status` was clean and the warning described a
+  state that no longer existed. It is true again now, for the new bump. A trap that describes
+  transient working-tree state goes stale silently; date it or delete it once committed.)*
 - **Parity tests fail on purpose** where the DSP ranges diverge. Rewrite the pinned expectation and
   record the divergence; never restore a broken value to make a test pass.
 - **Build only via `./app/build-launcher.sh`** — it globs all headers; a hand-written list once

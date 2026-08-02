@@ -87,6 +87,7 @@
 #include "synth/Color.hpp"
 #include "synth/DspScope.hpp"
 #include "synth/MasterClock.hpp"
+#include "synth/PortableScopeVisualizer.hpp"
 #include "synth/PortableUI.hpp"
 #include "synth/PortableUIBuilders.hpp"
 

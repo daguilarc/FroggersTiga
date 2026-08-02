@@ -753,8 +753,10 @@ public:
         // is the only way to get a coloured transport glyph on a Button node.
         // Deliberately NO `variant` set -- a variant would recolour the text and
         // fight the emoji's own colour.
-        builder.Button(FroggersNodeIds::kPlay, "▶️", synth::ui::Action::Named(FroggersActions::kPlay));
-        builder.Button(FroggersNodeIds::kStop, "🟥", synth::ui::Action::Named(FroggersActions::kStop));
+        builder.Button(FroggersNodeIds::kPlay, "▶️", synth::ui::Action::Named(FroggersActions::kPlay),
+                       synth::ui::ControlStyle{});
+        builder.Button(FroggersNodeIds::kStop, "🟥", synth::ui::Action::Named(FroggersActions::kStop),
+                       synth::ui::ControlStyle{});
 
         // Task 10.2: the packet 7-9 VCO scope panel, finally placed. Exactly
         // one combined 3-layer ScopeVisualizer exists (see this file's
@@ -765,7 +767,7 @@ public:
         if (app_ != nullptr) {
             synth::ui::Visualizer& vcoScope = app_->VcoScopeVisualizer();
             vcoScope.SetBounds(scopeArea);
-            builder.Visualizer(FroggersNodeIds::kVcoScope, &vcoScope);
+            builder.Visualizer(FroggersNodeIds::kVcoScope, &vcoScope, synth::ui::ControlStyle{});
         }
 
         // Task 10.3/10.7/3.1/6.3: bank header -- direct-select bank buttons
@@ -804,7 +806,7 @@ public:
         // is `node.selected` for the active bank -- `Builder::Button`
         // exposes no way to set it (Task 6.3's own note) -- so
         // MarkSelectedBank() below does that one remaining post-Build() edit.
-        synth::ui::NodeTree tree = builder.Build();
+        synth::ui::NodeTree tree = builder.Build(root);
         WireDrawNodeActions(tree);
         MarkSelectedBank(tree);
         return tree;
@@ -848,7 +850,8 @@ private:
         const auto& layouts = FroggersBankLayouts();
         for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
             builder.Button(FroggersNodeIds::BankButton(bankIx), layouts[bankIx].name,
-                           synth::ui::Action::WithValue(FroggersActions::kBankSelect, std::to_string(bankIx)));
+                           synth::ui::Action::WithValue(FroggersActions::kBankSelect, std::to_string(bankIx)),
+                           synth::ui::ControlStyle{});
         }
         // Task 10.7 (design D11/D14): Randomize Page restores the
         // per-page/bank-header position desktop-v2 removed
@@ -856,7 +859,7 @@ private:
         // randomize control lives here; Randomize All never does (task
         // 10.2's own explicit constraint).
         builder.Button(FroggersNodeIds::kRandomizePage, "Randomize Page",
-                       synth::ui::Action::Named(FroggersActions::kRandomizePage));
+                       synth::ui::Action::Named(FroggersActions::kRandomizePage), synth::ui::ControlStyle{});
     }
 
     void AppendEncoderGrid(synth::ui::Builder& builder, synth::ui::Bounds gridArea) const {
@@ -898,7 +901,7 @@ private:
                 // with no visualizer-specific code above this generic
                 // "does this cell have a visualizer" branch.
                 visualizer->SetBounds(cellBounds);
-                builder.Visualizer(encoderId + ".visualizer", visualizer);
+                builder.Visualizer(encoderId + ".visualizer", visualizer, synth::ui::ControlStyle{});
             }
             // Change 2 REVERTED (operator 2026-07-27): encoder press is a
             // DOUBLE click again. The single-click version required a local
@@ -915,7 +918,9 @@ private:
                 encoderId,
                 cellBounds,
                 synth::ui::BuildEncoderDrawCommands(state, cellBounds),
-                synth::ui::Action::WithValue(FroggersActions::kEncoderDrag, FormatFroggersEncoderDrag(ix, 0.0f)));
+                synth::ui::Action::WithValue(FroggersActions::kEncoderDrag, FormatFroggersEncoderDrag(ix, 0.0f)),
+                std::nullopt,
+                synth::ui::ControlStyle{});
         }
     }
 
@@ -991,7 +996,7 @@ private:
         // Task 10.2/10.7: Randomize All -- the ONLY randomize control in the
         // chrome band (Randomize Page lives in the bank header, above).
         builder.Button(FroggersNodeIds::kRandomizeAll, "Randomize All",
-                       synth::ui::Action::Named(FroggersActions::kRandomizeAll));
+                       synth::ui::Action::Named(FroggersActions::kRandomizeAll), synth::ui::ControlStyle{});
 
         // Task 3.5 (operator 2026-07-28, design E3d): "Scene 1"/"Scene 2" --
         // relabelled from the old "S1"/"S2" -- are now a TOGGLE between the
@@ -1012,7 +1017,8 @@ private:
         // file already uses for kSceneBlend/kPlay/kStop.
         for (std::size_t sceneIx = 0; sceneIx < 2; ++sceneIx) {
             builder.Button(FroggersNodeIds::SceneButton(sceneIx), "Scene " + std::to_string(sceneIx + 1),
-                           synth::ui::Action::WithValue(FroggersActions::kSceneSelect, std::to_string(sceneIx)));
+                           synth::ui::Action::WithValue(FroggersActions::kSceneSelect, std::to_string(sceneIx)),
+                           synth::ui::ControlStyle{});
         }
         const float sceneBlend =
             context_ != nullptr && context_->uiState != nullptr
@@ -1046,9 +1052,9 @@ private:
         // `juce::Slider::setName()`, i.e. the accessible name JUCE/screen
         // readers see, so dropping it would be a (minor) accessibility
         // regression for no display benefit.
-        builder.Label(FroggersNodeIds::kSceneBlendLabel, "Scene blend");
+        builder.Label(FroggersNodeIds::kSceneBlendLabel, "Scene blend", synth::ui::ControlStyle{});
         builder.Slider(FroggersNodeIds::kSceneBlend, "Scene blend", sceneBlend, 0.0f, 1.0f, 0.001f,
-                       synth::ui::Action::Named(FroggersActions::kSceneBlend));
+                       synth::ui::Action::Named(FroggersActions::kSceneBlend), synth::ui::ControlStyle{});
 
         // Task 10.6 (design cited MasterClock.hpp:318/:321,
         // MasterClock.cpp:963-965/:1182): the BPM slider sits beside the
@@ -1061,7 +1067,8 @@ private:
         const double tempoBpm = app_ != nullptr ? app_->DisplayTempoBpm() : synth::MasterClock::kDefaultTempoBpm;
         const bool externallyClocked = app_ != nullptr && app_->TempoExternallyClocked();
         if (externallyClocked) {
-            builder.StatusText(FroggersNodeIds::kBpm, "BPM " + FormatFroggersBpm(tempoBpm) + " (external clock)");
+            builder.StatusText(FroggersNodeIds::kBpm, "BPM " + FormatFroggersBpm(tempoBpm) + " (external clock)",
+                               synth::ui::ControlStyle{});
         } else {
             // Task 3.6 (design E3e): the label conflict is settled -- the
             // control genuinely IS labelled "BPM" (this line, verified by
@@ -1103,8 +1110,8 @@ private:
             // pair reads as [label][slider] [slider][label] with the labels
             // on the outside rather than both crowding the middle.
             builder.Slider(FroggersNodeIds::kBpm, kBpmLabel, static_cast<float>(tempoBpm), 30.0f, 300.0f, 1.0f,
-                           synth::ui::Action::Named(FroggersActions::kBpm));
-            builder.Label(FroggersNodeIds::kBpmLabel, kBpmLabel);
+                           synth::ui::Action::Named(FroggersActions::kBpm), synth::ui::ControlStyle{});
+            builder.Label(FroggersNodeIds::kBpmLabel, kBpmLabel, synth::ui::ControlStyle{});
         }
     }
 

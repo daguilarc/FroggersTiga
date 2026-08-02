@@ -1,7 +1,8 @@
 # Upstream asks for Sheaf — for jvictor0, updated 2026-07-29
 
 Context: Frogg3rs is an out-of-tree Sheaf app (`daguilarc/frogg3rs`), built against
-`External/Sheaf` pinned at **`1940ddcb`** via the `EXTRA_APP_*` registration hook.
+`External/Sheaf` pinned at **`77a3019e`** via the `EXTRA_APP_*` registration hook. (Pinned at
+`1940ddcb` when items 1-11 below were written; bumped 2026-08-01 — see the RE-CHECK section.)
 
 **We are deliberately not forking Sheaf.** A local fork was tried on 2026-07-27 and
 reverted the same day: because the two commits existed only on one machine, the
@@ -38,10 +39,10 @@ a new item here, give it the next FILE number and note separately which email ca
 
 ## RE-CHECK against upstream `origin/main` = `77a3019e` (2026-08-01)
 
-424 commits past our pin `1940ddcb`, fetched and read — every verdict below is traced to the
-named file:line at `77a3019e`, per OMNI §1. The submodule pin is **not yet bumped**; this section
-records what a bump will deliver. Item write-ups below this section still describe the state at
-`1940ddcb` and are retained as the record of what was asked.
+424 commits past our old pin `1940ddcb`, fetched and read — every verdict below is traced to the
+named file:line at `77a3019e`, per OMNI §1. **The submodule pin was bumped to `77a3019e` on
+2026-08-01**, after this re-check and on the strength of it. Item write-ups below this section
+still describe the state at `1940ddcb` and are retained as the record of what was asked.
 
 | Item | Verdict at `77a3019e` | Evidence |
 |---|---|---|

@@ -893,9 +893,9 @@ TEST_CASE(play_and_stop_controls_exist_and_gate_the_transport) {
     REQUIRE_TRUE(stopNode->action.has_value() &&
                  stopNode->action->name == synth_froggers::FroggersActions::kStop);
     REQUIRE_TRUE(!stopNode->doubleClickAction.has_value());
-    // No variant on either: an emoji carries its own colour, and a variant
-    // would recolour the text and fight it (design.md A3e).
-    REQUIRE_TRUE(playNode->variant.empty() && stopNode->variant.empty());
+    // No carried textStyle on either: an emoji carries its own colour, and a
+    // textStyle override would recolour the glyphs and fight it (design.md A3e).
+    REQUIRE_TRUE(!playNode->textStyle.has_value() && !stopNode->textStyle.has_value());
 
     // Non-default patch (task 6.12's default patch is already applied at
     // Init()) + transport stopped (the rig's own default state) -> silent,
