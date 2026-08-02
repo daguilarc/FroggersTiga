@@ -4,3 +4,8 @@
 # artifacts under src/FroggersTiga/build/ (see tasks.md 12.4); do not repeat
 # it here.
 build/
+
+# Direct-launch (Frogg3rs) build output -- app/build-launcher.sh points
+# APP_BUILD_DIR here so it lands in our own tree instead of the
+# External/Sheaf submodule; reproducible from source, never tracked.
+build-launcher/

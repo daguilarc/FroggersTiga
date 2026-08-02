@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Bundle metadata for the direct-launch Frogg3rs app.
+     juce_build.mk:154 copies this file verbatim into
+     Frogg3rs.app/Contents/Info.plist -- there is no templating, so
+     CFBundleExecutable must match APP_NAME in app/build-launcher.sh exactly.
+     If they disagree, LaunchServices looks for a binary that is not there and
+     a Finder double-click fails while a direct exec of the binary still works,
+     which makes the breakage easy to miss. CFBundleIdentifier is deliberately
+     distinct from sheaf-patch's dev.sheaf.SheafPatch: two bundles sharing one
+     identifier let LaunchServices resolve the wrong app. -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleExecutable</key>
+  <string>Frogg3rs</string>
+  <key>CFBundleIdentifier</key>
+  <string>dev.sheaf.Frogg3rs</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>Frogg3rs</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>0.1</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+</dict>
+</plist>
