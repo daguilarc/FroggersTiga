@@ -37,11 +37,22 @@ still says "pinned at `1940ddcb`"), `tasks.md` §0, and the Traps section below.
 
 ### 2. Rebuild and run the suite before changing anything else
 
-`cd app && nice make -j2 test`, **foreground**. 156/156 across ten binaries is the pre-bump
-baseline. Anything that breaks is a Sheaf API change, not a regression in our work — diagnose it as
-such.
+`cd app && nice make -j2 test` — dispatched **through a subagent brief** (OMNI §16.1, tasks.md §0),
+with the build **foreground within that brief**, never backgrounded. 156/156 across ten binaries is
+the pre-bump baseline. Anything that breaks is a Sheaf API change, not a regression in our work —
+diagnose it as such. **Known breakage awaiting you** (traced 2026-08-01, see the re-check section
+in `/UPSTREAM-SHEAF-ASK.md`): `DrawCommand::Kind` members renamed/split, `Builder` control methods
+now take a `ControlStyle` parameter object, `Node::variant` retired, UI command buffer at
+version 2 with a publish-time protocol assertion.
 
 ### 3. Re-check all 11 items in `/UPSTREAM-SHEAF-ASK.md` against the new Sheaf
+
+**DONE 2026-08-01 — the re-check ran against `origin/main` = `77a3019e` (424 commits past the
+pin), before any bump.** Full per-item verdicts with file:line evidence are in the "RE-CHECK"
+section of `/UPSTREAM-SHEAF-ASK.md`; the Status column below summarizes them. **Landed: 1, 3
+(via the new per-node appearance contract), 4. Effectively addressed: 6 (via
+`ControlStyle::caption`). Still open: 2, 5, 7, 8, 9, 10, 11.** The workaround-deletion doctrine
+in this step still applies — what follows is now confirmed work, not conjecture.
 
 **Assume every ask has a workaround behind it, including the ones not tabulated below.** The table
 lists the workarounds whose location is already known — it is a starting point, not the full set.
@@ -55,17 +66,17 @@ has no way to tell it apart from a deliberate choice.
 For each ask that landed upstream, the app almost certainly carries a **workaround that should now
 be deleted**, not left in place:
 
-| Ask | Workaround to remove if it landed |
-|---|---|
-| 1 — plain-click on `Draw` nodes | Play/Stop are `Button` nodes with `▶️`/`🟥` emoji labels. `BuildPlayDrawCommands`/`BuildStopDrawCommands` were deliberately **kept in the file, unused**, precisely so they can be restored. Encoders are `DrawInteractive` + `doubleClickAction` and can finally become single-click. |
-| 3 — selected-button text colour / no `Node` colour field | Bank selection uses background-only inversion. A green Play glyph was unreachable, which is the only reason Stop is a red-square emoji instead of a coloured glyph. |
-| 5 — slider numeric text box | Scene blend still shows a raw float the operator explicitly did not want. Spec `froggers-app-surface-layout` currently declares this **outside the app's control** — if it landed, amend that requirement back. |
-| 6 — slider labels never drawn | Every slider carries a separate adjacent `Label` node — two nodes to say one thing. `kSceneBlendLabel`/`kBpmLabel` exist only for this. |
-| 8 — input-channel vs user-routed | `kExternalAudioOptedIn = false` is hardcoded in `FroggersAppCore::ProcessBlock`, so the Audio config page **cannot re-enable external audio at all**. Deliberate, operator accepted the cost — but it is the workaround most worth undoing. |
-| 11 — one-level drill-in pop | `FroggersModulationDrillIn::Back()` synthesizes a pop by `Deselect()`-then-re-press using a remembered `level1Encoder_`. Note this one is now **required behaviour**, not just a workaround — the operator wants the one-level pop regardless. If the framework gains a native pop, switch to it; do not remove the behaviour. |
-| 7 — unlabelled CPU percentage | No app-side workaround exists today (it is the framework's own chrome), but if it landed, check nothing in our surface duplicates or compensates for it. |
+| Ask | Status at `77a3019e` | Workaround to remove if it landed |
+|---|---|---|
+| 1 — plain-click on `Draw` nodes | **LANDED** | Play/Stop are `Button` nodes with `▶️`/`🟥` emoji labels. `BuildPlayDrawCommands`/`BuildStopDrawCommands` were deliberately **kept in the file, unused**, precisely so they can be restored. Encoders are `DrawInteractive` + `doubleClickAction` and can finally become single-click. Also delete the post-`Build()` `SetNodeAction` field-patch helper — `ControlStyle::action` replaces it. Our `froggers-fork` branch is superseded by upstream's own implementation; do not rebase it. |
+| 3 — selected-button text colour / no `Node` colour field | **LANDED** (per-node `color`/`textStyle` + `ControlStyle::selected`, not a `TextColourForNode` branch) | Bank selection uses background-only inversion. A green Play glyph was unreachable, which is the only reason Stop is a red-square emoji instead of a coloured glyph. |
+| 5 — slider numeric text box | not landed | Scene blend still shows a raw float the operator explicitly did not want. Spec `froggers-app-surface-layout` currently declares this **outside the app's control** — that declaration stays accurate. |
+| 6 — slider labels never drawn | not landed as asked — but `ControlStyle::caption` emits the adjacent label from the library | Every slider carries a separate adjacent `Label` node — two nodes to say one thing. `kSceneBlendLabel`/`kBpmLabel` exist only for this; migrate them to captions. |
+| 8 — input-channel vs user-routed | not landed | `kExternalAudioOptedIn = false` is hardcoded in `FroggersAppCore::ProcessBlock`, so the Audio config page **cannot re-enable external audio at all**. Deliberate, operator accepted the cost — but it is the workaround most worth undoing. Stays for now. |
+| 11 — one-level drill-in pop | not landed | `FroggersModulationDrillIn::Back()` synthesizes a pop by `Deselect()`-then-re-press using a remembered `level1Encoder_`. Note this one is now **required behaviour**, not just a workaround — the operator wants the one-level pop regardless. If the framework gains a native pop, switch to it; do not remove the behaviour. |
+| 7 — unlabelled CPU percentage | not landed (`FormatDeadlineText` still bare `%.1f%%`) | No app-side workaround exists today (it is the framework's own chrome), but if it landed, check nothing in our surface duplicates or compensates for it. |
 
-### 4. D.6 unblocks if ask 1 landed
+### 4. D.6 unblocks if ask 1 landed — **it landed; D.6 is unblocked once the pin is bumped**
 
 The one deferred *feature*, not a workaround. The operator wants Stop/Start, Scene 1/Scene 2 and
 Scene blend in two columns **beneath** the scope in the left column. The space is already reserved

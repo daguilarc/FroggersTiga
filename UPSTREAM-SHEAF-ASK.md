@@ -36,6 +36,50 @@ a new item here, give it the next FILE number and note separately which email ca
 
 ---
 
+## RE-CHECK against upstream `origin/main` = `77a3019e` (2026-08-01)
+
+424 commits past our pin `1940ddcb`, fetched and read — every verdict below is traced to the
+named file:line at `77a3019e`, per OMNI §1. The submodule pin is **not yet bumped**; this section
+records what a bump will deliver. Item write-ups below this section still describe the state at
+`1940ddcb` and are retained as the record of what was asked.
+
+| Item | Verdict at `77a3019e` | Evidence |
+|---|---|---|
+| 1 | **LANDED** — plain click dispatches from `Draw` nodes in both backends | commit `48d20cb7`; `acceptsClick_` + `mouseUp` dispatch, `projects/synth/juce/PortableJuceBackend.hpp:534-621`; plain-click action carried by `ControlStyle::action`, `projects/synth/include/synth/PortableUIBuilders.hpp:28` |
+| 2 | not landed | `DrawCommand::Kind` has no image kind, `projects/synth/include/synth/PortableUI.hpp:83-95` |
+| 3 | **LANDED, by a different route** — `TextColourForNode` still has no `selected` branch (`PortableJuceBackend.hpp:1036-1043`), but the new appearance contract supersedes the ask: `ControlStyle` carries `selected`, per-node `color`, and `textStyle` (glyph colour), and selected/disabled treatment is derived from the carried colour | `PortableUIBuilders.hpp:20-33`; appearance contract comment, `PortableUI.hpp:189-235`. A green Play glyph is now reachable via `textStyle` on a `Button`; the `" *"` convention is obsolete |
+| 4 | **LANDED** — the Audio page's two selectors are captioned | `"Output device"` / `"Input device"` via `PageControls::Field(...)`, `projects/synth/include/synth/RuntimePages.hpp:763-774` |
+| 5 | not landed — text box still unconditional | `setTextBoxStyle(TextBoxBelow, ...)`, `PortableJuceBackend.hpp:1162` |
+| 6 | not landed as asked — Slider `label` still reaches only `setName` (`PortableJuceBackend.hpp:1163-1166`) — **but `ControlStyle::caption` now does the workaround's job in the library**: a caption is emitted as a sibling `Label` node with a stable derived id | `PortableUIBuilders.hpp:31`; caption contract, `PortableUI.hpp` appearance comment. Our hand-rolled `kSceneBlendLabel`/`kBpmLabel` nodes become captions on migration |
+| 7 | not landed — still a bare percentage | `FormatDeadlineText` renders `%.1f%%` with no label, `RuntimePages.hpp:285-290`, rendered at `:649-651` |
+| 8 | not landed | `AppContext`/`AudioBlock` carry no input-routing signal, `projects/synth/include/synth/AppContext.hpp:70-100`. `kExternalAudioOptedIn = false` stays |
+| 9 | not landed | `ConfigureProcessingTiming` unchanged, `projects/synth/src/ParameterModulation.cpp:859-865`; no default conversion at prepare time, no new callers under `runtime/`/`include/` |
+| 10 | not landed | same independent-draw coin loop, `ParameterModulation.cpp:2894-2899`. Our distinct-draw helper stays |
+| 11 | not landed | `Bank` still exposes only full `Deselect()`, `projects/synth/include/synth/ParameterModulation.hpp:620`. Our synthesized one-level pop stays (and is required behaviour regardless) |
+
+**Item 1 postscript:** upstream's implementation supersedes our `froggers-fork` commits
+(`04818deb`, `7fa9ce34`) — it uses its own drag-threshold discrimination, so the branch is now
+historical and must not be rebased onto the new pin. `ControlStyle::action` also makes the
+post-`Build()` `SetNodeAction` field-patch helper (`app/FroggersUiSurface.hpp`) deletable, the
+"related, optional" part of the ask.
+
+**Compile-relevant API changes seen during the re-check** (the bump will not be a clean build;
+these are Sheaf API changes, not regressions in our work):
+
+- `DrawCommand::Kind` renamed/split its members: `StrokeRect`, `FillEllipse`/`StrokeEllipse`,
+  `FillRoundedRect`/`StrokeRoundedRect` (`PortableUI.hpp:83-95`) — our draw builders name the old
+  kinds.
+- `Builder` control methods now take a `ControlStyle` parameter object
+  (`PortableUIBuilders.hpp:194-213`); the old style-less overloads are gone.
+- `Node::variant` is **retired**, enforced by `scripts/check_ui_boundary.sh`
+  (`PortableUI.hpp` appearance comment).
+- The UI command buffer is version 2, with a publish-time protocol assertion (upstream commit
+  `05ae5968`) — touches the D.4 publish pipeline and the wasm host.
+- The runtime pages and sidebar were rebuilt on the component library — the shell chrome may
+  differ visually from what the operator last saw.
+
+---
+
 ## 1. Plain-click dispatch for `Draw` nodes — **the code already exists, on a branch**
 
 **What's missing:** `RetainedDrawComponent` dispatches `pointerDragAction` and
