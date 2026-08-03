@@ -8,88 +8,58 @@ Then: `proposal.md`, `design.md`, `tasks.md`, `SUPERSESSION-RECORD.md` in this d
 
 ## Where things stand
 
-Everything implementable at the current Sheaf pin is done and committed. Suite green **156/156**
-across ten binaries, `make` exit 0. Branch `froggerstiga-desktop-v2`, pushed. `main` is deliberately
+Suite green **156/156** across ten binaries. Branch `froggerstiga-desktop-v2`. `main` is deliberately
 **not** merged — the operator wants v2 kept separate for now.
 
 Done: §A audio safety (comb feedback ±0.95, resonant bump 2×, limiter + hard backstop, attack 1.0 s,
 release 5.0 s, 200-draw randomize storm test at zero failures), §B/§B-bis UI, §E (randomize-depth
-distribution, drill-in navigation). Per-item evidence is in `tasks.md`.
+distribution, drill-in navigation), §F.0/F.1 (Sheaf pin bumped to `77a3019e` and the build restored
+green against it), §G.1 (the build opens straight into Frogg3rs, no app picker). Per-item evidence
+is in `tasks.md`.
 
-All 11 upstream asks have been sent to jvictor0; `/UPSTREAM-SHEAF-ASK.md` tracks sent status.
+**`External/Sheaf` is now pinned at `77a3019e`, not `1940ddcb`.** Anything in this document that
+reads as a statement about toolkit limitations was written at the old pin — check
+`/UPSTREAM-SHEAF-ASK.md`'s RE-CHECK section, which re-traced all 11 asks against the new pin with
+file:line evidence, before believing it.
+
+All 11 upstream asks have been sent to jvictor0; `/UPSTREAM-SHEAF-ASK.md` tracks sent status. Two
+more are queued from this session's work: a reusable direct-launch entry point (so
+`app/FroggersMain.cpp` stops being a near-copy of Sheaf's `Main.cpp`), and either templating
+`Info.plist` from `APP_NAME` or failing the build when they disagree.
 
 ---
 
-## YOUR PLAN
+## YOUR PLAN — superseded 2026-08-02. `tasks.md` §0 "Execution order" is the authority.
 
-**Sheaf has been updated upstream, and the operator says it fixes most of the outstanding UI items.
-Bumping the pin is your first task.**
+This section was the previous session's plan and it has been executed. It is kept only as the
+record of what was asked for; **do not work from it.** The live, ordered plan is `tasks.md` §0,
+with each scope's proposal in its own `§X-PLAN` section.
 
-The previous session did **not** fetch or inspect the new Sheaf — the operator explicitly deferred
-that to you. So everything in these artifacts describes the app as of pin `1940ddcb` and is accurate
-for that pin only. **Treat every "blocked on upstream" claim as stale until you re-check it
-yourself.**
+Keeping a second ordered plan here is the same defect that produced three parallel proposal
+documents (see `tasks.md` §0): the order then lives in two places and they drift.
 
-### 1. Bump `External/Sheaf` — **DONE 2026-08-01, `1940ddcb` → `77a3019e`**
+**What that plan asked for, and where it landed:**
 
-Operator approval was already given. The new SHA is recorded in `proposal.md` (Out of scope and
-success criterion 7), `tasks.md` §0, `UPSTREAM-SHEAF-ASK.md`, and the Traps section below. The
-submodule working tree is clean and unpatched.
+| Original step | Status |
+|---|---|
+| 1. Bump `External/Sheaf` | **Done** — `1940ddcb` → `77a3019e`, 2026-08-01. `tasks.md` F.0 |
+| 2. Rebuild and run the suite first | **Done** — 156/156 across ten binaries. `tasks.md` F.1 |
+| 3. Re-check all 11 upstream asks | **Done** — `/UPSTREAM-SHEAF-ASK.md` RE-CHECK, file:line evidence at the new pin |
+| 4. D.6 unblocks if ask 1 landed | Ask 1 **did** land. D.6 is sequenced in `tasks.md` §0 after F.2/F.3 |
+| 5. Then C.2, the operator walkthrough | Still last, still not closable by an implementer |
 
-### 2. Rebuild and run the suite before changing anything else
+The workaround-removal table that was here is now `tasks.md` F.2, with each item's cause confirmed
+dead against the new pin rather than assumed. Two corrections to what that table asserted:
 
-`cd app && nice make -j2 test` — dispatched **through a subagent brief** (OMNI §16.1, tasks.md §0),
-with the build **foreground within that brief**, never backgrounded. 156/156 across ten binaries is
-the pre-bump baseline. Anything that breaks is a Sheaf API change, not a regression in our work —
-diagnose it as such. **Known breakage awaiting you** (traced 2026-08-01, see the re-check section
-in `/UPSTREAM-SHEAF-ASK.md`): `DrawCommand::Kind` members renamed/split, `Builder` control methods
-now take a `ControlStyle` parameter object, `Node::variant` retired, UI command buffer at
-version 2 with a publish-time protocol assertion.
+- **Ask 8 (external audio) did NOT land.** `AppContext`/`AudioBlock` still carry no input-routing
+  signal, so `kExternalAudioOptedIn = false` stays. The table called it "the workaround most worth
+  undoing"; it is not yet undoable.
+- **Ask 3 landed by a different route** than the `TextColourForNode` branch that was asked for —
+  nodes now carry `color`/`textStyle`/`selected`. The workaround still goes, but the replacement is
+  not the one the table predicted.
 
-### 3. Re-check all 11 items in `/UPSTREAM-SHEAF-ASK.md` against the new Sheaf
-
-**DONE 2026-08-01 — the re-check ran against `origin/main` = `77a3019e` (424 commits past the
-pin), before any bump.** Full per-item verdicts with file:line evidence are in the "RE-CHECK"
-section of `/UPSTREAM-SHEAF-ASK.md`; the Status column below summarizes them. **Landed: 1, 3
-(via the new per-node appearance contract), 4. Effectively addressed: 6 (via
-`ControlStyle::caption`). Still open: 2, 5, 7, 8, 9, 10, 11.** The workaround-deletion doctrine
-in this step still applies — what follows is now confirmed work, not conjecture.
-
-**Assume every ask has a workaround behind it, including the ones not tabulated below.** The table
-lists the workarounds whose location is already known — it is a starting point, not the full set.
-Ask 7 (the unlabelled CPU percentage) and ask 6 (undrawn slider labels) are both the kind of thing
-an app can paper over, and there may be others nobody wrote down. So at **every** step: before
-implementing anything, check whether the workaround it depends on is still necessary, and delete it
-if not. A workaround left in place after its cause is fixed is worse than the original bug — it is
-invisible, it constrains the design around a limitation that no longer exists, and the next person
-has no way to tell it apart from a deliberate choice.
-
-For each ask that landed upstream, the app almost certainly carries a **workaround that should now
-be deleted**, not left in place:
-
-| Ask | Status at `77a3019e` | Workaround to remove if it landed |
-|---|---|---|
-| 1 — plain-click on `Draw` nodes | **LANDED** | Play/Stop are `Button` nodes with `▶️`/`🟥` emoji labels. `BuildPlayDrawCommands`/`BuildStopDrawCommands` were deliberately **kept in the file, unused**, precisely so they can be restored. Encoders are `DrawInteractive` + `doubleClickAction` and can finally become single-click. Also delete the post-`Build()` `SetNodeAction` field-patch helper — `ControlStyle::action` replaces it. Our `froggers-fork` branch is superseded by upstream's own implementation; do not rebase it. |
-| 3 — selected-button text colour / no `Node` colour field | **LANDED** (per-node `color`/`textStyle` + `ControlStyle::selected`, not a `TextColourForNode` branch) | Bank selection uses background-only inversion. A green Play glyph was unreachable, which is the only reason Stop is a red-square emoji instead of a coloured glyph. |
-| 5 — slider numeric text box | not landed | Scene blend still shows a raw float the operator explicitly did not want. Spec `froggers-app-surface-layout` currently declares this **outside the app's control** — that declaration stays accurate. |
-| 6 — slider labels never drawn | not landed as asked — but `ControlStyle::caption` emits the adjacent label from the library | Every slider carries a separate adjacent `Label` node — two nodes to say one thing. `kSceneBlendLabel`/`kBpmLabel` exist only for this; migrate them to captions. |
-| 8 — input-channel vs user-routed | not landed | `kExternalAudioOptedIn = false` is hardcoded in `FroggersAppCore::ProcessBlock`, so the Audio config page **cannot re-enable external audio at all**. Deliberate, operator accepted the cost — but it is the workaround most worth undoing. Stays for now. |
-| 11 — one-level drill-in pop | not landed | `FroggersModulationDrillIn::Back()` synthesizes a pop by `Deselect()`-then-re-press using a remembered `level1Encoder_`. Note this one is now **required behaviour**, not just a workaround — the operator wants the one-level pop regardless. If the framework gains a native pop, switch to it; do not remove the behaviour. |
-| 7 — unlabelled CPU percentage | not landed (`FormatDeadlineText` still bare `%.1f%%`) | No app-side workaround exists today (it is the framework's own chrome), but if it landed, check nothing in our surface duplicates or compensates for it. |
-
-### 4. D.6 unblocks if ask 1 landed — **it landed; D.6 is unblocked once the pin is bumped**
-
-The one deferred *feature*, not a workaround. The operator wants Stop/Start, Scene 1/Scene 2 and
-Scene blend in two columns **beneath** the scope in the left column. The space is already reserved
-and deliberately empty — `ScopeArea`/`GridArea` in `app/FroggersUiSurface.hpp` leave it free, and
-`scope_sits_in_a_left_column_with_the_grid_to_its_right` fails if anyone reclaims it. It was blocked
-only because positioned controls required `Draw` nodes, which were double-click.
-
-### 5. Then C.2 — the operator walkthrough
-
-Several §B items are marked `[x]·` meaning **code landed, pixels unseen**. Do not close any visual
-item without the operator seeing it. `screencapture` works and the PNG is readable, so you can
-verify some of it yourself — but audio and voicing are the operator's call.
+Ask 11's one-level drill-in pop remains **required behaviour**, not a workaround: if the framework
+gains a native pop, switch to it; do not remove the behaviour.
 
 ### A spec that disagrees with shipped code is stale, not authoritative
 
@@ -120,12 +90,18 @@ operator confirmed it correct. Only *modulation-depth* randomization was changed
 
 ## Still open, and why
 
+**Ordering lives in `tasks.md` §0, not here.** This table says *why* each item is open; it
+deliberately does not say what runs first, because two ordered lists in two files drift.
+
 | Task | Blocked on |
 |---|---|
-| C.2 operator walkthrough | ears and eyes; audio/voicing cannot be self-certified |
+| F.2 workaround deletions | nothing — next in sequence |
+| F.3 layout-engine adoption | F.2 (it rewrites the same call sites) |
+| D.6 left-column control block | F.2a for plain-clickable `Draw` nodes; cleanest after F.3 |
+| G.2 blank window on startup failure | a behaviour decision the operator has not made |
+| C.2 operator walkthrough / G.3 patch load | ears and eyes; audio/voicing cannot be self-certified |
 | D.3 voicing | operator taste — max-Crunchy character is already settled as *wanted*; open part is whether ±0.95 and 2× sound right |
 | D.4 publish pipeline | large separate scope; parts need hosting/registration by a human |
-| D.6 left-column control block | see step 4 above |
 
 Do not invent work to fill this list.
 

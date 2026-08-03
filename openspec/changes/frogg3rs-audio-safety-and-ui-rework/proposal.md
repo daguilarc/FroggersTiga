@@ -86,6 +86,23 @@ the running build):
 
 **6. Everything the predecessor finished is carried, not redone.** See `SUPERSESSION-RECORD.md`.
 
+**7. Scope extension, 2026-08-01/02 — the Sheaf pin bump and its consequences.** Recorded here
+because this proposal's "Why this change exists" above predates it and would otherwise not account
+for the largest remaining body of work. `External/Sheaf` moved `1940ddcb` → `77a3019e` (424
+commits, operator-approved). That delivered four of the eleven upstream asks, which means several
+app-side workarounds now have no cause, and it replaced the layout paradigm the surface was built
+against — so the toolkit-limitation justifications behind parts of this change have lifted rather
+than merely changed. The operator chose to adopt the new layout engine rather than defer it.
+
+Also folded in: the build now launches straight into Frogg3rs instead of Sheaf's app picker.
+
+The handoff's standing advice for a bump this size is *supersede rather than patch*. The operator
+chose to consolidate in place instead (2026-08-02), so **this change absorbs that scope and
+`tasks.md` is its single proposal layer** — §F-PLAN/§F for the bump and migration, §G-PLAN/§G for
+direct launch, with the execution order declared in §0. If the layout adoption (F.3) turns out to
+invalidate more requirements than the `specs/` delta already covers, that is the point to revisit
+superseding — **and the constraint that lifted gets recorded, never silently edited away.**
+
 ## Out of scope
 
 - **`External/Sheaf` modifications.** Pinned at **`77a3019e`** (bumped from `1940ddcb` on

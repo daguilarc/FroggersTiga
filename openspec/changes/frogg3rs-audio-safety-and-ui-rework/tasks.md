@@ -18,6 +18,29 @@
   Scope captures to the app window; a full-screen capture catches the operator's other windows.
 - **The operator's runtime data root is `~/Library/Sheaf/synth/sheaf-patch/`.**
 
+### Execution order — this file is the single proposal layer
+
+**One change, one proposal layer, one order.** Every `§X-PLAN` section below is a proposal under
+OMNI §3 and is the only artifact an executor runs for its scope. Two standalone proposal documents
+(`MIGRATION-PROPOSAL-sheaf-77a3019e.md`, `PROPOSAL-direct-launch.md`) existed briefly and were
+folded into §F-PLAN and §G-PLAN on 2026-08-02; **commit `6701fc1`'s message still cites the old
+path.** They were split out in the first place because each new scope looked self-contained — which
+is exactly how a change ends up with three proposals and its execution order recorded nowhere but a
+chat transcript. If a new scope arrives, it becomes a `§X-PLAN` section here.
+
+**Remaining work, in order. The order is load-bearing, not a preference:**
+
+1. **F.2** — delete the workarounds the bump obsoleted.
+2. **F.3** — adopt the portable layout engine. **Rewrites the same call sites F.2 touches**, so it
+   cannot precede F.2 without redoing it.
+3. **D.6** — left-column control block. Depends on F.2a (positioned controls needed plain-clickable
+   `Draw` nodes) and lands cleanest after F.3 makes placement declarative.
+4. **G.2** — blank-window-on-failure. Independent; ordered here only because it is small.
+5. **C.2 / G.3** — operator walkthrough and patch-load confirmation. **Last, and not closable by an
+   implementer.** F.2 and F.3 are both visible, so they end at the operator's eyes regardless.
+
+D.3 (voicing) and D.4 (publish pipeline) stay carried-open; neither blocks the above.
+
 ---
 
 ## §A Audio safety — do this first, it is why this change exists
@@ -268,6 +291,190 @@ implementation started.
 randomizes local Crispy on any bank (all-six-banks equivalent to randomizing global Crunchy, which
 this app never does); Randomize Page still does, since one page's own Crispy is that page's
 business.
+
+## §F-PLAN — Sheaf pin bump `1940ddcb` → `77a3019e` (written 2026-08-01)
+
+Folded in from a standalone `MIGRATION-PROPOSAL-sheaf-77a3019e.md` on 2026-08-02. **Commit
+`6701fc1`'s message references that path; the content is here now.** It was written as a separate
+document, which was a mistake: OMNI §2 generates OpenSpec once per task scope and §3 makes the
+proposal the single artifact an executor runs, so three parallel proposal documents left the
+execution order recorded nowhere but chat. §E-PLAN was already the right pattern and this section
+follows it.
+
+The OpenSpec layer is `design.md` plus the RE-CHECK section of `/UPSTREAM-SHEAF-ASK.md`, which
+re-traced all 11 upstream asks against the new pin with file:line evidence. This is the proposal
+layer.
+
+### §1 planning checklist — answered, not deferred to the implementer
+
+Claims cite `file:line` at the stated revision (OMNI §1). Sheaf paths are relative to
+`External/Sheaf/projects/synth/`.
+
+**Data flow — the complete break surface.** 21 errors, 3 files, **17 edit sites**:
+
+| # | Error kind | Count | Sites | Real or cascade |
+|---|---|---|---|---|
+| 1 | `no template named 'ScopeVisualizer'` | 1 | `FroggersAppCore.hpp:1470` | **real** — one missing include |
+| 2-7 | Builder methods need trailing `ControlStyle` | 14 | `FroggersUiSurface.hpp` — `Button` 756/757/850/858/993/1014, `Visualizer` 768/901, `Label` 1049/1107, `Slider` 1051/1106, `StatusText` 1064, `DrawInteractive` 918 | real |
+| 8 | `Build()` missing `rootExtent` | 1 | `FroggersUiSurface.hpp:807` | real |
+| 9 | `FroggersApp`→`FroggersAppCore` / concept | 4 | `Froggers.hpp:45, 49, 58`, `FroggersHeadlessTests.cpp:73` | **cascade of #1 — zero edits** |
+| 21 | `Node::variant` retired | 1 | `FroggersSurfaceTests.cpp:898` | real — found during execution |
+
+**Error 9 is a cascade, traced not assumed.** `vcoScopeVisualizer_` is a *member declaration* of
+`FroggersAppCore` (`FroggersAppCore.hpp:1470`); an unresolved type there invalidates the class, so
+`FroggersApp final : public FroggersAppCore` (`Froggers.hpp:42`) has a broken base and the
+`SynthApplication` static_assert fails with it. A build agent reported this as an unlisted
+"app composition vs inheritance" API change and said it found no link to error 1 — **that was
+wrong**; clang does not cross-reference a broken base class. There is no app-composition change.
+
+**Error 1 is a header move, not an API change.** `ScopeVisualizer` was at
+`include/synth/PortableUIBuilders.hpp:225-238` (`1940ddcb`) and is the **same template with a
+byte-identical constructor** at `include/synth/PortableScopeVisualizer.hpp:222-229` (`77a3019e`).
+The app got it transitively; it now needs the header named.
+
+**ERRATA — two enumeration defects, both mine, recorded so the next one is cheaper.**
+1. A first pass called the surface "truncated at clang's 20-error cap." It was not: the compiler's
+   own summary read `4 warnings and 20 errors generated.` with no `too many errors emitted` line.
+2. The corrected pass was still incomplete in a *second* dimension. `-ferror-limit=0` exhausts one
+   translation unit, but `make test` has no `-k` and aborts at the first failing **binary**, so
+   eight of ten test TUs were never compiled when the table was drawn. Execution found the 21st
+   error in a 3rd file. A follow-up static sweep for the retired symbols (`.variant`,
+   `DrawCommand::Kind::Stroke/Ellipse/RoundedRect`, style-less Builder calls) found no further site.
+   **Lesson: "complete" means every TU compiled or swept, not one TU un-capped.** The
+   aborts-at-first-binary trap §0 documents for *test runs* applies equally to *error enumeration*.
+
+**Dependencies, all public and verified at `77a3019e`:** `ControlStyle`
+(`PortableUIBuilders.hpp:20-33`), `Build(Bounds)` (`:352`), `ScopeVisualizer`
+(`PortableScopeVisualizer.hpp:222`); for F.3 additionally `IntrinsicFor(const Node&)`
+(`PortableUIMetrics.hpp:36`) and `Extent`/`LayoutOptions`/`AllocateExtents`
+(`PortableUILayout.hpp:31-53, :165`) — **all four of those headers are new since `1940ddcb`.**
+
+**Structure/helpers (§5/§6).** F.1 changes call-site arguments only. `ControlStyle{}` is passed
+positionally rather than through a wrapper — a wrapper satisfies neither §6 condition 2 nor 3.
+
+**Efficiency (§10/§11).** Not a factor. `Build(rootExtent)` resolves layout once per tree build,
+as the pre-bump path did.
+
+**Defensive code (§12).** No guard added around `rootExtent`: the value passed is the surface's own
+bounds, held unconditionally. An unreachable branch there is exactly what §12 and
+`frogg3rs-dsp-recovery`'s "No unreachable defensive clamps" forbid.
+
+### Preflight gate
+
+- [x] Trace complete, every claim cited to a `file:line` actually read.
+- [x] Error surface complete — every TU compiled or swept, not one TU un-capped (see ERRATA).
+- [x] Cascades distinguished by tracing the mechanism, not by pattern-matching.
+- [x] F.1 forbids smuggling in F.2/F.3 work.
+- [x] §A audio safety and parameter-VALUE randomization declared untouched.
+- [x] Layout-engine question escalated to the operator, not decided by an implementer.
+
+### Postflight
+
+Compare against this section only (§14). Did the suite run all ten binaries; is §A untouched; is
+`External/Sheaf` clean and unpatched; did F.1 change behaviour anywhere.
+
+---
+
+## §F — Sheaf pin bump and migration
+
+**Sequential. F.1 → F.2 → F.3. F.3 rewrites the very call sites F.2 touches, so the order is not
+a preference.**
+
+- [x] F.0 **Pin bumped** `1940ddcb` → `77a3019e`, operator-approved, submodule clean and unpatched.
+  All 11 upstream asks re-checked against the new pin with file:line evidence — see
+  `/UPSTREAM-SHEAF-ASK.md` RE-CHECK. Landed: asks 1 (plain click on `Draw` nodes), 3 (per-node
+  colour, delivered as `color`/`textStyle`/`selected` rather than the `TextColourForNode` branch
+  asked for), 4 (captioned audio selectors); ask 6 addressed by `ControlStyle::caption`. **Ask 8
+  (external audio) did NOT land** — `AppContext`/`AudioBlock` still carry no input-routing signal,
+  so `kExternalAudioOptedIn = false` stays.
+- [x] F.1 **Restore green, zero behaviour change.** Committed `6701fc1`, **156/156 across ten
+  binaries**. Include added to `FroggersAppCore.hpp`; `ControlStyle{}` at 14 sites;
+  `Build(root)`; `DrawInteractive` given an explicit `std::nullopt` doubleClickAction preserving
+  today's gesture. `WireDrawNodeActions()`/`MarkSelectedBank()` deliberately left in place.
+  `FroggersSurfaceTests.cpp`'s `Node::variant` assertion rewritten to pin the same intent
+  (nothing recolours the transport glyphs) via `textStyle`, since glyph colour now comes only from
+  there. **The pin was rewritten, not deleted** — §0's rule.
+- [ ] F.2 **Delete the workarounds the bump obsoleted.** Each has a confirmed-dead cause; a
+  workaround outliving its cause is invisible, constrains the design around a limitation that no
+  longer exists, and reads as deliberate to the next person.
+  - [ ] F.2a Encoders to single click — `DrawInteractive`'s `doubleClickAction` becomes
+    `ControlStyle::action`; `WireDrawNodeActions`/`SetNodeAction` post-`Build()` patching goes.
+  - [ ] F.2b Transport back to draw-command icons — `BuildPlayDrawCommands`/`BuildStopDrawCommands`
+    were kept unused in the file for exactly this; the `▶️`/`🟥` emoji and their byte-sequence
+    assertions retire with them.
+  - [ ] F.2c `MarkSelectedBank` post-`Build()` edit → `ControlStyle::selected`.
+  - [ ] F.2d `kSceneBlendLabel`/`kBpmLabel` adjacent `Label` nodes → `ControlStyle::caption`.
+  - [ ] F.2e Coloured glyphs via `textStyle` — **this deliberately reverses F.1's rewritten
+    assertion.** Expected, not churn: F.1 pinned "no `textStyle` carried" to preserve pre-bump
+    behaviour; F.2e is the behaviour change that assertion was holding the line against.
+- [ ] F.3 **Adopt the portable layout engine** (operator chose this over deferring it, 2026-08-01).
+  Delete `FroggersAutoFlowedChromeModel` (`FroggersUiSurface.hpp:140-152`+), a ~200-line app-side
+  replica of `PortableJuceBackend.hpp`'s sizing and greedy-wrap rules, and express the chrome band
+  with `LayoutOptions`/`Extent` resolved by `Build(rootExtent)`.
+  **Its stated justification has expired:** the replica exists because the app is portable code with
+  no JUCE dependency *"and Sheaf exposes no 'measured auto-flow extent' accessor."*
+  `PortableUIMetrics.hpp` now provides exactly that, portable and JUCE-free.
+  - Its per-constant citations into `PortableJuceBackend.hpp` line ranges are ~424 commits stale.
+    If any part of the replica survives, **those citations get re-verified, not assumed.**
+  - Touches the geometry that already shipped one regression, so
+    `scope_sits_in_a_left_column_with_the_grid_to_its_right` must be re-proven, and the guard must
+    pin position — §0's lesson that three tests here were green while wrong.
+  - Unblocks D.6.
+
+## §G-PLAN — direct launch, no app picker (written 2026-08-01)
+
+Folded in from a standalone `PROPOSAL-direct-launch.md` on 2026-08-02, same reason as §F-PLAN.
+Operator request: *"make the build launch just the frogg3rs app, not the rest of the sheaf stuff
+that i have to click through to get to it."*
+
+**§1 trace.** The picker is unconditional: `apps/sheaf-patch/Main.cpp:35-51` builds the three-app
+vector (MiniApp `:38`, Braid4 `:41`, our out-of-tree app `:44-48`) and always constructs
+`LauncherComponent`. **No bypass exists** — no CLI argument, no env var, no single-app-skip branch;
+`initialise(const juce::String&)` (`:29`) discards its command-line parameter. Verified by reading
+the whole selection path, not inferred. Launching is already one call: `LaunchRegisteredApp<App>`
+(`:87-99`) builds the session owner, reads `App::Config()`, and shows it.
+
+**Overridable without patching Sheaf.** `runtime/juce_build.mk` consumes `APP_NAME` (`:25-27`),
+`APP_SOURCES` (`:149-150`), `APP_BUILD_DIR` (`:24`), `APP_INFO_PLIST` (`:10`, copied verbatim at
+`:154`). sheaf-patch's Makefile sets these with `:=` (`Makefile:3-6`), but **make command-line
+overrides beat `:=`** — the same mechanism `build-launcher.sh` already uses for `EXTRA_APP_*`.
+
+**The one correctness constraint:** data paths must not move. Launch goes through
+`SheafPatchDataPathsForApp(dataRoot, "frogg3rs")` (`include/synth/AppRegistry.hpp:55`) with the
+appId read from `FroggersManifest()` (`app/FroggersRegistration.hpp:23`), so patches under
+`~/Library/Sheaf/synth/sheaf-patch/` stay put. Getting this wrong silently orphans operator work.
+
+**Accepted duplication (§8, flagged not hidden).** `app/FroggersMain.cpp` is a ~60-line near-copy of
+Sheaf's `Main.cpp`, because `MainWindow` and `LaunchRegisteredApp` are private members of
+`SheafPatchApplication` and unreachable from outside it. Structural parity with the upstream file is
+the maintenance strategy: if Sheaf exposes a direct-launch entry point, this collapses into it.
+`LaunchRegisteredApp` is kept as a single-use template on that basis (§6 exception — it names a
+domain concept and does not obscure data flow).
+
+## §G — direct launch
+
+- [x] G.1 **Build opens straight into Frogg3rs.** Committed `0b7899d`. `app/FroggersMain.cpp` +
+  four make overrides in `app/build-launcher.sh`. Nothing under `External/Sheaf` edited; the picker
+  build still works with no overrides. `APP_BUILD_DIR` also moved our artifacts out of the submodule
+  into `app/build-launcher/` (gitignored), serving §0's "Sheaf stays clean" and `juce_build.mk:8`'s
+  own "must be distinct per app", which two apps sharing one build dir did not meet.
+  - **ERRATA:** the first cut named only three overrides and shipped a bundle whose
+    `CFBundleExecutable` said `SheafPatch` while the only binary was `Frogg3rs`. LaunchServices
+    resolves through the plist, so **a Finder double-click failed** while the build exited 0, the
+    bundle existed, the binary ran directly, and the suite passed — invisible to every automated
+    check. Planning defect, not implementation: the implementer built what was written, then
+    correctly stopped and reported the inconsistency instead of improvising a fourth override.
+    Fixed with `app/Frogg3rs-Info.plist` + `APP_INFO_PLIST`; both files carry a comment naming the
+    coupling. **The guard that catches it compares the plist key against the `MacOS/` listing**, not
+    two app-side constants against each other — §0's green-while-wrong lesson again.
+- [ ] G.2 **Blank window on startup failure.** `LaunchRegisteredApp`'s inner `catch`
+  (`app/FroggersMain.cpp:96-98`) logs via `INFO` and returns, leaving an empty window. Harmless
+  upstream because the picker is still on screen; here there is no fallback, so a startup failure
+  presents as a silent blank window. Inherited structure, not introduced — but it should either quit
+  with a return value or surface the error. **Behaviour decision, operator's call.**
+- [ ] G.3 **Operator confirms an existing saved patch still loads** from
+  `~/Library/Sheaf/synth/sheaf-patch/`. Not self-certifiable and not cheaply testable; it is the
+  failure that would actually hurt.
 
 ## §D Carried open from the predecessor
 

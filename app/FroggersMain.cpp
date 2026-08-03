@@ -1,6 +1,6 @@
 // Direct-launch entry point for the Frogg3rs build (proposal
-// openspec/changes/frogg3rs-audio-safety-and-ui-rework/PROPOSAL-direct-launch.md,
-// section D1). Modelled on
+// openspec/changes/frogg3rs-audio-safety-and-ui-rework/tasks.md, §G-PLAN/§G;
+// originally PROPOSAL-direct-launch.md, folded in 2026-08-02). Modelled on
 // External/Sheaf/projects/synth/apps/sheaf-patch/Main.cpp: same
 // window/session-owner plumbing, minus the "Select an app" picker. Registers
 // and launches only Frogg3rs -- no Braid4Registration.hpp, no
