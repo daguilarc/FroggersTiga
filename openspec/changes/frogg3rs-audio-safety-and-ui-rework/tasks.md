@@ -407,7 +407,36 @@ a preference.**
   - [ ] F.2e Coloured glyphs via `textStyle` — **this deliberately reverses F.1's rewritten
     assertion.** Expected, not churn: F.1 pinned "no `textStyle` carried" to preserve pre-bump
     behaviour; F.2e is the behaviour change that assertion was holding the line against.
-- [ ] F.3 **Adopt the portable layout engine** (operator chose this over deferring it, 2026-08-01).
+- [ ] F.3 **Adopt the portable layout engine, resolution-independently** (operator chose adoption
+  over deferral 2026-08-01, and **option 2 — resolution-independent — over keeping the fixed window,
+  2026-08-02**).
+
+  **The decision, and what it commits us to.** The surface stops declaring a compiled-in size and
+  resolves against the actual window instead. That deletes four coupled artifacts, not one:
+  1. `FroggersAutoFlowedChromeModel` — the ~200-line replica.
+  2. `config.uiHeight = 632` (`FroggersAppCore.hpp:211`), a hand-maintained literal which the new
+     `Build(rootExtent)` rationale names directly as *"the compiled-in surface size sru-50
+     forbids"*.
+  3. `declared_ui_height_matches_the_derived_required_extent`, the test that exists only to
+     hand-check 1 against 2.
+  4. The circular-include workaround: the literal *cannot* call `RequiredHeight()` because
+     `FroggersUiSurface.hpp` includes `FroggersAppCore.hpp` (`FroggersAppCore.hpp:198-201`).
+
+  Keeping the fixed window would have deleted the replica while leaving all three artifacts that
+  exist **only** to compensate for it — the workaround-outliving-its-cause pattern this change
+  keeps rediscovering.
+
+  **This is a deliberate, operator-approved user-visible change** (§0 requires it be proposed, and
+  it was): the window becomes genuinely resizable and the chrome reflows. Both entry points already
+  call `setResizable(true, true)` (`FroggersMain.cpp:73`, sheaf-patch `Main.cpp:74`), so the
+  affordance is present today and simply does nothing — this makes it real rather than adding it.
+
+  **Guards this must not ship without.** Deleting the height cross-check removes the only current
+  assertion about vertical extent, so it is replaced, not dropped: the surface must be asserted to
+  fit its root at more than one width, and
+  `scope_sits_in_a_left_column_with_the_grid_to_its_right` must be re-proven and must **pin
+  position**, per §0's lesson that three tests here were green while wrong.
+  `PortableUILayout.hpp:246` treats overflow as an error — use it rather than inventing a check.
   Delete `FroggersAutoFlowedChromeModel` (`FroggersUiSurface.hpp:140-152`+), a ~200-line app-side
   replica of `PortableJuceBackend.hpp`'s sizing and greedy-wrap rules, and express the chrome band
   with `LayoutOptions`/`Extent` resolved by `Build(rootExtent)`.
