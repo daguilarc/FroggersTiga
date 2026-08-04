@@ -355,6 +355,55 @@ the level-1 parameter, `Deselect()`, then re-open it), so this is **not blocking
 one-level pop would be less fragile than an app re-deriving the intermediate state, and any app
 with multi-level drill-in will want it.
 
+## 12. No way to launch a single app without the picker — every out-of-tree app rebuilds `Main.cpp`
+
+`apps/sheaf-patch/Main.cpp:35-51` always builds the full app vector and always constructs
+`LauncherComponent`; `initialise(const juce::String&)` (`:29`) discards its command-line argument,
+so there is no flag, environment variable, or single-app-registered shortcut. An app that wants to
+ship as itself — ours does, the picker is a click between the operator and the instrument every
+launch — has to supply its own `main`.
+
+That is what we did, and it works without patching Sheaf (`APP_SOURCES` overridden on the make
+command line). The cost is that our `FroggersMain.cpp` is a ~60-line near-copy of yours, because
+`MainWindow` and the `LaunchRegisteredApp<App>` template are private members of
+`SheafPatchApplication` and unreachable from outside it. Any duplication of that kind drifts.
+
+Two shapes would both fix it, either is fine: a launch argument / registry hook that activates one
+`appId` directly and skips the picker, **or** hoisting `LaunchRegisteredApp` and the window
+plumbing into a reusable header so an out-of-tree `main` is a dozen lines instead of sixty.
+
+## 13. `APP_NAME` and `APP_INFO_PLIST` are coupled, but documented and validated as independent
+
+`runtime/juce_build.mk:6-10` documents them as separate inputs. They are not: `:25-27` derives the
+binary path from `APP_NAME` while `:152-156` copies `APP_INFO_PLIST` **verbatim, with no
+templating**. Override one without the other and you ship a bundle whose `CFBundleExecutable` names
+a binary that does not exist.
+
+The failure mode is what makes this worth reporting. **Nothing catches it**: the build exits 0, the
+bundle is produced, the binary is valid, and running it directly from `Contents/MacOS/` works. Only
+a Finder/LaunchServices double-click fails, because that is the one path that resolves through the
+plist. We shipped exactly this and it survived a green build and a full green test suite.
+
+Either templating `CFBundleExecutable` from `APP_NAME` at copy time, or a make-level guard that
+fails when the plist's `CFBundleExecutable` does not equal `APP_NAME`, would turn a silent
+mis-bundle into a build error.
+
+## 14. `ControlStyle::caption` can only lead its control, never trail it
+
+`Builder::FinishControl` (`PortableUIBuilders.hpp:428-465`) always emits the caption `Label` before
+the control it names, wrapped with it in an implicit Row. There is no trailing option.
+
+Caption is otherwise exactly right and we adopted it immediately — it replaced hand-rolled adjacent
+`Label` nodes and is the reason item 6 is effectively solved for us. But one of our two sliders
+needs its label **after** it: leading, it falls between two adjacent sliders and reads as labelling
+the wrong one. Our operator hit that, told us to make the pair deliberately asymmetric, and we now
+keep one hand-rolled `Label` node purely for placement — a workaround whose only remaining cause is
+this.
+
+A placement field on `ControlStyle` (leading/trailing, defaulting to today's leading) would let us
+delete it. Low priority; genuinely cosmetic. Reporting it because "captions exist but can't go
+where this one needs to go" is the sort of gap that quietly keeps a workaround alive.
+
 ## What we are NOT asking for
 
 Anything Frogg3rs-specific. Every item above is general to Sheaf; none of it

@@ -394,9 +394,33 @@ a preference.**
   `FroggersSurfaceTests.cpp`'s `Node::variant` assertion rewritten to pin the same intent
   (nothing recolours the transport glyphs) via `textStyle`, since glyph colour now comes only from
   there. **The pin was rewritten, not deleted** — §0's rule.
-- [ ] F.2 **Delete the workarounds the bump obsoleted.** Each has a confirmed-dead cause; a
-  workaround outliving its cause is invisible, constrains the design around a limitation that no
-  longer exists, and reads as deliberate to the next person.
+- [x] F.2 **Delete the workarounds the bump obsoleted** — done 2026-08-03, suite **156/156 across
+  ten binaries**, launcher exit 0. Each had a confirmed-dead cause; a workaround outliving its cause
+  is invisible, constrains the design around a limitation that no longer exists, and reads as
+  deliberate to the next person.
+
+  **Finding 1 — "delete the workaround" needs EVERY cause dead, not the first one found.**
+  F.2d's brief named the BPM label for conversion. Converting it silently reversed **B12**, an
+  explicit operator instruction ("the two labels are now deliberately asymmetric — do not 'fix'
+  that"): `ControlStyle::caption` always leads its control, and B12 requires this one to trail
+  because leading it reads as labelling the scene-blend slider. The implementer executed the brief
+  as written and **flagged it rather than absorbing it**, which is the behaviour the brief asked
+  for. **The brief was the defect, not the implementation.** Scene-blend keeps the caption (its only
+  cause — captions never drawn — is dead); BPM keeps its hand-rolled `Label` (a second cause is
+  still live). Filed as upstream ask 14. The guard now pins the **order**, not merely the label's
+  existence, or the reversal is invisible again.
+
+  **Finding 2 — `declared_ui_height_matches_the_derived_required_extent` cannot fail.** The brief
+  predicted it would break at F.2b. It did not, for a worse reason:
+  `FroggersAutoFlowedChromeModel::FlowedControls()` is a build-once `static` list that **hardcodes**
+  `{Kind::Button, "▶"}` / `{Kind::Button, "■"}` and never consults the tree `BuildTree()` actually
+  produces. It compares two app-side numbers to each other — the exact green-while-wrong shape §0
+  names, and the **fourth** in this change's history. After F.2b it is not merely vacuous but
+  **false**: Play/Stop are now 28px `Draw` plates while the model still bills them as 72px
+  `Button`s, so `config.uiHeight = 632` is no longer derived from anything real. Probably still
+  correct (dropping 88px likely does not change the row count) but **unprovable by the suite**.
+  Deliberately NOT repaired — F.3 deletes the model, the literal and this test. Repairing machinery
+  we are about to remove is the workaround pattern again.
   - [ ] F.2a Encoders to single click — `DrawInteractive`'s `doubleClickAction` becomes
     `ControlStyle::action`; `WireDrawNodeActions`/`SetNodeAction` post-`Build()` patching goes.
   - [ ] F.2b Transport back to draw-command icons — `BuildPlayDrawCommands`/`BuildStopDrawCommands`

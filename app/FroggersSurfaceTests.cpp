@@ -606,18 +606,23 @@ TEST_CASE(scene_buttons_push_scene_blend_to_the_correct_extremes) {
     REQUIRE_TRUE(std::fabs(rig.UIState().sceneBlend.load() - 0.0f) < 0.001f);
 }
 
-// Label-visibility fix (2026-07-28): `NodeKind::Slider` routes `node.label`
-// to `juce::Slider::setName()` only (PortableJuceBackend.hpp:1229-1232) --
-// no `juce::Label` is attached, so nothing ever draws it. The fix is an
-// adjacent `Label` node emitted immediately before the Slider in
-// `AppendChromeBand` (FroggersUiSurface.hpp). This test asserts the Label
-// NODE exists, carries the expected text, and sits immediately before the
-// Slider in `tree.nodes` order (which auto-flow walks directly,
-// PortableJuceBackend.hpp:754-798). It does NOT and CANNOT prove the text
-// is actually painted on screen -- that requires a human looking at the
-// running app; a previous task was closed on exactly that false equivalence
-// (asserting the label field was set) and this comment exists so it isn't
-// repeated.
+// Label-visibility fix (2026-07-28), updated F.2d (2026-08-03, Sheaf pin
+// 77a3019e): `NodeKind::Slider` routes `node.label` to `juce::Slider::
+// setName()` only (PortableJuceBackend.hpp:1229-1232) -- no `juce::Label` is
+// attached, so nothing ever draws it. This used to be worked around with a
+// hand-rolled adjacent `Label` node (`FroggersNodeIds::kSceneBlendLabel`).
+// F.2d replaced that with `ControlStyle::caption`, which the Sheaf builder
+// itself emits as sibling Label "<controlId>.caption" wrapped with the
+// control in an implicit Row "<controlId>.row"
+// (PortableUIBuilders.hpp:424-465) -- so the caption id is now derived from
+// the slider's own id rather than a separate app-side constant. This test
+// asserts the caption Label NODE exists, carries the expected text, and
+// sits immediately before the Slider in `tree.nodes` order (still true: the
+// Row is pushed before the Label/Slider pair, not between them). It does
+// NOT and CANNOT prove the text is actually painted on screen -- that
+// requires a human looking at the running app; a previous task was closed
+// on exactly that false equivalence (asserting the label field was set) and
+// this comment exists so it isn't repeated.
 TEST_CASE(scene_blend_slider_has_an_adjacent_label_node_carrying_its_text) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
         /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("scene_blend_label"));
@@ -626,13 +631,13 @@ TEST_CASE(scene_blend_slider_has_an_adjacent_label_node_carrying_its_text) {
     synth::ui::Surface& surface = rig.Application().PortableSurface();
     const synth::ui::NodeTree tree = surface.BuildTree();
 
-    const synth::ui::Node* labelNode = FindNodeById(tree, synth_froggers::FroggersNodeIds::kSceneBlendLabel);
+    const std::string captionId = std::string(synth_froggers::FroggersNodeIds::kSceneBlend) + ".caption";
+    const synth::ui::Node* labelNode = FindNodeById(tree, captionId);
     REQUIRE_TRUE(labelNode != nullptr);
     REQUIRE_TRUE(labelNode->kind == synth::ui::NodeKind::Label);
     REQUIRE_TRUE(labelNode->text == "Scene blend");
 
-    const std::optional<std::size_t> labelIx =
-        FindNodeIndexById(tree, synth_froggers::FroggersNodeIds::kSceneBlendLabel);
+    const std::optional<std::size_t> labelIx = FindNodeIndexById(tree, captionId);
     const std::optional<std::size_t> sliderIx =
         FindNodeIndexById(tree, synth_froggers::FroggersNodeIds::kSceneBlend);
     REQUIRE_TRUE(labelIx.has_value());
@@ -762,16 +767,30 @@ TEST_CASE(bpm_label_is_constant_across_transport_state) {
 // Label-visibility fix (2026-07-28), BPM half -- see
 // `scene_blend_slider_has_an_adjacent_label_node_carrying_its_text`'s
 // comment for the full trace of why the Slider's own label never draws and
-// what an adjacent Label node does/doesn't prove. This asserts the Label
-// node exists, reads the constant "BPM" text in both transport states
-// (UI-rework ITEM 5, design.md A3f -- the "(no effect while stopped)"
+// what an adjacent Label node does/doesn't prove. This asserts the caption
+// Label node exists and reads the constant "BPM" text in both transport
+// states (UI-rework ITEM 5, design.md A3f -- the "(no effect while stopped)"
 // annotation this test used to track is gone, see
-// `bpm_label_is_constant_across_transport_state`'s comment for why), and
-// stays immediately AFTER the Slider in node order (see the assertion's own
-// comment for why this pair is reversed relative to scene-blend). As with the
-// scene-blend case, this does NOT prove anything is visible on screen --
-// only that the nodes exist and are ordered correctly for the auto-flow
-// layout to place them adjacently.
+// `bpm_label_is_constant_across_transport_state`'s comment for why).
+//
+// THIS PAIR IS DELIBERATELY NOT CONVERTED TO `ControlStyle::caption`, unlike
+// its scene-blend neighbour. F.2d converts the hand-rolled adjacent `Label`
+// wherever its ONLY cause was upstream never drawing slider captions -- dead
+// at pin 77a3019e. Here a second cause is still live: B12 (tasks.md,
+// 2026-07-29) requires this label to TRAIL its slider, opposite the
+// scene-blend pair, because leading it reads as labelling the wrong control.
+// Operator: "the two labels are now deliberately asymmetric -- do not 'fix'
+// that." `Builder::FinishControl` (PortableUIBuilders.hpp:428-465) always
+// emits a caption BEFORE its control and offers no trailing option, so
+// converting here would silently reverse an explicit operator instruction.
+//
+// F.2d's brief named this test for conversion by line number; an implementer
+// executed that literally, flipped the order, and flagged it rather than
+// absorbing it. The flip was then reverted here. The brief was wrong, not
+// the implementation -- "delete the workaround" only holds once EVERY cause
+// behind it is dead, and enumerating just the first one is the §1 failure
+// this change keeps re-learning. Filed as upstream ask 14 (caption
+// placement); when it lands, this collapses to a caption like its neighbour.
 TEST_CASE(bpm_slider_has_an_adjacent_label_node_with_the_constant_bpm_text) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
         /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("bpm_adjacent_label"));
@@ -781,7 +800,8 @@ TEST_CASE(bpm_slider_has_an_adjacent_label_node_with_the_constant_bpm_text) {
 
     auto checkAdjacentLabel = [&](const std::string& expectedText) {
         const synth::ui::NodeTree tree = surface.BuildTree();
-        const synth::ui::Node* labelNode = FindNodeById(tree, synth_froggers::FroggersNodeIds::kBpmLabel);
+        const synth::ui::Node* labelNode =
+            FindNodeById(tree, synth_froggers::FroggersNodeIds::kBpmLabel);
         REQUIRE_TRUE(labelNode != nullptr);
         REQUIRE_TRUE(labelNode->kind == synth::ui::NodeKind::Label);
         REQUIRE_TRUE(labelNode->text == expectedText);
@@ -792,11 +812,11 @@ TEST_CASE(bpm_slider_has_an_adjacent_label_node_with_the_constant_bpm_text) {
             FindNodeIndexById(tree, synth_froggers::FroggersNodeIds::kBpm);
         REQUIRE_TRUE(labelIx.has_value());
         REQUIRE_TRUE(sliderIx.has_value());
-        // The BPM label TRAILS its slider (operator 2026-07-29) -- the
-        // opposite of the scene-blend pair, deliberately. Leading it put it
-        // between the two sliders and nearer the scene-blend one (whose value
-        // text box widens it to the right), so it read as labelling the wrong
-        // control. See AppendChromeBand's comment at the emission site.
+        // B12: the BPM label TRAILS its slider, deliberately asymmetric with
+        // the scene-blend one, because leading it reads as labelling the
+        // scene-blend slider. This ordering assertion is the guard that
+        // caught F.2d reversing B12 -- keep it pinned to the ORDER, not just
+        // to the label's existence, or the reversal becomes invisible again.
         REQUIRE_TRUE(*labelIx == *sliderIx + 1);
     };
 
@@ -849,53 +869,50 @@ TEST_CASE(play_and_stop_controls_exist_and_gate_the_transport) {
 
     synth::ui::Surface& surface = rig.Application().PortableSurface();
     const synth::ui::NodeTree tree = surface.BuildTree();
-    // Task 6.4 (operator 2026-07-28 revert): Play/Stop are plain Button
-    // nodes again -- at the pinned Sheaf version, Draw/DrawInteractive
-    // nodes dispatch only on double-click (RetainedDrawComponent,
-    // PortableJuceBackend.hpp:549-555), which cost single-click Play/Stop
-    // when they were briefly coloured-icon Draw nodes (Change 3, task
-    // 10.2/3.8). `HasButtonLabeled` finds them again. Assert by id: Button
-    // kind, the label, the action on `node.action` (Builder::Button,
-    // PortableUIBuilders.hpp:300-308 -- not `doubleClickAction`, which
-    // Button nodes never set). Button nodes have no app-computed placement
-    // (unlike the Draw nodes this reverts), so no bounds assertion here.
-    //
-    // UI-rework ITEM 4 (design.md A3e, tasks.md B.4, 2026-07-29,
-    // operator-approved): the label text is the transport glyph rather than
-    // the word "Play"/"Stop" -- still an ordinary Button node (single click
-    // keeps dispatching), the glyph just reads as an icon.
-    //
-    // EMOJI presentation, operator choice 2026-07-29. Asserted as explicit
-    // BYTE sequences, not as the pasted characters, because the difference
-    // that matters is invisible in a source listing: U+25B6 alone renders as
-    // a small monochrome text triangle, and U+25B6 U+FE0F renders as the
-    // emoji. A test written as `label == "▶"` would silently pass if the
-    // variation selector were dropped -- which is exactly the regression
-    // worth catching, since nobody can see the rendered glyph from here.
-    //   Play: U+25B6  -> E2 96 B6, then U+FE0F -> EF B8 8F
-    //   Stop: U+1F7E5 -> F0 9F 9F A5
-    const std::string kPlayGlyph = "\xE2\x96\xB6\xEF\xB8\x8F";  // "▶️"
-    const std::string kStopGlyph = "\xF0\x9F\x9F\xA5";          // "🟥"
-
+    // F.2b/F.2e (2026-08-03, Sheaf pin 77a3019e): Play/Stop are real
+    // draw-command controls again -- a rounded plate plus a `Color::Green`
+    // triangle (Play) / `Color::Red` square (Stop), via
+    // `BuildPlayDrawCommands`/`BuildStopDrawCommands`
+    // (FroggersUiSurface.hpp) -- replacing the EMOJI-glyph Button nodes
+    // (UI-rework ITEM 4/B.4, 2026-07-29) that were themselves a workaround
+    // for `Draw` nodes needing a double click and `Node` having no colour
+    // field. Both causes are gone at this pin (ask 1: plain click via
+    // `ControlStyle::action`; a `Draw` node's own commands always carried
+    // colour, which is why the emoji workaround chose emoji in the first
+    // place -- see the removed comment's own reasoning). Assert by id: Draw
+    // kind, drawCommands contains the plate then the coloured icon in the
+    // real Sheaf colours (not a text/emoji substitute), the action on
+    // `node.action` (not `doubleClickAction`, which this file never sets),
+    // and a resolved square extent (Draw has no intrinsic size --
+    // `layout.main`/`cross` were given explicitly, see BuildTree()'s own
+    // comment -- so a collapsed 0x0 node would mean that wiring broke).
     const synth::ui::Node* playNode = FindNodeById(tree, synth_froggers::FroggersNodeIds::kPlay);
     const synth::ui::Node* stopNode = FindNodeById(tree, synth_froggers::FroggersNodeIds::kStop);
     REQUIRE_TRUE(playNode != nullptr);
-    REQUIRE_TRUE(playNode->kind == synth::ui::NodeKind::Button);
-    REQUIRE_TRUE(playNode->label == kPlayGlyph);
-    REQUIRE_TRUE(playNode->label.size() == 6);  // 3 bytes U+25B6 + 3 bytes U+FE0F.
+    REQUIRE_TRUE(playNode->kind == synth::ui::NodeKind::Draw);
+    REQUIRE_TRUE(playNode->bounds.width == synth_froggers::kTransportPlateSize);
+    REQUIRE_TRUE(playNode->bounds.height == synth_froggers::kTransportPlateSize);
+    REQUIRE_TRUE(playNode->drawCommands.size() == 2);
+    REQUIRE_TRUE(playNode->drawCommands[0].kind == synth::ui::DrawCommand::Kind::FillRoundedRect);
+    REQUIRE_TRUE(playNode->drawCommands[0].color == synth_froggers::kTransportPlateColor);
+    REQUIRE_TRUE(playNode->drawCommands[1].kind == synth::ui::DrawCommand::Kind::FillPolygon);
+    REQUIRE_TRUE(playNode->drawCommands[1].color == synth::Color::Green);
     REQUIRE_TRUE(playNode->action.has_value() &&
                  playNode->action->name == synth_froggers::FroggersActions::kPlay);
     REQUIRE_TRUE(!playNode->doubleClickAction.has_value());
+
     REQUIRE_TRUE(stopNode != nullptr);
-    REQUIRE_TRUE(stopNode->kind == synth::ui::NodeKind::Button);
-    REQUIRE_TRUE(stopNode->label == kStopGlyph);
-    REQUIRE_TRUE(stopNode->label.size() == 4);  // U+1F7E5 is 4 bytes in UTF-8.
+    REQUIRE_TRUE(stopNode->kind == synth::ui::NodeKind::Draw);
+    REQUIRE_TRUE(stopNode->bounds.width == synth_froggers::kTransportPlateSize);
+    REQUIRE_TRUE(stopNode->bounds.height == synth_froggers::kTransportPlateSize);
+    REQUIRE_TRUE(stopNode->drawCommands.size() == 2);
+    REQUIRE_TRUE(stopNode->drawCommands[0].kind == synth::ui::DrawCommand::Kind::FillRoundedRect);
+    REQUIRE_TRUE(stopNode->drawCommands[0].color == synth_froggers::kTransportPlateColor);
+    REQUIRE_TRUE(stopNode->drawCommands[1].kind == synth::ui::DrawCommand::Kind::Fill);
+    REQUIRE_TRUE(stopNode->drawCommands[1].color == synth::Color::Red);
     REQUIRE_TRUE(stopNode->action.has_value() &&
                  stopNode->action->name == synth_froggers::FroggersActions::kStop);
     REQUIRE_TRUE(!stopNode->doubleClickAction.has_value());
-    // No carried textStyle on either: an emoji carries its own colour, and a
-    // textStyle override would recolour the glyphs and fight it (design.md A3e).
-    REQUIRE_TRUE(!playNode->textStyle.has_value() && !stopNode->textStyle.has_value());
 
     // Non-default patch (task 6.12's default patch is already applied at
     // Init()) + transport stopped (the rig's own default state) -> silent,
