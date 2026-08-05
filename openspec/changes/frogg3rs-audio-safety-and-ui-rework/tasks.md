@@ -526,6 +526,38 @@ a preference.**
     host-wiring example `juce/ControllersHarnessApp.cpp:56-70`). Braid4 never wired this —
     **we do, deliberately, in `FroggersMain.cpp`, per option 2.**
 
+  **PREFLIGHT AUDIT (OMNI §14, run 2026-08-04 at operator request — result: REJECTED pending the
+  fixes below; implementation may not dispatch until the gate at the bottom passes).**
+  1. *§1 violation, resize path asserted not traced.* "Wire live resize in `FroggersMain`" cites a
+     harness example, not OUR stack (`FroggersMain → RuntimeSessionOwner → session->Component()`).
+     Whether `synth::ui::Surface` exposes `SetContentBounds`, and where `RefreshFromSurface` is
+     reachable from our session owner, was never read. → resolved by the enumeration below before
+     dispatch.
+  2. *§1 violation, deletion set sampled not enumerated.* Every geometry artifact in the surface
+     needs a die / survive-as-data verdict with file:line: `ScopeArea`/`GridArea`,
+     `kContentAreaHeight`, `RootBounds()`, `RequiredHeight()`, `FroggersEncoderGridLayout`
+     (bounds arithmetic dies, slot→cell data survives), every explicit-bounds site in
+     `BuildTree()`, and every one of the 19 surface tests that pins current geometry. → same
+     enumeration.
+  3. *Precision.* `config.uiHeight` is NOT deleted — the window needs an initial size.
+     What dies is its load-bearing derivation: the `= RequiredHeight()` claim, the cross-check
+     test, and the circular-include workaround. The literal survives demoted to "initial window
+     size."
+  4. *§8.* Emission LOOPS over the cell map — 6 bank tabs and 16 encoder cells are loops over the
+     one data table, never 22 hand-written builder calls. The cell map is a single definition
+     site; a second copy in the emitter is the duplication §8 forbids.
+  5. *§12.* Fit-test sizes pinned here, not chosen by the implementer: 900×632 (default),
+     640×480 (small), 1440×900 (large). Overflow-throw is the only mechanism; no invented guards.
+
+  **Preflight gate — all must hold before the implementation dispatch:**
+  - [ ] Resize path traced through OUR runtime stack with file:line (finding 1).
+  - [ ] Deletion/survival table complete: every geometry helper, constant, explicit-bounds site,
+        and surface test enumerated with a verdict (finding 2).
+  - [ ] Brief states the uiHeight demotion precisely (finding 3), the loop-over-map rule
+        (finding 4), and the pinned sizes (finding 5).
+  - [ ] Brief forbids touching §A audio safety, parameter-value randomization, frozen trees,
+        `External/Sheaf`; requires foreground `nice make -j2`; Sonnet; sequential.
+
   **Acceptance criteria, from the screenshot (all operator-confirmable by looking):**
   1. Buttons are intrinsic-width controls in compact rows — nothing stretches to window width by
      default.
