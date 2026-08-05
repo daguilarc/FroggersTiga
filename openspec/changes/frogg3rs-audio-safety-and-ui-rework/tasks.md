@@ -558,6 +558,53 @@ a preference.**
   - [ ] Brief forbids touching §A audio safety, parameter-value randomization, frozen trees,
         `External/Sheaf`; requires foreground `nice make -j2`; Sonnet; sequential.
 
+  **TOPOLOGY TRACE RESULT (2026-08-04) — cell map holds, one assertion refined, two brief-changing
+  findings.** Verified: `kFroggersSlotsPerBank = 16`, `kFroggersBankCount = 6`
+  (`FroggersParameters.hpp:76-78`); 9 named params at slots 0-8 in **all six** banks
+  (`:77,145-186,310-340`); slots **9-13 deliberately empty** in every bank
+  (`FroggersModulation.hpp:187-191`); banks are Audio=Red, Envelope=Green, Filter=Blue,
+  Drive=Orange, Delay=Indigo, Reverb=Cyan (`FroggersParameters.hpp:147-183`). So the 4×4 encoder
+  region maps rows 2-5 to slots 0-3 / 4-7 / 8-11 / 12-15 exactly as approved, with 9-13 rendering
+  empty.
+
+  - **REFINED — Crunchy is GLOBAL, not per-bank.** CRIS (slot 14, `kFroggersCrispySlot`) is
+    per-bank and takes the bank's colour. CRNC (slot 15, `kFroggersCrunchySlot`) is **one shared
+    `Parameter` object aliased into all six banks' slot 15**, with its own fixed Yellow
+    (`FroggersParameters.hpp:79-80,191,251-256,342-366`) — which is why it renders yellow in the
+    operator screenshot. The cell map's positions were right; the sketch's implication that CRNC is
+    an ordinary bank-coloured encoder was wrong. **Its cell must keep the distinct global colour**,
+    and it is excluded from drill-in/randomize dispatch (`FroggersModulation.hpp:120-126`).
+  - **BRIEF-CHANGING (§8) — the emitter must NOT re-derive slot→parameter.** Loop `encoderId`
+    0..15 and call `bank.VisibleParameter(encoderId)`, the sanctioned parameter-or-empty accessor
+    over the full 16-wide layout (`FroggersModulation.hpp:202-204`, rationale `:187-201`).
+    `FroggersBankLayouts()`/`PageParameter()`/`Crispy()`/`Crunchy()` are **construction-time**
+    accessors and do not reflect drill-in substitution — using them would create a second
+    definition site AND render stale contents.
+  - **BRIEF-CHANGING — drill-in reuses the same 16 cells.** At modulation level 1/2 the identical
+    physical layout is repopulated with modulator depths rather than page parameters
+    (`FroggersModulation.hpp:192-204`); slot **count and positions are unchanged, contents differ
+    entirely**. The grid therefore emits one 16-cell region in every mode — no second topology, no
+    conditional cell count. This is why the accessor above is load-bearing.
+
+  **TEST ENUMERATION (2026-08-04) — all 19 surface tests classified. 12 unaffected, 6 rewritten,
+  1 dies.** This closes preflight finding 2's test half. Every rewrite keeps pinning its ORIGINAL
+  property against the new declared layout — §0's rule that a pin is rewritten, never deleted.
+
+  | Test (`FroggersSurfaceTests.cpp`) | Verdict |
+  |---|---|
+  | `root_and_content_bounds_match_default_config_size` :137 | REWRITE — pins pixel equality against dying `RequiredHeight()`; re-pin as "content inset within root by nonzero margin" |
+  | `scope_and_grid_regions_do_not_overlap_at_target_window_size` :148 | REWRITE — invariant survives verbatim (no overlap, both inside content); mechanism moves to resolved cell rects |
+  | `scope_area_is_wider_than_tall_and_at_most_a_third_of_its_old_area` :170 | REWRITE — **operator requirement, survives as data**; re-pin against resolved layout |
+  | `scope_sits_in_a_left_column_with_the_grid_to_its_right` :194 | REWRITE — **the single most important guard here**; keeps asserting scope-left / grid-right / grid full height |
+  | `every_encoder_cell_lies_fully_inside_the_grid_region` :216 | REWRITE — 16 cells, no overlap, fully contained; 4×4 topology is unchanged input |
+  | `declared_ui_height_matches_the_derived_required_extent` :241 | **DIES WITH ITS SUBJECT** — `ComputeFlowExtent`/`RequiredHeight` are deleted; nothing left to cross-check. Its replacement is the fit-at-three-sizes overflow test, NOT a rewritten version of itself |
+  | `play_and_stop_controls_exist_and_gate_the_transport` :865 | PARTIAL REWRITE — only the two `bounds.width/height == kTransportPlateSize` assertions (:893-894, :906-907) need re-verification against the new resolver; draw-command kind/colour/action and audio-gating assertions are untouched |
+  | remaining 12 | UNAFFECTED — node kind / id / action / ordering / audio-state only, no `Bounds` reads |
+
+  Note the asymmetry deliberately: the height cross-check **dies without a rewritten successor**
+  because it never tested anything real (Finding 2 above). Its *function* — proving the surface
+  fits — is taken over by the pinned-size overflow tests, which is a strictly stronger guarantee.
+
   **Acceptance criteria, from the screenshot (all operator-confirmable by looking):**
   1. Buttons are intrinsic-width controls in compact rows — nothing stretches to window width by
      default.
@@ -711,6 +758,20 @@ wasm host-integration work inherits it. Operator intent, near-verbatim:
   horizontal space with …" — that never named the sharer. Likely the scope or the transport
   controls, but this is a guess; **ask the operator before designing the mobile layer**, do not
   design around the guess.
+- **CONSTRAINT FOUND 2026-08-04 — re-packing slots is NOT free.** The mobile goal above
+  ("minimize blank encoder slots") assumes cells can be re-ordered. In this app the bank-layout
+  slot index **equals the hardware `PhysicalEncoderId`**, because `FroggersParameterModel::Init`
+  adds physical encoders in the exact sequence 0..15 (`app/FroggersParameters.hpp:265-267`) and
+  `Bank::RegisterParameters(params, offset)` indexes into that layout array rather than into
+  encoder-id values. So re-packing the *visual* order without also reordering the
+  `AddPhysicalEncoder` calls would change which physical encoder drives which parameter. Note this
+  is a consequence of THIS app's construction order, not a Sheaf-wide invariant.
+  **Implication:** the mobile layer must either (a) re-pack visually while keeping slot→encoder
+  identity intact — i.e. the cell map's *display* order differs from slot order, which is fine
+  precisely because the map is data — or (b) leave hardware mapping alone and accept some blanks.
+  **UNCLEAR and worth asking before designing:** whether `PhysicalEncoderId` carries further
+  hardware meaning (literal wiring position for the Daisy build) beyond what the app-side files
+  show. That lives outside the traced scope.
 
 Design consequence for F.3 (why this note lives here): the topology (§F.3 cell map) must stay a
 data-level description separate from the Sheaf-idiom emission code, so a second topology can be
