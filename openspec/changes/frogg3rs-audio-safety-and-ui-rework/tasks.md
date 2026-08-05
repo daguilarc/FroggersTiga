@@ -30,14 +30,20 @@ chat transcript. If a new scope arrives, it becomes a `§X-PLAN` section here.
 
 **Remaining work, in order. The order is load-bearing, not a preference:**
 
-1. **F.2** — delete the workarounds the bump obsoleted.
-2. **F.3** — adopt the portable layout engine. **Rewrites the same call sites F.2 touches**, so it
-   cannot precede F.2 without redoing it.
-3. **D.6** — left-column control block. Depends on F.2a (positioned controls needed plain-clickable
+1. ~~**F.2**~~ — done 2026-08-03, `84f83e7`.
+2. **F.3** — adopt the portable layout engine. Rewrites the same call sites F.2 touched.
+3. **F.4** — second pin bump, `77a3019e` → `508d9d68`, for ask 8. **After F.3, not before**: F.3 is
+   a re-architecture of the surface against a known-good toolkit, and stacking an unmigrated 27-commit
+   bump under it would make any breakage unattributable — the exact confusion F.1 existed to prevent.
+   F.4 is also its own compile-then-behaviour split, for the same reason.
+4. **F.5** — remove the external-audio workaround. Strictly after F.4; the API it needs does not
+   exist at our current pin.
+5. **D.6** — left-column control block. Depends on F.2a (positioned controls needed plain-clickable
    `Draw` nodes) and lands cleanest after F.3 makes placement declarative.
-4. **G.2** — blank-window-on-failure. Independent; ordered here only because it is small.
-5. **C.2 / G.3** — operator walkthrough and patch-load confirmation. **Last, and not closable by an
-   implementer.** F.2 and F.3 are both visible, so they end at the operator's eyes regardless.
+6. **G.2** — blank-window-on-failure. Independent; ordered here only because it is small.
+7. **C.2 / G.3** — operator walkthrough and patch-load confirmation. **Last, and not closable by an
+   implementer.** F.3 and F.5 are both operator-perceptible, so they end at the operator's eyes and
+   ears regardless.
 
 D.3 (voicing) and D.4 (publish pipeline) stay carried-open; neither blocks the above.
 
@@ -473,6 +479,37 @@ a preference.**
     `scope_sits_in_a_left_column_with_the_grid_to_its_right` must be re-proven, and the guard must
     pin position — §0's lesson that three tests here were green while wrong.
   - Unblocks D.6.
+
+- [ ] F.4 **Second pin bump, `77a3019e` → `508d9d68`** (27 commits, operator-reported 2026-08-03 and
+  verified the same day — see `/UPSTREAM-SHEAF-ASK.md` SECOND RE-CHECK). All 27 are the upstream
+  `synth audio input` change plus a demo app.
+  - **Sequenced after F.3 deliberately.** F.3 re-architects the surface against a toolkit we have
+    already migrated to and proven green; bumping underneath it would mean any F.3 breakage could
+    be either our layout work or an unmigrated API change, with no way to tell. That
+    unattributability is precisely what F.1 was created to prevent, and the lesson cost a session
+    the last time it was skipped.
+  - **Same compile-then-behaviour split as F.1/F.2.** F.4 restores green with zero behaviour change;
+    F.5 is the behaviour. Public headers that moved: `AppContext.hpp` (+116), `Engine.hpp`,
+    `RuntimeMainComponent.hpp`, `RuntimePages.hpp` (+31), and the browser runtime headers. Expect
+    `ValidateRuntimeConfig` to now throw on a negative `numAudioInputs`, and `Engine` to assert
+    `block.numRequestedInputChannels == config_.numAudioInputs`.
+  - **Enumerate the error surface across EVERY translation unit**, not one un-capped TU — §F-PLAN's
+    ERRATA records that mistake being made twice.
+- [ ] F.5 **Remove the external-audio workaround — ask 8's cause is finally dead.** Strictly after
+  F.4; the API does not exist at our current pin.
+  - `constexpr bool kExternalAudioOptedIn = false` (`app/FroggersAppCore.hpp:507`) goes, along with
+    the raw `externalInputHasChannel` test at `:508-509` — `block.inputs != nullptr &&
+    block.numInputChannels > 0 && block.inputs[0] != nullptr` is exactly the "channel exists"
+    question that could never answer "is anything routed". Replace with
+    `block.InputView().HasActiveChannel(0)`.
+  - `RuntimeConfig::numAudioInputs` must actually be **requested** (it defaults to 0), or
+    `ActiveChannelCount()` is 0 forever and the workaround is merely reimplemented.
+  - The original comment (`:504-506`) promised this would be "a one-line change rather than a
+    rewrite" because the channel plumbing was left intact. **Verify that promise rather than trusting
+    it** — it was written at a pin where the replacement API did not exist.
+  - **Operator-perceptible**: source #6 becomes a live modulation source that participates in
+    randomization. It was disabled because a phantom source steals randomization slots; confirm with
+    the operator that it now behaves, and that selecting no input device still leaves it dark.
 
 ## §G-PLAN — direct launch, no app picker (written 2026-08-01)
 

@@ -44,6 +44,33 @@ named file:line at `77a3019e`, per OMNI §1. **The submodule pin was bumped to `
 2026-08-01**, after this re-check and on the strength of it. Item write-ups below this section
 still describe the state at `1940ddcb` and are retained as the record of what was asked.
 
+### SECOND RE-CHECK — 2026-08-03, `77a3019e` → `origin/main` = `508d9d68` (27 commits)
+
+Fetched and read after the operator reported the audio item fixed. **Ask 8 landed**, and it is the
+only verdict in the table that changes; the row above now cites `508d9d68`, every other row still
+describes `77a3019e`, which is still our pin. All 27 commits are the `synth audio input` change
+(archived upstream at `fbcf89f5`) plus a one-second-delay demo app.
+
+**What landed, traced.** `RuntimeConfig::numAudioInputs` (`AppContext.hpp:33`) is documented as a
+*request* the host negotiates against the device. `AudioBlock::numRequestedInputChannels`
+(`:190-193`) carries that request per block — `Engine` asserts it equals the immutable config
+(`Engine.hpp`) — and `AudioBlock::InputView()` (`:194-202`) clamps the device's actual count into
+`[0, requested]` and returns an `AudioInputView` (`:127-171`) exposing `RequestedChannelCount()`,
+`ActiveChannelCount()`, `HasActiveChannel(ch)`, `Empty()`, `Sample()` and `SampleOrSilence()`.
+`AudioInputFrameView` (`:87-124`) is the per-frame equivalent. Both are callback-lifetime-only
+non-owning views and must not be retained past `ProcessBlock`.
+
+**Precise about what this does and does not give us.** It is a genuine *requested vs active*
+distinction, which is what our raw `block.inputs != nullptr && block.numInputChannels > 0` test
+could never express. In practice it also delivers the user opt-in we wanted, because the Audio
+page's input-device selector governs whether any channel goes active: pick no input device and
+`ActiveChannelCount()` is 0, so source #6 stays dark and cannot steal randomization.
+
+The residual gap is narrower than the original ask's wording: a user who *selects* an input device
+but patches nothing into it still yields an active, silent channel. We judge that acceptable — they
+explicitly chose an input device — but it is recorded rather than glossed, because "active channel"
+means the device is delivering it, not that a human plugged in a cable.
+
 | Item | Verdict at `77a3019e` | Evidence |
 |---|---|---|
 | 1 | **LANDED** — plain click dispatches from `Draw` nodes in both backends | commit `48d20cb7`; `acceptsClick_` + `mouseUp` dispatch, `projects/synth/juce/PortableJuceBackend.hpp:534-621`; plain-click action carried by `ControlStyle::action`, `projects/synth/include/synth/PortableUIBuilders.hpp:28` |
@@ -53,7 +80,7 @@ still describe the state at `1940ddcb` and are retained as the record of what wa
 | 5 | not landed — text box still unconditional | `setTextBoxStyle(TextBoxBelow, ...)`, `PortableJuceBackend.hpp:1162` |
 | 6 | not landed as asked — Slider `label` still reaches only `setName` (`PortableJuceBackend.hpp:1163-1166`) — **but `ControlStyle::caption` now does the workaround's job in the library**: a caption is emitted as a sibling `Label` node with a stable derived id | `PortableUIBuilders.hpp:31`; caption contract, `PortableUI.hpp` appearance comment. Our hand-rolled `kSceneBlendLabel`/`kBpmLabel` nodes become captions on migration |
 | 7 | not landed — still a bare percentage | `FormatDeadlineText` renders `%.1f%%` with no label, `RuntimePages.hpp:285-290`, rendered at `:649-651` |
-| 8 | not landed | `AppContext`/`AudioBlock` carry no input-routing signal, `projects/synth/include/synth/AppContext.hpp:70-100`. `kExternalAudioOptedIn = false` stays |
+| 8 | **LANDED at `508d9d68`** (not at `77a3019e`, where it was still open — see the 2026-08-03 re-check below) | `RuntimeConfig::numAudioInputs` is a *request*; `AudioBlock::numRequestedInputChannels` carries it per block and `AudioBlock::InputView()` returns an `AudioInputView` exposing `RequestedChannelCount()` vs `ActiveChannelCount()`, plus `HasActiveChannel(ch)`, `Empty()`, `SampleOrSilence()` — `AppContext.hpp:84-200`. `kExternalAudioOptedIn` can go |
 | 9 | not landed | `ConfigureProcessingTiming` unchanged, `projects/synth/src/ParameterModulation.cpp:859-865`; no default conversion at prepare time, no new callers under `runtime/`/`include/` |
 | 10 | not landed | same independent-draw coin loop, `ParameterModulation.cpp:2894-2899`. Our distinct-draw helper stays |
 | 11 | not landed | `Bank` still exposes only full `Deselect()`, `projects/synth/include/synth/ParameterModulation.hpp:620`. Our synthesized one-level pop stays (and is required behaviour regardless) |
