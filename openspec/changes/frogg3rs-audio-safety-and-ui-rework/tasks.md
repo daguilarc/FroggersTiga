@@ -605,6 +605,75 @@ a preference.**
   because it never tested anything real (Finding 2 above). Its *function* — proving the surface
   fits — is taken over by the pinned-size overflow tests, which is a strictly stronger guarantee.
 
+  **RESIZE-PATH TRACE (2026-08-04) — closes preflight finding 1. Option 2 is ACHIEVABLE and follows
+  the Sheaf idiom, but it is NOT free wiring; it needs a named app-side addition.**
+
+  | Fact | Evidence |
+  |---|---|
+  | `synth::ui::Surface` is a 4-method pure interface — `BuildTree`, `SetActionHandler`, `DispatchAction`, dtor. **No extent setter of any kind.** | `include/synth/PortableUI.hpp:280-291` |
+  | Sheaf's own concrete surfaces each declare their OWN `SetContentBounds(ui::Bounds)` — it is a per-surface convention, not a base-interface method | `RuntimePages.hpp:1350,1397,1462`; `ControllersPageUI.hpp:932` |
+  | `PortableComponent::RefreshFromSurface()` is **public**, and does the full rebuild: `BuildTree` → `ResolveTree` → `RebuildControls` → `LayoutControls` → `repaint` | `juce/PortableJuceBackend.hpp:214,226-233` |
+  | `PortableComponent::resized()` calls **only** `LayoutControls()` — re-applies already-resolved (stale) bounds; it never re-resolves | `juce/PortableJuceBackend.hpp:256-259` |
+  | `PortableComponent` is **not** a `juce::Timer`; there is no periodic rebuild inside the backend | class decl `:212-233`, no Timer base, no `startTimer` in file |
+  | The established host idiom is: owner's `resized()` → set renderer bounds → `RefreshFromSurface()` | `juce/RuntimePagesJuce.hpp:50-54`; live-extent variant `juce/ControllersHarnessApp.cpp:57-70` (`surface_.SetContentBounds(...)` then `renderer_.RefreshFromSurface()`) |
+  | No public component-traversal helper — `CollectPortableComponents` is **test-only** | no non-test definition in `include/`, `juce/`, `src/` |
+
+  **CORRECTION to an earlier claim in this plan's discussion:** it was stated that the app "rebuilds
+  at 30 Hz anyway," so resize would come along for free. **That is wrong.** `config.uiFrameHz` is
+  consumed only by `Engine` to size the *audio-thread UI-state publish interval*
+  (`include/synth/Engine.hpp:278,289-292`); it drives no GUI tree rebuild. Nothing rebuilds the tree
+  periodically. A resize therefore requires an explicit refresh — the assumption would have produced
+  a design that silently never reflowed.
+
+  **What option 2 consequently requires (all app-side, no Sheaf patch):**
+  1. `FroggersUiSurface` gains its own `SetContentBounds(ui::Bounds)` storing the live extent —
+     exactly the convention Sheaf's own surfaces use, since the base interface carries none.
+  2. `FroggersPageLayout::RootBounds()` returns that stored extent instead of reading fixed
+     `context->config->uiWidth/uiHeight`. `config.uiHeight` survives only as the INITIAL size.
+  3. Something owning the renderer must, on resize, call (1) then `RefreshFromSurface()`.
+     **OPEN SUB-QUESTION (traced separately): which host owns our app's `PortableComponent`, and
+     does its `resized()` already call `RefreshFromSurface()`?** Every host in
+     `RuntimePagesJuce.hpp` does. If ours does too, step 3 is nearly free and only the extent must
+     reach the surface. If not, `FroggersMain` must hand-roll a `juce::Component` child-walk to
+     find the renderer, since no public traversal helper exists — ~10 lines of our code reaching
+     through Sheaf's shell composite, which is more fragile and should be called out as such.
+
+  **DELETION / SURVIVAL TABLE (closes preflight finding 2's non-test half).** Verdicts are per-item,
+  and the recurring split matters: most helpers **die as pixel arithmetic while their intent
+  survives as data**. An implementer deleting the whole struct would take the topology with it.
+
+  | `FroggersUiSurface.hpp` | Verdict |
+  |---|---|
+  | `kControlGap/Margin`, `kDefaultButton*`, `kDefaultSlider*`, `kDefaultLabelHeight` :171-177 | DIES |
+  | `ButtonWidth` :193-196, `LabelLikeWidth` :205-208, `ControlWidth/Height` :210-232 | DIES |
+  | `FlowedControls()` :263-288 | **SURVIVES AS DATA** — control identity and order |
+  | `FlowExtent`/`ComputeFlowExtent` :290-326 | DIES |
+  | `kMargin` :341, `kGap` :342 | SURVIVES AS DATA (design tokens); literal arithmetic DIES |
+  | `kScopeHeight` :370, `kScopeWidth` :375 | **SURVIVES AS DATA — operator-mandated scope ratio** |
+  | `kContentAreaHeight` :401 | SURVIVES AS DATA (content budget) |
+  | `kAutoFlowedChromeGap` :410, `RequiredHeight()` :420-423, `ContentArea()` :441-449 | DIES |
+  | `RootBounds()` :425-433 | Pixel math DIES; config-driven sizing SURVIVES (now live-extent, see above) |
+  | `ScopeArea()` :514-521 | Pixel math DIES; "scope = left column at that ratio" SURVIVES AS DATA |
+  | `GridArea()` :530-538 | Pixel math DIES; "grid = right column, full height, gap right of scope" SURVIVES AS DATA |
+  | `kColumns=4/kRows=4/kEncoderCount=16` :547-549 | **SURVIVES AS DATA** — slot topology, static_assert-tied to `kFroggersSlotsPerBank` :568-569 |
+  | `FroggersEncoderGridLayout::kGap` :550 | SURVIVES AS DATA (token); division DIES |
+  | `BoundsForIndex()` :552-565 | Pixel division DIES; **row/col mapping (`ix/kColumns`, `ix%kColumns`) SURVIVES AS DATA** |
+  | `kTransportPlateColor` :600 | SURVIVES (colour, not geometry) |
+  | `kTransportIconFraction` :601 | DIES — intra-node inset fraction. UNCLEAR whether declared layout reaches inside Draw command factories at all |
+  | `kTransportPlateSize` :602 | SURVIVES AS DATA — already expressed as `Extent::Px(28)` at :758-759,764-765 |
+  | `BuildPlay/StopDrawCommands` bodies :604-638 | Inset arithmetic DIES; signatures + plate/icon command structure SURVIVE |
+
+  | Explicit-bounds call sites | Verdict |
+  |---|---|
+  | `RootBounds(context_)` :720, `ContentArea(root)` :721, `builder.Root(kRoot, root)` :724 | DIES |
+  | `playStyle/stopStyle .layout.main/cross = Extent::Px(...)` :758-759,764-765; `builder.Draw(kPlay/kStop, factory, style)` :760,766 | **SURVIVE — already LayoutOptions-shaped, no explicit Bounds** |
+  | `ScopeArea(content)` :773, `vcoScope.SetBounds(scopeArea)` :776 | DIES |
+  | `GridArea(content)` :786, `AppendEncoderGrid(builder, gridArea)` :797 | DIES |
+  | `BoundsForIndex(gridArea, ix)` :901, `visualizer->SetBounds(cellBounds)` :908 | DIES — visualizer placement becomes `overlayOf` |
+  | `builder.Draw(encoderId, cellBounds, ..., style)` :925 | DIES — explicit-Bounds `Draw` overload replaced by in-flow cell |
+  | `builder.Build(root)` :814 | Computed-root argument DIES; the `Build(extent)` entry point survives, now fed the live extent |
+  | `Button`/`Slider`/`StatusText`/`Label` calls :857,866,942,963,999,1013,1056,1058 | **UNAFFECTED — none passes explicit Bounds** |
+
   **Acceptance criteria, from the screenshot (all operator-confirmable by looking):**
   1. Buttons are intrinsic-width controls in compact rows — nothing stretches to window width by
      default.
