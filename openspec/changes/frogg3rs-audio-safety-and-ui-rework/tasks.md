@@ -674,6 +674,52 @@ a preference.**
   | `builder.Build(root)` :814 | Computed-root argument DIES; the `Build(extent)` entry point survives, now fed the live extent |
   | `Button`/`Slider`/`StatusText`/`Label` calls :857,866,942,963,999,1013,1056,1058 | **UNAFFECTED — none passes explicit Bounds** |
 
+  **RESIZE TRACE, FINAL — OPTION 2 IS NOT ACHIEVABLE AT THIS PIN. Operator decision required.**
+  Two corrections and one blocker, all traced 2026-08-04.
+
+  **Correction 1 (reversing this plan's own earlier correction).** The claim "the app rebuilds at
+  30 Hz" was marked false above. **It is actually TRUE** — just not via the path first assumed.
+  `Runtime<App>::timerCallback()` (`runtime/Runtime.hpp:718-722`) fires `repaintHook_`, wired to
+  `ShellComponent::RepaintAll` (`runtime/Shell.hpp:88,60-63`) → `MainPane::RefreshOnTick()` →
+  `renderer_.RefreshFromSurface()` (`runtime/MainPane.hpp:60-64`), at
+  `startTimerHz(config.uiFrameHz ? : 30)` (`Runtime.hpp:299`). So `uiFrameHz` drives BOTH Engine's
+  publish interval AND this UI timer. The tree is rebuilt 30×/sec.
+
+  **Correction 2 — no refresh wiring is needed at all.** `MainPane<App>::resized()`
+  (`runtime/MainPane.hpp:66-70`) already does `renderer_.setBounds(getLocalBounds())` then
+  `renderer_.RefreshFromSurface()`, and `ShellComponent::resized()` (`Shell.hpp:65`) propagates to
+  it. The earlier plan step "wire live resize in `FroggersMain`" is unnecessary — and would have
+  been impossible anyway: `RuntimeSessionOwner` exposes only `juce::Component&`
+  (`Shell.hpp:110-114,121`), `MainPane` has no public accessor for `renderer_`, and the traversal
+  helper is test-only. It would have required a `dynamic_cast` + hand-rolled child walk.
+
+  **THE BLOCKER.** Our surface is **embedded, not top-level**, and the shell composes by
+  *node-bounds arithmetic on an already-resolved app tree* — not by resolving our region:
+  `RuntimeMainComponent::BuildTree()` (`include/synth/RuntimeMainComponent.hpp:110-140`) calls
+  `app_.PortableSurface().BuildTree()` (`:112`, our tree, already resolved by our own
+  `Build(root)`), then places the sidebar with
+  **`sidebarTree.nodes.front().bounds.x = static_cast<float>(App::Config().uiWidth);`** (`:118`).
+  `App::Config()` is a static returning a compiled-in `uiWidth = 900`
+  (`app/FroggersAppCore.hpp:185`). **The sidebar is therefore pinned at x=900 forever.** If our
+  surface resolved against a live window extent, the app region and the sidebar would desync — the
+  sidebar would sit at 900 while our content claimed the full width. This also explains the
+  screenshot's large dead area: the renderer takes the whole window while the composed tree stays
+  900×632.
+
+  **Consequence: the window-reflow half of option 2 requires an upstream change** (shell composing
+  from a live extent rather than `App::Config()`), filed as upstream ask 15. **Everything else in
+  F.3 is unaffected and still fixes the actual defect** — the single declared grid, no overlap,
+  intrinsic-width buttons, cells flexing within the region.
+
+  **Operator decision (do not choose this for them):**
+  - **2a — proceed now, fixed region.** Build the declared grid resolving against the region size
+    from `Config()` (as today). Fixes the visible disaster; window stays effectively fixed-size;
+    internal layout is fully declarative so a live extent becomes a one-line change the day the
+    shell supports it. Fit tests still run at three sizes by feeding `RootBounds` directly.
+  - **2b — proceed and pursue upstream.** 2a plus filing ask 15 and revisiting when it lands.
+  - **2c — wait.** Leave the app broken until upstream lands. **Not recommended:** the app is
+    currently unusable, and 2a's work is required under every outcome.
+
   **Acceptance criteria, from the screenshot (all operator-confirmable by looking):**
   1. Buttons are intrinsic-width controls in compact rows — nothing stretches to window width by
      default.
