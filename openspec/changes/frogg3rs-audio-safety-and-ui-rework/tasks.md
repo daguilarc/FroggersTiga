@@ -810,6 +810,96 @@ a preference.**
     randomization. It was disabled because a phantom source steals randomization slots; confirm with
     the operator that it now behaves, and that selecting no input device still leaves it dark.
 
+## §F.6-PLAN — slider widths diverge because two emitters do one job (2026-08-05)
+
+Operator, on the F.3 build: *"the scene slider is too wide and the bpm slider is too narrow. grid
+design fail."* Correct on both counts, and the cause is structural rather than a bad constant.
+
+### §1 trace — root cause, cited
+
+Neither slider declares a width. Both pass a bare `synth::ui::ControlStyle{}`, so `layout` is
+default-constructed (`AppendSceneBlendGroup`, `AppendBpmControl`, `app/FroggersUiSurface.hpp`).
+The divergence comes entirely from **container kind**:
+
+- `AppendSceneBlendGroup` emits `builder.Column(kSceneBlendGroup, ...)` holding `[Slider, Label]`.
+  In a Column the horizontal axis is the CROSS axis, so the slider fills the full left-block width.
+- `AppendBpmGroup` emits `builder.Row(kBpmGroup, ...)` holding `[Slider, Label]` (via
+  `AppendBpmControl`). In a Row the horizontal axis is the MAIN axis, so slider and label **split**
+  it — the slider gets roughly half.
+
+So slider width is a side effect of where each label sits, not a declared property. **Both
+emitters are structurally identical otherwise** — same `groupLayout` fields (`main =
+Weight(rowWeight)`, `cross = Weight(1)`, `padding = 0`, `gap = kGap`), then a container holding a
+slider and its label.
+
+**Definition sites, enumerated (OMNI §1 — all, not the first found):** exactly two labelled
+sliders exist in the surface — Scene blend and BPM. There is no third. The encoder cells, bank
+tabs, transport and scene buttons carry no adjacent label node.
+
+### The OMNI §8 reading, which decides the design
+
+Two structurally near-identical emitters doing one conceptual job is the sequential duplication
+§8 forbids: *"if 2+ occurrences → must be looped, abstracted, or vectorized."* And it is the
+**direct cause of the defect** — the widths differ precisely because two hand-written emitters can
+drift where one parameterized emitter cannot. Any fix that leaves both emitters in place fixes the
+symptom and preserves the mechanism.
+
+A shared emitter also clears OMNI §6 comfortably — reused 2+ times (cond. 1), isolates a distinct
+transformation stage (cond. 2), prevents repetition of structurally similar code (cond. 4): **3 of
+4**, where 2 suffices.
+
+### Options
+
+**F.6-A — one `AppendLabelledSlider(builder, spec)` emitter, placement as a parameter.
+RECOMMENDED.** One function emits both rows; a `LabelPlacement` field (`Below` / `Trailing`)
+selects the container. **The slider's own `LayoutOptions` are declared once, inside that emitter**,
+so both sliders are the same width *by construction* — not by two constants kept in agreement.
+Preserves both standing instructions unchanged: scene-blend label below (cell-map amendment), BPM
+label trailing (B12). Eliminates the §8 duplication that caused this.
+
+**F.6-B — declare each slider's width separately, keep both emitters.** Give the BPM slider
+`main = Weight(1)` and its label `main = Intrinsic()`, then give the scene-blend slider a matching
+explicit cross extent. **NOT RECOMMENDED:** the two widths would be equal only while a human keeps
+two numbers in agreement — the exact hand-synced-geometry defect F.3 just deleted
+(`uiHeight == RequiredHeight()`), reintroduced at smaller scale.
+
+**F.6-C — make both labels sit the same way** (both below, or both trailing). Structurally
+symmetric and also kills the duplication, but it reverses one of two recorded operator
+instructions — B12's trailing BPM, or the cell-map's below scene-blend. **Not proposed as a
+default**; if the operator wants uniform placement, F.6-A implements it by changing one enum value
+at one call site, which is the point of making placement a parameter.
+
+### OMNI self-review of this proposal (requested by the operator)
+
+- **§1 data flow / trace.** Root cause traced to container kind with the emitters named; both
+  definition sites enumerated and confirmed to be the complete set. PASS.
+- **§5 structure depth (2-of-4).** F.6-A nests Column-inside-Row-inside-Row at most. Hidden state
+  across levels: no. Duplicated transformation logic across branches: **no — that is what it
+  removes.** Loss of input→output traceability: no, one emitter, one spec in. Decomposition not
+  matching real stages: no, each level is a real grid region. **0 of 4 → nesting valid.** PASS.
+- **§6 helper rule (2-of-4).** 3 of 4 as counted above. PASS.
+- **§7 full pipeline, not incremental patch.** F.6-A rewrites the whole labelled-slider path;
+  F.6-B would be the incremental patch §7 warns against. PASS for A, FAIL for B.
+- **§8 repetition.** The whole point. PASS for A and C; **F.6-B FAILS §8** — it leaves two
+  emitters and adds two constants to keep in sync.
+- **§10/§11 efficiency.** No loop, no repeated allocation, O(1) either way. N/A.
+- **§12 defensive code.** No new guards. The existing `externallyClocked` branch in
+  `AppendBpmControl` is real (BPM renders as `StatusText` when slaved) and stays — it is a genuine
+  state, not an impossible one. PASS.
+- **§14 preflight.** Trace complete and cited; definition sites exhaustive; no unread behaviour
+  asserted. The one open item is a **question, not an assumption**: what should the shared width
+  actually BE? Recorded below rather than guessed.
+- **§16.1.** Verification through a subagent, foreground, counts only.
+
+**Open question for the operator, not to be assumed:** F.6-A makes both sliders equal by
+construction, but "equal" still needs a value. Candidates: full left-block width minus the BPM
+label gutter (both shrink to the current BPM width), or full width with BPM's label wrapping below
+its own slider (both grow to the current scene-blend width, but that is F.6-C). **The screenshot
+says scene-blend is too wide AND BPM too narrow, which reads as wanting something between the two
+— so this needs the operator's answer, not an implementer's pick.**
+
+- [ ] F.6 Implement the approved option. **Blocked on the width answer above.**
+
 ## §G-PLAN — direct launch, no app picker (written 2026-08-01)
 
 Folded in from a standalone `PROPOSAL-direct-launch.md` on 2026-08-02, same reason as §F-PLAN.
