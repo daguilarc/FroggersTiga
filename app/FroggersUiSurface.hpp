@@ -2,61 +2,72 @@
 
 // synth_froggers::FroggersUiSurface -- packet 10 of the froggers-sheaf-app
 // change (openspec/changes/froggers-sheaf-app/tasks.md, section "10. Surface
-// layout (ported v2 design)", tasks 10.1-10.7; design D9/D9a/D9b/D11/D14/D17;
-// spec `specs/froggers-app-surface-layout/spec.md`).
+// layout (ported v2 design)"; design D9/D9a/D9b/D11/D14/D17;
+// spec `specs/froggers-app-surface-layout/spec.md`), re-architected under
+// `openspec/changes/frogg3rs-audio-safety-and-ui-rework/tasks.md` task F.3
+// (2026-08-04/05) to adopt Sheaf's portable layout engine
+// (`PortableUILayout.hpp`/`PortableUIMetrics.hpp`, pin `77a3019e`) instead of
+// this file's own hand-rolled pixel arithmetic.
 //
-// Follows Braid 4's builder composition exactly (apps/braid-4/Braid4UI.hpp:
-// 31-96; layout math apps/braid-4/Braid4UiModel.hpp:70-88,90-206, controls
-// :386-413): a portable `synth::ui::Surface` built fresh every BuildTree()
-// call from a Builder, reading published `ParameterManager::UIState`/
-// `BankSlot::UIState` snapshots for display and routing every operator
-// interaction through `synth::ui::Action`. No JUCE, no v2 JUCE component
-// reused (design D11) -- only the v2 *layout* (top band of scopes + chrome,
-// a bank selector, a 16-slot grid that swaps in place on drill-in) is
-// ported.
+// TOPOLOGY DIRECTIVE (operator, 2026-08-03): "sheaf is the guide for classes
+// but froggers is the guide for topology." This surface is now declared as
+// ONE grid -- encoders and chrome alike are grid citizens with cell
+// positions, not a scope/grid region plus a separately auto-flowed chrome
+// band. `FroggersCellMap` below is the topology, expressed as data (the
+// operator-approved 6-row-by-6-column table, tasks.md F.3 CELL MAP); the
+// mechanism -- how a cell becomes real geometry -- is the Sheaf idiom
+// Braid 4's own app uses for its grids (`apps/braid-4/Braid4UiModel.hpp`'s
+// `EmitBraid4CellGrid`/`Braid4CellLayout`): a `Column` of `Row`s, weighted
+// `Extent::Weight(n)` cells (n>1 expresses a span), and Draw nodes whose
+// commands are built from the RESOLVED bounds a `DrawFactory` receives, not
+// from pixel math this file computes ahead of time. `EmitBraid4CellGrid`
+// itself lives in an app-specific Sheaf header this app must not include
+// (cross-app coupling into another app's file) -- this file writes its own
+// equivalent, same convention `FroggersParseSize`/`FroggersParseFloat` below
+// already follow for Braid4UiModel.hpp's parse-helper pattern.
 //
-// Bounds note: `synth::ui::Builder`'s Button/Slider/Toggle/ComboBox/
-// TextField/StatusText node kinds take NO explicit `Bounds` (see
-// PortableUI.hpp's `Node`/Builder's method signatures) -- only `Draw`/
-// `DrawInteractive`/`Visualizer` nodes do. Braid4UI.hpp's own
-// `AppendBraid4Controls` confirms this: it calls `builder.Button(...)`/
-// `builder.Slider(...)` with no bounds at all, leaving control placement to
-// whatever host renders the node tree. This surface follows the identical
-// division of labor: `FroggersPageLayout`/`FroggersEncoderGridLayout` below
-// compute real `Bounds` for the two regions that are actually
-// Draw-positioned -- the VCO scope panel and the 16-slot encoder grid (task
-// 10.5's "no overlap"/"every encoder cell fully inside the grid region"
-// tests target exactly these two, plus -- as of F.2b, 2026-08-03, Sheaf pin
-// 77a3019e -- Play/Stop, restored as `Draw` nodes). Play/Stop and the
-// bank-select buttons were briefly coloured-icon/hand-drawn Draw nodes
-// (operator 2026-07-27/2026-07-28) to get custom icons and true
-// colour-inversion selection, but were reverted back to plain `Button`
-// nodes on 2026-07-28 (tasks 6.3/6.4): at Sheaf pin 1940ddcb,
-// Draw/DrawInteractive nodes dispatched only on double-click
-// (`RetainedDrawComponent`, PortableJuceBackend.hpp:549-555 -- no
-// plain-click path), which cost single-click page-switching and transport
-// control. Ask 1 landed plain click for `Draw` nodes at pin 77a3019e, so
-// F.2a/F.2b (2026-08-03) moved the encoder grid's drill-in press and
-// Play/Stop back onto `Draw` nodes using `ControlStyle::action` -- see
-// AppendEncoderGrid()'s and BuildTree()'s own comments. Randomize All/Page,
-// scene, BPM, and the bank buttons remain plain Button/Slider/StatusText
-// nodes with no app-computed placement, exactly like Braid4's own
-// scene/bank buttons and scene-blend slider. The transport-strip/
-// bank-header-strip vertical RESERVATIONS that used to sit above the
-// scope/grid regions for the Draw-node versions of these controls have been
-// removed as dead weight (regression fix, see `FroggersAutoFlowedChromeModel`/
-// `FroggersPageLayout` below): they no longer draw anything, and (traced
-// below) removing them does not move where the runtime's auto-flow chrome
-// band starts -- it only lets the scope/grid regions use the space those
-// strips used to blank out.
+// `StandardAppLayout` (`PortableUIStandardLayout.hpp`) is NOT used: it is
+// Braid4's OWN topology (an empty second-visualizer slot does not collapse,
+// `PortableUIStandardLayout.hpp:89-99`), not a neutral scaffold, and this
+// app's topology is the operator's, not Braid4's.
 //
-// Crunchy was removed from this chrome band entirely (operator 2026-07-27:
-// "why is there a fucking slider for crunchy... i never asked for that. It
-// duplicates bank slot 15"). Crunchy is reachable only via the encoder
-// grid's slot 15 now, addressed exactly like any other bank parameter --
+// Window size: OPERATOR DECISION 2026-08-05, route 2a. The surface still
+// resolves against `context->config->uiWidth/uiHeight` (a fixed, compiled-in
+// size, unchanged from before this task) rather than a live window extent --
+// making the layout track the ACTUAL window requires an upstream shell
+// change (filed as ask 15: `RuntimeMainComponent::BuildTree()` composes the
+// sidebar from `App::Config().uiWidth`, not a live extent, so a resizable
+// surface here would desync from it). Everything internal to this surface is
+// nonetheless fully declarative, so adopting a live extent later is a change
+// to `FroggersPageLayout::RootBounds()`'s source, not a redesign.
+//
+// Bounds note (still true): `synth::ui::Builder`'s Button/Slider/Toggle/
+// ComboBox/TextField/StatusText node kinds take no explicit `Bounds` --
+// placement comes entirely from each node's own `LayoutOptions` (`main`/
+// `cross` extents), resolved by the engine against whatever region its
+// container was given. Every region this surface used to compute a pixel
+// `Bounds` for by hand -- the scope panel, the encoder grid, Play/Stop's
+// plates -- is now an in-flow cell with a declared `LayoutOptions` instead;
+// the sole exception is the transport plates' own fixed `Extent::Px(28)`
+// size (unchanged from before this task, see `kTransportPlateSize`), which
+// was already a `LayoutOptions`-expressed size, not an `explicitBounds`
+// out-of-flow declaration.
+//
+// Crunchy was removed from a dedicated chrome slider entirely (operator
+// 2026-07-27: "why is there a fucking slider for crunchy... i never asked
+// for that. It duplicates bank slot 15"). Crunchy is reachable only via the
+// encoder grid's slot 15, addressed exactly like any other bank parameter --
 // see design.md D11/Resolved-decisions and tasks.md 10.2 for the recorded
 // trade-off (Crunchy is unreachable while a modulation view is open, since
-// slot 15 is then Target/Back).
+// slot 15 is then Target/Back). Crunchy (slot 15) is GLOBAL -- one shared
+// `Parameter` aliased into all six banks (`FroggersParameters.hpp:79-80,
+// 191,251-256,342-366`) carrying its own fixed Yellow rather than the bank
+// colour, and excluded from drill-in/randomize dispatch
+// (`FroggersModulation.hpp:120-126`). That colour already flows through
+// `Parameter::UIState.color` into `EncoderDrawStateFromParameter` with no
+// special-casing needed here -- this file's one encoder-cell code path
+// renders slot 14 (Crispy, per-bank colour) and slot 15 (Crunchy, fixed
+// Yellow) identically; the colour difference is data, not branching.
 //
 // Threading note: see FroggersAppCore.hpp's own header comment for the full
 // reasoning. Encoder DRAG, scene select/blend, and transport Start/Stop are
@@ -94,12 +105,39 @@ namespace synth_froggers {
 namespace FroggersNodeIds {
 
 inline constexpr const char* kRoot = "froggers.root";
+// The single outer split Row (left block | right block, tasks.md F.3 CELL
+// MAP) and the two blocks themselves.
+inline constexpr const char* kLayoutRoot = "froggers.layout.root";
+inline constexpr const char* kLeftBlock = "froggers.layout.left";
+inline constexpr const char* kRightBlock = "froggers.layout.right";
+
 inline constexpr const char* kPlay = "froggers.transport.play";
 inline constexpr const char* kStop = "froggers.transport.stop";
+// Row 3 of the left block (tasks.md F.3 CELL MAP): Play | Stop.
+inline constexpr const char* kTransportRow = "froggers.layout.left.transport";
+// Row 4 of the left block: Scene 1 | Scene 2.
+inline constexpr const char* kScenesRow = "froggers.layout.left.scenes";
+
 inline constexpr const char* kRandomizeAll = "froggers.randomize.all";
 inline constexpr const char* kRandomizePage = "froggers.randomize.page";
+// Row 6 of the right block: Randomize Page | Randomize All (moved out of the
+// bank-header group by the CELL MAP -- see AppendRandomizeRow()'s comment).
+inline constexpr const char* kRandomizeRow = "froggers.layout.right.randomize";
+// Row 1 of the right block: the six bank-select tabs.
+inline constexpr const char* kBankTabsRow = "froggers.layout.right.banks";
+
 inline constexpr const char* kSceneBlend = "froggers.scene.blend";
+// Row 5 of the left block: the Scene-blend slider with its label BELOW it
+// (the CELL MAP's one amendment to the operator-approved table, superseding
+// F.2d's `ControlStyle::caption` conversion for this control -- see
+// AppendSceneBlendGroup()'s own comment).
+inline constexpr const char* kSceneBlendGroup = "froggers.scene.blend.group";
+inline constexpr const char* kSceneBlendLabel = "froggers.scene.blend.label";
+
 inline constexpr const char* kBpm = "froggers.bpm";
+// Row 6 of the left block: the BPM slider with its label TRAILING it (B12,
+// unchanged by the CELL MAP -- see AppendBpmGroup()'s own comment).
+inline constexpr const char* kBpmGroup = "froggers.bpm.group";
 // Survives F.2d's caption conversion on purpose. The scene-blend label's
 // hand-rolled node went away because its ONLY cause -- upstream never drawing
 // slider captions -- is dead at pin 77a3019e. This one had a SECOND cause,
@@ -112,6 +150,7 @@ inline constexpr const char* kBpm = "froggers.bpm";
 // Tracked upstream as ask 14 (caption placement); when that lands, this
 // collapses into `ControlStyle::caption` like the scene-blend one already has.
 inline constexpr const char* kBpmLabel = "froggers.bpm.label";
+
 inline constexpr const char* kVcoScope = "froggers.scope.vco";
 
 inline std::string BankButton(std::size_t bankIx) {
@@ -124,6 +163,13 @@ inline std::string SceneButton(std::size_t sceneIx) {
 
 inline std::string Encoder(std::size_t ix) {
     return "froggers.encoder." + std::to_string(ix);
+}
+
+// One Row per 4-wide slice of the 16-slot encoder grid (rows 2-5 of the
+// right block, tasks.md F.3 CELL MAP): row 0 = slots 0-3, row 1 = slots 4-7,
+// etc.
+inline std::string EncoderRow(std::size_t row) {
+    return "froggers.layout.right.row." + std::to_string(row);
 }
 
 }  // namespace FroggersNodeIds
@@ -143,284 +189,42 @@ inline constexpr const char* kEncoderDrag = "froggers.encoder.drag";
 
 }  // namespace FroggersActions
 
-// Regression fix (operator 2026-07-28, task 3.7 follow-up): a just-landed
-// change reverted Play/Stop and the six bank buttons from bounds-carrying
-// `Draw` nodes back to unbounded `Button` nodes (tasks 6.3/6.4, see this
-// file's header comment). That made SIXTEEN controls flow via the runtime's
-// own auto-layout instead of one, but `FroggersPageLayout::RequiredHeight()`
-// (below) still reserved room for only a single 28px row -- silently
-// under-reserving `config.uiHeight` (FroggersAppCore.hpp) and clipping the
-// bottom of the chrome band.
-//
-// This struct is a small, EXPLICIT app-side replica of just enough of
-// `PortableJuceBackend.hpp`'s control-sizing/greedy-wrap rules to count how
-// many rows this app's own fixed 16-control chrome band will occupy and how
-// tall that block is. The app cannot query the backend directly for this
-// (this file is portable code with no JUCE dependency -- see this file's
-// header comment and `FroggersSurfaceTests.cpp`'s own
-// `#ifdef JUCE_MAJOR_VERSION #error` guard), and Sheaf exposes no "measured
-// auto-flow extent" accessor. Every constant/formula below cites the exact
-// `PortableJuceBackend.hpp` line range it mirrors, so a future toolkit
-// change to those rules is a findable trail rather than a silent drift, and
-// this is kept deliberately minimal -- enough to size THIS app's control
-// set, not a general layout engine.
-struct FroggersAutoFlowedChromeModel {
-    // PortableJuceBackend.hpp:339-347 (private consts of
-    // PortableJuceMainComponent -- the same class whose LayoutControls()/
-    // DefaultSizeForNode() this mirrors).
-    static constexpr float kControlGap = 8.0f;
-    static constexpr float kControlMargin = 12.0f;
-    static constexpr float kDefaultButtonWidth = 72.0f;
-    static constexpr float kDefaultButtonHeight = 28.0f;
-    static constexpr float kDefaultSliderWidth = 140.0f;
-    static constexpr float kDefaultSliderHeight = 28.0f;
-    static constexpr float kDefaultLabelHeight = 22.0f;
-
-    // This app never flows a Toggle/ComboBox/TextField, so DefaultSizeForNode's
-    // branches for those kinds (PortableJuceBackend.hpp:597-600,613-617) have
-    // no replica here -- `LabelLike` below covers both `Label` and
-    // `StatusText` (identical case in the switch, :601-607).
-    enum class Kind { Button, LabelLike, Slider };
-
-    struct ControlSpec {
-        Kind kind;
-        std::string label;  // Button label, or Label/StatusText text.
-    };
-
-    // PortableJuceBackend.hpp:608-612 (`NodeKind::Button` case of
-    // `DefaultSizeForNode`): width = max(kDefaultButtonWidth,
-    // round(label.size()*6.5 + 24)); height = kDefaultButtonHeight.
-    static float ButtonWidth(const std::string& label) {
-        const float raw = std::round(static_cast<float>(label.size()) * 6.5f + 24.0f);
-        return std::max(kDefaultButtonWidth, raw);
-    }
-
-    // PortableJuceBackend.hpp:601-607 (`NodeKind::Label`/`NodeKind::StatusText`
-    // case): width = min(availableWidth, max(120, round(text.size()*6.5 +
-    // 12))); height = kDefaultLabelHeight. The original reads
-    // `node.text.empty() ? node.label : node.text` -- this app's Label/
-    // StatusText nodes (AppendChromeBand() below) only ever set `label` via
-    // `Builder::Label`/`Builder::StatusText`, never `text`, so this replica
-    // only needs the label branch.
-    static float LabelLikeWidth(const std::string& text, float availableWidth) {
-        const float raw = std::round(static_cast<float>(text.size()) * 6.5f + 12.0f);
-        return std::min(availableWidth, std::max(120.0f, raw));
-    }
-
-    static float ControlWidth(const ControlSpec& spec, float availableWidth) {
-        switch (spec.kind) {
-            case Kind::Button:
-                return ButtonWidth(spec.label);
-            case Kind::LabelLike:
-                return LabelLikeWidth(spec.label, availableWidth);
-            case Kind::Slider:
-                return kDefaultSliderWidth;  // PortableJuceBackend.hpp:595-596.
-        }
-        return kDefaultButtonWidth;
-    }
-
-    static float ControlHeight(const ControlSpec& spec) {
-        switch (spec.kind) {
-            case Kind::Button:
-                return kDefaultButtonHeight;
-            case Kind::LabelLike:
-                return kDefaultLabelHeight;
-            case Kind::Slider:
-                return kDefaultSliderHeight;
-        }
-        return kDefaultButtonHeight;
-    }
-
-    // This app's exact flowed-chrome control set, IN BUILD ORDER -- flow
-    // order follows `m_tree.nodes` push order (PortableJuceBackend.hpp:754,
-    // 786-797's `FlowCursor` walks the tree in order), which in turn matches
-    // `synth::ui::Builder`'s push_back-on-call-order (PortableUIBuilders.hpp:
-    // 277-278, 407-416) -- so this list must match BuildTree()/
-    // AppendBankHeader()/AppendChromeBand()'s own build call order exactly:
-    // Play, Stop, the 6 bank buttons (read from `FroggersBankLayouts()`, the
-    // single source of truth AppendBankHeader() itself reads -- not
-    // retyped), Randomize Page, Randomize All, Scene 1, Scene 2, Scene-blend
-    // label+slider, BPM label+slider. 16 controls total.
-    //
-    // UI-rework ITEM 5 (design.md A3f, tasks.md B.5, 2026-07-29): the BPM
-    // label used to read "BPM (no effect while stopped)" pre-Play
-    // (AppendChromeBand() below) -- this list used to carry that longer
-    // string deliberately, as the WIDEST state, since reserving for the
-    // stopped-state label was the worst case. That annotation is gone (a
-    // constant "BPM" now, in both transport states -- see
-    // AppendChromeBand()'s own comment), so this list carries the one
-    // string that is now the only state: "BPM".
-    // Task 6.14: this control set is width-independent (only ControlWidth,
-    // called separately per spec, takes availableWidth) and never varies
-    // across calls, but ComputeFlowExtent() calls it once per FlowedControls
-    // spec in a loop, and ComputeFlowExtent is itself called from
-    // ContentArea(), which BuildTree() calls once per UI frame at 30 Hz --
-    // so a plain by-value return here heap-allocates this vector and its 16
-    // std::strings 30 times a second to recompute something that cannot
-    // change. A function-local `static const`, returned by reference, builds
-    // the vector exactly once (first call, thread-safe under C++11's
-    // "magic statics") and every subsequent call is a pointer return.
-    static const std::vector<ControlSpec>& FlowedControls() {
-        static const std::vector<ControlSpec> controls = [] {
-            std::vector<ControlSpec> built;
-            // UI-rework ITEM 4 (design.md A3e, tasks.md B.4, 2026-07-29):
-            // labels are the glyphs "▶"/"■" now (AppendChromeBand() below),
-            // not the words "Play"/"Stop" -- both are short enough that
-            // ButtonWidth's max(72, ...) floor dominates either way (no
-            // numeric change to this model's output), but this list models
-            // the REAL flowed control set, so it carries the real label.
-            built.push_back({Kind::Button, "▶"});
-            built.push_back({Kind::Button, "■"});
-            for (const FroggersBankLayout& layout : FroggersBankLayouts()) {
-                built.push_back({Kind::Button, layout.name});
-            }
-            built.push_back({Kind::Button, "Randomize Page"});
-            built.push_back({Kind::Button, "Randomize All"});
-            built.push_back({Kind::Button, "Scene 1"});
-            built.push_back({Kind::Button, "Scene 2"});
-            built.push_back({Kind::LabelLike, "Scene blend"});
-            built.push_back({Kind::Slider, "Scene blend"});
-            built.push_back({Kind::LabelLike, "BPM"});
-            built.push_back({Kind::Slider, "BPM"});
-            return built;
-        }();
-        return controls;
-    }
-
-    struct FlowExtent {
-        int rowCount = 0;
-        float totalHeight = 0.0f;
-    };
-
-    // Replica of the greedy wrap in `LayoutControls()`
-    // (PortableJuceBackend.hpp:740-798): a control starts a new row when
-    // `cursor.x + width > cursor.right` AND the current row is non-empty
-    // (:787), advancing `cursor.y` by `rowHeight + kControlGap` on wrap
-    // (:791). `cursor.x`/`cursor.right`/`availableWidth` derive from the
-    // flow root's own width minus `kControlMargin` on each side (:780-783).
-    // This app's chrome band has exactly one flow root
-    // (`froggers.root`/`FroggersNodeIds::kRoot`), so no per-root grouping is
-    // needed here, unlike the general `cursors` map in the original.
-    static FlowExtent ComputeFlowExtent(float rootWidth) {
-        const float availableWidth = std::max(0.0f, rootWidth - kControlMargin * 2.0f);
-        const float right = kControlMargin + availableWidth;  // rootBounds.getRight() - kControlMargin (root.x == 0).
-        float cursorX = kControlMargin;
-        float rowHeight = 0.0f;
-        FlowExtent extent;
-        for (const ControlSpec& spec : FlowedControls()) {
-            const float width = ControlWidth(spec, availableWidth);
-            const float height = ControlHeight(spec);
-            if (cursorX + width > right && rowHeight > 0.0f) {
-                extent.totalHeight += rowHeight + kControlGap;
-                cursorX = kControlMargin;
-                rowHeight = 0.0f;
-            }
-            if (rowHeight == 0.0f) {
-                ++extent.rowCount;
-            }
-            cursorX += width + kControlGap;
-            rowHeight = std::max(rowHeight, height);
-        }
-        extent.totalHeight += rowHeight;
-        return extent;
-    }
-};
-
-// Task 10.1 (design D11): layout math for the two Draw-positioned regions
-// (see this file's header comment on why buttons/sliders have none). Named
-// and shaped after `Braid4PageLayout` (apps/braid-4/Braid4UiModel.hpp:
-// 90-206) but reduced to what this app actually needs: one scope panel (not
-// Braid4's dual VCO+LFO scope stacks -- FroggersAppCore exposes exactly one
-// combined, 3-layer VCO ScopeVisualizer, built in packet 7; see this
-// packet's own report for the "dual" wording discrepancy) stacked above a
-// single 16-slot grid (UI-rework ITEM 1, 2026-07-29, retired the original
-// side-by-side "scope column beside grid column" split -- see
-// `ScopeArea()`/`GridArea()`'s own comments below for why).
+// Task 10.1/F.3: the surface's own extent and design tokens. Everything that
+// used to compute a pixel `Bounds` for the scope/grid regions by hand (task
+// F.3's deletion table: `ContentArea`/`RequiredHeight`/`ScopeArea`/
+// `GridArea`/`FroggersAutoFlowedChromeModel`, all removed) is gone -- that
+// arithmetic DIES, but the tokens and the historical ratio it enforced
+// SURVIVE AS DATA below, either still consumed (kMargin/kGap, as the outer
+// grid's own padding/gap) or preserved as the documented baseline
+// FroggersSurfaceTests.cpp's ratio guard checks the RESOLVED layout against
+// (kScopeWidth/kScopeHeight -- nothing here computes pixels from them any
+// more, but they remain this file's one definition of "the operator's
+// original scope proportions" rather than a duplicate literal in the test).
 struct FroggersPageLayout {
     static constexpr float kDefaultWidth = 900.0f;
+    // Replaces the old `RequiredHeight()`-derived fallback: a plain literal,
+    // matching `FroggersAppCore::Config().uiHeight` (see that file's own
+    // comment -- demoted from a derived cross-check to an initial window
+    // size, task F.3's "config.uiHeight is NOT deleted" precision).
+    static constexpr float kDefaultHeight = 632.0f;
+
+    // The outer split Row's own padding (inset from the window edge) and the
+    // gap between the left/right blocks and between each block's own stacked
+    // rows.
     static constexpr float kMargin = 16.0f;
     static constexpr float kGap = 14.0f;
 
-    // UI-rework ITEM 1 (design.md A3a, tasks.md B.1, 2026-07-29, the
-    // operator's strongest complaint): this used to be `kScopeWidth`
-    // (340.0f), the width of a portrait scope column that spanned the
-    // FULL content height (528px at the default 900x632 window --
-    // `kContentAreaHeight` below minus `kMargin*2`) -- 340 * 528 =
-    // 179520 px^2, far taller than wide. Operator, verbatim: "it is taller
-    // than it is wide, which is to put it mildly, fucking stupid for visual
-    // UI. it should be at most a third of its current size." Requirement:
-    // wider than tall, at most 1/3 of that area, and the reclaimed space
-    // goes to the encoder grid (not left blank).
-    //
-    // Fix: ScopeArea()/GridArea() below switch from a SIDE-BY-SIDE split
-    // (scope column left, grid column right, both spanning the full content
-    // height) to a STACKED one (a short, full-width landscape scope band at
-    // the top of the content area; the grid fills the entire rectangle
-    // below it). That is what makes "reclaimed space goes to the encoder
-    // grid, not left blank" literal: GridArea() inherits exactly the
-    // height/width the scope band does not use, with no leftover strip --
-    // same idea FroggersPageLayout's own transport-strip-removal note above
-    // already used for the 2026-07-28 fix.
-    //
-    // `kScopeHeight` is sized against the DEFAULT content width (868 =
-    // 900 - 2*kMargin): 868 * 64 = 55552 px^2 = 55552/179520 = ~31.0% of
-    // the old area -- under the 1/3 (33.3%) ceiling with headroom, not
-    // pinned to the exact boundary, so a few-px content-width change cannot
-    // push it over. 868 > 64 (wider than tall) with a wide margin.
-    static constexpr float kScopeHeight = 64.0f;
-    // Restored 2026-07-29 with the scope's position (see ScopeArea below).
-    // Unchanged from the original layout: only the HEIGHT was ever meant to
-    // change. 340 x 64 is 5.3x wider than tall and ~12% of the original
-    // 340 x 528 column's area.
+    // Historical operator-mandated scope proportions (tasks.md B.1,
+    // 2026-07-29, the operator's strongest complaint: "it is taller than it
+    // is wide... it should be at most a third of its current size"). The
+    // scope's cell is now weight-resolved against whatever window the
+    // surface builds against, not sized from these pixels directly -- but
+    // FroggersSurfaceTests.cpp's ratio guard still checks the resolved cell
+    // against this exact historical baseline (340 wide portrait column x the
+    // old full content height), so these stay this file's one definition
+    // site for that baseline rather than a second copy in the test.
     static constexpr float kScopeWidth = 340.0f;
-
-    // `kContentAreaHeight` is the height the scope/grid content area needs
-    // (560 -- untouched by this fix, per the task brief's "do not redesign
-    // the scope band"): ScopeArea/GridArea below just divide up whatever
-    // height content is given, with no minimum of their own. It was chosen
-    // once for a comfortable scope/grid size.
-    //
-    // `RequiredHeight()` adds, below that, room for the chrome band the
-    // runtime auto-flows below this content area (Play, Stop, the 6 bank
-    // buttons, Randomize Page, Randomize All, Scene 1, Scene 2, Scene
-    // blend, BPM -- BuildTree()/AppendBankHeader()/AppendChromeBand()
-    // below): `RuntimeMainComponent::IntrinsicBounds()`
-    // (External/Sheaf/projects/synth/include/synth/RuntimeMainComponent.hpp:
-    // 204-210) gives `uiHeight` ZERO vertical slack for it on its own, so
-    // whatever this struct does not explicitly reserve clips below the
-    // window (design E3g's original trace).
-    //
-    // Regression fix (2026-07-28): 16 controls now flow here (Play/Stop and
-    // the bank buttons were reverted from bounds-carrying `Draw` nodes back
-    // to unbounded `Button` nodes, tasks 6.3/6.4), not the 6 a prior
-    // revision of this comment assumed -- `FroggersAutoFlowedChromeModel`
-    // (above) computes the REAL flowed row count/height for this app's
-    // actual control set instead of a single hardcoded row height, so a
-    // future control added to the chrome band changes this number instead
-    // of silently under-reserving again.
-    static constexpr float kContentAreaHeight = 560.0f;
-    // The gap between the lowest Draw-positioned node (the scope/grid
-    // content area's bottom edge -- see ContentArea()'s own trace below)
-    // and the first auto-flowed control row (PortableJuceBackend.hpp:781,
-    // `cursor.y = maxDrawBottom + kControlGap`) -- numerically the same
-    // `kControlGap` `FroggersAutoFlowedChromeModel` replicates, kept as its
-    // own named constant here since it plays a distinct structural role
-    // (the ONE inter-region gap, vs. the N-1 inter-row gaps folded into
-    // `FlowExtent::totalHeight`).
-    static constexpr float kAutoFlowedChromeGap = 8.0f;
-
-    // Callable derivation (not `constexpr`: `FroggersAutoFlowedChromeModel::
-    // ComputeFlowExtent` loops over `std::string`-labelled controls, so this
-    // is evaluated at runtime, not compile time, unlike the old bare-sum
-    // constant it replaces). `FroggersAppCore::Config()` cannot call this
-    // directly (FroggersUiSurface.hpp includes FroggersAppCore.hpp -- the
-    // reverse include would be circular), so Config() carries a literal
-    // matching this value, cross-checked by FroggersSurfaceTests.cpp's
-    // `declared_ui_height_matches_the_derived_required_extent`.
-    static float RequiredHeight() {
-        return kContentAreaHeight + kAutoFlowedChromeGap +
-               FroggersAutoFlowedChromeModel::ComputeFlowExtent(kDefaultWidth).totalHeight;
-    }
+    static constexpr float kScopeHeight = 64.0f;
 
     static synth::ui::Bounds RootBounds(const synth::AppContext* context) {
         const float width = context != nullptr && context->config != nullptr
@@ -428,145 +232,86 @@ struct FroggersPageLayout {
                                  : kDefaultWidth;
         const float height = context != nullptr && context->config != nullptr
                                   ? static_cast<float>(context->config->uiHeight)
-                                  : RequiredHeight();
+                                  : kDefaultHeight;
         return {0.0f, 0.0f, width, height};
-    }
-
-    // The content area's height reserves the auto-flowed chrome band's
-    // space (gap + the REAL computed flow extent for `rootBounds.width`,
-    // not a hardcoded single-row guess) IN ADDITION to the usual top/bottom
-    // `kMargin` -- so a taller `rootBounds.height` does NOT simply hand the
-    // extra room to the scope/grid area (which would happily consume it and
-    // leave the chrome band clipped again).
-    static synth::ui::Bounds ContentArea(synth::ui::Bounds rootBounds) {
-        const float chromeExtent = FroggersAutoFlowedChromeModel::ComputeFlowExtent(rootBounds.width).totalHeight;
-        return {
-            kMargin,
-            kMargin,
-            std::max(0.0f, rootBounds.width - kMargin * 2.0f),
-            std::max(0.0f, rootBounds.height - kMargin * 2.0f - kAutoFlowedChromeGap - chromeExtent),
-        };
-    }
-
-    // Regression fix (2026-07-28), part B: this struct used to reserve two
-    // EXTRA blank vertical strips above the scope/grid content --
-    // `kTransportHeight`(40)+kGap and `kBankHeaderHeight`(28)+kGap,
-    // left over from when Play/Stop and the bank buttons were briefly
-    // bounds-carrying `Draw` nodes (tasks 10.2/3.1) needing dedicated
-    // strips. Tasks 6.3/6.4 reverted both back to unbounded `Button` nodes
-    // (this file's header comment) and removed their per-button bounds
-    // helpers (`TransportArea()`/`BankHeaderArea()`) as dead code, but LEFT
-    // the strip-height reservations in place, so the reserved space simply
-    // went blank instead of being removed.
-    //
-    // Traced (not assumed) that removing them is safe: `ScopeArea`/
-    // `GridArea` below always spanned the FULL height of whatever `content`
-    // (or `belowTransport`/`gridColumn`) they were given, and the removed
-    // helpers preserved the BOTTOM edge while only pushing the TOP edge (and
-    // shrinking the height by the same amount) -- `y' = y + offset`,
-    // `height' = height - offset`, so `y' + height' == y + height` always.
-    // The runtime's own auto-flow start point,
-    // `maxDrawBottom = max(Draw-node bottoms) + kControlGap`
-    // (PortableJuceBackend.hpp:768-781), reads exactly that bottom edge --
-    // which these two strips left UNCHANGED. So removing them moves nothing
-    // about where the auto-flowed chrome band starts (`RequiredHeight()`
-    // above is unaffected); it only lets `ScopeArea`/`GridArea` actually use
-    // the space that used to render blank. Chosen over shrinking the window
-    // instead (the task brief's other listed option) because it requires no
-    // new constant to redistribute the freed space and it fixes an existing
-    // asymmetry for free: before this fix, `ScopeArea` height (content minus
-    // only the transport strip) and the grid's actual cell height (content
-    // minus BOTH strips) already differed by `kBankHeaderHeight + kGap`
-    // (42px) -- after removing both, they are equal again. Freed: 54px
-    // (`kTransportHeight` 40 + `kGap` 14) to the scope area; 96px total (54
-    // + `kBankHeaderHeight` 28 + `kGap` 14) to the grid area, since the grid
-    // previously lost both strips and the scope only the first.
-
-    // Top of content: the VCO scope panel (packets 7-9's visualizers get
-    // placed here -- task 10.2), UI-rework ITEM 1 (see this struct's own
-    // comment above): a full-width landscape band, `kScopeHeight` tall,
-    // wider than tall by construction. `std::min(kScopeHeight,
-    // content.height)` is defensive only (mirrors the old code's own
-    // defensiveness against a content area smaller than the panel it was
-    // asked to hold) -- at the app's one configured window size this is
-    // always `kScopeHeight` itself, never the clamp.
-    // POSITION REGRESSION FIXED 2026-07-29. An earlier revision of this item
-    // shrank the scope AND moved it -- from a left-hand column to a
-    // full-width band across the top of the content area. The operator asked
-    // for neither: "WHEN DID I ASK FOR YOU TO CHANGE THE LOCATION OF IT? i
-    // said just the height should change." Only the HEIGHT was ever in scope.
-    //
-    // So: back to the original SIDE-BY-SIDE split -- scope in a left-hand
-    // column `kScopeWidth` wide, encoder grid in the column to its right --
-    // with the height fix kept. The panel is `kScopeWidth` x `kScopeHeight`
-    // = 340 x 64 = 21760 px^2 against the original full-height column's
-    // 340 x 528 = 179520 px^2, i.e. ~12% of the old area (requirement was at
-    // most a third) and 5.3x wider than tall (requirement was wider than
-    // tall).
-    //
-    // The remainder of the left column, below this panel, is deliberately
-    // LEFT EMPTY: the operator intends transport/scene controls there
-    // ("stop / start ; scene 1 / scene 2 ; scene blend" in two columns) but
-    // has deferred it, because positioning controls requires Draw nodes and
-    // Draw nodes are double-click-only at Sheaf pin 1940ddcb. Do not fill
-    // this space and do not reclaim its width for the grid -- see tasks.md
-    // D.6.
-    static synth::ui::Bounds ScopeArea(synth::ui::Bounds content) {
-        return {
-            content.x,
-            content.y,
-            std::min(kScopeWidth, content.width),
-            std::min(kScopeHeight, content.height),
-        };
-    }
-
-    // The 16-slot grid (task 10.3), in the column to the RIGHT of the scope's
-    // left-hand column -- restored alongside ScopeArea's position fix above.
-    // It spans the full content HEIGHT (it is beside the scope, not beneath
-    // it), so it is unaffected by the scope panel's height and does not
-    // inherit the empty space the shrunk scope left below itself in the left
-    // column. `kGap` separates the two columns horizontally, as it did
-    // originally.
-    static synth::ui::Bounds GridArea(synth::ui::Bounds content) {
-        const float x = content.x + std::min(kScopeWidth, content.width) + kGap;
-        return {
-            x,
-            content.y,
-            std::max(0.0f, content.x + content.width - x),
-            content.height,
-        };
     }
 };
 
-// Task 10.3 (design D5a/D11): the 16-slot grid, slots 0-15 laid out 4x4 --
-// same division-of-area math as `Braid4EncoderGridLayout`
-// (apps/braid-4/Braid4UiModel.hpp:70-88), sized to
-// `kFroggersSlotsPerBank` (FroggersParameters.hpp) rather than Braid4's own
-// `kEncoderCount`.
+// Task 10.3 (design D5a/D11): the 16-slot grid topology, slots 0-15 laid out
+// 4x4 -- `kColumns`/`kRows`/`kEncoderCount` are the slot topology
+// (static_assert-tied to `kFroggersSlotsPerBank`) and SURVIVE task F.3
+// unchanged; `BoundsForIndex`'s pixel division DIED with it (cells are now
+// in-flow grid cells the layout engine sizes, see AppendEncoderRow() below),
+// but the row/column mapping it embodied (`ix / kColumns`, `ix % kColumns`)
+// survives as the loop shape AppendEncoderGrid() below walks.
 struct FroggersEncoderGridLayout {
     static constexpr std::size_t kColumns = 4;
     static constexpr std::size_t kRows = 4;
     static constexpr std::size_t kEncoderCount = kColumns * kRows;
+    // The gap between encoder cells within a row and between encoder rows --
+    // its own distinct structural role vs. `FroggersPageLayout::kGap`, which
+    // separates the left/right blocks and each block's own top-level rows.
     static constexpr float kGap = 8.0f;
-
-    static synth::ui::Bounds BoundsForIndex(synth::ui::Bounds area, std::size_t index) {
-        const std::size_t row = index / kColumns;
-        const std::size_t column = index % kColumns;
-        const float cellWidth = (area.width - kGap * static_cast<float>(kColumns - 1)) /
-                                 static_cast<float>(kColumns);
-        const float cellHeight = (area.height - kGap * static_cast<float>(kRows - 1)) /
-                                  static_cast<float>(kRows);
-        return {
-            area.x + static_cast<float>(column) * (cellWidth + kGap),
-            area.y + static_cast<float>(row) * (cellHeight + kGap),
-            cellWidth,
-            cellHeight,
-        };
-    }
 };
 
 static_assert(FroggersEncoderGridLayout::kEncoderCount == kFroggersSlotsPerBank,
               "the grid must render exactly the 16 physical encoder slots FroggersParameterModel wires up");
+
+// The operator-approved 6-column x 6-row topology (tasks.md F.3 CELL MAP,
+// 2026-08-04/05), kept as PURE DATA -- no builder calls, no layout math --
+// separate from the emission code that interprets it (AppendLeftBlock()/
+// AppendRightBlock() below). This is what a future mobile (tasks.md §H) or
+// VST (§I) topology would replace with a DIFFERENT table consumed by
+// analogous emission code, without forking this surface (§8: one definition
+// site for "what goes where").
+//
+//   Row | L1                          | L2  | E1 E2 E3 E4
+//   1   | Scope (spans L1-L2, rows1-2)| <-  | Bank tabs x6 (span E1-E4)
+//   2   | (scope)                     | <-  | slot 0 | slot 1 | slot 2 | slot 3
+//   3   | Play                        | Stop| slot 4 | slot 5 | slot 6 | slot 7
+//   4   | Scene 1                     | Scene 2 | slot 8 | slot 9 | slot 10 | slot 11
+//   5   | Scene blend (label below)   | <-  | slot 12 | slot 13 | slot 14 CRIS | slot 15 CRNC
+//   6   | BPM (label trailing right)  | <-  | Randomize page (span 2) | Randomize all (span 2)
+struct FroggersCellMap {
+    enum class LeftKind { Scope, Transport, Scenes, SceneBlend, Bpm };
+    enum class RightKind { BankTabs, EncoderRow, Randomize };
+
+    struct LeftRow {
+        LeftKind kind;
+        // Vertical share of the left column's 6 row-units (a span, exactly
+        // like a horizontal `Extent::Weight` span within a row -- the Scope
+        // row is 2 units tall, matching rows 1-2 of the table above).
+        float rowWeight;
+    };
+    struct RightRow {
+        RightKind kind;
+        // Meaningful only for RightKind::EncoderRow: the first of the 4
+        // consecutive encoder slot indices this row renders.
+        std::size_t firstEncoderIndex;
+    };
+
+    static constexpr std::array<LeftRow, 5> kLeftRows = {{
+        {LeftKind::Scope, 2.0f},
+        {LeftKind::Transport, 1.0f},
+        {LeftKind::Scenes, 1.0f},
+        {LeftKind::SceneBlend, 1.0f},
+        {LeftKind::Bpm, 1.0f},
+    }};
+
+    static constexpr std::array<RightRow, 6> kRightRows = {{
+        {RightKind::BankTabs, 0},
+        {RightKind::EncoderRow, 0},
+        {RightKind::EncoderRow, 4},
+        {RightKind::EncoderRow, 8},
+        {RightKind::EncoderRow, 12},
+        {RightKind::Randomize, 0},
+    }};
+
+    // The outer split Row's weights (L1+L2 = 2 units, E1-E4 = 4 units,
+    // matching the table's 6-column width exactly).
+    static constexpr float kLeftBlockWeight = 2.0f;
+    static constexpr float kRightBlockWeight = 4.0f;
+};
 
 // Change 3 (operator 2026-07-27): Play/Stop as coloured icons -- "Play =
 // green triangle on white. Stop = red square on white." Built from exactly
@@ -574,10 +319,13 @@ static_assert(FroggersEncoderGridLayout::kEncoderCount == kFroggersSlotsPerBank,
 // both the JUCE and browser backends): `DrawCommand::FillRoundedRect` for
 // the plate, `DrawCommand::FillPolygon` for the Play triangle,
 // `DrawCommand::Fill(Bounds, Color)` for the Stop square. Commands are
-// authored in the SAME absolute coordinate space as `bounds` (matching
-// `synth::ui::BuildEncoderDrawCommands`'s own convention, EncoderDraw.hpp)
-// so the backend's local-vs-absolute heuristic (`DrawCommandsLookLocal`)
-// resolves them as absolute, not node-local.
+// authored against the node-LOCAL (0,0,width,height) box (PortableUI.hpp's
+// coordinate contract), which is unaffected by whether that box came from
+// hand-computed pixel math or, as of task F.3, the layout engine resolving
+// this node's `Extent::Px(kTransportPlateSize)` declaration -- the DrawFactory
+// signature `vector<DrawCommand>(Bounds)` receives the SAME 28x28 box either
+// way, so this inset-fraction arithmetic needed no change for F.3 and is
+// unchanged from before it.
 //
 // Task 3.8 (operator 2026-07-28, "look like shit from a butt" -- geometry,
 // not concept): the icon is inset to a fixed FRACTION of the plate rather
@@ -586,17 +334,7 @@ static_assert(FroggersEncoderGridLayout::kEncoderCount == kFroggersSlotsPerBank,
 // Sheaf's own chrome "primary" button colour (`ButtonColourForNode`'s
 // variant=="primary" branch, PortableJuceBackend.hpp:1130-1148, RGB
 // 57/106/127) instead of stark white so it sits in the dark instrument face
-// instead of glaring out of it. F.2b (2026-08-03, Sheaf pin 77a3019e, ask 1
-// landed): these two builders are back in use as the Play/Stop `Draw` nodes
-// in BuildTree() below, in the in-flow factory form
-// (`Builder::Draw(id, DrawFactory, ControlStyle)`,
-// PortableUIBuilders.hpp:316-327) -- their signature
-// `vector<DrawCommand>(Bounds)` already matches `DrawFactory` exactly, so
-// they are passed as the factory directly. `kTransportPlateSize` gives the
-// node an explicit square extent: `Draw` has no case in `metrics::
-// IntrinsicFor` (PortableUIMetrics.hpp:36-53, `default: {0,0,0,0}`), so an
-// in-flow Draw node with no explicit `layout.main`/`layout.cross` would
-// resolve to zero size.
+// instead of glaring out of it.
 inline constexpr synth::Color kTransportPlateColor = synth::Color::Rgb(57, 106, 127);
 inline constexpr float kTransportIconFraction = 0.575f;  // ~55-60% of the plate
 inline constexpr float kTransportPlateSize = 28.0f;      // matches the old Button height
@@ -636,17 +374,6 @@ inline std::vector<synth::ui::DrawCommand> BuildStopDrawCommands(synth::ui::Boun
     commands.push_back(synth::ui::DrawCommand::Fill(square, synth::Color::Red));
     return commands;
 }
-
-// Task 3.1 (operator 2026-07-28, design E3a) added `BankButtonBounds` here
-// (per-button placement for bank-select buttons rendered as Draw nodes) and
-// `kBankChromeBackground` (a hand-ported copy of Sheaf's own unselected
-// Button chrome, needed only because Draw nodes paint their own explicit
-// colours). Task 6.3 (operator 2026-07-28) reverted bank buttons back to
-// plain `Button` nodes (see AppendBankHeader()'s own note) -- Button nodes
-// have no app-computed bounds and get their selected/unselected chrome for
-// free from Sheaf's own `ButtonColourForNode`
-// (PortableJuceBackend.hpp:1130-1149), so both became unreachable and were
-// removed.
 
 // Small parse helpers (own implementation, following Braid4UiModel.hpp's
 // ParseSize/ParseFloat *pattern* -- design D11 ports the design, not the
@@ -718,7 +445,6 @@ public:
 
     synth::ui::NodeTree BuildTree() override {
         const synth::ui::Bounds root = FroggersPageLayout::RootBounds(context_);
-        const synth::ui::Bounds content = FroggersPageLayout::ContentArea(root);
 
         synth::ui::Builder builder;
         builder.Root(FroggersNodeIds::kRoot, root);
@@ -726,91 +452,25 @@ public:
         // title label is removed -- `config.appName`
         // (FroggersAppCore.hpp:135) and `FroggersManifest().displayName`
         // (FroggersRegistration.hpp:22) already cover launcher/window-title
-        // naming and are untouched by this change (design E3f). No
-        // replacement node is appended here: the title was a generic,
-        // unbounded `Label` node auto-flowed by host chrome (see this
-        // file's header comment on Node kinds), so removing it simply frees
-        // that row for whatever the host flows next -- nothing else in this
-        // surface computes a Bounds that depended on its presence. The
-        // freed space is left for a future logo (design E3f, deferred
-        // pending upstream `DrawCommand::Image`).
+        // naming. The freed space is left for a future logo (design E3f,
+        // deferred pending upstream `DrawCommand::Image`).
 
-        // F.2b/F.2e (2026-08-03, Sheaf pin 77a3019e): Play/Stop are real
-        // draw-command controls again -- a rounded plate plus a
-        // `Color::Green` triangle (Play) / `Color::Red` square (Stop), via
-        // `BuildPlayDrawCommands`/`BuildStopDrawCommands` above -- restoring
-        // Task 3.8's colour-icon design (E3a/Change 3) that Task 6.4
-        // reverted on 2026-07-28 only because Draw/DrawInteractive nodes
-        // dispatched exclusively on double-click at pin 1940ddcb, which cost
-        // single-click transport control. That cause is gone: ask 1 landed
-        // (`Draw` nodes now dispatch plain click from `ControlStyle::
-        // action`, confirmed at `RetainedDrawComponent::mouseUp`,
-        // PortableJuceBackend.hpp:592-603), so the workaround this file
-        // carried in its place -- Button nodes with EMOJI glyphs ("▶️"/"🟥")
-        // as the label TEXT, chosen 2026-07-29 (UI-rework ITEM 4/B.4)
-        // specifically because a `Node` has no colour field and an emoji
-        // carries its own -- is retired along with it. `Node` still has no
-        // colour field for Button/Label text, but a `Draw` node's own
-        // commands do, so the real green triangle / red square replace the
-        // emoji substitute.
-        synth::ui::ControlStyle playStyle{};
-        playStyle.action = synth::ui::Action::Named(FroggersActions::kPlay);
-        playStyle.layout.main = synth::ui::Extent::Px(kTransportPlateSize);
-        playStyle.layout.cross = synth::ui::Extent::Px(kTransportPlateSize);
-        builder.Draw(FroggersNodeIds::kPlay, BuildPlayDrawCommands, playStyle);
+        // Task F.3: ONE outer split Row -- left block (Weight(2): scope,
+        // transport, scenes, scene-blend, BPM) beside right block
+        // (Weight(4): bank tabs, the 16-slot encoder grid, randomize) --
+        // matching the CELL MAP's 2-of-6 vs 4-of-6 column split. Outer
+        // padding/gap are this file's own design tokens
+        // (FroggersPageLayout::kMargin/kGap), not upstream defaults.
+        synth::ui::LayoutOptions outerLayout;
+        outerLayout.main = synth::ui::Extent::Weight(1.0f);
+        outerLayout.cross = synth::ui::Extent::Weight(1.0f);
+        outerLayout.padding = FroggersPageLayout::kMargin;
+        outerLayout.gap = FroggersPageLayout::kGap;
+        builder.Row(FroggersNodeIds::kLayoutRoot, outerLayout, [this](synth::ui::Builder& b) {
+            AppendLeftBlock(b);
+            AppendRightBlock(b);
+        });
 
-        synth::ui::ControlStyle stopStyle{};
-        stopStyle.action = synth::ui::Action::Named(FroggersActions::kStop);
-        stopStyle.layout.main = synth::ui::Extent::Px(kTransportPlateSize);
-        stopStyle.layout.cross = synth::ui::Extent::Px(kTransportPlateSize);
-        builder.Draw(FroggersNodeIds::kStop, BuildStopDrawCommands, stopStyle);
-
-        // Task 10.2: the packet 7-9 VCO scope panel, finally placed. Exactly
-        // one combined 3-layer ScopeVisualizer exists (see this file's
-        // header comment) -- placed in the scope area, left of the grid.
-        // No longer offset below a transport strip -- see
-        // FroggersPageLayout's removal note.
-        const synth::ui::Bounds scopeArea = FroggersPageLayout::ScopeArea(content);
-        if (app_ != nullptr) {
-            synth::ui::Visualizer& vcoScope = app_->VcoScopeVisualizer();
-            vcoScope.SetBounds(scopeArea);
-            builder.Visualizer(FroggersNodeIds::kVcoScope, &vcoScope, synth::ui::ControlStyle{});
-        }
-
-        // Task 10.3/10.7/3.1/6.3: bank header -- direct-select bank buttons
-        // plus Randomize Page (restoring the per-page position desktop-v2
-        // removed, design D14). Task 6.3 (operator 2026-07-28) reverted the
-        // bank buttons back to unbounded Button nodes (see
-        // AppendBankHeader()'s own note), so no header-area bounds are
-        // computed or passed here any more.
-        const synth::ui::Bounds gridArea = FroggersPageLayout::GridArea(content);
-        AppendBankHeader(builder);
-
-        // Task 10.3/10.4/10.5: the 16-slot grid, in place -- reads the
-        // SAME `context_->uiState->slots[0]` snapshot whether it currently
-        // holds the parameter grid or a drilled-in modulation-detail grid
-        // (Bank::OpenModulationView/Deselect swap `visible_`'s contents;
-        // this surface has no branch of its own for "which grid" -- it just
-        // renders whatever BankSlot::PopulateUIState published, exactly like
-        // Braid4UI.hpp's own encoder loop). No longer offset below a
-        // bank-header strip -- see FroggersPageLayout's removal note.
-        AppendEncoderGrid(builder, gridArea);
-
-        // Task 10.2/10.6/10.7 (Crunchy removed operator 2026-07-27): global
-        // chrome -- Randomize All (only -- Randomize Page lives in the bank
-        // header above, never here), scenes, and the BPM slider beside the
-        // scene slider.
-        AppendChromeBand(builder);
-
-        // F.2a/F.2c (2026-08-03, Sheaf pin 77a3019e): nothing in this tree
-        // needs post-Build() patching any more. The encoder grid's drill-in
-        // press and drag actions are set at build-once time via
-        // `ControlStyle::action`/`pointerDragAction` in AppendEncoderGrid()
-        // (`WireDrawNodeActions()`/`SetNodeAction()`, removed); Play/Stop and
-        // the bank buttons already carried their `Action` directly
-        // (Task 6.3/6.4); and `node.selected` for the active bank is set via
-        // `ControlStyle::selected` in AppendBankHeader() (`MarkSelectedBank()`,
-        // removed).
         return builder.Build(root);
     }
 
@@ -826,237 +486,402 @@ public:
     }
 
 private:
-    void AppendBankHeader(synth::ui::Builder& builder) const {
-        // Bank labels are derived from FroggersBankLayouts() (single source
-        // of truth for bank identity/order -- app/FroggersParameters.hpp)
-        // rather than kept as a separate parallel array here, so adding or
-        // reordering a bank requires editing only that one place (OMNI §8).
-        //
-        // Task 3.1 (operator 2026-07-28, design E3a) rendered these as
-        // Draw nodes with hand-authored FillRoundedRect+Text commands so
-        // selection could invert BOTH background and text colour (Sheaf's
-        // `Node::selected` only inverts a Button's background via
-        // `ButtonColourForNode`, PortableJuceBackend.hpp:1130-1149;
-        // `TextColourForNode`, :1109-1127, has no `selected` branch at all
-        // -- confirmed still absent at the pinned version). Task 6.3
-        // (operator 2026-07-28) reverts that: at the pinned Sheaf version,
-        // Draw/DrawInteractive nodes dispatch only on double-click
-        // (RetainedDrawComponent, PortableJuceBackend.hpp:549-555, no
-        // plain-click path), which cost the operator single-click bank
-        // switching. Function over cosmetics -- back to plain `Button`
-        // nodes with the action supplied directly, accepting BACKGROUND-ONLY
-        // selection inversion. F.2c (2026-08-03, Sheaf pin 77a3019e):
-        // `ControlStyle::selected` now exists, so `node.selected` is set at
-        // build-once time via the style argument instead of a post-Build()
-        // patch (`MarkSelectedBank()`, removed). Still no marker character
-        // appended to the label either way.
-        const auto& layouts = FroggersBankLayouts();
-        for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
-            synth::ui::ControlStyle bankStyle{};
-            bankStyle.selected = BankSelected(bankIx);
-            builder.Button(FroggersNodeIds::BankButton(bankIx), layouts[bankIx].name,
-                           synth::ui::Action::WithValue(FroggersActions::kBankSelect, std::to_string(bankIx)),
-                           bankStyle);
-        }
-        // Task 10.7 (design D11/D14): Randomize Page restores the
-        // per-page/bank-header position desktop-v2 removed
-        // (desktop-v2/Source/ui/SubmodulePagePanel.cpp:11-13). Exactly one
-        // randomize control lives here; Randomize All never does (task
-        // 10.2's own explicit constraint).
-        builder.Button(FroggersNodeIds::kRandomizePage, "Randomize Page",
-                       synth::ui::Action::Named(FroggersActions::kRandomizePage), synth::ui::ControlStyle{});
+    // -- Left block (tasks.md F.3 CELL MAP, columns L1-L2) ------------------
+
+    void AppendLeftBlock(synth::ui::Builder& builder) const {
+        synth::ui::LayoutOptions blockLayout;
+        blockLayout.main = synth::ui::Extent::Weight(FroggersCellMap::kLeftBlockWeight);
+        blockLayout.cross = synth::ui::Extent::Weight(1.0f);
+        blockLayout.padding = 0.0f;
+        blockLayout.gap = FroggersPageLayout::kGap;
+        builder.Column(FroggersNodeIds::kLeftBlock, blockLayout, [this](synth::ui::Builder& b) {
+            for (const FroggersCellMap::LeftRow& row : FroggersCellMap::kLeftRows) {
+                AppendLeftRow(b, row);
+            }
+        });
     }
 
-    void AppendEncoderGrid(synth::ui::Builder& builder, synth::ui::Bounds gridArea) const {
-        const bool showingModulationView =
-            context_ != nullptr && context_->uiState != nullptr && context_->uiState->slotCapacity > 0 &&
-            context_->uiState->slots[0].showingModulationView.load(std::memory_order_relaxed);
-
-        for (std::size_t ix = 0; ix < FroggersEncoderGridLayout::kEncoderCount; ++ix) {
-            synth::ui::EncoderDrawState state{};
-            synth::ui::Visualizer* visualizer = nullptr;
-            if (context_ != nullptr && context_->uiState != nullptr && context_->uiState->slotCapacity > 0) {
-                const synth::BankSlot::UIState& slotState = context_->uiState->slots[0];
-                if (ix < slotState.cellCapacity) {
-                    // Design D9a/task 10.5: EncoderDrawStateFromParameter
-                    // reads only `Parameter::UIState.values[]` (the
-                    // post-fuego, post-modulation published display
-                    // center, see EncoderDraw.hpp:334) -- never
-                    // `.rawKnobValue`. This is the ONLY place this whole
-                    // surface reads a `Parameter::UIState`, so it is also
-                    // the one place to verify that guarantee.
-                    state = synth::ui::EncoderDrawStateFromParameter(slotState.cells[ix]);
-                    visualizer = slotState.cells[ix].visualizer.load(std::memory_order_relaxed);
-                }
-            }
-            if (showingModulationView && !state.connected) {
-                // Matches apps/braid-4/Braid4UI.hpp:65-68: hide disconnected
-                // depth cells entirely once drilled in (design D9b's "cell
-                // still pushed with parameter=nullptr" renders as this
-                // default, disconnected EncoderDrawState).
-                continue;
-            }
-            state.hasVisualizerUnderlay = visualizer != nullptr && visualizer->Visible();
-
-            const synth::ui::Bounds cellBounds = FroggersEncoderGridLayout::BoundsForIndex(gridArea, ix);
-            const std::string encoderId = FroggersNodeIds::Encoder(ix);
-            if (visualizer != nullptr && visualizer->Visible()) {
-                // Design D9b/D10: bump/comb transfer-function underlays and
-                // modulation-source underlays render here automatically,
-                // with no visualizer-specific code above this generic
-                // "does this cell have a visualizer" branch.
-                visualizer->SetBounds(cellBounds);
-                builder.Visualizer(encoderId + ".visualizer", visualizer, synth::ui::ControlStyle{});
-            }
-            // Change 2 REVERTED (operator 2026-07-27): encoder press used to
-            // be a DOUBLE click, because plain-click dispatch for Draw nodes
-            // did not exist in upstream Sheaf at pin 1940ddcb (a fork would
-            // have made the gitlink unresolvable from any other checkout).
-            // F.2a (2026-08-03, Sheaf pin 77a3019e, ask 1 landed): `Draw`
-            // nodes now dispatch plain click from `ControlStyle::action`, so
-            // the drill-in press moves there and the drag stays on the
-            // separate `ControlStyle::pointerDragAction` field -- no
-            // conflict, no post-Build() patch needed
-            // (`WireDrawNodeActions()`/`SetNodeAction()`, removed).
-            synth::ui::ControlStyle encoderStyle{};
-            encoderStyle.action = synth::ui::Action::WithValue(FroggersActions::kEncoderPress, std::to_string(ix));
-            encoderStyle.pointerDragAction =
-                synth::ui::Action::WithValue(FroggersActions::kEncoderDrag, FormatFroggersEncoderDrag(ix, 0.0f));
-            builder.Draw(encoderId, cellBounds, synth::ui::BuildEncoderDrawCommands(state, cellBounds),
-                        encoderStyle);
+    void AppendLeftRow(synth::ui::Builder& builder, const FroggersCellMap::LeftRow& row) const {
+        switch (row.kind) {
+            case FroggersCellMap::LeftKind::Scope:
+                AppendScopeCell(builder, row.rowWeight);
+                return;
+            case FroggersCellMap::LeftKind::Transport:
+                AppendTransportRow(builder, row.rowWeight);
+                return;
+            case FroggersCellMap::LeftKind::Scenes:
+                AppendScenesRow(builder, row.rowWeight);
+                return;
+            case FroggersCellMap::LeftKind::SceneBlend:
+                AppendSceneBlendGroup(builder, row.rowWeight);
+                return;
+            case FroggersCellMap::LeftKind::Bpm:
+                AppendBpmGroup(builder, row.rowWeight);
+                return;
         }
     }
 
-    void AppendChromeBand(synth::ui::Builder& builder) const {
-        // Crunchy chrome-band slider REMOVED (operator 2026-07-27: "why is
-        // there a fucking slider for crunchy between the randomize
-        // buttons, i never asked for that. It duplicates bank slot 15.").
-        // Crunchy is reachable only via the encoder grid's slot 15 now,
-        // exactly like any other bank parameter -- see this file's header
-        // comment and design.md D11/Resolved-decisions for the recorded
-        // trade-off (Crunchy is unreachable while a modulation view is
-        // open, since slot 15 is then Target/Back).
+    // Task 10.2: the packet 7-9 VCO scope panel. Its bounds are not known
+    // until the layout resolves (it is now an in-flow, weight-sized cell,
+    // not a hand-computed pixel rectangle), so the DrawFactory form is used
+    // exactly like Braid4UI.hpp's own encoder-visualizer-underlay pattern:
+    // the factory receives the RESOLVED extent and sets it on the
+    // visualizer at that point.
+    void AppendScopeCell(synth::ui::Builder& builder, float rowWeight) const {
+        synth::ui::LayoutOptions layout;
+        layout.main = synth::ui::Extent::Weight(rowWeight);
+        layout.cross = synth::ui::Extent::Weight(1.0f);
+        // The cell is always emitted (matching Braid4UI.hpp's own scope-cell
+        // idiom, `EmitScopeCell`): only the DATA depends on `app_`, not
+        // whether the node exists, so a bare-context resolve (no app
+        // attached -- FroggersSurfaceTests.cpp's layout-only tests) still
+        // sees a real `kVcoScope` cell with a real resolved extent, just
+        // empty draw commands.
+        FroggersAppCore* app = app_;
+        builder.Draw(FroggersNodeIds::kVcoScope, layout,
+                     [app](synth::ui::Bounds extent) -> std::vector<synth::ui::DrawCommand> {
+                         if (app == nullptr) {
+                             return {};
+                         }
+                         synth::ui::Visualizer& vcoScope = app->VcoScopeVisualizer();
+                         vcoScope.SetBounds(extent);
+                         return vcoScope.Draw();
+                     });
+    }
 
-        // Task 10.2/10.7: Randomize All -- the ONLY randomize control in the
-        // chrome band (Randomize Page lives in the bank header, above).
-        builder.Button(FroggersNodeIds::kRandomizeAll, "Randomize All",
-                       synth::ui::Action::Named(FroggersActions::kRandomizeAll), synth::ui::ControlStyle{});
+    // Row 3: Play | Stop, restored as `Draw` nodes (F.2b, ask 1 landed --
+    // plain click on `Draw` nodes). `kTransportPlateSize` is an unchanged,
+    // fixed `Extent::Px` size on both axes (survives task F.3's deletion
+    // table verbatim), so the plates stay their original 28x28 square
+    // regardless of the row's resolved width.
+    void AppendTransportRow(synth::ui::Builder& builder, float rowWeight) const {
+        synth::ui::LayoutOptions rowLayout;
+        rowLayout.main = synth::ui::Extent::Weight(rowWeight);
+        rowLayout.cross = synth::ui::Extent::Weight(1.0f);
+        rowLayout.padding = 0.0f;
+        rowLayout.gap = FroggersPageLayout::kGap;
+        builder.Row(FroggersNodeIds::kTransportRow, rowLayout, [](synth::ui::Builder& b) {
+            synth::ui::ControlStyle playStyle{};
+            playStyle.action = synth::ui::Action::Named(FroggersActions::kPlay);
+            playStyle.layout.main = synth::ui::Extent::Px(kTransportPlateSize);
+            playStyle.layout.cross = synth::ui::Extent::Px(kTransportPlateSize);
+            b.Draw(FroggersNodeIds::kPlay, BuildPlayDrawCommands, playStyle);
 
-        // Task 3.5 (operator 2026-07-28, design E3d): "Scene 1"/"Scene 2" --
-        // relabelled from the old "S1"/"S2" -- are now a TOGGLE between the
-        // scene-blend extremes, not a re-assignment of which stored scene
-        // occupies the less-weighted endpoint. Traced: the old behaviour
-        // dispatched `kSceneSelect` -> `ParameterManager::
-        // SetLessSelectedScene` (External/Sheaf/projects/synth/src/
-        // ParameterModulation.cpp:3336-3341), which reassigns
-        // scene_.leftScene/rightScene and never moves scene_.blend -- at
-        // either blend extreme, clicking did nothing audible (the
-        // operator's "inconsistent" report). This DELIBERATELY diverges
-        // from Braid 4's own convention (apps/braid-4/Braid4UiModel.hpp:
-        // 402-404 dispatches the identical `kSceneSelect`/
-        // `SetLessSelectedScene` pair) -- see FroggersParameters.hpp's
-        // kNumScenes comment for the matching note. Handled below in
-        // HandleAction(), which now pushes `MessageIn::SetSceneBlend`
-        // straight over `context_->uiBus` -- the same push pattern this
-        // file already uses for kSceneBlend/kPlay/kStop.
-        for (std::size_t sceneIx = 0; sceneIx < 2; ++sceneIx) {
-            builder.Button(FroggersNodeIds::SceneButton(sceneIx), "Scene " + std::to_string(sceneIx + 1),
-                           synth::ui::Action::WithValue(FroggersActions::kSceneSelect, std::to_string(sceneIx)),
-                           synth::ui::ControlStyle{});
-        }
-        const float sceneBlend =
-            context_ != nullptr && context_->uiState != nullptr
-                ? context_->uiState->sceneBlend.load(std::memory_order_relaxed)
-                : 0.0f;
-        // Task 3.5: relabelled "Scene Blend" -> "Scene blend" (design E3d).
-        // The spec also asks that no raw floating-point blend value be
-        // shown; note this file authors no such readout of its own (no
-        // StatusText/Label anywhere formats `sceneBlend` as text) -- the
-        // only numeric display of a Slider's value is JUCE's own built-in
-        // text box (`PortableJuceBackend.hpp:1228`,
-        // `setTextBoxStyle(juce::Slider::TextBoxBelow, ...)`), which is
-        // unconditional for EVERY Slider node in EVERY Sheaf app (Braid 4's
-        // own scene-blend slider, apps/braid-4/Braid4UiModel.hpp:406-412,
-        // has the identical box) and cannot be suppressed per-node from app
-        // code -- Sheaf exposes no field for it and this app must not
-        // modify External/Sheaf. Reported, not fixed.
-        // Task (2026-07-28 label-visibility fix): `NodeKind::Slider` routes
-        // `node.label` to `juce::Slider::setName()` only (PortableJuceBackend.hpp:
-        // 1229-1232) -- no `juce::Label` is attached, so the slider's own
-        // label argument never draws. That used to be worked around with a
-        // hand-rolled adjacent `Label` node (`FroggersNodeIds::kSceneBlendLabel`)
-        // built immediately before the Slider so it landed in the same
-        // flowed row. F.2d (2026-08-03, Sheaf pin 77a3019e): slider captions
-        // now draw upstream via `ControlStyle::caption`
-        // (PortableUIBuilders.hpp:20-33/424-465 -- emitted as a sibling
-        // `Label` "<controlId>.caption" wrapped with the control in an
-        // implicit Row, always BEFORE the control), so the hand-rolled node
-        // id/Label call are gone. The Slider's own label argument is kept --
-        // redundant for display, but it still feeds `juce::Slider::
-        // setName()`, the accessible name JUCE/screen readers see.
-        synth::ui::ControlStyle sceneBlendStyle{};
-        sceneBlendStyle.caption = "Scene blend";
-        builder.Slider(FroggersNodeIds::kSceneBlend, "Scene blend", sceneBlend, 0.0f, 1.0f, 0.001f,
-                       synth::ui::Action::Named(FroggersActions::kSceneBlend), sceneBlendStyle);
+            synth::ui::ControlStyle stopStyle{};
+            stopStyle.action = synth::ui::Action::Named(FroggersActions::kStop);
+            stopStyle.layout.main = synth::ui::Extent::Px(kTransportPlateSize);
+            stopStyle.layout.cross = synth::ui::Extent::Px(kTransportPlateSize);
+            b.Draw(FroggersNodeIds::kStop, BuildStopDrawCommands, stopStyle);
+        });
+    }
 
-        // Task 10.6 (design cited MasterClock.hpp:318/:321,
-        // MasterClock.cpp:963-965/:1182): the BPM slider sits beside the
-        // scene slider (just added above) and goes read-only/inert while
-        // slaved to external MIDI clock -- rendered as a non-interactive
-        // StatusText in that state (Builder has no "disabled slider" -- see
-        // this file's header comment on Node kinds), an interactive Slider
-        // otherwise. Both states display TempoBpm() (normal: the manually
-        // set tempo; slaved: the recovered external tempo).
+    // Row 4: Scene 1 | Scene 2, each taking half the row (Weight(1), an
+    // intrinsic cross size so the button does not stretch to the row's full
+    // resolved height).
+    //
+    // Task 3.5 (operator 2026-07-28, design E3d): "Scene 1"/"Scene 2" are a
+    // TOGGLE between the scene-blend extremes, not a re-assignment of which
+    // stored scene occupies the less-weighted endpoint -- see HandleAction()
+    // below for the full trace (kept unchanged by task F.3).
+    void AppendScenesRow(synth::ui::Builder& builder, float rowWeight) const {
+        synth::ui::LayoutOptions rowLayout;
+        rowLayout.main = synth::ui::Extent::Weight(rowWeight);
+        rowLayout.cross = synth::ui::Extent::Weight(1.0f);
+        rowLayout.padding = 0.0f;
+        rowLayout.gap = FroggersPageLayout::kGap;
+        builder.Row(FroggersNodeIds::kScenesRow, rowLayout, [](synth::ui::Builder& b) {
+            for (std::size_t sceneIx = 0; sceneIx < 2; ++sceneIx) {
+                synth::ui::ControlStyle style{};
+                style.layout.main = synth::ui::Extent::Weight(1.0f);
+                style.layout.cross = synth::ui::Extent::Intrinsic();
+                b.Button(FroggersNodeIds::SceneButton(sceneIx), "Scene " + std::to_string(sceneIx + 1),
+                         synth::ui::Action::WithValue(FroggersActions::kSceneSelect, std::to_string(sceneIx)),
+                         style);
+            }
+        });
+    }
+
+    // Row 5: the Scene-blend slider with its label BELOW it -- the CELL
+    // MAP's one amendment to the operator-approved table (tasks.md F.3,
+    // 2026-08-04): "the Scene blend label sits BELOW its slider. This
+    // supersedes the F.2d caption for scene-blend (a `ControlStyle::caption`
+    // can only lead, so scene-blend returns to a hand-rolled label, now
+    // placed under the slider)." B12 (BPM's label trailing) is refined, not
+    // reversed -- see AppendBpmGroup() below.
+    //
+    // NOTE ON A STALE TEST-ENUMERATION ENTRY: task F.3's own test
+    // enumeration table classified
+    // `scene_blend_slider_has_an_adjacent_label_node_carrying_its_text` as
+    // UNAFFECTED, which is inconsistent with this amendment (that test
+    // asserted the F.2d `<controlId>.caption` node, which this amendment
+    // retires for scene-blend). The CELL MAP's amendment is the more
+    // specific and more recently affirmed instruction, so it governs; the
+    // test was rewritten in FroggersSurfaceTests.cpp to match, and this is
+    // called out in the task report as a place the traced table was wrong.
+    void AppendSceneBlendGroup(synth::ui::Builder& builder, float rowWeight) const {
+        synth::ui::LayoutOptions groupLayout;
+        groupLayout.main = synth::ui::Extent::Weight(rowWeight);
+        groupLayout.cross = synth::ui::Extent::Weight(1.0f);
+        groupLayout.padding = 0.0f;
+        groupLayout.gap = FroggersPageLayout::kGap;
+        const float sceneBlend = context_ != nullptr && context_->uiState != nullptr
+                                      ? context_->uiState->sceneBlend.load(std::memory_order_relaxed)
+                                      : 0.0f;
+        builder.Column(FroggersNodeIds::kSceneBlendGroup, groupLayout, [sceneBlend](synth::ui::Builder& b) {
+            b.Slider(FroggersNodeIds::kSceneBlend, "Scene blend", sceneBlend, 0.0f, 1.0f, 0.001f,
+                     synth::ui::Action::Named(FroggersActions::kSceneBlend), synth::ui::ControlStyle{});
+            // Label-visibility fix (2026-07-28): `NodeKind::Slider` routes
+            // `node.label` to `juce::Slider::setName()` only
+            // (PortableJuceBackend.hpp:1229-1232) -- no `juce::Label` is
+            // attached, so the slider's own label argument never draws; this
+            // adjacent Label node is what actually renders "Scene blend".
+            b.Label(FroggersNodeIds::kSceneBlendLabel, "Scene blend", synth::ui::ControlStyle{});
+        });
+    }
+
+    // Row 6: the BPM slider with its label TRAILING it (B12, tasks.md
+    // 2026-07-29 -- unchanged by task F.3's CELL MAP: "BPM's label still
+    // trails to the right of its slider; the two labels remain asymmetric
+    // with each other and neither leads"), or a read-only StatusText while
+    // slaved to external MIDI clock.
+    void AppendBpmGroup(synth::ui::Builder& builder, float rowWeight) const {
+        synth::ui::LayoutOptions groupLayout;
+        groupLayout.main = synth::ui::Extent::Weight(rowWeight);
+        groupLayout.cross = synth::ui::Extent::Weight(1.0f);
+        groupLayout.padding = 0.0f;
+        groupLayout.gap = FroggersPageLayout::kGap;
+        builder.Row(FroggersNodeIds::kBpmGroup, groupLayout, [this](synth::ui::Builder& b) { AppendBpmControl(b); });
+    }
+
+    // Task 10.6 (design cited MasterClock.hpp:318/:321, MasterClock.cpp:
+    // 963-965/:1182): read-only/inert (a StatusText) while slaved to
+    // external MIDI clock, an interactive Slider otherwise. Both states
+    // display TempoBpm(). Unchanged in substance from before task F.3 --
+    // only its container moved (from the old auto-flowed chrome band into
+    // this row's own group, see AppendBpmGroup() above).
+    void AppendBpmControl(synth::ui::Builder& builder) const {
         const double tempoBpm = app_ != nullptr ? app_->DisplayTempoBpm() : synth::MasterClock::kDefaultTempoBpm;
         const bool externallyClocked = app_ != nullptr && app_->TempoExternallyClocked();
         if (externallyClocked) {
             builder.StatusText(FroggersNodeIds::kBpm, "BPM " + FormatFroggersBpm(tempoBpm) + " (external clock)",
                                synth::ui::ControlStyle{});
-        } else {
-            // Task 3.6 (design E3e): the label conflict is settled -- the
-            // control genuinely IS labelled "BPM" (this line, verified by
-            // running the app; see FroggersSurfaceTests.cpp for the
-            // regression test). BPM is correctly wired (RequestTempoBpm ->
-            // MasterClock::SetTempoBpm -> pendingQuarterNotesPerSample_ ->
-            // TransportQuarterNotesAt -> gates audioAdsr_) and genuinely
-            // drives the D17 ASR gate rate -- no wiring change here.
-            //
-            // UI-rework ITEM 5 (design.md A3f, tasks.md B.5, 2026-07-29):
-            // this used to switch to "BPM (no effect while stopped)" while
-            // the transport was stopped. That annotation was never
-            // requested -- an agent invented it "to improve discoverability"
-            // (design.md's process note) -- and, because chrome is
-            // auto-flowed by control width (FroggersAutoFlowedChromeModel
-            // above), a longer label re-flowed every neighbouring control
-            // each time the transport started or stopped. Operator:
-            // "a really stupid feature I never asked for, and it changes the
-            // alignment of nearby labels." Reverted to a constant "BPM";
-            // the state-dependent branch is gone, not merely disabled --
-            // per the standing rule (design.md A3f, tasks.md §0) not to add
-            // user-visible behaviour the operator did not request, this is
-            // not to be reintroduced without asking first.
-            constexpr const char* kBpmLabel = "BPM";
-            // NOT converted to `ControlStyle::caption`, unlike the
-            // scene-blend slider just above. That conversion was F.2d's whole
-            // point, and it applies wherever the hand-rolled adjacent `Label`
-            // existed ONLY because upstream never drew slider captions -- a
-            // cause that is dead at pin 77a3019e. Here a second cause is
-            // still live: B12 (tasks.md, 2026-07-29) requires this label to
-            // TRAIL its slider, since leading it puts it between the two
-            // sliders and reads as labelling the scene-blend one. The
-            // operator's words were "the two labels are now deliberately
-            // asymmetric -- do not 'fix' that."
-            //
-            // `ControlStyle::caption` cannot express that: `FinishControl`
-            // (PortableUIBuilders.hpp:428-465) always emits the caption Label
-            // BEFORE its control, wrapped with it in an implicit Row. So the
-            // adjacent `Label` node stays here and the asymmetry is
-            // preserved. Filed as upstream ask 14; when caption placement
-            // lands this collapses to a caption like its neighbour.
-            builder.Slider(FroggersNodeIds::kBpm, kBpmLabel, static_cast<float>(tempoBpm), 30.0f, 300.0f, 1.0f,
-                           synth::ui::Action::Named(FroggersActions::kBpm), synth::ui::ControlStyle{});
-            builder.Label(FroggersNodeIds::kBpmLabel, kBpmLabel, synth::ui::ControlStyle{});
+            return;
         }
+        // Task 3.6 (design E3e): the control genuinely IS labelled "BPM"
+        // (UI-rework ITEM 5, design.md A3f, tasks.md B.5, 2026-07-29 -- the
+        // transport-state-dependent "(no effect while stopped)" annotation
+        // was never requested and is not to be reintroduced without asking
+        // first).
+        constexpr const char* kLabel = "BPM";
+        // NOT converted to `ControlStyle::caption`, unlike the scene-blend
+        // slider (AppendSceneBlendGroup() above) -- B12 requires this label
+        // to TRAIL its slider, and `Builder::FinishControl`
+        // (PortableUIBuilders.hpp:428-465) always emits a caption BEFORE its
+        // control. Filed as upstream ask 14 (caption placement); when it
+        // lands this collapses to a caption like its neighbour.
+        builder.Slider(FroggersNodeIds::kBpm, kLabel, static_cast<float>(tempoBpm), 30.0f, 300.0f, 1.0f,
+                       synth::ui::Action::Named(FroggersActions::kBpm), synth::ui::ControlStyle{});
+        builder.Label(FroggersNodeIds::kBpmLabel, kLabel, synth::ui::ControlStyle{});
+    }
+
+    // -- Right block (tasks.md F.3 CELL MAP, columns E1-E4) -----------------
+
+    void AppendRightBlock(synth::ui::Builder& builder) const {
+        synth::ui::LayoutOptions blockLayout;
+        blockLayout.main = synth::ui::Extent::Weight(FroggersCellMap::kRightBlockWeight);
+        blockLayout.cross = synth::ui::Extent::Weight(1.0f);
+        blockLayout.padding = 0.0f;
+        blockLayout.gap = FroggersPageLayout::kGap;
+        builder.Column(FroggersNodeIds::kRightBlock, blockLayout, [this](synth::ui::Builder& b) {
+            for (const FroggersCellMap::RightRow& row : FroggersCellMap::kRightRows) {
+                AppendRightRow(b, row);
+            }
+        });
+    }
+
+    void AppendRightRow(synth::ui::Builder& builder, const FroggersCellMap::RightRow& row) const {
+        switch (row.kind) {
+            case FroggersCellMap::RightKind::BankTabs:
+                AppendBankTabsRow(builder);
+                return;
+            case FroggersCellMap::RightKind::EncoderRow:
+                AppendEncoderRow(builder, row.firstEncoderIndex);
+                return;
+            case FroggersCellMap::RightKind::Randomize:
+                AppendRandomizeRow(builder);
+                return;
+        }
+    }
+
+    // Row 1: the six bank-select tabs, LOOPED from `FroggersBankLayouts()`
+    // (single source of truth for bank identity/order,
+    // app/FroggersParameters.hpp) -- OMNI §8, not a second hand-written list.
+    //
+    // Task 3.1/6.3 (operator 2026-07-28): plain `Button` nodes with the
+    // action supplied directly (Draw/DrawInteractive nodes dispatched only
+    // on double-click at the pin then current; reverted for single-click bank
+    // switching). F.2c (2026-08-03, pin 77a3019e): `node.selected` for the
+    // active bank now comes from `ControlStyle::selected`.
+    void AppendBankTabsRow(synth::ui::Builder& builder) const {
+        synth::ui::LayoutOptions rowLayout;
+        rowLayout.main = synth::ui::Extent::Weight(1.0f);
+        rowLayout.cross = synth::ui::Extent::Weight(1.0f);
+        rowLayout.padding = 0.0f;
+        rowLayout.gap = FroggersPageLayout::kGap;
+        const auto& layouts = FroggersBankLayouts();
+        builder.Row(FroggersNodeIds::kBankTabsRow, rowLayout, [this, &layouts](synth::ui::Builder& b) {
+            for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+                synth::ui::ControlStyle style{};
+                style.selected = BankSelected(bankIx);
+                style.layout.main = synth::ui::Extent::Weight(1.0f);
+                style.layout.cross = synth::ui::Extent::Intrinsic();
+                b.Button(FroggersNodeIds::BankButton(bankIx), layouts[bankIx].name,
+                         synth::ui::Action::WithValue(FroggersActions::kBankSelect, std::to_string(bankIx)), style);
+            }
+        });
+    }
+
+    // Rows 2-5: the 16-slot grid, 4 slots per row -- LOOPED over
+    // `FroggersEncoderGridLayout::kColumns`, the row/col mapping
+    // (`firstEncoderIndex / kColumns` below, `ix / kColumns`/`ix % kColumns`
+    // in spirit) surviving task F.3's deletion of `BoundsForIndex`'s pixel
+    // division.
+    void AppendEncoderRow(synth::ui::Builder& builder, std::size_t firstEncoderIndex) const {
+        const std::size_t row = firstEncoderIndex / FroggersEncoderGridLayout::kColumns;
+        synth::ui::LayoutOptions rowLayout;
+        rowLayout.main = synth::ui::Extent::Weight(1.0f);
+        rowLayout.cross = synth::ui::Extent::Weight(1.0f);
+        rowLayout.padding = 0.0f;
+        rowLayout.gap = FroggersEncoderGridLayout::kGap;
+        builder.Row(FroggersNodeIds::EncoderRow(row), rowLayout, [this, firstEncoderIndex](synth::ui::Builder& b) {
+            for (std::size_t column = 0; column < FroggersEncoderGridLayout::kColumns; ++column) {
+                AppendEncoderCell(b, firstEncoderIndex + column);
+            }
+        });
+    }
+
+    // Task 10.3/10.4/10.5: one encoder cell. Reads the SAME
+    // `context_->uiState->slots[0]` snapshot whether it currently holds the
+    // parameter grid or a drilled-in modulation-detail grid (Bank::
+    // OpenModulationView/Deselect swap `visible_`'s contents; this surface
+    // has no branch of its own for "which grid" -- see the drill-in note
+    // below) -- and it is the ONLY place this surface reads a
+    // `Parameter::UIState`.
+    //
+    // BRIEF-CHANGING (task F.3 topology trace): this loop must NOT
+    // re-derive slot->parameter from `FroggersBankLayouts()`/
+    // `PageParameter()`/`Crispy()`/`Crunchy()` -- those are
+    // construction-time accessors that do not reflect modulation drill-in
+    // substitution. `context_->uiState->slots[0].cells[ix]` already reflects
+    // `Bank::VisibleParameter(ix)` (BankSlot::PopulateUIState publishes
+    // exactly that), so this file already satisfies that requirement and did
+    // not need to change to do so.
+    //
+    // A disconnected cell in the modulation view still holds its place in
+    // the grid (Braid4UI.hpp's own EmitEncoderCell idiom, `hidden` below):
+    // in the old fixed-pixel-index layout a `continue`-skip left the cell's
+    // designated position blank; in this weight-resolved grid, omitting the
+    // node entirely would let its siblings' weights redistribute and shift
+    // position, silently RESEQUENCING the remaining cells on every drill-in
+    // change. Always emitting the node with empty draw commands (and no
+    // action/drag) when hidden keeps the grid geometry stable and is the
+    // established Sheaf idiom this surface's own header comment points at
+    // (Braid4UI.hpp:154-160).
+    void AppendEncoderCell(synth::ui::Builder& builder, std::size_t ix) const {
+        const bool showingModulationView =
+            context_ != nullptr && context_->uiState != nullptr && context_->uiState->slotCapacity > 0 &&
+            context_->uiState->slots[0].showingModulationView.load(std::memory_order_relaxed);
+
+        synth::ui::EncoderDrawState state{};
+        synth::ui::Visualizer* visualizer = nullptr;
+        if (context_ != nullptr && context_->uiState != nullptr && context_->uiState->slotCapacity > 0) {
+            const synth::BankSlot::UIState& slotState = context_->uiState->slots[0];
+            if (ix < slotState.cellCapacity) {
+                // Design D9a/task 10.5: EncoderDrawStateFromParameter reads
+                // only `Parameter::UIState.values[]` (the post-fuego,
+                // post-modulation published display center) -- never
+                // `.rawKnobValue`.
+                state = synth::ui::EncoderDrawStateFromParameter(slotState.cells[ix]);
+                visualizer = slotState.cells[ix].visualizer.load(std::memory_order_relaxed);
+            }
+        }
+        const bool hidden = showingModulationView && !state.connected;
+        state.hasVisualizerUnderlay = !hidden && visualizer != nullptr && visualizer->Visible();
+
+        const std::string encoderId = FroggersNodeIds::Encoder(ix);
+        if (!hidden && visualizer != nullptr && visualizer->Visible()) {
+            // Design D9b/D10: bump/comb transfer-function underlays and
+            // modulation-source underlays render here automatically. The
+            // underlay is deferred to the resolved bounds of its SIBLING
+            // encoder cell via `overlayOf` (PortableUILayout.hpp:672-683,
+            // 743-752) -- the same mechanism Braid4UI.hpp's own
+            // EmitEncoderCell uses, needed here because the cell's own
+            // bounds are not known until the layout resolves.
+            synth::ui::LayoutOptions underlayLayout;
+            underlayLayout.overlayOf = encoderId;
+            builder.Draw(encoderId + ".visualizer", underlayLayout, [visualizer](synth::ui::Bounds extent) {
+                visualizer->SetBounds(extent);
+                return visualizer->Draw();
+            });
+        }
+
+        // Change 2 REVERTED (operator 2026-07-27), F.2a (2026-08-03, pin
+        // 77a3019e, ask 1 landed): the drill-in press dispatches from
+        // `ControlStyle::action` (plain click) and the drag from the
+        // separate `pointerDragAction` field -- no conflict, no post-Build()
+        // patch. Neither is set while hidden: a disconnected cell in the
+        // modulation view is inert as well as invisible.
+        // `Draw` has no case in `metrics::IntrinsicFor`
+        // (PortableUIMetrics.hpp:36-53, `default: {0,0,0,0}`) -- an in-flow
+        // Draw node needs an explicit `layout.main` or it resolves to zero
+        // size (this file's header comment makes the same point about the
+        // transport plates). `Weight(1)` makes the cell fill its equal share
+        // of the row, exactly `Braid4CellLayout()`'s own square-cell idiom
+        // (`cross` stays the library default `Weight(1)` too, filling the
+        // row's height).
+        synth::ui::ControlStyle cellStyle{};
+        cellStyle.layout.main = synth::ui::Extent::Weight(1.0f);
+        if (!hidden) {
+            cellStyle.action = synth::ui::Action::WithValue(FroggersActions::kEncoderPress, std::to_string(ix));
+            cellStyle.pointerDragAction =
+                synth::ui::Action::WithValue(FroggersActions::kEncoderDrag, FormatFroggersEncoderDrag(ix, 0.0f));
+        }
+        builder.Draw(
+            encoderId,
+            [state, hidden](synth::ui::Bounds extent) {
+                return hidden ? std::vector<synth::ui::DrawCommand>{} : synth::ui::BuildEncoderDrawCommands(state, extent);
+            },
+            cellStyle);
+    }
+
+    // Row 6: Randomize Page | Randomize All, each spanning 2 of the 4
+    // encoder columns (`Extent::Weight(2)`, matching the encoder rows'
+    // per-column `Weight(1)` unit so the two rows visually align).
+    //
+    // Task 10.7 (design D11/D14): moved here from the old bank-header group
+    // by the CELL MAP -- row 1 is bank tabs only now (AppendBankTabsRow()
+    // above); Randomize Page and Randomize All sit together in row 6.
+    // Exactly one Randomize All control exists anywhere in this surface
+    // (task 10.2's constraint, unchanged).
+    void AppendRandomizeRow(synth::ui::Builder& builder) const {
+        synth::ui::LayoutOptions rowLayout;
+        rowLayout.main = synth::ui::Extent::Weight(1.0f);
+        rowLayout.cross = synth::ui::Extent::Weight(1.0f);
+        rowLayout.padding = 0.0f;
+        rowLayout.gap = FroggersEncoderGridLayout::kGap;
+        builder.Row(FroggersNodeIds::kRandomizeRow, rowLayout, [](synth::ui::Builder& b) {
+            synth::ui::ControlStyle pageStyle{};
+            pageStyle.layout.main = synth::ui::Extent::Weight(2.0f);
+            pageStyle.layout.cross = synth::ui::Extent::Intrinsic();
+            b.Button(FroggersNodeIds::kRandomizePage, "Randomize Page",
+                     synth::ui::Action::Named(FroggersActions::kRandomizePage), pageStyle);
+
+            synth::ui::ControlStyle allStyle{};
+            allStyle.layout.main = synth::ui::Extent::Weight(2.0f);
+            allStyle.layout.cross = synth::ui::Extent::Intrinsic();
+            b.Button(FroggersNodeIds::kRandomizeAll, "Randomize All",
+                     synth::ui::Action::Named(FroggersActions::kRandomizeAll), allStyle);
+        });
     }
 
     bool BankSelected(std::size_t bankIx) const {
@@ -1091,13 +916,10 @@ private:
         }
         if (action.name == FroggersActions::kSceneSelect) {
             // Task 3.5 (design E3d): Scene 1/Scene 2 now toggle the blend to
-            // its extremes rather than reassigning a stored-scene endpoint
-            // (see AppendChromeBand's comment for the full trace). The
-            // mapping below is verified, not assumed: FroggersParameters.hpp
-            // wires `manager.SetSceneEndpoints(0, 1)` once at Init() (fixed
-            // for this app's lifetime -- nothing here or in ParameterManager
-            // ever calls SetSceneEndpoints again after this change removes
-            // SetLessSelectedScene's own call to it), and
+            // its extremes rather than reassigning a stored-scene endpoint.
+            // Verified: FroggersParameters.hpp wires
+            // `manager.SetSceneEndpoints(0, 1)` once at Init() (fixed for
+            // this app's lifetime), and
             // ParameterGroup::ApplySceneDistribution's blend arithmetic
             // (External/Sheaf/projects/synth/src/ParameterModulation.cpp:2172)
             // is `SceneCenter(leftScene) * (1-blend) + SceneCenter(rightScene)
@@ -1126,7 +948,7 @@ private:
 
         // App-request bridge (see FroggersAppCore.hpp's header comment):
         // encoder press (drill-in cap), Randomize All/Page, BPM. (Crunchy
-        // removed operator 2026-07-27 -- see AppendChromeBand's comment.)
+        // removed operator 2026-07-27 -- see this file's header comment.)
         if (action.name == FroggersActions::kEncoderPress) {
             app_->RequestEncoderPress(FroggersParseSize(action.value, 0));
             return;
@@ -1145,7 +967,7 @@ private:
         }
         if (action.name == FroggersActions::kBpm) {
             // Task 10.6: belt-and-suspenders -- the slider itself renders as
-            // a non-interactive StatusText while slaved (BuildTree(),
+            // a non-interactive StatusText while slaved (AppendBpmControl(),
             // above), so this action should not even be reachable then; the
             // guard here means the audio-thread's own no-op
             // (MasterClock::SetTempoBpm's `syncConfig_.receiveClock` check)

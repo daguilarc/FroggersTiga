@@ -51,7 +51,7 @@
 // Crunchy no longer routes through this bridge (operator 2026-07-27): the
 // chrome-band Crunchy slider that used to call `RequestCrunchy()` here is
 // removed (it duplicated the real control at bank slot 15 -- see
-// FroggersUiSurface.hpp's `AppendChromeBand`/tasks.md 10.2). Crunchy is a
+// FroggersUiSurface.hpp's own header comment/tasks.md 10.2). Crunchy is a
 // `Parameter` shared across all six banks, but at slot 15 it is addressed
 // exactly like any other bank parameter (generic encoder press/drag over
 // `context_->uiBus`), so it never needed a pending-atomic request of its
@@ -183,31 +183,29 @@ public:
         config.preferredSampleRate = 48000.0;
         config.preferredBlockSize = 256;
         config.uiWidth = 900;
-        // Task 3.7 (design E3g), regression fix (2026-07-28): 632, not the
-        // 596 a prior revision of this comment derived. `RuntimeMainComponent::
-        // IntrinsicBounds()` (External/Sheaf/projects/synth/include/synth/
-        // RuntimeMainComponent.hpp:204-210) gives this figure ZERO vertical
-        // slack, and the runtime auto-flows a whole chrome band (Play, Stop,
-        // the 6 bank buttons, Randomize Page, Randomize All, Scene 1, Scene
-        // 2, Scene blend, BPM -- 16 controls once Play/Stop and the bank
-        // buttons were reverted from bounds-carrying `Draw` nodes back to
-        // unbounded `Button` nodes, tasks 6.3/6.4) below this app's own
-        // content area with no room reserved for it, which 596's single-row
-        // assumption still clipped (16 controls wrap to 2 rows at this
-        // width, not 1). This literal must equal
-        // `synth_froggers::FroggersPageLayout::RequiredHeight()`
-        // (FroggersUiSurface.hpp) -- it cannot be written as that call
-        // directly, since FroggersUiSurface.hpp includes THIS file, so the
-        // reverse include would be circular. FroggersSurfaceTests.cpp's
-        // `declared_ui_height_matches_the_derived_required_extent` is the
-        // single-source-of-truth cross-check (OMNI §8): 560 (content area,
-        // unchanged) + 8 (the runtime's own gap before the first flowed row)
-        // + 64 (the REAL computed 2-row flow extent -- 28px row height + 8px
-        // inter-row gap + 28px row height, per
-        // `FroggersAutoFlowedChromeModel::ComputeFlowExtent`) = 632 -- see
-        // that struct's and FroggersPageLayout's own comments for the full
-        // per-control derivation and why the flow extent is computed rather
-        // than a live query.
+        // DEMOTED by task F.3 (openspec/changes/frogg3rs-audio-safety-and-
+        // ui-rework/tasks.md, 2026-08-04/05): this literal is now just the
+        // window's INITIAL size, not a derived cross-check. Before F.3 it
+        // was required to equal `FroggersPageLayout::RequiredHeight()`
+        // (hand-maintained in sync, verified by a dedicated test) because
+        // `FroggersUiSurface.hpp`'s hand-rolled auto-flow model
+        // (`FroggersAutoFlowedChromeModel`) needed the app to reserve
+        // exactly the right amount of vertical space for its own chrome
+        // band ahead of time. F.3 replaced that band with one declarative
+        // grid whose regions are resolved by Sheaf's own layout engine
+        // against whatever root extent it is given (`FroggersPageLayout::
+        // RootBounds()`), so there is nothing left for this literal to be
+        // derived FROM, and the circular-include workaround that comment
+        // used to describe (`FroggersUiSurface.hpp` cannot call back into
+        // this file) no longer applies because there is no call to make.
+        // 632 itself is unchanged -- it is simply a plain, hand-picked
+        // initial window size now, matching
+        // `synth_froggers::FroggersPageLayout::kDefaultHeight`
+        // (FroggersUiSurface.hpp). `FroggersSurfaceTests.cpp`'s fit-guard
+        // tests assert the surface actually fits its declared grid at this
+        // size (and at a smaller and a larger one), which is a stronger
+        // guarantee than the old cross-check ever was (see task F.3's
+        // report for why the old test could never fail even when wrong).
         config.uiHeight = 632;
         config.uiFrameHz = 30;
         return config;

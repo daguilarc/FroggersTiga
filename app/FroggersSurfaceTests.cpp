@@ -37,7 +37,9 @@
 #include <cstddef>
 #include <exception>
 #include <filesystem>
+#include <functional>
 #include <iostream>
+#include <map>
 #include <optional>
 #include <set>
 #include <sstream>
@@ -123,6 +125,47 @@ const synth::ui::Node* FindNodeById(const synth::ui::NodeTree& tree, const std::
     return nullptr;
 }
 
+// A resolved node's `bounds` are PARENT-relative, not accumulated screen
+// coordinates (PortableUI.hpp's coordinate contract, `sru-46`): "every node's
+// bounds are relative to its parent's origin," and a backend's rendered
+// position is that node's own bounds "folded over the accumulated origins of
+// its ancestor chain" (PortableUI.hpp:44-46; the JUCE backend's own fold is
+// `PortableJuceBackend.hpp:737-753`'s `resolve()`). Task F.3's rewritten
+// geometry tests below compare nodes that do not share an immediate parent
+// (e.g. an encoder cell several containers deep vs. the scope, or two
+// encoder cells in different grid rows), so they need the SAME fold this
+// helper performs by walking each node's parent chain (found by scanning
+// every node's `children` list, since `Node` carries no parent pointer of
+// its own) and summing each ancestor's own local offset.
+synth::ui::Bounds AbsoluteBounds(const synth::ui::NodeTree& tree, const std::string& id) {
+    std::map<std::string, std::string> parentOf;
+    for (const synth::ui::Node& node : tree.nodes) {
+        for (const synth::ui::NodeId& child : node.children) {
+            parentOf[child.value] = node.id.value;
+        }
+    }
+    const synth::ui::Node* node = FindNodeById(tree, id);
+    if (node == nullptr) {
+        return {};
+    }
+    synth::ui::Bounds bounds = node->bounds;
+    std::string current = id;
+    for (;;) {
+        const auto found = parentOf.find(current);
+        if (found == parentOf.end()) {
+            break;
+        }
+        const synth::ui::Node* parent = FindNodeById(tree, found->second);
+        if (parent == nullptr) {
+            break;
+        }
+        bounds.x += parent->bounds.x;
+        bounds.y += parent->bounds.y;
+        current = found->second;
+    }
+    return bounds;
+}
+
 std::optional<std::size_t> FindNodeIndexById(const synth::ui::NodeTree& tree, const std::string& id) {
     for (std::size_t ix = 0; ix < tree.nodes.size(); ++ix) {
         if (tree.nodes[ix].id.value == id) {
@@ -132,50 +175,119 @@ std::optional<std::size_t> FindNodeIndexById(const synth::ui::NodeTree& tree, co
     return std::nullopt;
 }
 
-// --- 10.1/10.5: layout bounds, no overlap, cell containment ----------------
+// --- F.3: layout bounds, no overlap, cell containment -----------------------
+//
+// Task F.3 (openspec/changes/frogg3rs-audio-safety-and-ui-rework/tasks.md)
+// replaced `FroggersPageLayout`'s hand-computed pixel `Bounds` (ContentArea/
+// ScopeArea/GridArea, `FroggersEncoderGridLayout::BoundsForIndex`) with a
+// declarative grid resolved by Sheaf's own layout engine. Every test below
+// that used to call those functions directly now builds the REAL tree
+// through a bare `FroggersUiSurface` (same convention `BuildBraid4TreeAt`
+// uses in `External/Sheaf/projects/synth/tests/portable_ui_tests.cpp`) and
+// reads the RESOLVED node bounds instead -- each test still pins its
+// ORIGINAL property (§0: a pin is rewritten, never deleted), just against
+// the new mechanism.
+
+// A context-free surface build at an arbitrary size: the layout claims below
+// are about the resolver, not about any particular engine/parameter state
+// (mirrors `BuildBraid4TreeAt`, portable_ui_tests.cpp:476-485).
+synth::ui::NodeTree BuildFroggersTreeAt(float width, float height) {
+    synth::RuntimeConfig config = synth_froggers::FroggersApp::Config();
+    config.uiWidth = static_cast<int>(width);
+    config.uiHeight = static_cast<int>(height);
+    synth::AppContext context;
+    context.config = &config;
+    synth_froggers::FroggersUiSurface surface;
+    surface.Attach(&context, nullptr);
+    return surface.BuildTree();
+}
+
+synth::ui::NodeTree BuildFroggersTreeAtDefaultSize() {
+    return BuildFroggersTreeAt(synth_froggers::FroggersPageLayout::kDefaultWidth,
+                               synth_froggers::FroggersPageLayout::kDefaultHeight);
+}
+
+// try/catch around a resolve, exactly the pattern
+// `tests/portable_ui_tests.cpp:1558-1568` and
+// `tests/braid4_system_tests.cpp:476-485` use -- own local implementation
+// since those files live under the read-only External/Sheaf submodule.
+std::string FroggersResolutionDiagnostic(const std::function<void()>& build) {
+    try {
+        build();
+    } catch (const std::exception& error) {
+        return error.what();
+    }
+    return {};
+}
 
 TEST_CASE(root_and_content_bounds_match_default_config_size) {
     const synth::ui::Bounds root = synth_froggers::FroggersPageLayout::RootBounds(nullptr);
     REQUIRE_TRUE(root.width == synth_froggers::FroggersPageLayout::kDefaultWidth);
-    REQUIRE_TRUE(root.height == synth_froggers::FroggersPageLayout::RequiredHeight());
+    REQUIRE_TRUE(root.height == synth_froggers::FroggersPageLayout::kDefaultHeight);
 
-    const synth::ui::Bounds content = synth_froggers::FroggersPageLayout::ContentArea(root);
-    REQUIRE_TRUE(content.x > 0.0f && content.y > 0.0f);
-    REQUIRE_TRUE(content.width < root.width);
-    REQUIRE_TRUE(content.height < root.height);
+    // REWRITE (task F.3): `ContentArea()` (a computed pixel Bounds) is gone
+    // along with the auto-flow model it served -- what survives is the
+    // property it existed to guarantee, that real content is inset from the
+    // window edge by a nonzero margin. The left/right blocks (children of
+    // the outer split Row, `FroggersNodeIds::kLayoutRoot`, whose own
+    // `padding` IS `FroggersPageLayout::kMargin`) are that content now; their
+    // ABSOLUTE bounds (AbsoluteBounds() above -- a resolved node's `bounds`
+    // are parent-relative, not screen coordinates) must sit `kMargin` inside
+    // the window on every edge they touch.
+    const synth::ui::NodeTree tree = BuildFroggersTreeAtDefaultSize();
+    const synth::ui::Bounds left = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kLeftBlock);
+    const synth::ui::Bounds right = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kRightBlock);
+    REQUIRE_TRUE(left.width > 0.0f && left.height > 0.0f);
+    REQUIRE_TRUE(right.width > 0.0f && right.height > 0.0f);
+
+    constexpr float kTolerance = 0.01f;
+    REQUIRE_TRUE(std::fabs(left.x - synth_froggers::FroggersPageLayout::kMargin) < kTolerance);
+    REQUIRE_TRUE(std::fabs(left.y - synth_froggers::FroggersPageLayout::kMargin) < kTolerance);
+    REQUIRE_TRUE(std::fabs((root.width - (right.x + right.width)) - synth_froggers::FroggersPageLayout::kMargin) <
+                 kTolerance);
+    REQUIRE_TRUE(std::fabs((root.height - (left.y + left.height)) - synth_froggers::FroggersPageLayout::kMargin) <
+                 kTolerance);
 }
 
 TEST_CASE(scope_and_grid_regions_do_not_overlap_at_target_window_size) {
+    // REWRITE (task F.3): the invariant survives verbatim (scope and every
+    // encoder cell occupy disjoint regions, all inside the window); the
+    // mechanism moves from computed pixel rectangles to the RESOLVED,
+    // absolute-folded node bounds of the real tree.
+    const synth::ui::NodeTree tree = BuildFroggersTreeAtDefaultSize();
     const synth::ui::Bounds root = synth_froggers::FroggersPageLayout::RootBounds(nullptr);
-    const synth::ui::Bounds content = synth_froggers::FroggersPageLayout::ContentArea(root);
-    const synth::ui::Bounds scope = synth_froggers::FroggersPageLayout::ScopeArea(content);
-    const synth::ui::Bounds grid = synth_froggers::FroggersPageLayout::GridArea(content);
-
-    REQUIRE_TRUE(!Overlaps(scope, grid));
-    REQUIRE_TRUE(FullyInside(scope, content));
-    REQUIRE_TRUE(FullyInside(grid, content));
+    const synth::ui::Bounds scope = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kVcoScope);
     REQUIRE_TRUE(scope.width > 0.0f && scope.height > 0.0f);
-    REQUIRE_TRUE(grid.width > 0.0f && grid.height > 0.0f);
+    REQUIRE_TRUE(FullyInside(scope, root));
+
+    for (std::size_t ix = 0; ix < synth_froggers::FroggersEncoderGridLayout::kEncoderCount; ++ix) {
+        const synth::ui::Bounds cell = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::Encoder(ix));
+        REQUIRE_TRUE(cell.width > 0.0f && cell.height > 0.0f);
+        REQUIRE_TRUE(FullyInside(cell, root));
+        REQUIRE_TRUE(!Overlaps(scope, cell));
+    }
 }
 
 // UI-rework ITEM 1 (design.md A3a, tasks.md B.1, 2026-07-29, the operator's
 // strongest complaint, verbatim: "it is taller than it is wide, which is to
 // put it mildly, fucking stupid for visual UI. it should be at most a third
-// of its current size."). Pins the two hard requirements directly: wider
-// than tall, and at most 1/3 of the OLD panel's area (340 wide x 528 tall
-// -- the portrait column this replaces, computed the same way the old
-// `ScopeArea()` did: `kScopeWidth` x the old full content height). A
+// of its current size."). REWRITE (task F.3): pins the two hard requirements
+// directly against the RESOLVED scope node -- wider than tall, and at most
+// 1/3 of the OLD panel's area (340 wide x 528 tall -- the portrait column
+// this replaced, long before this file's own `ScopeArea()` existed; the
+// baseline is `FroggersPageLayout::kScopeWidth`, this file's one surviving
+// definition of that historical width, and the old full content height,
+// preserved here as a literal since the struct that computed it is gone). A
 // regression back to a portrait panel, or one that merely shrinks without
 // changing its aspect ratio, fails this test.
 TEST_CASE(scope_area_is_wider_than_tall_and_at_most_a_third_of_its_old_area) {
-    const synth::ui::Bounds root = synth_froggers::FroggersPageLayout::RootBounds(nullptr);
-    const synth::ui::Bounds content = synth_froggers::FroggersPageLayout::ContentArea(root);
-    const synth::ui::Bounds scope = synth_froggers::FroggersPageLayout::ScopeArea(content);
-
+    const synth::ui::NodeTree tree = BuildFroggersTreeAtDefaultSize();
+    const synth::ui::Bounds scope = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kVcoScope);
+    REQUIRE_TRUE(scope.width > 0.0f && scope.height > 0.0f);
     REQUIRE_TRUE(scope.width > scope.height);
 
-    constexpr float kOldScopeWidth = 340.0f;    // the retired portrait panel's width.
-    const float oldScopeArea = kOldScopeWidth * content.height;  // old ScopeArea() spanned the full content height.
+    constexpr float kOldFullContentHeight = 528.0f;  // historical: the pre-F.3 content area's height.
+    const float oldScopeArea = synth_froggers::FroggersPageLayout::kScopeWidth * kOldFullContentHeight;
     const float newScopeArea = scope.width * scope.height;
     REQUIRE_TRUE(newScopeArea <= oldScopeArea / 3.0f);
 }
@@ -184,136 +296,93 @@ TEST_CASE(scope_area_is_wider_than_tall_and_at_most_a_third_of_its_old_area) {
 // LOCATION, so a change asked to shrink it also moved it -- from a left-hand
 // column to a full-width band across the top -- and every existing assertion
 // still passed. Operator: "WHEN DID I ASK FOR YOU TO CHANGE THE LOCATION OF
-// IT? i said just the height should change."
-//
-// This pins the side-by-side arrangement: the scope occupies a left-hand
-// column and the grid is entirely to its RIGHT. It also pins that the space
-// BELOW the scope in the left column stays empty -- the grid must not reclaim
-// it, because the operator intends transport/scene controls there once
-// positioned controls stop costing single-click dispatch (tasks.md D.6).
+// IT? i said just the height should change." REWRITE (task F.3): the single
+// most important guard in this file -- still pins scope-left/grid-right/
+// grid-full-height, now against the resolved left/right block nodes.
 TEST_CASE(scope_sits_in_a_left_column_with_the_grid_to_its_right) {
+    const synth::ui::NodeTree tree = BuildFroggersTreeAtDefaultSize();
     const synth::ui::Bounds root = synth_froggers::FroggersPageLayout::RootBounds(nullptr);
-    const synth::ui::Bounds content = synth_froggers::FroggersPageLayout::ContentArea(root);
-    const synth::ui::Bounds scope = synth_froggers::FroggersPageLayout::ScopeArea(content);
-    const synth::ui::Bounds grid = synth_froggers::FroggersPageLayout::GridArea(content);
+    const synth::ui::Bounds left = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kLeftBlock);
+    const synth::ui::Bounds right = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kRightBlock);
+    const synth::ui::Bounds scope = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kVcoScope);
+    REQUIRE_TRUE(left.width > 0.0f && right.width > 0.0f && scope.width > 0.0f);
 
     // The scope is a COLUMN, not a full-width band.
-    REQUIRE_TRUE(scope.width < content.width);
+    REQUIRE_TRUE(scope.width < root.width);
 
-    // The grid starts to the right of the scope's right edge, and the scope
-    // does not start to the right of the grid (i.e. they are not stacked).
-    REQUIRE_TRUE(grid.x >= scope.x + scope.width);
+    // The grid (right block) starts to the right of the left block's right
+    // edge, and the left block does not start to the right of the right
+    // block (i.e. they are not stacked).
+    REQUIRE_TRUE(right.x >= left.x + left.width);
+    REQUIRE_TRUE(right.x > left.x);
 
-    // The grid spans the full content height -- it is BESIDE the scope, so it
-    // is not pushed down by the scope's height.
-    REQUIRE_TRUE(grid.height >= content.height - 0.5f);
+    // The grid (right block) spans the full content height -- it is BESIDE
+    // the left column, not pushed down by anything in it.
+    REQUIRE_TRUE(right.height >= left.height - 0.5f);
 
-    // The left column below the scope is genuinely free: the grid's left edge
-    // never intrudes into the scope's column.
-    REQUIRE_TRUE(grid.x > scope.x);
+    // The scope itself sits inside the LEFT block, not the right.
+    REQUIRE_TRUE(FullyInside(scope, left));
 }
 
 TEST_CASE(every_encoder_cell_lies_fully_inside_the_grid_region) {
-    const synth::ui::Bounds root = synth_froggers::FroggersPageLayout::RootBounds(nullptr);
-    const synth::ui::Bounds content = synth_froggers::FroggersPageLayout::ContentArea(root);
-    const synth::ui::Bounds grid = synth_froggers::FroggersPageLayout::GridArea(content);
+    // REWRITE (task F.3): "grid region" is now the right block (bank tabs,
+    // the 16-slot grid, and Randomize share it per the CELL MAP), a superset
+    // of the old grid-only region but still a meaningful containment check;
+    // the harder property -- no two cells overlap -- is unchanged and still
+    // checked pairwise.
+    const synth::ui::NodeTree tree = BuildFroggersTreeAtDefaultSize();
+    const synth::ui::Bounds right = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kRightBlock);
+    REQUIRE_TRUE(right.width > 0.0f);
 
+    std::vector<synth::ui::Bounds> cells;
+    cells.reserve(synth_froggers::FroggersEncoderGridLayout::kEncoderCount);
     for (std::size_t ix = 0; ix < synth_froggers::FroggersEncoderGridLayout::kEncoderCount; ++ix) {
-        const synth::ui::Bounds cell = synth_froggers::FroggersEncoderGridLayout::BoundsForIndex(grid, ix);
+        const synth::ui::Bounds cell = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::Encoder(ix));
         REQUIRE_TRUE(cell.width > 0.0f && cell.height > 0.0f);
-        REQUIRE_TRUE(FullyInside(cell, grid));
+        REQUIRE_TRUE(FullyInside(cell, right));
+        cells.push_back(cell);
     }
 
-    // No two cells overlap each other either.
-    for (std::size_t a = 0; a < synth_froggers::FroggersEncoderGridLayout::kEncoderCount; ++a) {
-        for (std::size_t b = a + 1; b < synth_froggers::FroggersEncoderGridLayout::kEncoderCount; ++b) {
-            const synth::ui::Bounds cellA = synth_froggers::FroggersEncoderGridLayout::BoundsForIndex(grid, a);
-            const synth::ui::Bounds cellB = synth_froggers::FroggersEncoderGridLayout::BoundsForIndex(grid, b);
-            REQUIRE_TRUE(!Overlaps(cellA, cellB));
+    for (std::size_t a = 0; a < cells.size(); ++a) {
+        for (std::size_t b = a + 1; b < cells.size(); ++b) {
+            REQUIRE_TRUE(!Overlaps(cells[a], cells[b]));
         }
     }
 }
 
-// --- 3.7 / regression fix: declared uiHeight matches the derived required
-// extent, computed from the REAL flowed control set (not a hardcoded row
-// count) ----------------------------------------------------------------
+// --- F.3: fit guards, replacing the deleted height cross-check --------------
+//
+// `declared_ui_height_matches_the_derived_required_extent` DIES WITH ITS
+// SUBJECT (task F.3): `FroggersAutoFlowedChromeModel`/`RequiredHeight()` are
+// deleted, so there is nothing left to cross-check, and per task F.3's own
+// finding that test could never actually fail even when its assumptions were
+// already wrong (`FroggersAutoFlowedChromeModel::FlowedControls()` hardcoded
+// a control list it never checked against the real tree). Its FUNCTION --
+// proving the surface fits -- is taken over by these three, a strictly
+// stronger guarantee: they resolve the real declarative grid and let
+// `RequireContainerHoldsItsChildren` (PortableUILayout.hpp:267-316) itself
+// report any overflow, at the three sizes task F.3's preflight gate pinned
+// (900x632 default, 640x480 small, 1440x900 large) -- not an invented check.
 
-TEST_CASE(declared_ui_height_matches_the_derived_required_extent) {
-    // FroggersAppCore::Config() cannot literally call
-    // FroggersPageLayout::RequiredHeight() (FroggersUiSurface.hpp includes
-    // FroggersAppCore.hpp, so the reverse include would be circular) -- this
-    // is the single-source-of-truth cross-check (OMNI §8) that keeps
-    // Config()'s literal from silently drifting away from the derivation.
-    //
-    // The regression this test was strengthened to catch: a prior version of
-    // this test compared two app-side numbers (Config().uiHeight and
-    // RequiredHeight()) that agreed with EACH OTHER while both were wrong
-    // about the real auto-flow extent (both assumed a single 28px row when
-    // Play/Stop + the bank buttons reverting to unbounded Button nodes,
-    // tasks 6.3/6.4, made 16 controls flow, wrapping to 2 rows). Equality
-    // between two independently-hardcoded numbers proves nothing about
-    // correctness -- the assertions below instead pin down the actual
-    // per-control flow simulation.
-    const synth_froggers::FroggersAutoFlowedChromeModel::FlowExtent flow =
-        synth_froggers::FroggersAutoFlowedChromeModel::ComputeFlowExtent(
-            synth_froggers::FroggersPageLayout::kDefaultWidth);
+TEST_CASE(surface_resolves_without_overflow_at_the_default_window_size) {
+    const std::string diagnostic = FroggersResolutionDiagnostic([] {
+        BuildFroggersTreeAt(900.0f, 632.0f);
+    });
+    REQUIRE_TRUE(diagnostic.empty());
+}
 
-    // Verified by hand in the packet report (per-control widths, all in px,
-    // PortableJuceBackend.hpp's Button-width formula
-    // max(72, round(label.size()*6.5+24))): Play 72, Stop 72, Audio 72,
-    // Envelope 76, Filter 72, Drive 72, Delay 72, Reverb 72, Randomize Page
-    // 115, Randomize All 109 -- row 1, summing with 9 inter-control gaps
-    // (8px each) to exactly 876px, filling the full 876px-wide available row
-    // (900 - 2*12 kControlMargin) with no room left for an 11th control, so
-    // Scene 1 (72px) wraps to row 2 along with Scene 2 (72), the Scene-blend
-    // Label (120, LabelLike formula min(avail,max(120,round(len*6.5+12))))
-    // + Slider (140), and the BPM Label (120, "BPM" -- UI-rework ITEM 5,
-    // design.md A3f: the constant label, the state-dependent "(no effect
-    // while stopped)" annotation is gone) + Slider (140). Both rows are
-    // 28px tall (button/slider height; labels are only 22px, so the row max
-    // stays 28) -- total flow extent = 28 + 8 (inter-row gap) + 28 = 64px.
-    // A regression back to assuming a single row (the bug that motivated
-    // this fix) would fail this assertion, and so would a future control
-    // added to the chrome band that shifts the wrap point.
-    REQUIRE_TRUE(flow.rowCount == 2);
-    REQUIRE_TRUE(flow.totalHeight == 64.0f);
+TEST_CASE(surface_resolves_without_overflow_at_a_small_window_size) {
+    const std::string diagnostic = FroggersResolutionDiagnostic([] {
+        BuildFroggersTreeAt(640.0f, 480.0f);
+    });
+    REQUIRE_TRUE(diagnostic.empty());
+}
 
-    // The real requirement: `uiHeight` must be enough to cover the content
-    // area, the gap before the first flowed row, and the REAL computed flow
-    // extent -- not bare equality against a separately-hardcoded (and
-    // possibly equally wrong) constant.
-    const float requiredExtent = synth_froggers::FroggersPageLayout::kContentAreaHeight +
-                                  synth_froggers::FroggersPageLayout::kAutoFlowedChromeGap + flow.totalHeight;
-    REQUIRE_TRUE(static_cast<float>(synth_froggers::FroggersApp::Config().uiHeight) >= requiredExtent);
-    REQUIRE_TRUE(requiredExtent == synth_froggers::FroggersPageLayout::RequiredHeight());
-    // Config()'s literal is hand-maintained to match RequiredHeight() exactly
-    // (not just cover it) -- this is the part of part C ("keep uiHeight and
-    // RequiredHeight() in sync") this test still enforces.
-    REQUIRE_TRUE(synth_froggers::FroggersApp::Config().uiHeight ==
-                 static_cast<int>(synth_froggers::FroggersPageLayout::RequiredHeight()));
-
-    // The case that would fail if the row count were hardcoded back to 1:
-    // one row's worth of extent (28px, both Button and Slider height) is not
-    // enough for this app's actual 16-control chrome band -- the pre-fix
-    // regression's exact mistake.
-    constexpr float kOldSingleRowHeightAssumption = 28.0f;
-    REQUIRE_TRUE(synth_froggers::FroggersPageLayout::RequiredHeight() >
-                 synth_froggers::FroggersPageLayout::kContentAreaHeight +
-                     synth_froggers::FroggersPageLayout::kAutoFlowedChromeGap + kOldSingleRowHeightAssumption);
-
-    // Structural check: the scope/grid content area plus the auto-flowed
-    // chrome band it now reserves room for must fit inside the declared root
-    // height with no clipping.
-    const synth::ui::Bounds root = synth_froggers::FroggersPageLayout::RootBounds(nullptr);
-    const synth::ui::Bounds content = synth_froggers::FroggersPageLayout::ContentArea(root);
-    const float chromeBandBottom =
-        content.y + content.height + synth_froggers::FroggersPageLayout::kAutoFlowedChromeGap + flow.totalHeight;
-    REQUIRE_TRUE(root.height >= chromeBandBottom);
-
-    // Content area size is governed solely by kContentAreaHeight/kMargin,
-    // untouched by this fix (task brief: "do not redesign the scope band").
-    REQUIRE_TRUE(content.height == synth_froggers::FroggersPageLayout::kContentAreaHeight -
-                                        synth_froggers::FroggersPageLayout::kMargin * 2.0f);
+TEST_CASE(surface_resolves_without_overflow_at_a_large_window_size) {
+    const std::string diagnostic = FroggersResolutionDiagnostic([] {
+        BuildFroggersTreeAt(1440.0f, 900.0f);
+    });
+    REQUIRE_TRUE(diagnostic.empty());
 }
 
 // --- 6.3-test: bank buttons are Button nodes again --------------------------
@@ -607,22 +676,33 @@ TEST_CASE(scene_buttons_push_scene_blend_to_the_correct_extremes) {
 }
 
 // Label-visibility fix (2026-07-28), updated F.2d (2026-08-03, Sheaf pin
-// 77a3019e): `NodeKind::Slider` routes `node.label` to `juce::Slider::
-// setName()` only (PortableJuceBackend.hpp:1229-1232) -- no `juce::Label` is
-// attached, so nothing ever draws it. This used to be worked around with a
-// hand-rolled adjacent `Label` node (`FroggersNodeIds::kSceneBlendLabel`).
-// F.2d replaced that with `ControlStyle::caption`, which the Sheaf builder
-// itself emits as sibling Label "<controlId>.caption" wrapped with the
-// control in an implicit Row "<controlId>.row"
-// (PortableUIBuilders.hpp:424-465) -- so the caption id is now derived from
-// the slider's own id rather than a separate app-side constant. This test
-// asserts the caption Label NODE exists, carries the expected text, and
-// sits immediately before the Slider in `tree.nodes` order (still true: the
-// Row is pushed before the Label/Slider pair, not between them). It does
-// NOT and CANNOT prove the text is actually painted on screen -- that
-// requires a human looking at the running app; a previous task was closed
-// on exactly that false equivalence (asserting the label field was set) and
-// this comment exists so it isn't repeated.
+// 77a3019e), REWRITTEN AGAIN by task F.3's CELL MAP amendment (2026-08-04):
+// "the Scene blend label sits BELOW its slider. This supersedes the F.2d
+// caption for scene-blend (a `ControlStyle::caption` can only lead, so
+// scene-blend returns to a hand-rolled label, now placed under the slider)."
+//
+// `NodeKind::Slider` routes `node.label` to `juce::Slider::setName()` only
+// (PortableJuceBackend.hpp:1229-1232) -- no `juce::Label` is attached, so
+// nothing ever draws it; some adjacent Label node is required regardless of
+// which mechanism produces it. F.2d had made that mechanism
+// `ControlStyle::caption` (a sibling Label BEFORE the control); the CELL MAP
+// amendment reverts scene-blend specifically to a hand-rolled Label node
+// (`FroggersNodeIds::kSceneBlendLabel`) placed AFTER the slider, because a
+// caption can only lead and the operator wants it below/trailing here.
+//
+// NOTE: task F.3's own test enumeration table classified this test as
+// UNAFFECTED, which does not hold once the CELL MAP amendment is applied --
+// see FroggersUiSurface.hpp's `AppendSceneBlendGroup()` comment for the same
+// note. The amendment is the more specific, more recently affirmed
+// instruction and governs; this rewrite is flagged in the task report as a
+// place the traced table was wrong.
+//
+// This test asserts the Label NODE exists, carries the expected text, and
+// sits immediately AFTER the Slider in `tree.nodes` order. It does NOT and
+// CANNOT prove the text is actually painted on screen -- that requires a
+// human looking at the running app; a previous task was closed on exactly
+// that false equivalence (asserting the label field was set) and this
+// comment exists so it isn't repeated.
 TEST_CASE(scene_blend_slider_has_an_adjacent_label_node_carrying_its_text) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
         /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("scene_blend_label"));
@@ -631,18 +711,20 @@ TEST_CASE(scene_blend_slider_has_an_adjacent_label_node_carrying_its_text) {
     synth::ui::Surface& surface = rig.Application().PortableSurface();
     const synth::ui::NodeTree tree = surface.BuildTree();
 
-    const std::string captionId = std::string(synth_froggers::FroggersNodeIds::kSceneBlend) + ".caption";
-    const synth::ui::Node* labelNode = FindNodeById(tree, captionId);
+    const synth::ui::Node* labelNode = FindNodeById(tree, synth_froggers::FroggersNodeIds::kSceneBlendLabel);
     REQUIRE_TRUE(labelNode != nullptr);
     REQUIRE_TRUE(labelNode->kind == synth::ui::NodeKind::Label);
     REQUIRE_TRUE(labelNode->text == "Scene blend");
 
-    const std::optional<std::size_t> labelIx = FindNodeIndexById(tree, captionId);
+    const std::optional<std::size_t> labelIx =
+        FindNodeIndexById(tree, synth_froggers::FroggersNodeIds::kSceneBlendLabel);
     const std::optional<std::size_t> sliderIx =
         FindNodeIndexById(tree, synth_froggers::FroggersNodeIds::kSceneBlend);
     REQUIRE_TRUE(labelIx.has_value());
     REQUIRE_TRUE(sliderIx.has_value());
-    REQUIRE_TRUE(*sliderIx == *labelIx + 1);
+    // The label TRAILS the slider (built after it, AppendSceneBlendGroup()) --
+    // the opposite order from the retired F.2d caption, which always led.
+    REQUIRE_TRUE(*labelIx == *sliderIx + 1);
 }
 
 // --- 10.6: BPM slider normal vs external-clock-slaved states ----------------
