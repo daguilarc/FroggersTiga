@@ -439,7 +439,47 @@ a preference.**
     behaviour; F.2e is the behaviour change that assertion was holding the line against.
 - [ ] F.3 **Adopt the portable layout engine, resolution-independently** (operator chose adoption
   over deferral 2026-08-01, and **option 2 — resolution-independent — over keeping the fixed window,
-  2026-08-02**).
+  2026-08-02**). **Upgraded from cleanup to unusable-until-fixed by the 2026-08-03 walkthrough — see
+  the finding below.**
+
+  **WALKTHROUGH FINDING (2026-08-03, operator screenshot; verdict "absolute trash", correctly).**
+  The app has rendered broken since F.1, and the suite could not see it. The bump replaced the
+  layout *paradigm*, not just signatures: at `1940ddcb` the JUCE backend flowed controls itself
+  (greedy row-wrap, `DefaultSizeForNode`, 72px floors — the algorithm `FroggersAutoFlowedChromeModel`
+  replicates); at `77a3019e` that algorithm is **gone** — `LayoutControls()`
+  (`juce/PortableJuceBackend.hpp:976-994`) only applies engine-resolved bounds, and layout is the
+  app's job via per-node `LayoutOptions`. We declare none, so every control gets the defaults
+  (`PortableUILayout.hpp:53-55`): `main = Intrinsic()`, `cross = Weight(1.0)` — in a vertical root,
+  **full window width**, stacked one per row. Symptom map, each traced:
+  - *Bank/randomize/scene buttons as full-width stacked bars* — default in-flow children of a
+    vertical root. The full-width blue stripe is the selected bank's `ControlStyle::selected`
+    inversion (F.2c) at those bounds.
+  - *Scene-blend and BPM sliders full-width, cutting across the grid* — same defaults.
+  - *Encoder grid and scope overlapping the flowed controls* — grid/scope are out-of-flow
+    (explicit bounds); the flow does not reserve space for out-of-flow nodes, so the stack runs
+    underneath them. Two coordinate systems, no arbitration.
+  - *Scope painted over Play/Stop, top-left* — F.2b's plates are in-flow 28×28
+    (`FroggersUiSurface.hpp:764-765`), so they stack at the top of the vertical flow — the same
+    corner the scope's explicit bounds claim.
+  - *Not ours*: the numeric text boxes on sliders (ask 5, open) and the unlabelled `15.3%` (ask 7).
+
+  **Process finding, recorded for §0:** F.1's "zero behaviour change" was verified against the node
+  tree and the test suite only. Nothing in the suite asserts *resolved geometry* — the one guard
+  that claims to is the vacuous one Finding 2 documents — so a total layout collapse rode through
+  ten green binaries and three green commits. The operator's eyes were the first geometry assertion
+  the project ran since the bump. F.3's acceptance criteria below exist so that is never true again.
+
+  **Acceptance criteria, from the screenshot (all operator-confirmable by looking):**
+  1. Buttons are intrinsic-width controls in compact rows — nothing stretches to window width by
+     default.
+  2. Nothing overlaps: scope, transport, grid, chrome, and sliders each occupy distinct regions;
+     the flow reserves space such that out-of-flow content never collides with flowed content.
+  3. Scope keeps its own region (wider than tall, left column, grid to its right — the standing
+     guard, now pinning *position*), with Play/Stop adjacent to it, not under it.
+  4. Sliders are bounded-width controls with their labels adjacent (B12 asymmetry preserved), not
+     window-spanning strips through the grid.
+  5. Resizing the window reflows without overlap at multiple widths — the §14-gate fit assertions
+     run at more than one size.
 
   **The decision, and what it commits us to.** The surface stops declaring a compiled-in size and
   resolves against the actual window instead. That deletes four coupled artifacts, not one:
