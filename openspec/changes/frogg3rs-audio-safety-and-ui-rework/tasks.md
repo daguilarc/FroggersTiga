@@ -487,6 +487,45 @@ a preference.**
     or do Sheaf's own apps do grids as explicit bounds?) decides the mechanism; the operator has
     already decided the shape.
 
+  **CELL MAP — operator-approved 2026-08-04, with one amendment: the Scene blend label sits BELOW
+  its slider.** This supersedes the F.2d caption for scene-blend (a `ControlStyle::caption` can only
+  lead, so scene-blend returns to a hand-rolled label, now placed under the slider). B12 is
+  *refined*, not reversed: BPM's label still trails to the right of its slider; the two labels
+  remain asymmetric with each other and neither leads. Upstream ask 14 (caption placement) still
+  stands.
+
+  Six columns (L1 L2 | E1 E2 E3 E4), six rows. Encoder slots keep firmware order: 0-8 named,
+  14/15 = CRIS/CRNC, empties render as visibly empty cells (slots never shift between banks):
+
+  | Row | L1 | L2 | E1 | E2 | E3 | E4 |
+  |---|---|---|---|---|---|---|
+  | 1 | Scope (spans L1-L2, rows 1-2) | ← | Bank tabs ×6 span E1-E4 | ← | ← | ← |
+  | 2 | (scope) | ← | slot 0 | slot 1 | slot 2 | slot 3 |
+  | 3 | Play | Stop | slot 4 | slot 5 | slot 6 | slot 7 |
+  | 4 | Scene 1 | Scene 2 | slot 8 | slot 9 | slot 10 | slot 11 |
+  | 5 | Scene blend slider span 2, **label below** | ← | slot 12 | slot 13 | slot 14 CRIS | slot 15 CRNC |
+  | 6 | BPM slider span 2, label trailing right (B12) | ← | Randomize page span 2 | ← | Randomize all span 2 | ← |
+
+  **MECHANISM — from the idiom trace (2026-08-03, all citations at pin `77a3019e`):**
+  - `Column`-of-`Row`s with `Extent::Weight(1)` cells is the first-party grid idiom (Braid4
+    `EmitBraid4CellGrid`, `Braid4UiModel.hpp:74-135`); there is no native X×Y container. Outer
+    `Row` = left block `Weight(2)` | right block `Weight(4)`; spans = weighted cells within a row.
+  - **`StandardAppLayout` is NOT used** — it is Braid4's topology, not a neutral scaffold (empty
+    second visualizer slot does not collapse, `PortableUIStandardLayout.hpp:89-99`), and our
+    topology is the operator's. Classes from Sheaf, topology from Froggers.
+  - Encoder visualizer underlays via `overlayOf` — deferred resolution copies the target cell's
+    final bounds (`PortableUILayout.hpp:672-683, 743-752`); the idiom Braid4 already uses.
+  - Explicit bounds are **parent-relative** (`:596`; backend translates to absolute,
+    `juce/PortableJuceBackend.hpp:738-756`). Goal state: zero explicit-bounds nodes except at most
+    a Braid4-style background paint.
+  - Overflow **throws** (`RequireContainerHoldsItsChildren`, `:267-316`) naming container and
+    child; fit tests wrap `Build()` in try/catch at multiple sizes — the pattern Braid4's system
+    tests already use (`tests/braid4_system_tests.cpp:476-485`).
+  - Resize: backend `resized()` only re-applies stale bounds; a real relayout is
+    `RefreshFromSurface()` fed a live extent (`juce/PortableJuceBackend.hpp:226-233`;
+    host-wiring example `juce/ControllersHarnessApp.cpp:56-70`). Braid4 never wired this —
+    **we do, deliberately, in `FroggersMain.cpp`, per option 2.**
+
   **Acceptance criteria, from the screenshot (all operator-confirmable by looking):**
   1. Buttons are intrinsic-width controls in compact rows — nothing stretches to window width by
      default.
@@ -623,6 +662,31 @@ domain concept and does not obscure data flow).
 - [ ] G.3 **Operator confirms an existing saved patch still loads** from
   `~/Library/Sheaf/synth/sheaf-patch/`. Not self-certifiable and not cheaply testable; it is the
   failure that would actually hurt.
+
+## §H — DEFERRED: wasm/mobile-web UI layer (operator directive, 2026-08-04)
+
+Not part of this change's execution; recorded here so the F.3 design does not foreclose it and the
+wasm host-integration work inherits it. Operator intent, near-verbatim:
+
+- The wasm build needs a **separate UI layer for mobile web** — the desktop cell map (§F.3) is not
+  the mobile topology.
+- On mobile, **the encoder grid takes all horizontal space in a square region of the screen**.
+- **Figure out the optimal mobile grid to minimize blank encoder slots.** The desktop 4×4 keeps
+  firmware slot positions and shows empties; on a phone, blank cells are wasted glass. E.g. a bank
+  with 9 named params + CRIS/CRNC = 11 live encoders — a 3×4 region wastes 1 cell where 4×4 wastes
+  5. The mobile layer may re-pack; the desktop layer never does.
+- **Dictation gap, unresolved:** the directive contained a truncated clause — "only sharing
+  horizontal space with …" — that never named the sharer. Likely the scope or the transport
+  controls, but this is a guess; **ask the operator before designing the mobile layer**, do not
+  design around the guess.
+
+Design consequence for F.3 (why this note lives here): the topology (§F.3 cell map) must stay a
+data-level description separate from the Sheaf-idiom emission code, so a second topology can be
+emitted for wasm without forking the surface. F.3 should keep the cell map in one declarative
+place, not smeared through `BuildTree()`.
+
+Related standing context: the wasm/web V2 host integration is the recorded next task after the
+desktop work, and `V2ParamDisplayNames.hpp` was already forked to avoid breaking web.
 
 ## §D Carried open from the predecessor
 
