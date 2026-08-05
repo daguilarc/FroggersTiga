@@ -431,6 +431,31 @@ A placement field on `ControlStyle` (leading/trailing, defaulting to today's lea
 delete it. Low priority; genuinely cosmetic. Reporting it because "captions exist but can't go
 where this one needs to go" is the sort of gap that quietly keeps a workaround alive.
 
+## 15. Embedded app surfaces cannot resolve against a live extent — **FILED as a GitHub issue**
+
+**<https://github.com/jvictor0/Sheaf/issues/1>** — filed 2026-08-05, the first of these asks sent as
+an issue rather than email. Traced at pin `77a3019e`.
+
+The layout engine makes an app's *internal* layout resolution-independent, but an embedded app
+surface can never be handed a live extent: `RuntimeMainComponent::BuildTree()`
+(`include/synth/RuntimeMainComponent.hpp:110-140`) receives an **already-resolved** app tree at
+`:112` and then places the sidebar by arithmetic —
+`sidebarTree.nodes.front().bounds.x = App::Config().uiWidth` (`:118`) — against a compiled-in
+static. An app resolving against the live window would desync from a sidebar frozen at that x.
+Today's inverse symptom: the renderer grows on resize while the composed tree stays compiled-in
+size, leaving dead space.
+
+Notably every refresh layer is already wired — `MainPane::resized()` (`runtime/MainPane.hpp:66-70`),
+`ShellComponent::resized()` (`runtime/Shell.hpp:65`), and `Runtime::timerCallback()` at `uiFrameHz`
+(`runtime/Runtime.hpp:718-722`, `:299`). Only the composition step is fixed-size. Nor is there an
+app-side workaround: `RuntimeSessionOwner` exposes only `juce::Component&`
+(`runtime/Shell.hpp:110-114,121`), `MainPane` has no public renderer accessor, and
+`CollectPortableComponents` is test-only.
+
+**Not blocking us** — F.3 ships a declared-layout grid resolving against the `Config()`-sized
+region, and adopting a live extent later is a change to where `RootBounds()` sources its extent
+rather than a redesign.
+
 ## What we are NOT asking for
 
 Anything Frogg3rs-specific. Every item above is general to Sheaf; none of it
