@@ -549,14 +549,22 @@ a preference.**
   5. *§12.* Fit-test sizes pinned here, not chosen by the implementer: 900×632 (default),
      640×480 (small), 1440×900 (large). Overflow-throw is the only mechanism; no invented guards.
 
-  **Preflight gate — all must hold before the implementation dispatch:**
-  - [ ] Resize path traced through OUR runtime stack with file:line (finding 1).
-  - [ ] Deletion/survival table complete: every geometry helper, constant, explicit-bounds site,
-        and surface test enumerated with a verdict (finding 2).
-  - [ ] Brief states the uiHeight demotion precisely (finding 3), the loop-over-map rule
-        (finding 4), and the pinned sizes (finding 5).
-  - [ ] Brief forbids touching §A audio safety, parameter-value randomization, frozen trees,
-        `External/Sheaf`; requires foreground `nice make -j2`; Sonnet; sequential.
+  **Preflight gate — PASSED 2026-08-05, all five findings closed. Implementation may dispatch.**
+  - [x] Resize path traced through OUR runtime stack (finding 1) — and it surfaced a blocker plus
+        two corrections; see RESIZE TRACE, FINAL below.
+  - [x] Deletion/survival table complete: every geometry helper, constant, explicit-bounds site,
+        and all 19 surface tests enumerated with individual verdicts (finding 2).
+  - [x] uiHeight demotion stated precisely (finding 3); loop-over-map rule stated (finding 4);
+        fit sizes pinned at 900×632 / 640×480 / 1440×900 (finding 5).
+  - [x] Constraints restated for the brief: no `External/Sheaf` edits, no §A audio safety, no
+        parameter-value randomization, no frozen trees; foreground `nice make -j2`; Sonnet;
+        sequential.
+
+  **OPERATOR DECISION 2026-08-05: route 2a + file the upstream ask as a GitHub issue.** Build the
+  declared grid now against the `Config()`-sized region; file ask 15 with jvictor0 for shell-level
+  resolution independence. Window reflow revisits when that lands — and because the internal layout
+  is fully declarative, adopting a live extent is then a change to `RootBounds()`'s source, not a
+  redesign.
 
   **TOPOLOGY TRACE RESULT (2026-08-04) — cell map holds, one assertion refined, two brief-changing
   findings.** Verified: `kFroggersSlotsPerBank = 16`, `kFroggersBankCount = 6`
