@@ -469,6 +469,24 @@ a preference.**
   ten green binaries and three green commits. The operator's eyes were the first geometry assertion
   the project ran since the bump. F.3's acceptance criteria below exist so that is never true again.
 
+  **TOPOLOGY DIRECTIVE (operator, 2026-08-03): the surface is ONE grid.** Verbatim intent: *"sheaf
+  is the guide for classes but froggers is the guide for topology."* Old Froggers never had this
+  problem because everything lived in a single grid — encoders AND buttons — and that grid took
+  real effort to get right. F.3 therefore does not build "a grid plus a flowed chrome band": it
+  builds **one X×Y grid that fits encoders and buttons logically**, expressed through Sheaf's
+  layout classes. Buttons are grid citizens with cell positions, not flow refugees beneath the
+  content. Consequences:
+  - The layout *classes* (`LayoutOptions`, `Extent`, containers, whatever the idiom trace says)
+    come from Sheaf and are used idiomatically — no hand-rolled resolver, no second
+    `FroggersAutoFlowedChromeModel`.
+  - The *topology* — which control sits in which cell, what X×Y is, where scope/transport/sliders
+    fall relative to the encoder blocks — comes from Froggers, with the frozen firmware's own grid
+    as the reference for what "logically" means. Sheaf idiom informs HOW cells are declared, never
+    WHERE things go.
+  - The pending idiom trace's grid question (does the engine offer a native grid/wrap container,
+    or do Sheaf's own apps do grids as explicit bounds?) decides the mechanism; the operator has
+    already decided the shape.
+
   **Acceptance criteria, from the screenshot (all operator-confirmable by looking):**
   1. Buttons are intrinsic-width controls in compact rows — nothing stretches to window width by
      default.
