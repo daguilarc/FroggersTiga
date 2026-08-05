@@ -688,6 +688,26 @@ place, not smeared through `BuildTree()`.
 Related standing context: the wasm/web V2 host integration is the recorded next task after the
 desktop work, and `V2ParamDisplayNames.hpp` was already forked to avoid breaking web.
 
+## §I — DEFERRED: VST implementation (operator directive, 2026-08-04)
+
+Same status as §H: not executed in this change, recorded so nothing designed now forecloses it.
+
+Operator intent: a VST build with **no internal audio/MIDI routing — the DAW handles all of it.**
+Consequences worth pinning today, while the adjacent decisions are fresh:
+
+- **Audio input**: source #6's feed is just the plugin's input bus, routed by the DAW. The F.5
+  opt-in question ("did the user route anything?") is answered by the host, not by our Audio page
+  — F.5's `InputView()` gating should therefore live where a plugin build can swap the answer's
+  source, not be entangled with the standalone Audio-page UI.
+- **Transport and tempo**: Play/Stop and the BPM slider are standalone-app affordances. Under a
+  DAW the host owns transport state and tempo; the §F.3 cell map's row-3/row-6 left-block cells
+  are candidates to hide or repurpose in the VST topology. Another reason (with §H) the cell map
+  stays data, separate from emission code — VST is a third topology consumer.
+- **MIDI**: none of our own routing; whatever note/CC handling exists must accept host-delivered
+  events rather than opening devices.
+- **Packaging**: unrelated to the §G direct-launch JUCE app; likely intersects D.4 (publish
+  pipeline) when that scope opens.
+
 ## §D Carried open from the predecessor
 
 - [x] D.1 **S&H dice-roll motion — CONFIRMED ALIVE 2026-07-29.** The 6.1 sweep had already proved
