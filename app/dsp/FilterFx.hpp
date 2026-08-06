@@ -481,6 +481,19 @@ struct FilterFxChain
     // including the abrupt jumps a Crispy/randomize scramble produces.
     OnePoleLowPass combTrimSmoother;
 
+    // B1 (tasks.md CONSOLIDATED PUSH table; W2.1-MATH's peak bound `|peak|
+    // <= A * height`): mirrors combTrimSmoother exactly, but smooths the
+    // PEAK branch's exact output trim `1/height` computed in Process()
+    // below, so `A * height / height == A`. `height` (ResonantBump::height,
+    // set via `SetHeight`) is refreshed from `RouteAudioSample()` once per
+    // SAMPLE the same way `fb` is (audio-rate modulation reaches this
+    // parameter's maximum continuously, not just as an edge case -- see
+    // tasks.md's "Audio-rate modulation" note) -- so this needs the exact
+    // same glide as the comb trim for the exact same reason, not a separate
+    // constant chosen by fresh analogy. Smooths the TRIM, never `height`
+    // itself (that would change the filter, not just its level).
+    OnePoleLowPass peakTrimSmoother;
+
     FilterFxChain()
     {
         // Sample-rate-independent knob-glide idiom this codebase already
@@ -518,9 +531,15 @@ struct FilterFxChain
         // premise correction above, not a separate design choice: once `fb`
         // is known to step every sample rather than every block, matching
         // its own update rate is what the safety bound requires.
-        constexpr float kCombTrimGlideCyclesPerSample = 0.45f;
-        combTrimSmoother.SetAlphaFromNatFreq(kCombTrimGlideCyclesPerSample);
+        // B1: shared by peakTrimSmoother below rather than a second literal
+        // (§8) -- both trims are refreshed at the same per-sample cadence
+        // (`fb`/`height` are both set from `RouteAudioSample()` once per
+        // sample) so R1's fix applies identically to both.
+        constexpr float kTrimGlideCyclesPerSample = 0.45f;
+        combTrimSmoother.SetAlphaFromNatFreq(kTrimGlideCyclesPerSample);
         combTrimSmoother.output = 1.0f;  // unity at fb=0 -- matches the untrimmed branch (no initial fade-in).
+        peakTrimSmoother.SetAlphaFromNatFreq(kTrimGlideCyclesPerSample);
+        peakTrimSmoother.output = 1.0f;  // unity at height=1 (the minimum) -- matches the untrimmed branch.
     }
 
     // combPeakBlend/scoopMix are precomputed 0..1 control values (the
@@ -548,7 +567,19 @@ struct FilterFxChain
             const float rawCombTrim = 1.0f / (1.0f + std::fabs(comb.feedback));
             const float combTrim = combTrimSmoother.Process(rawCombTrim);
             const float combPath = combRaw * combTrim;
-            const float peakPath = peak.Process(input);
+            // B1: exact output trim `1/height` on the peak branch, the path
+            // W2.2a deliberately left uncompensated ("one variable at a
+            // time"). `|peakRaw| <= A * height` (RBJ peaking biquad, centre
+            // gain == height -- W2.1-MATH), so this normalizes the worst
+            // case (input at the bump's own resonant frequency) to exactly
+            // A, matching the comb trim's treatment of its own worst case.
+            // `height >= 1.0` always (`ExpMapCompute(1, kMaxResonantBumpHeight,
+            // knob)`), so the divisor can never be zero -- no guard needed
+            // for an unreachable case.
+            const float peakRaw = peak.Process(input);
+            const float rawPeakTrim = 1.0f / peak.height;
+            const float peakTrim = peakTrimSmoother.Process(rawPeakTrim);
+            const float peakPath = peakRaw * peakTrim;
             const float mixed = peakPath * (1.0f - combPeakBlend) + combPath * combPeakBlend;
             const float scooped = scoopNotch.Process(mixed);
             return mixed * (1.0f - scoopMix) + scooped * scoopMix;

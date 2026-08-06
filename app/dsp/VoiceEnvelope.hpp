@@ -42,7 +42,20 @@ struct VcoAdsrState
     // make Stop responsive -- 5s of release after pressing Stop still reads as
     // broken, which is why FroggersAppCore's stop path forces a ~50ms fade
     // independent of this ceiling (see kStopFadeReleaseKnob there).
-    static constexpr float kMaxReleaseSeconds = 5.0f;
+    //
+    // B3 (tasks.md CONSOLIDATED PUSH table, 2026-08-05): operator, "sustain
+    // and release maxima are simply too long." Traced before changing
+    // anything (§0's "no fix before the recorded root cause"): `sustainKnob`
+    // is clamped to a LEVEL in [0,1] by `stepVoice` below, not mapped through
+    // any seconds-ceiling constant -- there is no `kMaxSustainSeconds` in
+    // this file, and none is buildable from a knob that is a level, not a
+    // time. "Sustain maximum too long" therefore cannot literally mean
+    // sustain; it is release read through the perceptual lens of "how long
+    // the note keeps ringing after I let go" (release governs exactly that,
+    // Stage::Release above), so this is treated as a release complaint.
+    // Halved as a starting point, ear-tuned by the operator like the 5.0s
+    // value it replaces -- this number is not derived from anything.
+    static constexpr float kMaxReleaseSeconds = 2.5f;
 
     enum class Stage : uint8_t
     {

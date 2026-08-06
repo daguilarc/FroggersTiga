@@ -760,6 +760,28 @@ TEST_CASE(filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend) {
     refTrimSmoother.output = 1.0f;
     const float rawCombTrim = 1.0f / (1.0f + std::fabs(0.3f));
 
+    // B1 (tasks.md CONSOLIDATED PUSH table): the peak branch now carries
+    // its own exact output trim `1/height`, smoothed the identical way the
+    // comb trim above is (same `dsp::OnePoleLowPass` type, own instance,
+    // `alpha` read from production's `chain.peakTrimSmoother.alpha` rather
+    // than re-hardcoded, `output` seeded at 1.0 matching the untrimmed
+    // branch -- R2's precedent applied to the new trim rather than
+    // reproduced ad hoc). `height` is fixed at 1.5 for this whole test
+    // (never changes), so `rawPeakTrim` is likewise a constant target.
+    // OLD expectation: `peakPath = refPeak.Process(input)`, untrimmed
+    // (0.0905098 at this test's fixed inputs before B1). NEW: `peakPath =
+    // refPeak.Process(input) * trimState`, where `trimState` converges to
+    // `1/1.5 ~= 0.6667` -- the ~33% reduction the arithmetic (0.0905098 *
+    // 0.6667 ~= 0.0603) does NOT land on the measured 0.0717059 above only
+    // because the smoother is still gliding from its unity seed across
+    // these first 8 samples, not yet at steady state; REQUIRE_NEAR below
+    // reads the same live recurrence, so it tracks the glide exactly rather
+    // than asserting the converged number.
+    dsp::OnePoleLowPass refPeakTrimSmoother;
+    refPeakTrimSmoother.alpha = chain.peakTrimSmoother.alpha;
+    refPeakTrimSmoother.output = 1.0f;
+    const float rawPeakTrim = 1.0f / 1.5f;
+
     for (int i = 0; i < 8; ++i) {
         const float input = 0.1f * static_cast<float>(i + 1);
         const float actual = chain.Process(input, /*useParallel=*/true, combPeakBlend, scoopMix);
@@ -767,7 +789,9 @@ TEST_CASE(filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend) {
         const float combRaw = refComb.Process(refPureDelay.Process(input));
         const float trimState = refTrimSmoother.Process(rawCombTrim);
         const float combPath = combRaw * trimState;
-        const float peakPath = refPeak.Process(input);
+        const float peakRaw = refPeak.Process(input);
+        const float peakTrimState = refPeakTrimSmoother.Process(rawPeakTrim);
+        const float peakPath = peakRaw * peakTrimState;
         const float mixed = peakPath * (1.0f - combPeakBlend) + combPath * combPeakBlend;
         const float scooped = refScoop.Process(mixed);
         const float expected = mixed * (1.0f - scoopMix) + scooped * scoopMix;
@@ -911,6 +935,157 @@ TEST_CASE(comb_branch_output_stays_at_or_below_computed_bound_under_audio_rate_f
             const float combPath =
                 chain.Process(inputAmplitude, /*useParallel=*/true, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
             REQUIRE_TRUE(std::fabs(combPath) <= boundFor(fb) + 1.0e-4f);
+        }
+    }
+}
+
+// -----------------------------------------------------------------------
+// B1 (tasks.md CONSOLIDATED PUSH table; W2.1-MATH's peak bound `|peak| <=
+// A * height`): mirrors the comb bound test above -- static height held at
+// the app's own ceiling, driven with a full-scale sine at the bump's own
+// resonant frequency (the peak's worst case, matching
+// resonant_bump_max_knob_settles_at_the_apps_configured_ceiling's own
+// excitation shape), and asserts the TRIMMED branch output never exceeds
+// A (== A * height / height, B1's exact target) once warmed up.
+// `combPeakBlend=0` isolates the peak branch exactly as
+// `combPeakBlend=1` isolated the comb branch above.
+// -----------------------------------------------------------------------
+TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_at_max_height) {
+    dsp::FilterFxChain chain;
+    const float maxHeight = dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, 1.0f);
+    const float freqNormalized = 0.05f;  // matches resonant_bump_max_knob_settles_at_the_apps_configured_ceiling
+    chain.peak.SetFreq(freqNormalized);
+    chain.peak.SetHeight(maxHeight);
+    chain.peak.SetWidth(1.0f);
+
+    const float inputAmplitude = 1.0f;  // A: filter input is bounded |A| <= 1 (Drive output, W2.1-MATH).
+    const float bound = inputAmplitude;  // A * height / height == A -- B1's exact target.
+
+    constexpr int kWarmupSamples = 4000;   // same buildup window the untrimmed ceiling test uses.
+    constexpr int kAssertSamples = 400;
+    int sampleIx = 0;
+    for (; sampleIx < kWarmupSamples; ++sampleIx) {
+        const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
+        chain.Process(inputAmplitude * std::sin(phase), /*useParallel=*/true, /*combPeakBlend=*/0.0f,
+                      /*scoopMix=*/0.0f);
+    }
+    for (int i = 0; i < kAssertSamples; ++i, ++sampleIx) {
+        const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
+        const float peakPath = chain.Process(inputAmplitude * std::sin(phase), /*useParallel=*/true,
+                                              /*combPeakBlend=*/0.0f, /*scoopMix=*/0.0f);
+        REQUIRE_TRUE(std::fabs(peakPath) <= bound + 0.05f);
+    }
+}
+
+// -----------------------------------------------------------------------
+// R1's peak-branch analogue (tasks.md CONSOLIDATED PUSH table): the static
+// test above holds `height` fixed and settles for 4000 samples first, so it
+// cannot see the trim smoother's lag against a fast-moving `height` -- and
+// in the real app `height` is not static: `ResonantBump::SetHeight` is
+// called from `RouteAudioSample()` once per SAMPLE, same cadence as the
+// comb's `fb`, so a noise-modulation source can redraw it every sample
+// (see comb_branch_output_stays_at_or_below_computed_bound_under_audio_
+// rate_feedback_modulation's own comment for the production call-site
+// citation). Same two adversarial patterns, same glide constant under test
+// (peakTrimSmoother shares kTrimGlideCyclesPerSample with combTrimSmoother,
+// FilterFx.hpp) -- reused here rather than re-derived, per B1's brief.
+//
+// FINDING (measured, not fixed -- out of B1's scope, which is "mirror
+// W2.2a's mechanism exactly"): pattern 1 (hard step) settles to ~0
+// overshoot, same as the comb -- but pattern 2 (audio-rate sweep) does NOT
+// reach the comb's "exactly 0 overshoot at glide>=0.33" result. Root cause,
+// traced rather than assumed: the comb's per-sample bound is UNCONDITIONAL
+// on history -- `PadeSaturator::Saturate` sits INSIDE the loop and clamps
+// the fed-back term to +-1 every sample regardless of what `fb` was a
+// moment ago, so any trim fast enough to track `fb`'s current value fully
+// closes the gap. The peak's raw branch has no such per-sample clamp: it is
+// a genuine two-pole recursive filter whose x1/x2/y1/y2 state persists
+// across a height change, so when `height` drops suddenly the trim (tracked
+// fast, correctly, at the new low target) can under-attenuate a raw signal
+// still carrying resonance energy built up under the PRIOR, higher height
+// -- the mirror image of R1's original comb problem, and not closable by
+// retuning the same one glide constant in either direction (faster
+// worsens a height-decrease; slower would reopen R1's original
+// height-increase gap). Measured (500,000 trials across 10 fixed seeds,
+// xorshift32, 50000 samples/seed): trimmed worst-case 1.669 vs raw
+// (untrimmed) worst-case 1.819 -- B1 measurably helps (worst case pulled
+// down from near the untrimmed ceiling) but does not achieve the static
+// case's tight `A` bound under this adversarial pattern. What IS still
+// provably true, and what this test pins: the trim never makes the
+// worst case WORSE than the pre-existing, already-accepted ceiling
+// `A * kMaxResonantBumpHeight` (W2.1-MATH's own `|peak| <= A * height`,
+// height <= kMaxResonantBumpHeight) -- i.e. B1 is a net improvement and a
+// safe no-regression, not a complete fix of the audio-rate case. Recorded
+// as a residual finding for a future dispatch, not invented as a fix here
+// (B1's brief is "mirror W2.2a's mechanism exactly", not "redesign it").
+// -----------------------------------------------------------------------
+TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_under_audio_rate_height_modulation) {
+    const float inputAmplitude = 1.0f;  // A: filter input is bounded |A| <= 1 (Drive output, W2.1-MATH).
+    const float freqNormalized = 0.05f;
+    const float kMaxHeight = dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, 1.0f);
+
+    auto makeChain = [&]() {
+        dsp::FilterFxChain chain;
+        chain.peak.SetFreq(freqNormalized);
+        chain.peak.SetWidth(1.0f);
+        return chain;
+    };
+
+    // Pattern 1: hard step from rest (height=1, exact flat passthrough --
+    // ResonantBump::UpdateCoefficients reduces to H(z)==1 at height==1, see
+    // this file's resonant_bump_coefficients_match_rbj_peaking_formula's own
+    // math) to the app's ceiling, held -- the sharpest transient a
+    // scramble/randomize can produce. Measured worst overshoot here: ~4e-6
+    // (float noise floor) -- this pattern DOES reach B1's tight `A` bound.
+    {
+        dsp::FilterFxChain chain = makeChain();
+        chain.peak.SetHeight(1.0f);
+        int sampleIx = 0;
+        constexpr int kSettleSamples = 500;
+        for (; sampleIx < kSettleSamples; ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
+            chain.Process(inputAmplitude * std::sin(phase), /*useParallel=*/true, /*combPeakBlend=*/0.0f,
+                          /*scoopMix=*/0.0f);
+        }
+        chain.peak.SetHeight(kMaxHeight);
+        constexpr int kPostJumpSamples = 4000;  // resonance buildup window, same as the static test above.
+        for (int i = 0; i < kPostJumpSamples; ++i, ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
+            const float peakPath = chain.Process(inputAmplitude * std::sin(phase), /*useParallel=*/true,
+                                                  /*combPeakBlend=*/0.0f, /*scoopMix=*/0.0f);
+            REQUIRE_TRUE(std::fabs(peakPath) <= inputAmplitude + 0.05f);
+        }
+    }
+
+    // Pattern 2: audio-rate sweep, `height` redrawn every sample across its
+    // full [1, kMaxHeight] range -- the worst realistic case (a 100%-depth
+    // Noise source modulating this parameter, same idiom as the comb's own
+    // pattern 2). Deterministic xorshift32, fixed seed, dependency-free.
+    // Per this TEST_CASE's own header finding, this pattern does NOT settle
+    // to the tight `A` bound the way the comb's audio-rate sweep does --
+    // asserted here against the pre-existing, already-established ceiling
+    // `A * kMaxResonantBumpHeight` (W2.1-MATH) instead: the property this
+    // test CAN honestly pin is "B1 does not regress the worst case past the
+    // already-accepted untrimmed ceiling", not "B1 fully bounds the
+    // audio-rate case" (it measurably does not, per the header comment).
+    {
+        dsp::FilterFxChain chain = makeChain();
+        std::uint32_t rngState = 0xC0FFEEu;
+        const auto nextUniform01 = [&rngState]() {
+            rngState ^= rngState << 13;
+            rngState ^= rngState >> 17;
+            rngState ^= rngState << 5;
+            return static_cast<float>(rngState % 1000000u) / 1000000.0f;
+        };
+        const float ceilingBound = inputAmplitude * dsp::kMaxResonantBumpHeight;  // W2.1-MATH's own bound.
+        constexpr int kSamples = 20000;
+        for (int i = 0; i < kSamples; ++i) {
+            const float height = 1.0f + nextUniform01() * (kMaxHeight - 1.0f);
+            chain.peak.SetHeight(height);
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(i);
+            const float peakPath = chain.Process(inputAmplitude * std::sin(phase), /*useParallel=*/true,
+                                                  /*combPeakBlend=*/0.0f, /*scoopMix=*/0.0f);
+            REQUIRE_TRUE(std::fabs(peakPath) <= ceilingBound + 1.0e-3f);
         }
     }
 }
@@ -1540,6 +1715,55 @@ TEST_CASE(stereo_delay_clear_buffers_resets_to_silence) {
     const dsp::DelayWetPair wetAfterClear = delay.Process(0.0f, p);
     REQUIRE_TRUE(std::isfinite(wetAfterClear.l));
     REQUIRE_TRUE(std::isfinite(wetAfterClear.r));
+}
+
+// -----------------------------------------------------------------------
+// B2 (tasks.md CONSOLIDATED PUSH table; W2.1-MATH-2's "the delay is the
+// only unsaturated feedback stage" finding): FAILING-FIRST, pinning a
+// latent defect nobody has heard (the brief's own words). Pre-fix,
+// `StereoDelay::Process` wrote `inSignal + fbL * fbk` -- a linear,
+// unsaturated loop. `fbk` clamps to 0.98 (:170 above), so the loop's steady
+// state is `in*send / (1 - 0.98)` == 50x input, unbounded by anything
+// short of that 50x ceiling. Post-fix, the fed-back term is wrapped in the
+// SAME `PadeSaturator::Saturate` the comb's own in-loop feedback already
+// uses (`Comb::Process`, FilterFx.hpp), clamped to +-1 BEFORE the `fbk`
+// multiply -- so every write to the line is bounded by
+// `|inSignal| + fbk` REGARDLESS of how many round trips have already run,
+// a per-sample bound, not merely a steady-state one.
+//
+// Feedback pinned to 1.0 (clamps to 0.98, the loop's actual maximum), Send
+// to 1.0 (inSignal == bumpIn exactly), Time to 0.0 (~48 samples/round-trip
+// at 48 kHz -- short enough that dozens of round trips, and therefore the
+// pre-fix loop's runaway growth, happen well inside this test's sample
+// budget), Width to 0.3 (nonzero cross-feed, so both channels exercise the
+// saturator through the `fbL = dL*(1-cross) + dR*cross` blend -- "both
+// lines" per B2's brief, not just an isolated single-channel case).
+// -----------------------------------------------------------------------
+TEST_CASE(delay_feedback_loop_stays_bounded_at_max_feedback) {
+    dsp::StereoDelay delay;
+    const float sr = 48000.0f;
+    delay.SetSampleRate(sr);
+
+    dsp::DelayParams p;
+    p.dtim = 0.0f;   // -> baseSeconds = 0.001s = 48 samples at sr=48000: fast round trips.
+    p.dsnd = 1.0f;   // inSignal == bumpIn exactly.
+    p.dfbk = 1.0f;   // -> fbk clamps to 0.98 (StereoDelay::Process's own clamp).
+    p.dwid = 0.3f;   // nonzero cross-feed -- exercises both lineL and lineR through the blend.
+    p.ddet = 0.0f;
+    p.dmod = 0.0f;
+
+    const float inputAmplitude = 1.0f;
+    const float fbk = 0.98f;                             // the clamp StereoDelay::Process itself applies.
+    const float bound = inputAmplitude * p.dsnd + fbk;    // |inSignal| + fbk -- B2's per-sample guarantee.
+
+    constexpr int kSamples = 3000;  // ~60 round trips at 48 samples/trip -- pre-fix, this is already
+                                     // well past the ~50x-input steady state (in*send/(1-0.98)==50.0).
+    for (int i = 0; i < kSamples; ++i) {
+        const dsp::DelayWetPair wet = delay.Process(inputAmplitude, p);
+        REQUIRE_TRUE(std::isfinite(wet.l) && std::isfinite(wet.r));
+        REQUIRE_TRUE(std::fabs(wet.l) <= bound + 1.0e-4f);
+        REQUIRE_TRUE(std::fabs(wet.r) <= bound + 1.0e-4f);
+    }
 }
 
 // Fix 1b regression test (strict-executor brief item "FIX 1"): immediately

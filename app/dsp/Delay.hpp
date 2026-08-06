@@ -39,6 +39,7 @@
 // DelayParams mapping, the Color/Halo fold, and StereoDelay itself.
 
 #include "DspMath.hpp"
+#include "FilterFx.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -171,8 +172,21 @@ struct StereoDelay
         const float send = std::min(std::max(p.dsnd, 0.0f), 1.0f);
         const float inSignal = bumpIn * send;
 
-        WriteSample(inSignal + fbL * fbk, lineL);
-        WriteSample(inSignal + fbR * fbk, lineR);
+        // B2 (tasks.md CONSOLIDATED PUSH table; W2.1-MATH-2's "delay is the
+        // only unsaturated feedback stage"): `fbL`/`fbR` are unbounded reads
+        // straight off the delay line (ReadAt), so the pre-fix
+        // `inSignal + fbL * fbk` fed a linear, unsaturated loop -- steady
+        // state `in*send/(1-fbk)`, 50x input at fbk's 0.98 clamp. Wraps the
+        // fed-back term in the SAME PadeSaturator::Saturate the comb's own
+        // loop already uses (`Comb::Process` above, FilterFx.hpp -- reused,
+        // not reimplemented, per §8), applied to the tapped signal before
+        // the feedback-gain multiply, exactly mirroring `feedback *
+        // Saturate(filter.Process(tapped))`. `Saturate` clamps to +-1
+        // unconditionally, so this line can never write more than
+        // `|inSignal| + fbk` regardless of how many round trips have
+        // already run -- a per-sample bound, not just a steady-state one.
+        WriteSample(inSignal + fbk * PadeSaturator::Saturate(fbL), lineL);
+        WriteSample(inSignal + fbk * PadeSaturator::Saturate(fbR), lineR);
         AdvanceWrite();
 
         lastWet.l = dL;
