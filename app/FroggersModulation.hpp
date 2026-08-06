@@ -1165,8 +1165,6 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
 // hence this function takes the slate too, and must run AFTER
 // FroggersModulationSlate::Init.
 inline void ApplyFroggersDefaultPatch(FroggersParameterModel& model) {
-    constexpr synth::SceneState kScene{};  // leftScene=0, rightScene=0, blend=0 -- the model's own default
-
     // "One encoder detent" (design D16): the surface's real encoder
     // resolution is not established until packet 10, so this is an explicit
     // placeholder quantum, flagged per D16's own "ties the default to the
@@ -1176,18 +1174,32 @@ inline void ApplyFroggersDefaultPatch(FroggersParameterModel& model) {
     // (and therefore this default) must be revisited.
     constexpr float kPlaceholderEncoderDetent = 1.0f / 100.0f;
 
-    // VCO1 Shape = minimum (sine), VCO2 Shape = 0.5 (saw), VCO3 Shape =
-    // maximum (square) -- Audio bank slots 3-5 (design D5a), confirmed
-    // against EvalWaveMorph's sine->saw (0-0.5) / saw->square (0.5-1.0)
-    // crossfade (app/dsp/Vco.hpp's EvalWaveMorph, ported from
-    // src/core/VcoWaveEval.hpp:7-23).
-    model.PageParameter(FroggersBankId::Audio, 3).HandleSetAbsolute(kScene, 0.0f);
-    model.PageParameter(FroggersBankId::Audio, 4).HandleSetAbsolute(kScene, 0.5f);
-    model.PageParameter(FroggersBankId::Audio, 5).HandleSetAbsolute(kScene, 1.0f);
+    // C1a (tasks.md CONSOLIDATED PUSH, item C1 -- operator: "the default VCO
+    // shapes in scene 2 should be the opposite of what they are in scene
+    // 1"): scene 1 (pole 0, `detail::kScenePole0`) keeps sine/saw/square =
+    // 0.0/0.5/1.0 exactly as before -- Audio bank slots 3-5 (design D5a),
+    // confirmed against EvalWaveMorph's sine->saw (0-0.5) / saw->square
+    // (0.5-1.0) crossfade (app/dsp/Vco.hpp's EvalWaveMorph, ported from
+    // src/core/VcoWaveEval.hpp:7-23). Scene 2 (pole 1, `detail::
+    // kScenePole1`) gets the MIRROR of that same value, `1.0 - shape` --
+    // written as an expression of the scene-1 value, not as three more
+    // hardcoded literals, so the mirror relationship is what the reader
+    // sees. VCO2's 0.5 (saw) is its own mirror and is therefore unchanged
+    // in scene 2 too, without needing a special case.
+    constexpr std::array<float, 3> kScene1VcoShapes{0.0f, 0.5f, 1.0f};
+    for (std::size_t vcoIx = 0; vcoIx < kScene1VcoShapes.size(); ++vcoIx) {
+        const float scene1Shape = kScene1VcoShapes[vcoIx];
+        synth::Parameter& shapeParam = model.PageParameter(FroggersBankId::Audio, 3 + vcoIx);
+        shapeParam.HandleSetAbsolute(detail::kScenePole0, scene1Shape);
+        shapeParam.HandleSetAbsolute(detail::kScenePole1, 1.0f - scene1Shape);
+    }
 
-    // Cross-VCO pitch modulation at one detent, sourced from the VCO
-    // audio-rate slate entries (indices 6-8), targeting Audio bank pitch
-    // parameters (slots 0-2):
+    // C1b: the same light cross-VCO pitch modulation lands in BOTH scene
+    // poles, identically -- same sources, same signs, same magnitude. This
+    // matches A3's rule that source membership (and, for this fixed
+    // non-randomized default, depth too) is identical across poles.
+    // Sourced from the VCO audio-rate slate entries (indices 6-8), targeting
+    // Audio bank pitch parameters (slots 0-2):
     //   VCO1 pitch (slot 0) <- +1 detent from VCO2 audio (7), VCO3 audio (8)
     //   VCO2 pitch (slot 1) <- -1 detent from VCO1 audio (6), VCO3 audio (8)
     //   VCO3 pitch (slot 2) <- +1 detent from VCO1 audio (6), VCO2 audio (7)
@@ -1197,7 +1209,14 @@ inline void ApplyFroggersDefaultPatch(FroggersParameterModel& model) {
         if (depth == nullptr) {
             return;  // storage exhausted -- would be a partial default patch; flagged, not silently ignored
         }
-        depth->HandleIncDec(kScene, sign * kPlaceholderEncoderDetent);
+        // F2: iterates kScenePoles rather than naming each pole in its own
+        // statement -- see that array's own comment. Same delta applied
+        // independently to each pole's own scene center, from the same
+        // freshly-materialized neutral base, so both poles land on the same
+        // final value.
+        for (const synth::SceneState& pole : detail::kScenePoles) {
+            depth->HandleIncDec(pole, sign * kPlaceholderEncoderDetent);
+        }
     };
     applyDetent(0, kModSlotVco2Audio, +1.0f);
     applyDetent(0, kModSlotVco3Audio, +1.0f);
@@ -1206,11 +1225,14 @@ inline void ApplyFroggersDefaultPatch(FroggersParameterModel& model) {
     applyDetent(2, kModSlotVco1Audio, +1.0f);
     applyDetent(2, kModSlotVco2Audio, +1.0f);
 
-    // Drive (Drive bank, slot 0) = 20% of its range (D16, flagged
+    // C1c: Drive (Drive bank, slot 0) = 20% of its range (D16, flagged
     // provisional -- "GAIN on the distortion page" maps to the Drive
     // parameter, no parameter is literally named Gain, D5a's Drive-bank
-    // layout).
-    model.PageParameter(FroggersBankId::Drive, 0).HandleSetAbsolute(kScene, 0.2f);
+    // layout), identical in both scene poles -- only the VCO shapes differ
+    // between scene 1 and scene 2.
+    for (const synth::SceneState& pole : detail::kScenePoles) {
+        model.PageParameter(FroggersBankId::Drive, 0).HandleSetAbsolute(pole, 0.2f);
+    }
 }
 
 }  // namespace synth_froggers

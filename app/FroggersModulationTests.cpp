@@ -29,6 +29,7 @@
 #include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 using namespace synth_froggers;
@@ -823,6 +824,56 @@ TEST_CASE(default_patch_cross_vco_pitch_depths_have_correct_sign_and_source) {
     constexpr float kDetent = 1.0f / 100.0f;
     REQUIRE_NEAR(vco1Pitch.ModulationDepthParameter(kModSlotVco2Audio)->SceneCenter(0), kNeutral + kDetent, 1e-5f);
     REQUIRE_NEAR(vco2Pitch.ModulationDepthParameter(kModSlotVco1Audio)->SceneCenter(0), kNeutral - kDetent, 1e-5f);
+}
+
+// C1a (tasks.md CONSOLIDATED PUSH item C1): scene 2 (SceneCenter(1)) must be
+// the MIRROR of scene 1 (SceneCenter(0)) for each of the three VCO shapes --
+// asserted as the computed relationship `scene2 == 1.0 - scene1`, not as
+// three more hardcoded literals, so this test actually pins the mirror
+// property rather than merely re-stating two independent lists of numbers.
+TEST_CASE(default_patch_scene2_vco_shapes_are_the_mirror_of_scene1) {
+    Fixture fx;
+    ApplyFroggersDefaultPatch(fx.model);
+
+    for (std::size_t vcoIx = 0; vcoIx < 3; ++vcoIx) {
+        synth::Parameter& shapeParam = fx.model.PageParameter(FroggersBankId::Audio, 3 + vcoIx);
+        const float scene1 = shapeParam.SceneCenter(0);
+        const float scene2 = shapeParam.SceneCenter(1);
+        REQUIRE_NEAR(scene2, 1.0f - scene1, 1e-6f);
+    }
+    // Scene 1 itself is unchanged from the pre-C1 defaults (pinned again
+    // here, alongside the mirror check, so a future edit cannot satisfy the
+    // mirror relationship by drifting scene 1 instead of deriving scene 2).
+    REQUIRE_NEAR(fx.model.PageParameter(FroggersBankId::Audio, 3).SceneCenter(0), 0.0f, 1e-6f);
+    REQUIRE_NEAR(fx.model.PageParameter(FroggersBankId::Audio, 4).SceneCenter(0), 0.5f, 1e-6f);
+    REQUIRE_NEAR(fx.model.PageParameter(FroggersBankId::Audio, 5).SceneCenter(0), 1.0f, 1e-6f);
+}
+
+// C1b (tasks.md CONSOLIDATED PUSH item C1 + A3 scene-pair semantics): the
+// light cross-VCO pitch-modulation depths must be PRESENT and EQUAL in both
+// scene poles -- same source set (already covered by the sign/source test
+// above via SceneCenter(0)), same magnitude in scene 2 as in scene 1.
+TEST_CASE(default_patch_cross_vco_pitch_depths_equal_in_both_scene_poles) {
+    Fixture fx;
+    ApplyFroggersDefaultPatch(fx.model);
+
+    synth::Parameter& vco1Pitch = fx.model.PageParameter(FroggersBankId::Audio, 0);
+    synth::Parameter& vco2Pitch = fx.model.PageParameter(FroggersBankId::Audio, 1);
+    synth::Parameter& vco3Pitch = fx.model.PageParameter(FroggersBankId::Audio, 2);
+
+    const std::array<std::pair<synth::Parameter*, std::size_t>, 6> depths{{
+        {&vco1Pitch, kModSlotVco2Audio},
+        {&vco1Pitch, kModSlotVco3Audio},
+        {&vco2Pitch, kModSlotVco1Audio},
+        {&vco2Pitch, kModSlotVco3Audio},
+        {&vco3Pitch, kModSlotVco1Audio},
+        {&vco3Pitch, kModSlotVco2Audio},
+    }};
+    for (const auto& [param, modIx] : depths) {
+        synth::Parameter* depth = param->ModulationDepthParameter(modIx);
+        REQUIRE_TRUE(depth != nullptr);  // present in both poles (materialized once, applies to both)
+        REQUIRE_NEAR(depth->SceneCenter(0), depth->SceneCenter(1), 1e-6f);  // equal in both poles
+    }
 }
 
 TEST_CASE(default_patch_touches_no_parameter_outside_the_enumerated_set) {
