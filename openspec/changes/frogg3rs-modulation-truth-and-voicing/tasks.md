@@ -626,3 +626,42 @@ variable-speed head. Consequences, per its own ranking:
 
 When this is picked up: it is a bank-topology change (fills slots 9-13), so the §H mobile
 re-pack constraint and the cell map are upstream of it.
+
+## OMNI REVIEW — Group A diffs (uncommitted), reviewed 2026-08-05
+
+Implementation is substantively correct: fixed scene poles with `leftScene==rightScene` so writes
+land on one pole regardless of blend; zeroing placed at the single call site every branch routes
+through; only already-materialized depths touched (`ModulationDepthParameter` never allocates);
+`ComputeAllParameters()` called ONCE, in `ProcessFrame` (audio thread), guarded by `randomizeRan`.
+Tests pin the properties that actually broke — `UIDisplayCenter`, a decrease across presses,
+`nonzeroScene0 == nonzeroScene1`. Four defects to fix before this ships.
+
+**F1 — REAL-TIME VIOLATION (most serious).** `std::fprintf(stderr, ...)` is called from
+`ProcessFrame()`, which the method's own header comment states runs on the **audio thread**
+(`synth::Engine` invokes it per block, after message drains, before `ProcessBlock()`). `fprintf`
+can allocate, take a lock, and block — in an audio callback that is a dropout, and it fires exactly
+when the instrument is already under stress (storage exhausted). The `lastRandomizePartial_` atomic
+is the correct half of A4 and already makes the condition observable. **Remove the `fprintf` and
+the `<cstdio>` include added for it.** If a human-visible log is wanted, it must be emitted from
+the UI thread reading the atomic — never from `ProcessFrame`.
+
+**F2 — second definition site for "how many scene poles exist" (§1, §8).** Both the zeroing and the
+randomize hardcode exactly two poles as separate consecutive statements, while
+`FroggersParameterModel::kNumScenes == 2` is the authority. If `kNumScenes` ever changes these
+silently keep handling two. **Fix: iterate an array of the poles, and `static_assert` its size
+against `kNumScenes`** so a change breaks the build instead of the behaviour.
+
+**F3 — magic `0.5f` duplicated (§1).** The bipolar-neutral commanded value appears twice as a bare
+literal in `ZeroExistingModulationDepths`, and the tests separately define their own `kNeutral`.
+Sheaf's `kNeutralModulationDepthCenter` is file-private, so we must define our own — **once**, as a
+named constant in our header, referenced by both the implementation and the tests.
+
+**F4 — fragile-but-correct short-circuit (latent trap).**
+`anyPartial = RandomizeAll(...).partial || anyPartial;` is correct ONLY because the call sits on
+the left. The obvious "cleanup" — swapping to `anyPartial || RandomizePage(...).partial` — would
+short-circuit and **skip the second randomize entirely** whenever the first was partial. **Fix:
+hoist each call's result into a named local first**, so evaluation is unconditional and the
+ordering stops being load-bearing.
+
+Fixed together with W2.2a's R1 (trim smoothing constant unvalidated under audio-rate modulation)
+and R2 (parity test re-implements the one-pole recurrence) in a single dispatch.
