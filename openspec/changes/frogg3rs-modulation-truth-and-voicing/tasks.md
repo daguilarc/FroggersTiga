@@ -252,6 +252,66 @@ S2 drill-in depth knobs all read 12 o'clock; S3 Randomize All inside level-1 sho
   (`model.PageParameter(bank, slot).SceneCenter(0) = value`, `:559-563`) plus
   `rig.StartAt(0)`/`RunBlocks(n)`.
 
+- [x] W2.1-MATH **Option B sizing — computed 2026-08-05, and it rules Option B OUT as a primary
+  fix.** Operator asked for the optimal setting by arithmetic rather than by ear.
+
+  **Model, from the code (not the summary).** The chain runs `useParallel = true`
+  (`FroggersAppCore.hpp:1033`), so comb and peak are **parallel, convex-blended**
+  (`FilterFx.hpp:475-484`) — the bump does NOT multiply the comb. Bounds, for filter input
+  amplitude `A` (Drive output is bounded |A| ≤ 1):
+  - Comb: `out = in + fb · Saturate(lp(delayed))` with `Saturate` clamped to ±1
+    (`FilterFx.hpp` `PadeSaturator`), so **|comb| ≤ A + fb**. At fb = 0.95 the loop saturates for
+    any input above ≈0.05, so this bound is the operative one, not the linear `A/(1−fb)`.
+  - Peak: RBJ peaking biquad with `a = sqrt(height)` (`FilterFx.hpp:186`), so centre gain = height
+    → **|peak| ≤ A · height**, height ≤ 2.0.
+  - Blend and scoop are both convex, so **filterOut ≤ max(A + fb, A · height)**.
+
+  **The decisive number.** Limiter threshold is 0.9. The comb's feedback term alone at fb = 0.95
+  contributes **0.95 — already above 0.9 with ZERO input.** A decaying tail with the voice silent
+  still holds the limiter engaged. That is the pumping, and no choice of input level avoids it.
+
+  **What Option B would have to do.** Solving `A + fb ≤ 0.9`:
+
+  | Signal condition | Required fb |
+  |---|---|
+  | Tail only, A → 0 | ≤ 0.90 |
+  | Quiet voice, A = 0.2 | ≤ 0.70 |
+  | Moderate, A = 0.3 | ≤ 0.60 |
+  | Typical, A = 0.5 | ≤ 0.40 |
+
+  And `A · height ≤ 0.9` → height ≤ 1.8 at A = 0.5, ≤ 1.2 at A = 0.75.
+
+  **What that costs, quantified.** Comb resonant gain is `1/(1−fb)`; T60 is
+  `ln(0.001)/ln(fb)` round trips, × delay period (up to 2400 samples ≈ 50 ms at the low end of
+  `combFreq`):
+
+  | fb | resonant gain | round trips to −60 dB | longest-delay ring |
+  |---|---|---|---|
+  | 0.95 (today) | 20× (+26 dB) | 135 | **6.7 s** |
+  | 0.90 | 10× (+20 dB) | 66 | 3.3 s |
+  | 0.80 | 5× (+14 dB) | 31 | 1.6 s |
+  | 0.60 | 2.5× (+8 dB) | 13.5 | 0.68 s |
+  | 0.40 | 1.7× (+4.4 dB) | 7.5 | **0.38 s** |
+
+  **Verdict: Option B is not viable as the primary fix.** To stop sustained limiting at a typical
+  playing level it needs fb ≈ 0.4 — surrendering ~22 dB of resonant gain and ~95 % of the ring
+  time. That is a different instrument, not a tamed one. Even the most generous target (tail-only,
+  fb ≤ 0.9) is a change so small it would not fix the operator's symptom.
+
+  **What the arithmetic reveals instead: there is no gain-staging budget anywhere.** The limiter
+  threshold (0.9) sits BELOW the level a correctly-working filter produces — even a modest fb = 0.5
+  at A = 0.5 gives 1.0 > 0.9. That is why the limiter rides continuously regardless of settings,
+  and it is a headroom defect, not a filter-range defect.
+
+  **Therefore a THIRD option the earlier scoping missed — Option D, settings-derived output trim.**
+  Scale each branch by the inverse of its own worst-case gain before blending: comb by
+  `1/(1 + fb)`, peak by `1/height`. Then comb → `(A + fb)/(1 + fb)` = 1.0 at A = 1/fb = 0.95, and
+  0.74 at A = 0.5; peak → `A`. **The filter's frequency response shape is unchanged** — a scalar
+  trim moves level, not tone — so the resonant character the operator called "settled as wanted"
+  survives exactly, while the limiter stops engaging. Cost: one multiply per sample per branch,
+  plus smoothing of the trim so a moving `fb` knob does not zipper. **This preserves character
+  strictly better than B and adds no compression artifacts at all, unlike A.**
+
 - [ ] W2.2 Implement the agreed treatments, sequentially, each with a guard that pins the property
   that was wrong (sustained-tone limiter engagement at max, not merely peak ceiling), using the
   observable `envelope` above.
