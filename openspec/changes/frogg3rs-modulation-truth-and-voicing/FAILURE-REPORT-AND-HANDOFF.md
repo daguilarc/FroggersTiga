@@ -49,19 +49,46 @@ in the predecessor change as: never zero, **median 3**, sharp falloff above 4, g
 the full connected-source count, distinct sources per call. Tests
 (`randomize_depth_helper_median_count_is_three_across_1000_trials`) assert the median.
 
-**Hypotheses, in order of suspicion:**
-1. **The median test measures the helper, not the outcome.** It asserts on the count the helper
-   *chooses*. Badges are driven by `HasNonZeroState()` across BOTH scene poles (A3 now writes both).
-   If the union of two independent draws is what lights badges, the visible count is the union of
-   two median-3 draws, not one — which would look like ~5-6 typical, matching the report exactly.
-   **This is the strongest candidate and it is a direct consequence of A3.** Check whether the two
-   poles draw the same source SET (spec) or draw independently (bug).
-2. The geometric tail's `r` may be too fat, so "sharp falloff above 4" is not sharp.
-3. `eligible` source count may exceed expectations, widening the tail.
+**HYPOTHESIS CORRECTED 2026-08-05 after the operator pushed back. The first version of this
+report blamed A3 for drawing source sets independently per pole. THAT IS WRONG — verified by
+reading the loop: the source set is drawn ONCE via partial Fisher-Yates, and both poles receive
+values for the SAME `eligible[i]`. A3 matches its spec. Do not chase it.**
 
-**First move:** print the actual per-parameter nonzero-source count after one Randomize All from a
-fresh patch, both poles separately and unioned. Compare against the spec's distribution. Do not
-trust the existing median test.
+**THE ACTUAL LIKELY CAUSE — the zeroing is incomplete, and `HasNonZeroState()` counts more than
+the depth's own value.**
+
+`Parameter::HasNonZeroState()` (Sheaf, `src/ParameterModulation.cpp`) returns true if ANY of these
+differ from neutral: `currentCenter_`, `targetCenter_`, `sceneCenters_`, `gestureActiveMasks_`,
+**`currentDepths_`**, **`targetDepths_`**, `currentNormalizationOffsets_`,
+`targetNormalizationOffsets_`.
+
+`currentDepths_`/`targetDepths_` on a level-1 depth parameter are **that depth's OWN sub-depths —
+level 2.**
+
+`detail::ZeroExistingModulationDepths` (`app/FroggersModulation.hpp`) writes only
+`depth->SceneCenter(pole) = kNeutralModulationDepthCenter` for each pole. **It does not recurse
+into the depth's own modulation depths.** Therefore any level-1 depth that ever received level-2
+assignments keeps reading as "has non-zero state" forever, and keeps lighting a badge on the main
+page, even though its own value was correctly zeroed.
+
+**This explains the exact symptom pair the operator reports:** values DO reset (non-additivity
+works — confirmed), but badge counts stay high and accumulate. It also means badge count is not
+the count of sources with non-zero DEPTH — it is the count of sources whose depth parameter has
+non-zero state ANYWHERE in its subtree, which is a different and much larger set.
+
+**And it is coupled to F4.** Whatever level-2 assignments exist — from the fan-out working
+previously, or from any earlier session — persist through every subsequent zeroing.
+
+**First moves, in order:**
+1. Print, for one parameter after one Randomize All from a fresh patch: the chosen count, the
+   number of depths with non-neutral `SceneCenter`, and the number for which `HasNonZeroState()`
+   is true. **If the third is larger than the second, this hypothesis is confirmed.**
+2. Check whether `Parameter::ClearModulationDepths()` (public, in the Parameter API) does the
+   recursive clear that `ZeroExistingModulationDepths` hand-rolls incompletely. **Prefer the
+   library call over deepening the hand-rolled loop** — the hand-rolled version being incomplete
+   is the whole bug.
+3. Only after that, re-examine the count distribution itself. **The distribution may be entirely
+   correct and the badge criterion simply measuring something else.**
 
 ### F2 — Filter Crispy at max still blows out
 Unchanged from the start of the session, despite: comb trim, peak trim, peak limiter, delay
@@ -161,7 +188,7 @@ not-implemented produce the identical symptom, and only reading the code disting
 |---|---|---|
 | A1 non-additive randomize | works (operator-confirmed) | genuinely fixed |
 | A2 `ComputeAllParameters()` reseed | drill-in knobs move | genuinely fixed |
-| A3 scene-pair semantics | both poles written | **may be the cause of F1** — union of two draws |
+| A3 scene-pair semantics | both poles written | correct as specified; source set drawn ONCE, verified by reading the loop. The report's first F1 hypothesis blamed this and was wrong |
 | A4 surface `partial` | atomic published | **useless in practice** — nothing shows it to the operator |
 | E.1 fan-out to level 2 (predecessor change) | claimed done, spec'd | **UNVERIFIED by this session** — reported by a subagent, never read by the lead, never tested. F4 says it does not work |
 | W2.2a comb trim `1/(1+fb)` | overshoot 0.0 | isolated stage only |
