@@ -79,16 +79,43 @@ non-zero state ANYWHERE in its subtree, which is a different and much larger set
 **And it is coupled to F4.** Whatever level-2 assignments exist — from the fan-out working
 previously, or from any earlier session — persist through every subsequent zeroing.
 
-**First moves, in order:**
-1. Print, for one parameter after one Randomize All from a fresh patch: the chosen count, the
-   number of depths with non-neutral `SceneCenter`, and the number for which `HasNonZeroState()`
-   is true. **If the third is larger than the second, this hypothesis is confirmed.**
-2. Check whether `Parameter::ClearModulationDepths()` (public, in the Parameter API) does the
-   recursive clear that `ZeroExistingModulationDepths` hand-rolls incompletely. **Prefer the
-   library call over deepening the hand-rolled loop** — the hand-rolled version being incomplete
-   is the whole bug.
-3. Only after that, re-examine the count distribution itself. **The distribution may be entirely
-   correct and the badge criterion simply measuring something else.**
+**SECOND CORRECTION, same day — the subtree hypothesis above does NOT explain the operator's
+actual observation either.** They randomized ONCE and saw many parameters at 4-7 badges. A level-0
+Randomize All does not create level-2 assignments (the fan-out lives only in the drill-in branch,
+see F4), so persisting sub-depths cannot be the cause of a single fresh press — unless the loaded
+patch already carried them from an earlier session, which is possible but must be verified, not
+assumed.
+
+**THE ARITHMETIC NOBODY DID.** The spec'd distribution is **10/30/30/20** for counts 1/2/3/4, then
+a geometric r=0.7 tail for 5+. Therefore **P(count ≥ 4) = 30%**. Across 16 visible parameters that
+is ~5 expected at 4+ per press. **"Many parameters with 4+ badges" is what this distribution
+produces by design.** "Median 3" means half of all draws are 3 or below — it does NOT mean most
+draws are 3 or below, and the operator's expectation ("bias towards a median/mode of 3") reads as
+wanting the latter.
+
+**The part that does NOT fit the spec is 7.** The geometric tail should put P(7) well under 1%. If
+7s are appearing with any regularity, the tail is fatter than specified.
+
+**Three candidates now, and they are distinguishable by ONE measurement:**
+1. **The distribution is implemented correctly and the SPEC is what the operator dislikes.** Then
+   this is a spec change (tighter distribution — e.g. mode 2, hard cap at 4), not a bug fix.
+2. **The tail is implemented fatter than 10/30/30/20 + r=0.7.** A real bug in the count draw.
+3. **The badge criterion is over-counting** via the subtree issue above — only viable if the loaded
+   patch already carried level-2 state.
+
+**THE DECISIVE MEASUREMENT — do this before touching anything:** from a genuinely fresh patch,
+press Randomize All once, and histogram the per-parameter count three ways: (a) the count the
+helper CHOSE, (b) the number of depths with non-neutral `SceneCenter`, (c) the number where
+`HasNonZeroState()` is true. Compare (a) against 10/30/30/20+tail.
+- (a) matches spec and (c) == (a) → **candidate 1**, spec change, talk to the operator about the
+  distribution they actually want.
+- (a) does NOT match spec → **candidate 2**, fix the draw.
+- (c) > (b) → **candidate 3**, the zeroing/badge issue above is real and additional.
+
+**Do not "fix" the distribution before running this.** The lead twice asserted a cause for F1 and
+was wrong twice — first blaming A3's per-pole draws (disproved by reading the loop), then the
+subtree state (disproved by the operator pointing out a single fresh press cannot have created
+level-2 state). Both times the operator caught it. Measure first.
 
 ### F2 — Filter Crispy at max still blows out
 Unchanged from the start of the session, despite: comb trim, peak trim, peak limiter, delay
