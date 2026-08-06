@@ -371,11 +371,31 @@ budgets "up to 915 level-1 plus more at level 2" and notes depth storage rides
 is very likely to hit `CanAllocate() == false`** — the same silent-exhaustion path already
 suspected in F4.
 
-**Therefore: land the constant + array refactor first, then MEASURE allocation at level 3 before
-enabling it.** If the pool cannot take it, the options are a larger storage batch or making the
-fan-out sparse (materialize only the selected sources rather than all 15) — and the sparse option
-is likely correct regardless, since eager materialization of 15 to use ~2 is wasteful at every
-level.
+**THE FIX IS THE SAME ONE AS F4a, AND IT IS NOT SPECULATIVE — VERIFIED BY READING THE CODE.**
+
+`detail::RandomizeParameterModulationDepths` **does not need the modulation view open.** It takes
+the `Parameter&` directly, reads eligibility from `group.GetModulators().Metadata()`, and calls
+`parameter.EnsureModulationDepth(eligible[i])` itself — materializing **on demand, exactly the
+sources it selects.** Nothing in it reads view state.
+
+So the `drillIn.PressEncoder(modIx)` → randomize → `drillIn.Back()` round trip in Step 3 of
+`RandomizeAll`'s level-1 branch accomplishes **nothing except** (a) triggering
+`Bank::OpenModulationView`'s eager materialization of ALL 15 connected sub-depths when ~2 are
+wanted, and (b) driving the level counter up and down, which is what ejects the operator (F4a).
+
+**Delete the press/Back round trip in Step 3.** One edit fixes:
+- **F4a** — no level churn, so no ejection; the operator stays in their view.
+- **Allocation** — materialization drops from 15 per depth to ~2, i.e. the level-2 cost falls from
+  15 + 15×15 = 240 to roughly 15 + 15×2 ≈ 45 for a focused parameter.
+- **Level 3 feasibility** — sparse fan-out is ~15 + 30 + 60 ≈ 105 instead of 3615. **This is the
+  difference between level 3 being impossible and being cheap.**
+
+Step 2's `Back()`/`PressEncoder` round trip (used only to locate the encoder id in the parameter
+grid) should be removed on the same grounds — find the id without leaving the view, or cache it.
+
+**Sequence: delete the round trips first, re-measure allocation, then land the constant + array
+refactor, then raise the maximum to 3.** The capacity objection to level 3 very likely disappears
+entirely once the fan-out stops materializing 15 to use 2.
 
 **Also note F1's ruling applies here:** the mode-2 distribution must govern level-3 draws too —
 *"the same median/mode skew ... should apply in all cases."*
