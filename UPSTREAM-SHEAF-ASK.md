@@ -35,6 +35,31 @@ file items 6, 5, 3, 7 as items **5-8**, continuing the sequence he has already s
 2 and 4 were sent by Diego outside those two emails. When adding
 a new item here, give it the next FILE number and note separately which email carried it.
 
+### FULL LEDGER — all 15 asks, sent status × landed status (updated 2026-08-05)
+
+This table is the single source of truth; the 1-11 table above and the per-item headers defer to
+it. "Landed" verdicts cite the re-check sections (evidence at `77a3019e` unless marked `508d9d68`).
+
+| Item | Topic | Sent via | Landed upstream? |
+|---|---|---|---|
+| 1 | Plain-click on `Draw` nodes | email | **YES** — workarounds deleted (F.2) |
+| 2 | `DrawCommand::Image` | email | no — logo still blocked |
+| 3 | Selected-button text colour | email | **YES**, different route (`ControlStyle` appearance) |
+| 4 | Audio dropdowns unlabelled | email | **YES** — captioned upstream |
+| 5 | Slider numeric text box opt-out | email | no — box still unconditional |
+| 6 | Slider labels never drawn | email | **effectively** — `ControlStyle::caption` does the job (we use hand-rolled labels only for below-placement, see 14) |
+| 7 | Unlabelled CPU/deadline % | email + **issue #2** | no |
+| 8 | Input-exists vs user-routed | email | **YES at `508d9d68`** — W4.2 consumes it after the bump |
+| 9 | Parameter timing off 48 kHz | email | no |
+| 10 | Same-source-twice randomize draw | email | no — our distinct-draw helper stays |
+| 11 | One-level drill-in pop | email | no — our synthesized pop stays (required behaviour regardless) |
+| 12 | Reusable direct-launch entry point | **issue #2** (with the realized G.4 drift cost) | no |
+| 13 | `APP_NAME`/`APP_INFO_PLIST` coupled but documented independent | **NOT YET SENT** | no |
+| 14 | `ControlStyle::caption` placement (below/trailing) | **NOT YET SENT** | no |
+| 15 | Embedded surfaces can't resolve a live extent | **issue #1** | no |
+
+**Not yet sent to jvictor0: items 13 and 14 only.** Both are written up below, ready to file.
+
 ---
 
 ## RE-CHECK against upstream `origin/main` = `77a3019e` (2026-08-01)
