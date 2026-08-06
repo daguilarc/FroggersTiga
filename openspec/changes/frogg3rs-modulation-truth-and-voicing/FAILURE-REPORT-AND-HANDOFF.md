@@ -237,10 +237,29 @@ the main bank page."* **They are seeing the main bank page because the operation
 The level-2 work may well be happening correctly and simply not be visible, because the view they
 would need to see it in has been exited.
 
-**Verify before fixing:** after a level-1 Randomize All, check (a) `drillIn.Level()` — expect 0,
-which is the bug; (b) whether the focused parameter's depths actually have non-neutral level-2
-sub-depths; (c) `LastRandomizePartial()`. If (b) is populated and (a) is 0, this is purely a
-navigation defect and the randomization is fine.
+**OPERATOR RULING 2026-08-05, both parts:**
+1. **The SCOPE is correct as built** — *"this is desired functionality for randomize all"*.
+   Level-1 Randomize All affecting only the drilled parameter (its 15 depths + their level-2
+   sub-depths) is the intended behaviour. **Do not change the scope.**
+2. **Navigating out is a BUG** — *"randomize all in level 1 shouldn't navigate me out wtf"*.
+   Randomize All must leave the operator **exactly where they were**, in the same level-1 view of
+   the same parameter, with the results visible on that page.
+
+**So F4 splits into two fixes:**
+- **F4a (navigation, almost certainly the whole visible symptom):** restore the drill-in state
+  after the operation. The branch currently ends on a bare `drillIn.Back()` after the loop, which
+  drops level 1 → 0. It must instead return to the level-1 view of `originalParam`. Note Step 2
+  ALSO leaves the view (`Back()` to level 0 purely to look up the encoder id in the parameter
+  grid) — that round trip is an implementation detail the operator should never observe, and if
+  the id can be found without exiting, better still. **The whole operation should be visually
+  atomic: press it, stay put, see the badges change on the page you are on.**
+- **F4b (verify the work actually happened):** with navigation fixed, confirm the focused
+  parameter's depths really do carry non-neutral level-2 sub-depths, and check
+  `LastRandomizePartial()` for silent allocation failure. If badges appear on the level-1 cells
+  once you stop being ejected, F4 was only ever a navigation defect.
+
+**Do F4a first.** It is likely that the randomization has been working correctly all along and was
+simply never visible.
 
 **Also note the allocation pressure:** the comment records that `PressEncoder`'s view-open
 **eagerly materializes ALL of a depth's connected sub-depths**, not just the ones randomize picks.
