@@ -782,6 +782,24 @@ TEST_CASE(filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend) {
     refPeakTrimSmoother.output = 1.0f;
     const float rawPeakTrim = 1.0f / 1.5f;
 
+    // B5 (tasks.md CONSOLIDATED PUSH table): the peak branch now runs its
+    // own `OutputLimiter` (`chain.peakLimiter`) AFTER the trim above, before
+    // the blend below. Copied wholesale from `chain.peakLimiter` (R2's own
+    // precedent: share the reusable TYPE/STATE, not re-derive the tuning) --
+    // taken here, before any `chain.Process()` call, so it captures exactly
+    // the state the production instance starts this test in (its
+    // constructor's assumed-48kHz `Configure()` call, FilterFx.hpp; this
+    // test never calls `chain.Configure()` itself, so production and
+    // reference must agree on that same starting state or this parity check
+    // would silently test the wrong thing). Every value in this test's
+    // fixed 0.1..0.8 input range stays far below `kPeakLimiterThreshold`
+    // (0.7) at height=1.5, so the limiter is expected to act as an exact
+    // identity here (the struct's own bit-identical-below-threshold
+    // guarantee, dsp/Limiter.hpp) -- included anyway so this reference
+    // mirrors production's real code path rather than one that happens to
+    // produce the same numbers by omission.
+    dsp::OutputLimiter refPeakLimiter = chain.peakLimiter;
+
     for (int i = 0; i < 8; ++i) {
         const float input = 0.1f * static_cast<float>(i + 1);
         const float actual = chain.Process(input, /*useParallel=*/true, combPeakBlend, scoopMix);
@@ -791,7 +809,8 @@ TEST_CASE(filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend) {
         const float combPath = combRaw * trimState;
         const float peakRaw = refPeak.Process(input);
         const float peakTrimState = refPeakTrimSmoother.Process(rawPeakTrim);
-        const float peakPath = peakRaw * peakTrimState;
+        const float peakTrimmed = peakRaw * peakTrimState;
+        const float peakPath = refPeakLimiter.Process(peakTrimmed);
         const float mixed = peakPath * (1.0f - combPeakBlend) + combPath * combPeakBlend;
         const float scooped = refScoop.Process(mixed);
         const float expected = mixed * (1.0f - scoopMix) + scooped * scoopMix;
@@ -1087,6 +1106,69 @@ TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_under_audio_rate_h
                                                   /*combPeakBlend=*/0.0f, /*scoopMix=*/0.0f);
             REQUIRE_TRUE(std::fabs(peakPath) <= ceilingBound + 1.0e-3f);
         }
+    }
+}
+
+// -----------------------------------------------------------------------
+// B5 (tasks.md CONSOLIDATED PUSH table; "Group B outcomes" B1 finding):
+// FAILING-FIRST for the property B1 could not close -- the peak branch
+// respects its own computed bound `A` (not the looser untrimmed ceiling
+// `A * kMaxResonantBumpHeight` the test above settles for) under the exact
+// same adversarial per-sample-random height modulation that measured B1's
+// own 1.669. B1's own header comment (above) traced WHY the trim alone
+// cannot do this: the peak is a stateful 2-pole biquad whose stored energy
+// survives a height DROP, so a same-instant scalar cannot retroactively
+// remove energy already in its state -- what corrects that is something
+// with its own release, i.e. `FilterFxChain::peakLimiter`
+// (`OutputLimiter`, dsp/Limiter.hpp), inserted after the trim in
+// `Process()` (FilterFx.hpp). Reuses the existing Pattern-2 idiom exactly
+// (freqNormalized, kMaxHeight, xorshift32, seed 0xC0FFEE, 20000 samples --
+// the identical adversarial drive, not a fresh one) so this test is a
+// direct tightening of the assertion above, not a different measurement.
+//
+// `chain.Configure(sampleRate)` is called explicitly here (rather than
+// relying on the constructor's assumed-48kHz default, FilterFx.hpp) so
+// this test exercises the exact call production makes
+// (FroggersAppCore::PrepareToPlay -> filterChain_.Configure(sampleRate_)).
+//
+// MEASURED (this exact seed/sample count, a scratch harness reproducing
+// this file's own production math bit-for-bit before this test existed):
+// worst-case overshoot with B1's trim only (no limiter) = 1.615898 against
+// bound 1.0 (this single seed does not reach the full 500k-trial/10-seed
+// worst case of 1.669, but is comfortably past the bound this test pins,
+// which is what makes it a valid failing-first repro). With
+// `peakLimiter` inserted at its measured tuning (kPeakLimiterThreshold
+// 0.7, kPeakLimiterAttackSeconds 5 microseconds, kPeakLimiterReleaseSeconds
+// 100ms, FilterFx.hpp): worst-case overshoot = 0.988341, at or below bound.
+// -----------------------------------------------------------------------
+TEST_CASE(peak_branch_output_respects_computed_bound_under_audio_rate_height_modulation_with_limiter) {
+    constexpr float sampleRate = 48000.0f;
+    const float inputAmplitude = 1.0f;  // A: filter input is bounded |A| <= 1 (Drive output, W2.1-MATH).
+    const float freqNormalized = 0.05f;
+    const float kMaxHeight = dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, 1.0f);
+    const float bound = inputAmplitude;  // the computed bound this task targets -- never a literal.
+
+    dsp::FilterFxChain chain;
+    chain.Configure(sampleRate);
+    chain.peak.SetFreq(freqNormalized);
+    chain.peak.SetWidth(1.0f);
+
+    std::uint32_t rngState = 0xC0FFEEu;  // identical seed to Pattern 2 above -- same adversarial drive.
+    const auto nextUniform01 = [&rngState]() {
+        rngState ^= rngState << 13;
+        rngState ^= rngState >> 17;
+        rngState ^= rngState << 5;
+        return static_cast<float>(rngState % 1000000u) / 1000000.0f;
+    };
+
+    constexpr int kSamples = 20000;
+    for (int i = 0; i < kSamples; ++i) {
+        const float height = 1.0f + nextUniform01() * (kMaxHeight - 1.0f);
+        chain.peak.SetHeight(height);
+        const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(i);
+        const float peakPath = chain.Process(inputAmplitude * std::sin(phase), /*useParallel=*/true,
+                                              /*combPeakBlend=*/0.0f, /*scoopMix=*/0.0f);
+        REQUIRE_TRUE(std::fabs(peakPath) <= bound + 1.0e-2f);
     }
 }
 

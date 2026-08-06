@@ -114,6 +114,15 @@ struct ShadowChain {
     void Prepare(float sr) {
         sampleRate = sr;
         delay.SetSampleRate(sr);
+        // B5 (openspec/changes/frogg3rs-modulation-truth-and-voicing/
+        // tasks.md): mirrors FroggersAppCore::PrepareToPlay's new
+        // `filterChain_.Configure(sampleRate_)` call -- this struct's own
+        // header comment promises a byte-for-byte copy of
+        // RouteAudioSample's stage order/formulas, so the peak branch's own
+        // limiter (FilterFxChain::peakLimiter) needs the same real-sample-
+        // rate configuration production gives it, not the constructor's
+        // assumed-48kHz default (FilterFx.hpp).
+        filterChain.Configure(sr);
     }
 
     // Same threshold SanitizeOutputSample clamps the real output to

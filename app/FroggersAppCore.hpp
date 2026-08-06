@@ -78,6 +78,7 @@
 #include "dsp/Drive.hpp"
 #include "dsp/DspMath.hpp"
 #include "dsp/FilterFx.hpp"
+#include "dsp/Limiter.hpp"
 #include "dsp/Reverb.hpp"
 #include "dsp/Vco.hpp"
 #include "dsp/VoiceEnvelope.hpp"
@@ -299,6 +300,7 @@ public:
         // runs."
         delay_.SetSampleRate(sampleRate_);
         outputLimiter_.Configure(sampleRate_);  // item 3: attack/release coeffs are sample-rate-dependent.
+        filterChain_.Configure(sampleRate_);  // B5: peak-branch limiter's own coeffs, same reason.
 
         // Root-cause fix (D17 robustness gap, found while diagnosing "Play
         // produces no audio in the real Runtime"): `synth::Engine::Prepare()`
@@ -836,26 +838,22 @@ public:
     dsp::ResonantBump& TestFilterPeak() { return filterChain_.peak; }
     dsp::ResonantBump& TestFilterScoopNotch() { return filterChain_.scoopNotch; }
     dsp::Comb& TestFilterComb() { return filterChain_.comb; }
-    // Item 3: test/inspection access to the output limiter, same convention
-    // as the accessors above -- lets tests call Process()/Reset() directly
-    // and read `envelope` without going through the full RouteAudioSample
-    // chain, e.g. to prove the bit-identical-passthrough acceptance test.
-    // `auto&` (C++14 return-type deduction) rather than spelling
-    // `OutputLimiter&` here: `OutputLimiter` is a PRIVATE nested type
-    // defined further down (right before SanitizeOutputSample(), its one
-    // real caller) -- a member function BODY is complete-class context (so
-    // `outputLimiter_`/`OutputLimiter` resolve fine regardless of
-    // declaration order), but a DECLARATION's spelled-out return type is
-    // resolved as the class is parsed, not deferred, so writing
-    // `OutputLimiter&` literally here would need a forward declaration --
-    // and forward-declaring a nested type public then defining it private
-    // is itself a hard error (access specifiers must match between a
-    // class's first declaration and its definition). `auto&` sidesteps
-    // both problems by deferring return-type resolution to the same
-    // complete-class context the body already gets. A caller outside this
-    // class still cannot spell `OutputLimiter` (it truly is private), but
-    // can hold the deduced reference via `auto&`, same as every other
-    // TestXxx() accessor's caller does implicitly.
+    // B5: test/inspection access to the peak branch's OWN limiter instance
+    // (`FilterFxChain::peakLimiter`, `dsp/FilterFx.hpp`) -- same convention
+    // as `TestOutputLimiter()` above, but for the independently-tuned
+    // second instance rather than the master.
+    dsp::OutputLimiter& TestFilterPeakLimiter() { return filterChain_.peakLimiter; }
+    // Item 3: test/inspection access to the MASTER output limiter, same
+    // convention as the accessors above -- lets tests call Process()/
+    // Reset() directly and read `envelope` without going through the full
+    // RouteAudioSample chain, e.g. to prove the bit-identical-passthrough
+    // acceptance test. `auto&` kept as-is post-B5 (`dsp::OutputLimiter` is
+    // now a public type, so `dsp::OutputLimiter&` would spell fine too, but
+    // every other TestXxx() accessor above already returns `dsp::Xxx&` by
+    // deduction-free convention -- `auto&` here is simply consistent with
+    // those, not a workaround for privacy anymore). Distinct from the peak
+    // branch's OWN limiter instance, which has its own accessor
+    // (`TestFilterPeakLimiter()`, mirroring `TestFilterPeak()` above).
     auto& TestOutputLimiter() { return outputLimiter_; }
 
 private:
@@ -1142,7 +1140,7 @@ private:
         return SanitizeOutputSample(reverbOut);
     }
 
-    // ITEM 3 (design.md A2/A2a, 2026-07-29): output-stage limiter struct.
+    // ITEM 3 (design.md A2/A2a, 2026-07-29): output-stage limiter.
     // Supersedes task 2.8's unconditional hard clamp (2026-07-28 revision,
     // below in `SanitizeOutputSample`'s own comment for the historical
     // record) -- design.md A4 records the clamp as superseded, and the
@@ -1153,97 +1151,28 @@ private:
     // scalar gain per sample from a smoothed envelope of the input's own
     // instantaneous magnitude and multiplies the sample by it, rather than
     // reshaping the sample the way a saturator/waveshaper would. Below
-    // `kThreshold`, the target gain is mathematically exactly 1.0f (see
+    // `threshold`, the target gain is mathematically exactly 1.0f (see
     // `DesiredMagnitude()`), and `1.0f * x == x` is an IEEE-754 identity
     // (exact, no rounding) -- so once `envelope` itself settles to exactly
     // 1.0f (its `Reset()`/initial value, never disturbed while every sample
-    // stays under threshold, per the Sterbenz-lemma argument in this
-    // struct's `Process()` comment), passthrough is bit-identical. That is
-    // this stage's own acceptance test (design.md A2a).
+    // stays under threshold, per the Sterbenz-lemma argument in the
+    // struct's own `Process()` comment), passthrough is bit-identical. That
+    // is this stage's own acceptance test (design.md A2a).
     //
-    // VST/PLUGIN NOTE (operator, 2026-07-29, design.md A2a -- required
-    // comment at this definition): this stage does NOT need to live inside
-    // a future VST/plugin build. A plugin host owns final gain staging on
-    // its own output bus and typically supplies its own limiter there, so
-    // in a plugin context this stage is redundant -- a candidate to bypass
-    // or compile out rather than run twice. Recorded here, at the
-    // definition, so whoever builds the VST finds this reasoning rather
-    // than rediscovering it; joins the existing set of standalone-only
-    // concerns this app already carries (e.g. the transport/master-clock
-    // ownership this class's own header comment discusses).
-    struct OutputLimiter {
-        static constexpr float kThreshold = 0.9f;               // design.md A2a.
-        static constexpr float kCeiling = 1.0f;                 // float full scale (0 dBFS).
-        static constexpr float kHeadroom = kCeiling - kThreshold;  // 0.1f.
-        static constexpr float kAttackSeconds = 0.001f;         // fast: 1ms, per design.md A2a.
-        static constexpr float kReleaseSeconds = 0.1f;          // ~100ms, per design.md A2a ("so it does not pump").
-
-        float attackCoeff = 0.0f;   // (re)computed by Configure(); one-pole coeff exp(-1/(t*sampleRate)).
-        float releaseCoeff = 0.0f;
-        float envelope = 1.0f;      // current gain multiplier; 1.0f == no reduction (also Reset()'s value).
-
-        // Sample-rate-dependent, mirrors `delay_.SetSampleRate()`'s own call
-        // site in `PrepareToPlay()` below.
-        void Configure(float sampleRate) {
-            const float sr = std::max(1.0f, sampleRate);
-            attackCoeff = std::exp(-1.0f / (kAttackSeconds * sr));
-            releaseCoeff = std::exp(-1.0f / (kReleaseSeconds * sr));
-        }
-
-        // Instantaneous desired output magnitude for a given input
-        // magnitude: identity below `kThreshold` (so a below-threshold
-        // sample's own target gain is always exactly 1.0f), and above it an
-        // exponential-saturation curve that asymptotes toward `kCeiling` as
-        // `absX -> infinity` without ever reaching or exceeding it for any
-        // finite input. Continuous AND C1-continuous (equal value AND
-        // slope) at `absX == kThreshold`, so there is no audible knee
-        // discontinuity between the two branches.
-        static float DesiredMagnitude(float absX) {
-            if (absX <= kThreshold) {
-                return absX;
-            }
-            return kThreshold + kHeadroom * (1.0f - std::exp(-(absX - kThreshold) / kHeadroom));
-        }
-
-        // `targetGain == DesiredMagnitude(|x|) / |x|`: for any `|x| <=
-        // kThreshold` this is exactly `|x| / |x| == 1.0f` (guarded at
-        // `absX == 0` to avoid a 0/0). `envelope` then one-pole-smooths
-        // toward `targetGain`, fast (`attackCoeff`) when MORE reduction is
-        // needed (`targetGain < envelope`) and slow (`releaseCoeff`) when
-        // easing back off, so recovery from a loud transient does not pump.
-        //
-        // Bit-identical claim for an entirely-below-threshold signal: if
-        // `envelope` is already exactly 1.0f and `targetGain` is exactly
-        // 1.0f, then `coeff*1.0f + (1.0f-coeff)*1.0f` is exactly 1.0f in
-        // IEEE-754 float, not merely in real-number arithmetic -- both
-        // `attackCoeff` and `releaseCoeff` sit in (0.5, 1) for any musically
-        // reasonable sample rate (`exp(-1/N)` for `N` on the order of tens
-        // of samples or more), so Sterbenz's lemma makes `1.0f - coeff`
-        // exact, `coeff*1.0f`/`(1.0f-coeff)*1.0f` exact (multiplying by
-        // 1.0f is always exact), and their sum exactly reconstructs the
-        // representable value 1.0f with zero rounding error. So `envelope`
-        // never moves off exactly 1.0f while the signal stays under
-        // threshold, and `x * 1.0f == x` bit for bit.
-        float Process(float x) {
-            const float absX = std::fabs(x);
-            const float targetGain = absX > 0.0f ? DesiredMagnitude(absX) / absX : 1.0f;
-            const float coeff = targetGain < envelope ? attackCoeff : releaseCoeff;
-            envelope = coeff * envelope + (1.0f - coeff) * targetGain;
-            return x * envelope;
-        }
-
-        // Task 2.2-style per-unit recovery (this class's own
-        // RecoverPoisonedUnitState()): unity gain is this unit's quiescent
-        // state, the same convention `dsp::DriveBlendPhase::Reset()`
-        // (Drive.hpp) uses for its own allpass history -- "no reduction" is
-        // this stage's equivalent of "no recursive history". `envelope`
-        // cannot legitimately leave `(0, 1]` from finite input (`targetGain`
-        // is always in that range), so `StateFinite()` only exists to
-        // satisfy `RecoverIfNonFinite<Unit>`'s template contract and defend
-        // against an unforeseen path in.
-        void Reset() { envelope = 1.0f; }
-        bool StateFinite() const { return std::isfinite(envelope); }
-    };
+    // B5 (openspec/changes/frogg3rs-modulation-truth-and-voicing/tasks.md):
+    // the struct itself now lives in `dsp::OutputLimiter`
+    // (`dsp/Limiter.hpp`), not here -- it was a PRIVATE nested type until
+    // B5 needed a SECOND, independently-tuned instance on the Filter bank's
+    // peak branch (`FilterFxChain::peakLimiter`, `dsp/FilterFx.hpp`), which
+    // needed the type reachable from a header below this one in the include
+    // graph (this class includes `dsp/FilterFx.hpp`, never the reverse --
+    // see `dsp/Limiter.hpp`'s own header comment for the full reasoning).
+    // `outputLimiter_` below keeps its exact field name, its exact call
+    // site (`outputLimiter_.Configure(sampleRate_)` in `PrepareToPlay()`,
+    // unchanged), and its exact tuning (the single-argument `Configure()`
+    // overload pins the master's original threshold/ceiling/attack/release,
+    // `dsp/Limiter.hpp`'s own header comment) -- this move is behaviour-
+    // neutral, not a retune.
 
     // Task 2.8 (revised 2026-07-28; SUPERSEDED 2026-07-29 by the
     // `OutputLimiter` above -- item 3, design.md A2/A2a/A4): this was the
@@ -1454,6 +1383,10 @@ private:
         // struct's own comment) and there is no analogous "legitimately
         // very large but finite" case Tier 2 would need to tolerate.
         RecoverIfNonFinite(outputLimiter_);
+        // B5: the peak branch's own limiter carries the identical per-
+        // sample `envelope` state as the master above -- same Tier-1-only
+        // treatment, same reasoning, independent instance.
+        RecoverIfNonFinite(filterChain_.peakLimiter);
     }
 
     FroggersParameterModel parameters_;
@@ -1474,9 +1407,10 @@ private:
     dsp::StereoDelay delay_;
     dsp::Reverb reverb_;
     // Item 3 (design.md A2/A2a): the output-stage limiter's own per-sample
-    // gain-envelope state -- see the `OutputLimiter` struct's definition
-    // (above SanitizeOutputSample) for the full design rationale.
-    OutputLimiter outputLimiter_;
+    // gain-envelope state -- see the comment above `SanitizeOutputSample()`
+    // for the full design rationale, and `dsp::OutputLimiter`'s own
+    // definition (`dsp/Limiter.hpp`, moved out by B5) for the struct itself.
+    dsp::OutputLimiter outputLimiter_;
 
     // Tasks 2.4/2.5 (Tier 2 recovery): per-unit "how many consecutive
     // seconds of real audio has this unit's state stayed over

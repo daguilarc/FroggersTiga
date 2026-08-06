@@ -51,6 +51,7 @@
 // should assume").
 
 #include "DspMath.hpp"
+#include "Limiter.hpp"
 
 #include "synth/DspTransferFunction.hpp"
 
@@ -120,6 +121,73 @@ struct PadeSaturator
 // blowout territory"). See FroggersAppCore's own comment at the SetHeight
 // call for why modulation is the case that governs this number.
 inline constexpr float kMaxResonantBumpHeight = 2.0f;
+
+// B5 (openspec/changes/frogg3rs-modulation-truth-and-voicing/tasks.md,
+// CONSOLIDATED PUSH table; "Group B outcomes" B1 finding): tuning for
+// `FilterFxChain::peakLimiter` below, a SECOND, independently-configured
+// `dsp::OutputLimiter` instance (dsp/Limiter.hpp) inserted after B1's own
+// `1/height` scalar trim on the peak branch only. B1 measured that trim
+// alone cannot close the gap under per-sample-random height modulation --
+// the peak is a stateful 2-pole biquad whose stored energy survives a
+// height DROP, and no per-sample SCALAR can retroactively scale away energy
+// already in a filter's state; something with its own release can. These
+// four constants are the ones that something needs, chosen BY MEASUREMENT
+// (a scratch harness reproducing this file's own ResonantBump + trim-
+// smoother math plus a candidate `dsp::OutputLimiter`, run over the exact
+// adversarial pattern that measured B1's own 1.669: per-sample-random
+// `height` in [1, kMaxResonantBumpHeight], full-scale sine at the bump's
+// resonant frequency, 500,000 trials across 10 fixed xorshift32 seeds,
+// 50,000 samples/seed -- matching FroggersDspParityTests.cpp's own Pattern
+// 2 idiom exactly, not a fresh methodology), never by analogy to the master
+// limiter's own tuning (W2.2a's smoothing constant was picked by analogy
+// once and measured 80% wrong later -- this task's own binding warning).
+//
+//   - kPeakLimiterThreshold (0.7): BELOW the master output limiter's 0.9
+//     (task requirement -- this stage must catch the peak's residual
+//     BEFORE the master ever sees it) with comfortable margin, not just
+//     barely under it; the sweep found overshoot fell smoothly as
+//     threshold dropped from 0.9 toward 0.5, and 0.7 sits in the flat part
+//     of that curve (0.65 -> 0.982783, 0.70 -> 0.990022, 0.75 -> 0.995622
+//     worst-case, all at the attack below) -- low enough to leave real
+//     headroom under the computed bound A, not so low it engages on every
+//     ordinary moderate-height passage for no measured benefit.
+//   - kPeakLimiterAttackSeconds (5 microseconds): the delicate number, and
+//     NOT chosen by analogy to the master's 1ms. Per-sample-random height
+//     modulation makes the worst-case transient a SINGLE-SAMPLE event (the
+//     biquad's residual right after a height drop, still carrying energy
+//     from the prior, higher height) -- a 1ms attack (a ~48-sample time
+//     constant at 48kHz) cannot react within one sample, and measured
+//     worst-case overshoot barely moved across the ENTIRE 1ms-500ms release
+//     sweep at a 1ms attack (stuck at ~1.44-1.53, nowhere near bound A).
+//     Sweeping attack alone (release fixed at 100ms, threshold fixed at
+//     0.7) found the worst case crosses under 1.0 between 0.01ms
+//     (1.028044) and 0.006ms (0.991957); 5 microseconds (0.990022 measured,
+//     10 seeds x 50,000 samples) sits just past that crossing with a
+//     working margin, and going faster still (2 microseconds: 0.988134)
+//     buys almost nothing further -- the curve is flattening, not still
+//     falling, so 5us is the measured knee, not an arbitrary small number.
+//   - kPeakLimiterReleaseSeconds (100ms, matches the master): release
+//     barely moves the worst-case-overshoot measurement at all once attack
+//     is fast enough (0.005ms/thr=0.7: 0.991766 at 10ms release vs 0.989732
+//     at 500ms release -- a 0.002 spread across 50x the release time), so
+//     it cannot be chosen FROM that metric; it has to be chosen from the
+//     thing the task warns about instead -- reintroducing pumping on a
+//     slow-decaying residual. Measured that residual directly: a step
+//     excitation at max Q (10) and max height (2.0) at this file's own
+//     `freq = 0.05` (matches the existing peak-branch bound tests) decays
+//     to -60dB in 566 samples (11.79ms at 48kHz) once the input stops.
+//     100ms is ~8.5x that decay time -- comfortably slower than the
+//     residual it is meant to ride OVER rather than chase sample-by-sample
+//     (a release near or under 11.79ms would let the gain snap back up
+//     mid-ring, audible as pumping on the exact signal this task exists to
+//     tame), and it reuses a value this codebase has already accepted for
+//     this exact "gain reduction that does not pump" job (the master's own
+//     `kDefaultReleaseSeconds`, dsp/Limiter.hpp) rather than inventing a
+//     second number where the measurement gave no reason to.
+inline constexpr float kPeakLimiterThreshold = 0.7f;
+inline constexpr float kPeakLimiterCeiling = 1.0f;
+inline constexpr float kPeakLimiterAttackSeconds = 5.0e-6f;   // 5 microseconds -- see comment above.
+inline constexpr float kPeakLimiterReleaseSeconds = 0.1f;     // 100ms -- matches the master, see comment above.
 
 struct ResonantBump
 {
@@ -494,6 +562,26 @@ struct FilterFxChain
     // itself (that would change the filter, not just its level).
     OnePoleLowPass peakTrimSmoother;
 
+    // B5 (tasks.md CONSOLIDATED PUSH table; "Group B outcomes" B1 finding):
+    // the peak branch's OWN limiter, inserted AFTER peakTrimSmoother's
+    // scalar trim above, not instead of it. B1 measured that the scalar
+    // trim alone cannot bound the peak branch under per-sample-random
+    // height modulation (worst-case 1.669 trimmed vs 1.819 untrimmed,
+    // against an ideal of 1.0, 500k trials/10 seeds) because the peak is a
+    // stateful 2-pole biquad -- its stored energy survives a height DROP,
+    // and a same-instant scalar cannot retroactively remove energy already
+    // in the filter's state. A limiter can, because it has its own release
+    // and therefore its own memory. Tuned independently from the master
+    // output limiter via the four `kPeakLimiter*` constants above this
+    // struct (by measurement, not by analogy -- see their own comment).
+    // NOT applied to `filterOut`/the composite (constraint from this task's
+    // brief): the comb branch is already provably bounded by its own W2.2a
+    // trim (the saturator sits INSIDE that loop), so limiting the composite
+    // would compress a signal that does not need it and colour the comb's
+    // sound for no measured benefit -- the measurement traced the offender
+    // to the peak specifically, so only the peak gets treated.
+    OutputLimiter peakLimiter;
+
     FilterFxChain()
     {
         // Sample-rate-independent knob-glide idiom this codebase already
@@ -540,6 +628,32 @@ struct FilterFxChain
         combTrimSmoother.output = 1.0f;  // unity at fb=0 -- matches the untrimmed branch (no initial fade-in).
         peakTrimSmoother.SetAlphaFromNatFreq(kTrimGlideCyclesPerSample);
         peakTrimSmoother.output = 1.0f;  // unity at height=1 (the minimum) -- matches the untrimmed branch.
+
+        // B5: `peakLimiter`'s attack/release coefficients ARE sample-rate-
+        // dependent (unlike the two smoothers above), so unlike them it
+        // cannot be fully configured here without a sample rate this
+        // constructor never receives. Configure() below (called from
+        // FroggersAppCore::PrepareToPlay(), mirroring
+        // outputLimiter_.Configure(sampleRate_) there) supplies the real
+        // one; this assumed-48kHz call just gives a direct
+        // `FilterFxChain chain;` instantiation (e.g. a test that never
+        // calls Configure()) the intended threshold/attack/release rather
+        // than dsp::OutputLimiter's own generic master-limiter defaults
+        // (0.9/1ms/100ms), which would silently under-tune this branch.
+        // 48kHz matches FroggersAppCore's own `sampleRate_` field default.
+        constexpr float kDefaultAssumedSampleRate = 48000.0f;
+        peakLimiter.Configure(kDefaultAssumedSampleRate, kPeakLimiterThreshold, kPeakLimiterCeiling,
+                               kPeakLimiterAttackSeconds, kPeakLimiterReleaseSeconds);
+    }
+
+    // B5: sample-rate-dependent configuration for `peakLimiter`, separate
+    // from the constructor above because the real sample rate is only known
+    // once FroggersAppCore::PrepareToPlay() runs. Mirrors
+    // `outputLimiter_.Configure(sampleRate_)`'s own call site there.
+    void Configure(float sampleRate)
+    {
+        peakLimiter.Configure(sampleRate, kPeakLimiterThreshold, kPeakLimiterCeiling, kPeakLimiterAttackSeconds,
+                               kPeakLimiterReleaseSeconds);
     }
 
     // combPeakBlend/scoopMix are precomputed 0..1 control values (the
@@ -579,7 +693,18 @@ struct FilterFxChain
             const float peakRaw = peak.Process(input);
             const float rawPeakTrim = 1.0f / peak.height;
             const float peakTrim = peakTrimSmoother.Process(rawPeakTrim);
-            const float peakPath = peakRaw * peakTrim;
+            const float peakTrimmed = peakRaw * peakTrim;
+            // B5: the scalar trim above cannot fully bound the peak branch
+            // on its own (B1's own finding -- see peakLimiter's declaration
+            // comment above and the kPeakLimiter* tuning comment near this
+            // file's top) because the biquad's stored energy survives a
+            // height DROP and a same-instant scalar cannot retroactively
+            // remove energy already in its state. `peakLimiter` is
+            // inserted HERE -- after the trim, before the blend with
+            // combPath below -- so it catches exactly the residual the
+            // trim leaves behind, not instead of the trim (B1's trim stays;
+            // this is additive).
+            const float peakPath = peakLimiter.Process(peakTrimmed);
             const float mixed = peakPath * (1.0f - combPeakBlend) + combPath * combPeakBlend;
             const float scooped = scoopNotch.Process(mixed);
             return mixed * (1.0f - scoopMix) + scooped * scoopMix;
