@@ -87,10 +87,14 @@ S2 drill-in depth knobs all read 12 o'clock; S3 Randomize All inside level-1 sho
     exists, S2 becomes **upstream ask 16** (depth display never ticks outside top-level
     registration) with an interim app-side settle (bounded `ComputeAllParameters()` calls — ugly,
     ~46 iterations to converge at alpha 0.0994; record the cost honestly if chosen).
-  - [ ] W1.1b **S1 semantics — OPERATOR DECISION, not a bug fix:** should Randomize All zero the
-    un-drawn sources first (each press = a fresh median-3 sculpture) or accumulate (current)?
-    E.1's spec never said. The operator's complaint reads as expecting non-accumulation, but this
-    changes randomize behaviour and §0 forbids assuming it.
+  - [x] W1.1b **DECIDED 2026-08-05 — Option A, fresh sculpture.** Operator: *"option A is what it
+    should have always been, the randomization should never have been additive (and it was still
+    too much to start with)."* Randomize All zeroes ALL modulation depths first, then draws the
+    fresh median-3 per parameter; Randomize Page zeroes only its own page's parameters' depths
+    first. **Density flag:** "still too much to start with" may mean median-3 itself is too dense —
+    but it was judged on accumulated state and cannot be read cleanly. Land Option A first; the
+    operator judges single-press density in isolation at W1.3, and the count distribution moves
+    only if they still say so.
   - [ ] W1.1c **S3 fresh-state repro** (failing-test-first): drive L1 Randomize All from a clean
     rig, assert visible depth changes; separately surface `partial=true` somewhere a user can see
     (silent partial success is its own defect regardless of S3's verdict).
@@ -145,8 +149,18 @@ S2 drill-in depth knobs all read 12 o'clock; S3 Randomize All inside level-1 sho
   `ExpMapCompute(1.0f, 10.0f, ...)` for peak height, predating §A's `kMaxResonantBumpHeight = 2.0`,
   so its diagnostic thresholds no longer describe the real ceiling. A second definition site that
   drifted, again.
-- [ ] W2.1 Operator triage of the ranked offenders — which are defects vs character. Per-offender
-  decision: range trim / stage headroom / per-stage limiting / leave. **By ear, one at a time.**
+- [ ] W2.1 Operator triage — **PARTIAL VERDICT 2026-08-05: "more pumping than piercing/ringing",
+  reproduced by Filter-bank Crispy at max.** Consistent with offenders 1-2 (comb feedback + LP),
+  not 3 (peak). Mechanism confirmed by reading `dsp/Fuegoize.hpp:52-79`: Crispy is the per-bank
+  fuegoization knob, a bit-scramble of the normalized value — `outInt = (inputInt & ~mask) |
+  scrambledLowerBits`, output always in [0,1] — so **Crispy exposes reachable extremes, it cannot
+  create out-of-range values.** At max (mask=255) it scrambles all 8 bits, jumping filter params
+  anywhere in range including the comb-feedback/LP maxima. Therefore the treatment target is the
+  maxima/stage headroom, NOT Crispy: taming those tames Crispy's exposure of them for free. (Also
+  noted: Crispy's discontinuous jumps into a ringing comb add transient bursts — the post-filter
+  limiter candidate catches those too.) **Operator also asked to consider a cap on Drive's gain
+  ("probably not... but maybe worth looking at") — added to the W2.2 evidence list, not assumed.**
+  Per-offender decision: range trim / stage headroom / per-stage limiting / leave. **By ear.**
   Treatment candidates the trace supports (pick per offender, not wholesale):
   - **Post-filter, pre-Delay limiter/soft-knee** — addresses the mechanism directly: the comb's
     sustained ring gets caught BEFORE it smears through Delay/Reverb and forces whole-mix ducking.
