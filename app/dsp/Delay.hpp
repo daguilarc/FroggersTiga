@@ -103,9 +103,9 @@ namespace synth_froggers::dsp {
 //     dsp::kPeakLimiterReleaseSeconds) -- reused rather than a fresh number
 //     invented where the measurement gave no reason to move it.
 inline constexpr float kDelayWetLimiterThreshold = 0.9f;
-inline constexpr float kDelayWetLimiterCeiling = 1.0f;
+inline constexpr float kDelayWetLimiterCeiling = kSharedCeiling;
 inline constexpr float kDelayWetLimiterAttackSeconds = 2.0e-6f;   // 2 microseconds -- see comment above.
-inline constexpr float kDelayWetLimiterReleaseSeconds = 0.1f;     // 100ms -- matches the master, see comment above.
+inline constexpr float kDelayWetLimiterReleaseSeconds = kSharedReleaseSeconds;  // shared; see Limiter.hpp.
 
 // sim/StereoDelay.hpp:10-19.
 struct DelayParams

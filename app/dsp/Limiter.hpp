@@ -39,6 +39,36 @@
 
 namespace synth_froggers::dsp {
 
+// Shared across EVERY per-stage limiter instance (peak branch, delay wet,
+// reverb wet, and the master). These two values are identical at all four
+// sites by design, not by coincidence, so they live here once rather than
+// being re-declared per stage (OMNI §8: 2+ occurrences must be abstracted;
+// they were duplicated 4x and 3x respectively before this consolidation).
+//
+// What is DELIBERATELY NOT shared: each stage's `threshold` and
+// `attackSeconds`. Both are MEASURED per stage and legitimately differ --
+// peak 0.7/5us (single-sample transients from stored biquad energy), delay
+// and reverb 0.9/2us (fast onset at the short-round-trip extreme), master
+// 0.9/1ms (sustained material only). §K.4 records that inferring attack
+// from mechanism shape was wrong twice; it is per-stage evidence, not a
+// shared constant, and must not be folded in here.
+//
+// `kSharedCeiling` is full scale everywhere: a limiter's ceiling is what it
+// must never let through, and that is 1.0 for every stage regardless of
+// where the stage sits.
+inline constexpr float kSharedCeiling = 1.0f;
+// `kSharedReleaseSeconds`: 100ms at all four sites. B5 derived it from the
+// peak's measured residual decay (-60dB in 11.79ms at max Q, so ~8.5x
+// margin) and B6 measured it as correct for delay and reverb too; each
+// stage's own comment already said "matches the master". One value.
+inline constexpr float kSharedReleaseSeconds = 0.1f;
+
+// NOTE for B7.1 (§K): the per-stage THRESHOLDS are currently scattered
+// (0.7 peak, 0.9 delay/reverb/master). B7.1 retargets every stage to the
+// measured shared ceiling C = 0.80. When that lands, the per-stage
+// threshold constants collapse into one shared value here too -- and the
+// master's stays 0.9, since it is the backstop that must fire LAST.
+
 // VST/PLUGIN NOTE (operator, 2026-07-29, design.md A2a -- required comment,
 // carried from this struct's original definition site): this stage does NOT
 // need to live inside a future VST/plugin build. A plugin host owns final
@@ -56,9 +86,9 @@ struct OutputLimiter
     // tuned instance (e.g. the peak-branch limiter, B5) calls the five-
     // argument Configure() overload instead of touching these.
     static constexpr float kDefaultThreshold = 0.9f;
-    static constexpr float kDefaultCeiling = 1.0f;
+    static constexpr float kDefaultCeiling = kSharedCeiling;
     static constexpr float kDefaultAttackSeconds = 0.001f;  // fast: 1ms, per design.md A2a.
-    static constexpr float kDefaultReleaseSeconds = 0.1f;   // ~100ms, per design.md A2a ("so it does not pump").
+    static constexpr float kDefaultReleaseSeconds = kSharedReleaseSeconds;  // shared; design.md A2a ("so it does not pump").
 
     // Per-instance tuning (B5: was `static constexpr`, shared by every
     // instance of the type -- see this file's header comment for why that

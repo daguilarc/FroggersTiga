@@ -113,9 +113,9 @@ namespace synth_froggers::dsp {
 //     dsp::kDelayWetLimiterReleaseSeconds) rather than inventing a fourth
 //     number where measurement gave no reason to move it.
 inline constexpr float kReverbWetLimiterThreshold = 0.9f;
-inline constexpr float kReverbWetLimiterCeiling = 1.0f;
+inline constexpr float kReverbWetLimiterCeiling = kSharedCeiling;
 inline constexpr float kReverbWetLimiterAttackSeconds = 2.0e-6f;   // 2 microseconds -- see comment above.
-inline constexpr float kReverbWetLimiterReleaseSeconds = 0.1f;     // 100ms -- matches the master, see comment above.
+inline constexpr float kReverbWetLimiterReleaseSeconds = kSharedReleaseSeconds;  // shared; see Limiter.hpp.
 
 struct Reverb
 {

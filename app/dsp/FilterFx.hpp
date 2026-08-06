@@ -185,9 +185,9 @@ inline constexpr float kMaxResonantBumpHeight = 2.0f;
 //     `kDefaultReleaseSeconds`, dsp/Limiter.hpp) rather than inventing a
 //     second number where the measurement gave no reason to.
 inline constexpr float kPeakLimiterThreshold = 0.7f;
-inline constexpr float kPeakLimiterCeiling = 1.0f;
+inline constexpr float kPeakLimiterCeiling = kSharedCeiling;
 inline constexpr float kPeakLimiterAttackSeconds = 5.0e-6f;   // 5 microseconds -- see comment above.
-inline constexpr float kPeakLimiterReleaseSeconds = 0.1f;     // 100ms -- matches the master, see comment above.
+inline constexpr float kPeakLimiterReleaseSeconds = kSharedReleaseSeconds;  // shared; see Limiter.hpp.
 
 struct ResonantBump
 {
