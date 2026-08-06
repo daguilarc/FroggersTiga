@@ -978,3 +978,74 @@ its own gain, and is bounded back to `C` out. A single budget therefore holds th
 re-derived.** Named prerequisites already on record: comb saturator drive (`C.Drive`) requires
 re-deriving W2.2a's trim, which is computed from feedback alone; series/parallel routing requires
 B1's peak trim because series makes the peak multiply the comb.
+
+### §K.1 — MEASURED: `DriveBlendPhase` is unbounded to ~50×. This is probably THE blowout.
+
+**W2.2-PREP's "Drive is a bounded waveshaper, no cap needed" verdict was WRONG** — it examined the
+seven ported parameters and never looked at the *authored* Blend/Phase stage. Corrected by
+measurement 2026-08-05, harness including the real `app/dsp/Drive.hpp`:
+
+- `FrogBlock::Process` (`Drive.hpp:283-295`) — the sine-fold ⊕ `PadeSaturator` convex blend
+  W2.2-PREP actually checked — **is** genuinely bounded: worst case **1.004** over 120k samples ×
+  10 seeds with all nine knobs redrawn per-sample-random. The 0.4% is `DigitalReorganizer`'s
+  integer round-trip, not gain. That part of the verdict stands.
+- **`DriveBlendPhase` (`Drive.hpp:339-367`, slots 7-8) is NOT bounded.** Its allpass coefficient
+  `a` (`:350`) is **read fresh every sample from the Phase knob with no smoothing**. A
+  fixed-coefficient allpass is unity-gain; **a time-varying one is not.** Measured, with a bounded
+  ±1 input: **1.002** under free random phase, **4.15** under full-bank per-sample-random
+  modulation, and **50.5** under periodic phase/content coincidence — e.g. an LFO locked near the
+  note's own period. Bounded and plateauing (verified to 20M samples), not divergent. Buildup to
+  plateau ≈ **2000 samples (~40 ms)** — a *sustained* shape.
+
+**Scale check: 50× dwarfs everything this architecture was built to fix.** The comb's worst case is
+~1.95 and the peak's was 1.669. And it is reached by exactly what the operator does — audio-rate
+modulation, including an LFO landing near the note's period.
+
+**Two candidate fixes, and the cheaper one is probably right:**
+1. **Smooth the allpass coefficient** (root cause). The excess exists *because* `a` jumps
+   per-sample; a one-pole on `a` makes the allpass quasi-static and unity-gain again. Same class of
+   fix as W2.2a's trim smoothing, and it costs nothing tonally — an unsmoothed per-sample-random
+   coefficient is not a musical control in the first place. **Try this first.**
+2. **Limit the stage output** (symptom). Necessary only if smoothing proves insufficient. Catching
+   50× with a limiter means heavy sustained gain reduction — the pumping we are trying to remove.
+   **A limiter alone here would be the wrong tool.**
+Do not reuse B5's peak tuning by analogy: that was calibrated for single-sample transients at ~1.7×,
+and this is sustained buildup at up to 50×.
+
+### §K.2 — MEASURED: ceiling and make-up gain
+
+**`C = 0.80`.** Normal-patch cost measured on the D16 default patch via `SynthRig`:
+
+| C | peak | rms | vs today |
+|---|---|---|---|
+| today (0.9) | 0.8828 | 0.3071 | — |
+| 0.85 | 0.8820 | 0.3068 | −0.007 dB |
+| **0.80** | 0.8806 | 0.3030 | **−0.115 dB** |
+| 0.70 | 0.8715 | 0.2795 | −0.817 dB |
+
+0.80 is effectively free (−0.1 dB, inaudible) and leaves 0.10 margin under the master's 0.9. 0.85
+leaves only 0.05 — thinner than the 0.7-vs-0.9 spacing the peak limiter already proved sufficient.
+0.70 costs a real ~0.8 dB on *ordinary* playing for no measured benefit. **Note today's default
+patch already peaks at 0.88, i.e. it sits just under the master's threshold with almost no
+headroom** — which is the headroom-budget defect in one number.
+
+**Make-up gain (`1/C` = 1.25×, +1.9 dB): AFTER `outputLimiter_.Process(x)` and BEFORE the trailing
+clamp** (`FroggersAppCore.hpp:1228`). Not before the limiter — its threshold/headroom math is
+calibrated in absolute terms, so pre-scaling would silently retune every stage's budget. The
+trailing hard clamp stays; it is the residual-overshoot net. Optional at C=0.80 given the 0.1 dB
+cost, but cheap and correct.
+
+### §K.3 — filter composite confirmed, and the completeness sweep
+
+**B7.3's cheaper answer holds.** The parallel path is convex throughout — `mixed` is a convex
+blend (`FilterFx.hpp:708`), the scoop return is convex (`:710`), and `scoopNotch.height` is a DIP
+capped at 1.0 (`FroggersAppCore.hpp:1085-1086`), so the scoop cannot amplify. Therefore
+`filterOut ≤ max(combPath, peakPath)` with no summation anywhere: **retarget the two branch
+ceilings to `C` rather than adding a third limiter at `filterOut`.**
+
+**Exhaustive chain sweep** (VCO blend → 3-voice average → ASR gate → Drive fold → DriveBlendPhase →
+PureDelay → comb/peak/scoop → delay write/read/ToReverbMono → reverb → dry/wet → master → dual-mono
+copy): every operation is convex, pure attenuation, or already on the list. **The only unbounded
+gain-bearing operations in the entire chain are `DriveBlendPhase` (§K.1) and the reverb's
+`aIn/bIn = preOut + aFb*fb` sums** — the latter already on §K's Reverb row and being closed by B6.
+Nothing else was found.
