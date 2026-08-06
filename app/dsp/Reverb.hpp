@@ -55,12 +55,67 @@
 // ported params reproduce ProcessReverb + the Wet/dry blend exactly.
 
 #include "DspMath.hpp"
+#include "Limiter.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 
 namespace synth_froggers::dsp {
+
+// B6b (openspec/changes/frogg3rs-modulation-truth-and-voicing/tasks.md,
+// "Group B outcomes" / operator: "why can't we just have limiters for
+// reverb and delay?"): tuning for `Reverb::wetLimiter` below, a single
+// `dsp::OutputLimiter` (dsp/Limiter.hpp) instance inserted on the value
+// `Process()` returns, AFTER both tanks and the dry/wet mix -- NOT inside
+// the feedback loop, and it never touches `fb`/Hold's own computation
+// (:238 below is unchanged). Hold (W2.1-MATH-2: `fb` -> ~0.99998 at Hold's
+// ceiling, ~50,000x steady-state gain, deliberately parked just under
+// self-oscillation) keeps sustaining exactly as before; this stage only
+// caps the LEVEL that escapes toward the master limiter, the same "bound
+// what escapes, don't touch what persists" treatment B6a gives Delay.
+//
+// Chosen BY MEASUREMENT (scratch harness driving this exact struct with
+// Hold pinned to 1.0/max, decay knob swept {0,0.5,1.0}, room size knob swept
+// {0,0.3,0.6,1.0}, sustained full-scale input, fully wet (mix=1.0, isolates
+// the tank's own bound from any diluting dry floor), 20000 samples per
+// point):
+//
+//   - Raw (no limiter) growth is genuinely unbounded and, unlike Delay's
+//     worst case, DOES build over hundreds of milliseconds to seconds at
+//     moderate room sizes -- measured raw |output| reached ~7x input by
+//     100ms, ~14x by 200ms, ~72x by 1s, ~290x by 4s of sustained input
+//     (size=0.6, decay=1.0, Hold=1.0) -- confirming the "sustained
+//     material" premise for the STEADY-STATE climb.
+//   - But master's own tuning (0.9/1ms/100ms) is still NOT sufficient: the
+//     measured worst-case TRANSIENT overshoot (at the smallest room size,
+//     shortest tank round trip -- the reverb's analogue of Delay's
+//     shortest-delay-time worst case) was 1.282757 against the 1.0
+//     ceiling, at a 1ms attack. Same failure shape as B6a: the onset is
+//     fast even though the long-run climb is slow.
+//   - kReverbWetLimiterThreshold (0.9): kept AT the master's value, for the
+//     identical reason B6a's comment gives (dsp/Delay.hpp) -- this stage
+//     runs inside `Reverb::Process`, upstream of `SanitizeOutputSample`'s
+//     master limiter in FroggersAppCore.hpp, so it always reduces first
+//     regardless of where its threshold sits relative to the master's.
+//   - kReverbWetLimiterAttackSeconds (2 microseconds): sweeping attack
+//     alone (threshold 0.9, release 100ms, worst case taken across every
+//     room-size/decay combination above) found the worst-case overshoot
+//     crosses under the 1.0 ceiling between 3us (1.000006) and 2us
+//     (1.000000); 2 microseconds sits at that measured crossing -- the
+//     identical value B6a's own sweep found for Delay's own worst case
+//     (dsp/Delay.hpp's own comment), not copied from it by analogy.
+//   - kReverbWetLimiterReleaseSeconds (100ms, matches the master): as with
+//     B6a, the worst-case peak is an attack-side effect; release does not
+//     move it, so it stays at the value this codebase already uses for
+//     "gain reduction that does not pump" (dsp::OutputLimiter::
+//     kDefaultReleaseSeconds, dsp::kPeakLimiterReleaseSeconds,
+//     dsp::kDelayWetLimiterReleaseSeconds) rather than inventing a fourth
+//     number where measurement gave no reason to move it.
+inline constexpr float kReverbWetLimiterThreshold = 0.9f;
+inline constexpr float kReverbWetLimiterCeiling = 1.0f;
+inline constexpr float kReverbWetLimiterAttackSeconds = 2.0e-6f;   // 2 microseconds -- see comment above.
+inline constexpr float kReverbWetLimiterReleaseSeconds = 0.1f;     // 100ms -- matches the master, see comment above.
 
 struct Reverb
 {
@@ -93,6 +148,42 @@ struct Reverb
     // Authored Mod depth's own LFO phase (no frozen equivalent).
     float modLfoPhase = 0.0f;
 
+    // B6b: the stage's own output limiter, applied to what Process() (below)
+    // returns -- after both tanks and the dry/wet mix, never inside the
+    // feedback loop. See this file's header comment (above the struct) for
+    // the tuning and its measurement.
+    OutputLimiter wetLimiter;
+
+    // B6b: unlike `dsp::StereoDelay` (which is always `SetSampleRate()`'d
+    // before any `Process()` call, dsp/Delay.hpp), `Reverb` has no such
+    // entry point of its own -- every caller passes `sampleRate` directly
+    // into `Process()` each call instead, and several existing tests
+    // default-construct a `dsp::Reverb` and call `Process()` immediately
+    // with no configuration step at all. Mirrors `FilterFxChain`'s own
+    // constructor (dsp/FilterFx.hpp, B5): pre-configure `wetLimiter` at an
+    // assumed 48kHz here so a bare `dsp::Reverb rv;` still gets this stage's
+    // intended threshold/attack/release rather than `OutputLimiter`'s
+    // zero-initialized attack/release coefficients (unconfigured, `Process()`
+    // would apply no smoothing at all). `Configure()` below re-configures at
+    // the real sample rate once FroggersAppCore::PrepareToPlay() calls it
+    // (mirrors `filterChain_.Configure(sampleRate_)`/`delay_.SetSampleRate(
+    // sampleRate_)` there).
+    Reverb()
+    {
+        constexpr float kDefaultAssumedSampleRate = 48000.0f;
+        Configure(kDefaultAssumedSampleRate);
+    }
+
+    // B6b: sample-rate-dependent configuration for `wetLimiter`, separate
+    // from the constructor above for the identical reason `FilterFxChain::
+    // Configure()` is (dsp/FilterFx.hpp) -- the real sample rate is only
+    // known once FroggersAppCore::PrepareToPlay() runs.
+    void Configure(float sampleRate)
+    {
+        wetLimiter.Configure(sampleRate, kReverbWetLimiterThreshold, kReverbWetLimiterCeiling,
+                              kReverbWetLimiterAttackSeconds, kReverbWetLimiterReleaseSeconds);
+    }
+
     // Task 6.x (Stop-transport reset, app/FroggersAppCore.hpp's ProcessBlock
     // running->stopped edge): zero every member that carries signal energy
     // between calls to Process() -- the recursive comb-ish tank (lineA/
@@ -124,6 +215,11 @@ struct Reverb
         wetL = 0.0f;
         wetR = 0.0f;
         modLfoPhase = 0.0f;
+        // B6b: `wetLimiter` carries its own per-sample `envelope` state, so
+        // a buffer clear -- Stop-transport reset or Tier 1 fault recovery,
+        // both routed through this same Reset() -- resets it too, the same
+        // treatment B6a gives `StereoDelay::wetLimiterL`/`R` (dsp/Delay.hpp).
+        wetLimiter.Reset();
     }
 
     // Task 2.3 (Tier 1 recovery, app/FroggersAppCore.hpp): Reverb has NO
@@ -144,6 +240,14 @@ struct Reverb
     {
         if (!std::isfinite(dampFilter.output) || !std::isfinite(wetL) || !std::isfinite(wetR) ||
             !std::isfinite(modLfoPhase))
+        {
+            return false;
+        }
+        // B6b: fold `wetLimiter`'s own finiteness into this unit's
+        // aggregate -- `RecoverIfNonFinite(reverb_)` (FroggersAppCore.hpp)
+        // calls this StateFinite()/the Reset() above uniformly, so a
+        // poisoned limiter envelope must be visible here.
+        if (!wetLimiter.StateFinite())
         {
             return false;
         }
@@ -260,7 +364,18 @@ struct Reverb
         const float wet = 0.5f * (wetL + wetR);
 
         const float mix = mixKnob01;  // :455, direct passthrough
-        return (1.0f - mix) * input + mix * wet;  // :846
+        const float mixedOut = (1.0f - mix) * input + mix * wet;  // :846
+
+        // B6b (tasks.md CONSOLIDATED PUSH table; "Group B outcomes" /
+        // operator: "why can't we just have limiters for reverb and
+        // delay?"): applied to the fully mixed dry/wet output, AFTER both
+        // tanks (`lineA`/`lineB` already written above) and AFTER the mix
+        // -- `fb`/Hold's own computation above (:341-342) is untouched, so
+        // Hold keeps sustaining exactly as before; this only bounds the
+        // LEVEL that escapes this stage toward the master limiter. See this
+        // file's header comment (above the struct) for the tuning and its
+        // measurement.
+        return wetLimiter.Process(mixedOut);
     }
 };
 

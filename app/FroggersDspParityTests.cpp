@@ -1380,6 +1380,116 @@ TEST_CASE(reverb_authored_mod_depth_alters_output_and_stays_finite) {
     REQUIRE_TRUE(sawDifference);
 }
 
+// -----------------------------------------------------------------------
+// B6b (openspec/changes/frogg3rs-modulation-truth-and-voicing/tasks.md,
+// "Group B outcomes" / operator: "why can't we just have limiters for
+// reverb and delay?"): FAILING-FIRST for the property nothing upstream of
+// the master output limiter used to bound -- W2.1-MATH-2's own finding:
+// Hold pushes `fb` to ~0.99998 (Reverb.hpp:238), ~50,000x steady-state
+// gain, "the master limiter is the only thing between Hold-at-max and the
+// output." This test pins the STAGE's own escape bound instead:
+// `wetLimiter` (dsp/Reverb.hpp), applied to the fully mixed dry/wet output
+// AFTER both tanks, so what actually leaves `Process()` never exceeds
+// `dsp::OutputLimiter::kDefaultCeiling` (1.0 -- `Reverb.hpp`'s own
+// `kReverbWetLimiterCeiling` is defined equal to it).
+//
+// Smallest room size (shortest tank round trip -- B6b's own measured worst
+// case; see dsp/Reverb.hpp's header comment for the full sweep), decay and
+// Hold both at their ceiling, fully wet (mix=1.0, isolates the tank's own
+// bound from any diluting dry floor), sustained full-scale input, run long
+// enough (20000 samples, ~0.42s) to comfortably clear the transient window
+// the measurement found the worst-case overshoot inside.
+//
+// MEASURED (scratch harness, this exact scenario, run against the code
+// before this task existed): WITHOUT `wetLimiter`, worst case over this
+// run = 66.555695 -- clears the 1.0 ceiling by nearly two orders of
+// magnitude, the failing case this test pins (and this is still far short
+// of the ~50,000x steady state W2.1-MATH-2 computed -- reaching that
+// would take vastly longer than any bounded test can run, which is exactly
+// why nothing upstream could ever bound it by construction). WITH
+// `wetLimiter` at its measured tuning (threshold 0.9, attack 2
+// microseconds, release 100ms -- dsp/Reverb.hpp's own
+// `kReverbWetLimiter*` constants): worst case = 1.000000, at the ceiling.
+// -----------------------------------------------------------------------
+TEST_CASE(reverb_wet_output_stays_at_or_below_limiter_ceiling_with_hold_at_max) {
+    dsp::Reverb rv;
+    const float sr = 48000.0f;
+
+    const float ceiling = dsp::OutputLimiter::kDefaultCeiling;  // 1.0 -- shared by wetLimiter and the master.
+
+    constexpr int kSamples = 20000;
+    float maxAbs = 0.0f;
+    for (int i = 0; i < kSamples; ++i) {
+        const float out = rv.Process(1.0f, /*mix=*/1.0f, /*size=*/0.0f, /*decay=*/1.0f, /*pre=*/0.1f,
+                                      /*damp=*/0.5f, /*width=*/0.5f, /*diffusion=*/0.4f, sr,
+                                      /*modDepth=*/0.0f, /*hold=*/1.0f);
+        REQUIRE_TRUE(std::isfinite(out));
+        maxAbs = std::max(maxAbs, std::fabs(out));
+    }
+    REQUIRE_TRUE(maxAbs <= ceiling + 1.0e-4f);
+}
+
+// -----------------------------------------------------------------------
+// B6b's own guard, required by this task's brief: proves the limiter added
+// above caps LEVEL without touching Hold's PERSISTENCE -- the failure mode
+// the brief names directly, "fixed the level by breaking the feature."
+// `fb`/Hold's own computation (Reverb.hpp:341-342) is untouched by B6b, so
+// Hold's near-unity feedback should decay imperceptibly slowly regardless
+// of the new limiter; a genuine break (e.g. the limiter's envelope
+// permanently riding the tail down toward zero instead of merely capping
+// its peaks moment to moment) would show up here as an artificially fast
+// collapse toward silence, which this test would catch.
+//
+// Excites the tank with a burst of sustained input (building real energy
+// into the tank, not a single impulse), then cuts input to silence and
+// measures the peak twice: immediately after the burst, and again after a
+// further stretch of continued silence. Hold's own decay time constant is
+// on the order of `1/(1-fb)` round trips (W2.1-MATH-2, ~50,000 round trips
+// at this Hold setting) -- the further silence window below is a tiny
+// fraction of even a single round trip's worth of that decay, so the tail
+// must still be comparable to its post-burst peak, not collapsed.
+// -----------------------------------------------------------------------
+TEST_CASE(reverb_hold_at_max_tail_still_sustains_after_wet_limiter_is_added) {
+    dsp::Reverb rv;
+    const float sr = 48000.0f;
+    constexpr float mixKnob = 1.0f, sizeKnob = 0.6f, decayKnob = 1.0f, preKnob = 0.1f, dampKnob = 0.5f,
+                    widthKnob = 0.5f, diffusionKnob = 0.4f, holdKnob = 1.0f;
+
+    constexpr int kExciteSamples = 4000;
+    for (int i = 0; i < kExciteSamples; ++i) {
+        rv.Process(1.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr, 0.0f,
+                   holdKnob);
+    }
+
+    constexpr int kMeasureWindow = 200;
+    float peakAfterExcite = 0.0f;
+    for (int i = 0; i < kMeasureWindow; ++i) {
+        const float out = rv.Process(0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob,
+                                      diffusionKnob, sr, 0.0f, holdKnob);
+        REQUIRE_TRUE(std::isfinite(out));
+        peakAfterExcite = std::max(peakAfterExcite, std::fabs(out));
+    }
+    REQUIRE_TRUE(peakAfterExcite > 0.05f);  // meaningfully non-silent right after the burst.
+
+    // A further stretch of continued silence -- if Hold's persistence had
+    // been broken (rather than just its peak capped), a decay-to-near-zero
+    // would show up here.
+    constexpr int kSilenceRunSamples = 10000;  // ~0.21s -- negligible against Hold's own decay time constant.
+    for (int i = 0; i < kSilenceRunSamples; ++i) {
+        rv.Process(0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr, 0.0f,
+                   holdKnob);
+    }
+
+    float peakAfterSilenceRun = 0.0f;
+    for (int i = 0; i < kMeasureWindow; ++i) {
+        const float out = rv.Process(0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob,
+                                      diffusionKnob, sr, 0.0f, holdKnob);
+        REQUIRE_TRUE(std::isfinite(out));
+        peakAfterSilenceRun = std::max(peakAfterSilenceRun, std::fabs(out));
+    }
+    REQUIRE_TRUE(peakAfterSilenceRun > peakAfterExcite * 0.5f);
+}
+
 // =========================================================================
 // 3.9 -- Drive (PolynomialDrive.hpp whole file, wiring FroggersEngine.hpp:
 // 81-92,207,483-490,569-573,640-650). Blend and Phase are newly authored (no
@@ -1840,12 +1950,73 @@ TEST_CASE(delay_feedback_loop_stays_bounded_at_max_feedback) {
 
     constexpr int kSamples = 3000;  // ~60 round trips at 48 samples/trip -- pre-fix, this is already
                                      // well past the ~50x-input steady state (in*send/(1-0.98)==50.0).
+    // B6a note: `wet.l`/`wet.r` measured here are now what `wetLimiterL`/`R`
+    // (dsp/Delay.hpp) return, not the raw loop tap -- still `<= bound`
+    // (trivially: limiter output <= raw tap <= bound, since the limiter
+    // only ever reduces magnitude), just no longer the tightest statement
+    // about them. The tighter, B6a-specific bound (the limiter's own
+    // ceiling, ~1.0 rather than this test's ~1.98) is pinned separately
+    // below (delay_wet_output_stays_at_or_below_limiter_ceiling_at_max_feedback).
     for (int i = 0; i < kSamples; ++i) {
         const dsp::DelayWetPair wet = delay.Process(inputAmplitude, p);
         REQUIRE_TRUE(std::isfinite(wet.l) && std::isfinite(wet.r));
         REQUIRE_TRUE(std::fabs(wet.l) <= bound + 1.0e-4f);
         REQUIRE_TRUE(std::fabs(wet.r) <= bound + 1.0e-4f);
     }
+}
+
+// -----------------------------------------------------------------------
+// B6a (openspec/changes/frogg3rs-modulation-truth-and-voicing/tasks.md,
+// "Group B outcomes" / operator: "why can't we just have limiters for
+// reverb and delay?"): FAILING-FIRST for the property B2's in-loop
+// saturator alone cannot close -- B2 bounds the LOOP's own write to
+// `|inSignal| + fbk` (~1.98 at max feedback, the test above), still well
+// over the master output limiter's 0.9 threshold (W2.1-MATH-2's own
+// finding: "at A = 0.5 that is 25.0 against a 0.9 threshold"). This test
+// pins the STAGE's own escape bound instead: `wetLimiterL`/`wetLimiterR`
+// (dsp/Delay.hpp), applied to `dL`/`dR` strictly AFTER B2's loop write, so
+// what actually leaves this stage never exceeds
+// `dsp::OutputLimiter::kDefaultCeiling` (1.0 -- both wetLimiterL/R's own
+// `kDelayWetLimiterCeiling` and the master's ceiling share this same
+// value).
+//
+// Same scenario as the test immediately above (shortest reachable delay
+// time -- the fastest round trip, B6a's own measured worst case; see
+// dsp/Delay.hpp's header comment for the full sweep), run long enough
+// (5000 samples) to comfortably clear the transient window the measurement
+// found the worst-case overshoot inside.
+//
+// MEASURED (scratch harness, this exact scenario, run against the code
+// before this task existed): WITHOUT wetLimiterL/R (raw `dL`/`dR` tap),
+// worst case over this run = 1.962235 -- clears the 1.0 ceiling easily,
+// the failing case this test pins. WITH wetLimiterL/R at their measured
+// tuning (threshold 0.9, attack 2 microseconds, release 100ms --
+// dsp/Delay.hpp's own `kDelayWetLimiter*` constants): worst case =
+// 0.999999, at or below the ceiling.
+// -----------------------------------------------------------------------
+TEST_CASE(delay_wet_output_stays_at_or_below_limiter_ceiling_at_max_feedback) {
+    dsp::StereoDelay delay;
+    const float sr = 48000.0f;
+    delay.SetSampleRate(sr);
+
+    dsp::DelayParams p;
+    p.dtim = 0.0f;   // shortest reachable round trip -- B6a's own measured worst case.
+    p.dsnd = 1.0f;
+    p.dfbk = 1.0f;   // -> fbk clamps to 0.98.
+    p.dwid = 0.3f;
+    p.ddet = 0.0f;
+    p.dmod = 0.0f;
+
+    const float ceiling = dsp::OutputLimiter::kDefaultCeiling;  // 1.0 -- shared by wetLimiterL/R and the master.
+
+    constexpr int kSamples = 5000;
+    float maxAbs = 0.0f;
+    for (int i = 0; i < kSamples; ++i) {
+        const dsp::DelayWetPair wet = delay.Process(1.0f, p);
+        REQUIRE_TRUE(std::isfinite(wet.l) && std::isfinite(wet.r));
+        maxAbs = std::max(maxAbs, std::max(std::fabs(wet.l), std::fabs(wet.r)));
+    }
+    REQUIRE_TRUE(maxAbs <= ceiling + 1.0e-4f);
 }
 
 // Fix 1b regression test (strict-executor brief item "FIX 1"): immediately

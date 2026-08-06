@@ -40,6 +40,7 @@
 
 #include "DspMath.hpp"
 #include "FilterFx.hpp"
+#include "Limiter.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -47,6 +48,64 @@
 #include <vector>
 
 namespace synth_froggers::dsp {
+
+// B6a (openspec/changes/frogg3rs-modulation-truth-and-voicing/tasks.md,
+// "Group B outcomes" / operator: "why can't we just have limiters for
+// reverb and delay?"): tuning for `StereoDelay::wetLimiterL`/`wetLimiterR`
+// below, a per-channel pair of `dsp::OutputLimiter` instances (dsp/
+// Limiter.hpp) inserted on the WET tap (`dL`/`dR`), strictly AFTER the
+// feedback loop's own `WriteSample` calls -- so the loop keeps writing the
+// unlimited value (B2's in-loop `PadeSaturator::Saturate` bound,
+// `|inSignal| + fbk`, is completely untouched) and only what ESCAPES this
+// stage toward Reverb/the master limiter gets bounded further.
+//
+// Chosen BY MEASUREMENT (scratch harness driving this exact struct with
+// dtim swept from 0.0 to 1.0, dfbk pinned to 1.0 -> fbk clamps to 0.98,
+// dsnd=1.0, dwid=0.3, sustained full-scale input, 20000 samples per point --
+// not by analogy to the master limiter, following this task's own binding
+// warning that analogy-picked constants have been measured wrong before):
+//
+//   - Starting point was the master's own tuning (threshold 0.9, attack
+//     1ms, release 100ms) per this task's explicit instruction to start
+//     there and measure. It is NOT sufficient: at the shortest reachable
+//     delay time (dtim=0 -> ~48-sample round trip at 48kHz), the raw wet
+//     tap rises from 0 to its ~1.96 per-sample bound (`inputAmplitude +
+//     fbk`) within about 100 samples (~2ms) -- far faster than a 1ms
+//     attack's own time constant can track -- and the 1ms-attack limiter's
+//     own transient overshoot measured 1.673412, comfortably past the 1.0
+//     ceiling. This is the delay's own version of B5's peak-branch finding:
+//     "sustained material" is true of the STEADY STATE but the ONSET at
+//     minimum delay time is a fast transient, not a slow swell, so a slow
+//     attack under-reacts to it exactly like a slow attack under-reacted
+//     to B5's per-sample-random height steps.
+//   - kDelayWetLimiterThreshold (0.9): kept AT the master's own value (not
+//     lowered) -- measurement (below) shows the attack alone, not the
+//     threshold, is what needs to move; this stage still "catches first"
+//     because it sits upstream of Reverb and the master in the signal
+//     path (FroggersAppCore.hpp's `delay_.Process` runs before
+//     `reverb_.Process` and before `SanitizeOutputSample`), so by the time
+//     the master ever sees this signal it has already been reduced here.
+//   - kDelayWetLimiterAttackSeconds (2 microseconds): sweeping attack alone
+//     (threshold 0.9, release 100ms fixed) across dtim in {0, 0.02, 0.05,
+//     0.1, 0.3, 1.0} found the worst-case (always at dtim=0, the fast-
+//     round-trip extreme) crosses under the 1.0 ceiling between 2.5us
+//     (1.000113) and 2.0us (0.999999); 2 microseconds sits just past that
+//     crossing with a working margin, and going faster still (1.5us:
+//     0.999998, 1.0us: 0.999998) buys nothing further -- the curve has
+//     already flattened at the DesiredMagnitude asymptote for this bound,
+//     so 2us is the measured knee, not an arbitrary small number.
+//   - kDelayWetLimiterReleaseSeconds (100ms, matches the master): the
+//     worst-case transient overshoot above is entirely an ATTACK-side
+//     effect (a fast-rising raw signal outrunning the envelope's fall);
+//     release governs recovery afterward, not this peak, and 100ms is the
+//     same "gain reduction that does not pump" value this codebase has
+//     already accepted for that job (dsp::OutputLimiter::kDefaultReleaseSeconds,
+//     dsp::kPeakLimiterReleaseSeconds) -- reused rather than a fresh number
+//     invented where the measurement gave no reason to move it.
+inline constexpr float kDelayWetLimiterThreshold = 0.9f;
+inline constexpr float kDelayWetLimiterCeiling = 1.0f;
+inline constexpr float kDelayWetLimiterAttackSeconds = 2.0e-6f;   // 2 microseconds -- see comment above.
+inline constexpr float kDelayWetLimiterReleaseSeconds = 0.1f;     // 100ms -- matches the master, see comment above.
 
 // sim/StereoDelay.hpp:10-19.
 struct DelayParams
@@ -74,6 +133,28 @@ struct StereoDelay
     static constexpr size_t kMaxDelaySamples = 96000;
     static constexpr float kMaxDetuneCents = 50.0f;
 
+    // B6a: per-channel wet-output limiters (see this file's header comment,
+    // above the struct, for the tuning derivation). Per-channel, not one
+    // instance driven by max(|dL|,|dR|): the codebase's own established
+    // idiom for a two-instance choice is per-unit/per-channel independence
+    // (mirrors `outputLimiter_`/`filterChain_.peakLimiter` being separate,
+    // independently-configured instances rather than a single shared one,
+    // dsp/Limiter.hpp's own header comment on why one shared-tuning instance
+    // was wrong for two different jobs). Concretely for THIS stage: `dwid`'s
+    // cross-feed (`fbL = dL*(1-cross) + dR*cross`) already keeps L and R
+    // close to each other in practice, so the two channels rarely diverge
+    // enough for one limiter engaging alone to read as an image shift; a
+    // linked (max-driven) limiter would instead force BOTH channels to duck
+    // whenever EITHER one alone crossed threshold, which is exactly the
+    // whole-mix-ducking failure mode this task exists to eliminate, just
+    // narrowed from "the whole mix" to "the whole delay stage" -- a smaller
+    // version of the same mistake. Per-channel keeps each channel's own
+    // reduction tied to its own excess only, matching how every other
+    // per-stage limiter in this codebase (`peakLimiter`, `outputLimiter_`)
+    // is scoped to exactly the signal it bounds and nothing wider.
+    OutputLimiter wetLimiterL;
+    OutputLimiter wetLimiterR;
+
     // :33-40 (clearBuffers).
     void ClearBuffers()
     {
@@ -82,6 +163,16 @@ struct StereoDelay
         writePos = 0;
         lfoPhase = 0.0f;
         lastWet = {};
+        // B6a: the wet limiters carry their own per-sample `envelope` state
+        // (dsp::OutputLimiter::Process), so a buffer clear -- whether the
+        // Stop-transport reset or Tier 1 fault recovery via Reset() below --
+        // must reset them too, the same way it resets `lastWet` above. Not
+        // load-bearing for post-Stop silence (a reduced-gain envelope only
+        // ever multiplies toward zero, never away from it, and the lines
+        // are already zeroed), but keeps this unit in a single deterministic
+        // state after a clear, matching `lfoPhase`'s own reset rationale.
+        wetLimiterL.Reset();
+        wetLimiterR.Reset();
     }
 
     // Task 2.3 (Tier 1 recovery, app/FroggersAppCore.hpp): a thin name
@@ -99,6 +190,16 @@ struct StereoDelay
     bool StateFinite() const
     {
         if (!std::isfinite(lfoPhase) || !std::isfinite(lastWet.l) || !std::isfinite(lastWet.r))
+        {
+            return false;
+        }
+        // B6a: the wet limiters' own `envelope` state participates in this
+        // unit's aggregate finiteness the same way every other member here
+        // does -- `RecoverIfNonFinite(delay_)` (FroggersAppCore.hpp) calls
+        // this StateFinite()/the Reset() above uniformly across the whole
+        // unit, so a poisoned limiter envelope must be visible here rather
+        // than needing its own separate top-level recovery call.
+        if (!wetLimiterL.StateFinite() || !wetLimiterR.StateFinite())
         {
             return false;
         }
@@ -133,6 +234,18 @@ struct StereoDelay
         writePos = 0;
         lfoPhase = 0.0f;
         lfoInc = 2.0f * 3.14159265f * 0.25f / sampleRate;
+        // B6a: the wet limiters' attack/release coefficients are sample-
+        // rate-dependent (dsp::OutputLimiter::Configure), so they are
+        // (re)configured here, the one place a real sample rate is known --
+        // every caller of this struct (production's `delay_.SetSampleRate`
+        // in FroggersAppCore::PrepareToPlay(), and every DSP-parity test
+        // that constructs a StereoDelay) already calls SetSampleRate()
+        // before ever calling Process(), so there is no path that reaches
+        // the limiter unconfigured.
+        wetLimiterL.Configure(sampleRate, kDelayWetLimiterThreshold, kDelayWetLimiterCeiling,
+                               kDelayWetLimiterAttackSeconds, kDelayWetLimiterReleaseSeconds);
+        wetLimiterR.Configure(sampleRate, kDelayWetLimiterThreshold, kDelayWetLimiterCeiling,
+                               kDelayWetLimiterAttackSeconds, kDelayWetLimiterReleaseSeconds);
     }
 
     // :58-101 (process).
@@ -189,8 +302,19 @@ struct StereoDelay
         WriteSample(inSignal + fbk * PadeSaturator::Saturate(fbR), lineR);
         AdvanceWrite();
 
-        lastWet.l = dL;
-        lastWet.r = dR;
+        // B6a (tasks.md CONSOLIDATED PUSH table; "Group B outcomes" /
+        // operator: "why can't we just have limiters for reverb and
+        // delay?"): the loop write above already committed using the
+        // UNLIMITED `dL`/`dR` taps -- B2's in-loop saturator alone still
+        // governs the loop's own dynamics/persistence, exactly as before
+        // this task. `wetLimiterL`/`wetLimiterR` are applied strictly AFTER
+        // that write, to what actually ESCAPES this stage toward
+        // `ToReverbMono`/Reverb/the master limiter, so a hot delay tail no
+        // longer forces the downstream chain (Reverb, then the master) to
+        // duck around it. See this file's header comment (above the struct)
+        // for the tuning and its measurement.
+        lastWet.l = wetLimiterL.Process(dL);
+        lastWet.r = wetLimiterR.Process(dR);
         return lastWet;
     }
 

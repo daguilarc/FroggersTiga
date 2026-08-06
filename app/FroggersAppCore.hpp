@@ -298,9 +298,10 @@ public:
         // (VcoAdsrState::init() sets m_gateHigh = false, Stage::Idle), which
         // is the correct starting state for "silent until the transport
         // runs."
-        delay_.SetSampleRate(sampleRate_);
+        delay_.SetSampleRate(sampleRate_);  // B6a: also (re)configures wetLimiterL/R's coeffs, see dsp/Delay.hpp.
         outputLimiter_.Configure(sampleRate_);  // item 3: attack/release coeffs are sample-rate-dependent.
         filterChain_.Configure(sampleRate_);  // B5: peak-branch limiter's own coeffs, same reason.
+        reverb_.Configure(sampleRate_);  // B6b: reverb's own wetLimiter coeffs, same reason.
 
         // Root-cause fix (D17 robustness gap, found while diagnosing "Play
         // produces no audio in the real Runtime"): `synth::Engine::Prepare()`

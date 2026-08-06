@@ -123,6 +123,16 @@ struct ShadowChain {
         // rate configuration production gives it, not the constructor's
         // assumed-48kHz default (FilterFx.hpp).
         filterChain.Configure(sr);
+        // B6a/B6b (tasks.md CONSOLIDATED PUSH table): same reasoning,
+        // mirroring FroggersAppCore::PrepareToPlay's new
+        // `delay_.SetSampleRate(sampleRate_)` (already called two lines
+        // above)/`reverb_.Configure(sampleRate_)` calls -- Delay's own
+        // wetLimiterL/R are already configured by the `delay.SetSampleRate`
+        // call above (dsp/Delay.hpp folds that in); Reverb's wetLimiter
+        // needs this explicit call the same way filterChain's peakLimiter
+        // does, since Reverb has no other sample-rate entry point of its
+        // own (dsp/Reverb.hpp).
+        reverb.Configure(sr);
     }
 
     // Same threshold SanitizeOutputSample clamps the real output to
