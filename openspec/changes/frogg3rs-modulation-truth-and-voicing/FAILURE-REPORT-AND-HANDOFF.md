@@ -313,3 +313,69 @@ that the SAME distribution governs the level-1 and level-2 draws.
 **Do not trust any assertion in this change's test suite to mean the instrument works.** 176 tests
 pass and four reported failures remain. The suite measures stages; the operator hears the
 instrument.
+
+---
+
+## 5. F5 — raise the drill-in maximum to level 3 (operator, 2026-08-05)
+
+*"increase the drilldown level maxima to 3, not 2 (keeping with the frogg3rs as base-3 system
+theme)"* and *"the omni rule compliant implementation of this should be really really simple"* —
+correct, and it is simple ONCE the existing §8 violation is removed. It is not simple today.
+
+### The violation blocking it
+
+**The cap is TWO hardcoded `2`s with no named constant** (`app/FroggersModulation.hpp`):
+- `PressEncoder`: `if (level_ >= 2)` (~`:676`)
+- `Back()`: `const bool wasLevelTwo = (level_ == 2);` (~`:723`)
+
+Same concept, two definition sites, magic number both times. Operator: *"it would be an omni rule
+violation for it to be hardcoded in multiple places."* Exactly — and it is why 2→3 is not currently
+a one-line change.
+
+### The second obstacle: `Back()` remembers only ONE level
+
+`Back()` synthesizes the one-level pop (Sheaf exposes only a full `Deselect()` — upstream ask 11)
+by: full `Deselect()` to level 0, then re-press the remembered `level1Encoder_` to return to level
+1. **That works only because there is exactly one intermediate level to restore.** From level 3,
+popping to level 2 requires re-pressing level 1's encoder *and then* level 2's — state the current
+code does not keep.
+
+### Agreed design (operator: *"i like the array approach"*)
+
+Replace the single remembered id with an array indexed by level, and derive everything from one
+constant:
+
+```cpp
+static constexpr std::size_t kMaxDrillLevel = 3;                 // ONE definition site
+std::array<synth::PhysicalEncoderId, kMaxDrillLevel> levelEncoders_{};
+```
+- `PressEncoder`: cap becomes `if (level_ >= kMaxDrillLevel)`; on a successful descent record
+  `levelEncoders_[level_]` before incrementing.
+- `Back()`: pop one level by `Deselect()` to 0, then re-press `levelEncoders_[0 .. level_-2]` —
+  a loop, not a special case. **This removes the `wasLevelTwo` branch entirely**, which is the
+  §8/§5 win: one mechanism that works at any depth instead of a hardcoded two-level special case.
+- Raising or lowering the maximum thereafter is **one constant**, which is the property the
+  operator is asking for.
+
+**Do this refactor even if the maximum stays at 2** — it is a strict improvement and it is the
+prerequisite that makes the change trivial.
+
+### The real open question: CAPACITY
+
+Level-3 randomize fan-out is **15 + 15² + 15³ = 3615 depth parameters for ONE focused parameter**
+(vs 240 today). Worse, the recorded behaviour is that `PressEncoder`'s view-open **eagerly
+materializes ALL of a depth's connected sub-depths**, not only the ones randomize selects — so
+3615 is materialization, not selection. Existing sizing commentary (`FroggersParameters.hpp:215-224`)
+budgets "up to 915 level-1 plus more at level 2" and notes depth storage rides
+`RequestParameterStorageBatch`. **3615 per focused parameter is a different order of magnitude and
+is very likely to hit `CanAllocate() == false`** — the same silent-exhaustion path already
+suspected in F4.
+
+**Therefore: land the constant + array refactor first, then MEASURE allocation at level 3 before
+enabling it.** If the pool cannot take it, the options are a larger storage batch or making the
+fan-out sparse (materialize only the selected sources rather than all 15) — and the sparse option
+is likely correct regardless, since eager materialization of 15 to use ~2 is wasteful at every
+level.
+
+**Also note F1's ruling applies here:** the mode-2 distribution must govern level-3 draws too —
+*"the same median/mode skew ... should apply in all cases."*
