@@ -43,13 +43,60 @@ operator is listening). W4 after W1/W2 so bump breakage stays attributable (F.1'
 Symptoms (operator, 2026-08-05, F.6 build): S1 Randomize All badges nearly every parameter;
 S2 drill-in depth knobs all read 12 o'clock; S3 Randomize All inside level-1 shows no icons.
 
-- [ ] W1.0 **Root-cause investigation** — dispatched 2026-08-05, read-only, tracing: what a badge
-  renders FROM (existence vs nonzero); what `EnsureModulationDepth` + `RandomizeVisibleValue`
-  actually write and to WHICH scene; what a level-1 knob reads and what 12-o'clock means for the
-  depth's RangeKind (bipolar zero vs unipolar mid); whether ensures accumulate without removal;
-  what the E.1 tests actually assert; the level-1 Randomize All branch; any publish-path
-  overwrite. **Findings land here as the §1 trace before any fix is proposed.**
-- [ ] W1.1 Fix per root cause — *unwritten until W1.0 lands (Iron Law).*
+- [x] W1.0 **Root-cause investigation — LANDED 2026-08-05.** All file:line-cited (Sheaf cites at
+  pin `77a3019e`, `src/ParameterModulation.cpp` unless noted). Ruled OUT: scene mismatch (writes
+  and reads use the same mono `ParameterManager::Scene()`), unipolar-midpoint misread (depths are
+  `RangeKind::Bipolar`, 0.5 IS zero), and Sheaf-side overwrite (`Deselect()` recycling is gated on
+  the same nonzero check as badges; fresh writes protected).
+
+  **S2 CONFIRMED — the knobs are the lie; badges and audio are true.** Badges are genuinely
+  nonzero-gated (`ModulatorsAffectingMask` requires `HasNonZeroState()`, `:2356-2400`), and
+  `RandomizeVisibleValue` writes `sceneCenters_` directly and immediately (`:1549-1554`). But the
+  drill-in knob draws from `uiDisplayCenters_`, which is populated only by `ProcessLitePhase1` —
+  and that runs only for `topLevelParameters_`, which **depth parameters are never registered
+  into** (`:867-869` vs `:712`). The one seed a depth's display ever gets is inside
+  `RandomizeVisibleValue` itself: a single smoothing step at `targetCenterAlpha ≈ 0.0994`
+  (`:2206-2213`) — one ~10 % nudge of a filter calibrated to converge over thousands of audio-rate
+  calls, then hard-copied to the display (`:2324-2329`) and never ticked again. The commanded
+  depth jumps; the displayed depth stays visually at center forever.
+
+  **S1 CONFIRMED — accumulation, not overreach.** The median-3 draw works as designed, but nothing
+  ever zeroes previously-randomized sources (`FroggersModulation.hpp:862-878` touches only the
+  drawn subset). Repeated Randomize All presses monotonically saturate badge coverage. Decisive
+  check for the operator: badge count after 1 press from a fresh patch vs after N.
+
+  **S3 PLAUSIBLE, UNCONFIRMED — silent pool exhaustion.** `EnsureModulationDepth` returns nullptr
+  when `!group_.CanAllocate()` (`:1823-1826`) and the app helper `break`s with zero writes,
+  leaving `partial=true` un-surfaced (`FroggersModulation.hpp:872-876`). The L1 Randomize All
+  fans out to 225 level-2 depths; a pool already consumed by S1-style accumulation could exhaust
+  mid-loop. No rendering gap exists at L1 (same mask path at every level). **Must repro from a
+  FRESH app state before any fix** — if S3 reproduces fresh, this hypothesis is wrong and the
+  cause is still unidentified.
+
+  **The sixth green-while-wrong guard, confirmed.** Both E.1 tests assert `depth->SceneCenter(0)`
+  — the raw commanded value — never the UI-facing display
+  (`FroggersModulationTests.cpp:524-624`). Their own comment (`:527-548`) documents the smoothed
+  display path and works around it with `ComputeAllParameters()` between trials — the tests KNEW
+  the display was stale and stepped over it rather than asserting it.
+
+- [ ] W1.1 Fix design — constrained by **no-Sheaf-patch**: every implicated mechanism
+  (`uiDisplayCenters_`, `ProcessLitePhase1`, the seed path) lives in Sheaf.
+  - [ ] W1.1a **Trace how patch LOAD displays depth knobs correctly** (it must — or the same
+    staleness would afflict every loaded patch, which the operator has not reported). Whatever
+    public mechanism reseeds displays on load is the app-callable fix candidate for S2. If none
+    exists, S2 becomes **upstream ask 16** (depth display never ticks outside top-level
+    registration) with an interim app-side settle (bounded `ComputeAllParameters()` calls — ugly,
+    ~46 iterations to converge at alpha 0.0994; record the cost honestly if chosen).
+  - [ ] W1.1b **S1 semantics — OPERATOR DECISION, not a bug fix:** should Randomize All zero the
+    un-drawn sources first (each press = a fresh median-3 sculpture) or accumulate (current)?
+    E.1's spec never said. The operator's complaint reads as expecting non-accumulation, but this
+    changes randomize behaviour and §0 forbids assuming it.
+  - [ ] W1.1c **S3 fresh-state repro** (failing-test-first): drive L1 Randomize All from a clean
+    rig, assert visible depth changes; separately surface `partial=true` somewhere a user can see
+    (silent partial success is its own defect regardless of S3's verdict).
+- [ ] W1.2 Guard tests pin `UIDisplayCenter`/knob-facing state after a randomize press — the
+  property that was actually wrong — replacing the E.1 pins' layer; record the green-while-wrong
+  instance in the ledger.
 - [ ] W1.2 Guard test pinning the RESULTING visible depth in the scene the UI reads, across a
   randomize call — not helper call counts. Rewrite the E.1 tests' pins if W1.0 shows they assert
   the wrong property; record the green-while-wrong instance if so.
