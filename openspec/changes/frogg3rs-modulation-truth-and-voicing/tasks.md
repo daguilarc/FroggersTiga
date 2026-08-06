@@ -665,3 +665,41 @@ ordering stops being load-bearing.
 
 Fixed together with W2.2a's R1 (trim smoothing constant unvalidated under audio-rate modulation)
 and R2 (parity test re-implements the one-pole recurrence) in a single dispatch.
+
+### §J.2 — empty-slot candidates for the other five banks (research, 2026-08-05)
+
+Explored read-only across `app/dsp/**` + the `RouteAudioSample()` mapping block. Sorted by real
+cost in THIS codebase, same method as the delay analysis. Deferred; recorded so a future design
+starts from evidence rather than a wishlist.
+
+**Only THREE Tier-1 items (already in the DSP, just unreachable) exist across all 30 slots.**
+Audio, Envelope and Reverb have **zero** — every `Process()` arg and `Set*` method in those banks
+is already knob-driven, which is a good signal about the port's completeness.
+
+| # | Tier-1 item | Evidence | Value |
+|---|---|---|---|
+| 1 | **Filter series/parallel routing** | `FilterFxChain::Process(input, bool useParallel, ...)` (`FilterFx.hpp:501`) is hardcoded `/*useParallel=*/true` (`FroggersAppCore.hpp:1092`) | **Highest.** A real topology switch — comb-in-series-with-peak vs today's parallel blend — for one line. NOTE: series mode makes the peak MULTIPLY the comb, so W2.1-MATH's parallel-only bounds do not hold there; exposing it requires re-running that arithmetic for the series path. |
+| 2 | **Drive oversampler anti-alias cutoff** | `drive_.oversampler.antiAlias` (`OnePoleLowPass`, `Drive.hpp:121`) fixed at `0.4f` in the `Oversampler2x()` ctor (`Drive.hpp:123`); no production call site | Post-drive brightness/tone for near-zero work. |
+| 3 | Comb-trim smoother rate | `combTrimSmoother` fixed at `0.01f` (`FilterFx.hpp:492-493`) | Free but **not musical** — it is W2.2a's anti-zipper glide. Exposing an internal safety constant as a knob is a bad idea; listed for completeness only. |
+
+**Envelope question answered definitively: there is NO Decay stage.** `stepVoice` implements
+Idle/Attack/Hold/Release only (`VoiceEnvelope.hpp:126-162`) — a genuine ASR, not an ADSR with a
+dormant stage. Decay is therefore Tier 2 (new stage reusing the existing per-voice machine), and
+probably the single highest musical payoff on this whole list despite not being free.
+
+**Tier-2 highlights** (new code, but composed from pieces already here):
+- **Delay feedback-path tone/damping** — the loop currently has NO filtering at all
+  (`Delay.hpp:164-176`); an `OnePoleLowPass` (`DspMath.hpp:56-76`) inserted there is the classic
+  dark-repeats control. **Pairs with B2:** B2's in-loop saturator + this = Feedback Drive and
+  Feedback Tone, the two controls that define a tape echo, both living in the loop we are already
+  modifying. Strong argument for doing them together.
+- Envelope curve (linear → exponential) via `ExpMapCompute` on the existing ramp.
+- VCO detune/spread — pure mapping-layer offset on the pitch knobs, no `Vco` change
+  (the struct is deliberately cross-VCO-free, `Vco.hpp:20-25`).
+- Reverb mod-LFO rate/depth range — widens the already-authored wow mechanism
+  (`kModLfoHz`/`kModMaxOffsetSamples`, `Reverb.hpp:74-75`).
+- Comb pre-saturation gain; steeper peak slope (two chained `ResonantBump`s).
+
+**Tier 3** (genuinely new DSP): sub-oscillator, hard sync, per-voice gates, true ping-pong, true
+reverb freeze (Hold is clamped `<0.999`, `Reverb.hpp:238`), multi-tap early reflections,
+state-variable/ladder filter.
