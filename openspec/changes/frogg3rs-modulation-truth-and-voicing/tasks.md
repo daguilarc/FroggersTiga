@@ -22,6 +22,78 @@
 - **Systematic debugging is binding for W1/W2:** no fix before the recorded root cause.
 - **The operator's runtime data root is `~/Library/Sheaf/synth/sheaf-patch/`.**
 
+## ⚠ CONSOLIDATED PUSH (operator directive, 2026-08-05) — FINISH EVERYTHING, THEN TEST ONCE
+
+Operator: *"why did you defer shit and still have me test it? stop deferring shit and fucking
+finish! all of these bugs are interconnected... it's still too blown out for me to tell if
+individual shit works, because of all the shit that remains broken."*
+
+**Correct, and the sequencing error was mine.** Asked which *offender* to triage first, the operator
+said "filter"; I read that as "do filter instead of modulation", parked W1 after DECIDING and
+DESIGNING it, and then asked for a listening pass on W2.2a alone. Verified by grep 2026-08-05:
+`ComputeAllParameters` appears nowhere in `app/`, and no depth-zeroing exists in
+`FroggersModulation.hpp` — **W1 was never built.** One-variable-at-a-time is right when the
+instrument is otherwise sound; it is wrong when several defects stack into a blowout that masks
+every individual result. **Nothing goes to the operator until the whole list lands.**
+
+**Everything outstanding, built in three sequential dispatches, then one rebuild and one handover:**
+
+| # | Item | Where |
+|---|---|---|
+| A1 | Randomize non-additive (Option A): zero depths in scope, then draw the median-3 | `FroggersModulation.hpp` |
+| A2 | Display reseed: `ComputeAllParameters()` once at the END of the audio-thread drain | `FroggersAppCore.hpp` |
+| A3 | Scene-pair semantics (below) | `FroggersModulation.hpp` |
+| A4 | Level-1 randomize: surface `partial=true` instead of silently doing nothing | `FroggersModulation.hpp` |
+| B1 | Peak branch trim `1/height` — the path W2.2a deliberately left uncompensated | `dsp/FilterFx.hpp` |
+| B2 | Delay in-loop saturation (was W2.2b) | `dsp/Delay.hpp` |
+| B3 | Envelope: sustain/release maxima too long | `dsp/VoiceEnvelope.hpp` |
+| B4 | **Stop does not stop**: transport Stop never clears/freezes the delay buffer | `FroggersAppCore.hpp` |
+| C1 | Scene 2 opposite VCO shape defaults + shared light cross-coupling (was W3) | `FroggersParameters.hpp` |
+
+### A3 — scene-pair semantics, DECIDED from the operator's own proposal
+
+Operator: *"scene 2 inherits randomized modulation badges from scene 1, but not the modulation
+depths... shouldn't it just randomize values for each pole of the scene blend spectrum and keep the
+same modulation source depths across the whole scene spectrum?"*
+
+**Root cause of the badge/depth mismatch:** the badge mask is a property of the **Parameter**
+(`ModulatorsAffectingMask` → `HasNonZeroState()`, which is true if ANY scene holds a nonzero),
+while a depth VALUE is per-scene (`sceneCenters_`). Randomizing only scene 0 therefore lights the
+badge in both scenes while scene 1 reads zero — exactly what the operator sees.
+
+**Decision, taken from the operator's stated proposal rather than deferred back to them:**
+Randomize All / Page is **agnostic to scene-slider position**. For each parameter it picks ONE set
+of modulation sources, and writes a randomized depth for that same source set **in BOTH scene
+poles** — different values per pole (so blending sweeps between two different modulation states),
+identical source membership (so badges are true in both scenes and blending never reveals a source
+that was invisible at one pole). Non-additive in both scenes.
+
+### B4 — Stop does not stop
+
+Operator: *"stop hasn't been wired to the delay buffer yet... so stop hasn't stopped anything."*
+Transport Stop must silence the instrument, and today the delay (and its feedback loop) keeps
+ringing after Stop. Implementer traces the Stop path and clears/mutes the delay line — and checks
+Reverb for the same defect, since Hold at ~0.99998 would ring for minutes after Stop.
+
+### Audio-rate modulation — VERIFIED, and it changes what "at max" means
+
+Checked 2026-08-05 (operator: *"you didn't account for audio rate modulation, including noise
+modulation, for these parameters we're trying to limit"*). `Parameter::GetRaw` sums modulation and
+**does clamp** — `ClampToRange(currentCenter_·scale + offset + modulators.ApplyActive(...), range)`
+(`src/ParameterModulation.cpp:1207-1215`) — and `ProcessLitePhase1` refreshes
+`currentKnobValues_` from it **per audio sample** (`:1459-1461`), which is what `knob()` reads
+(`FroggersAppCore.hpp:849-851`).
+
+**So modulation cannot exceed a parameter's maximum — but it REACHES that maximum constantly,
+including from noise sources.** Every "at max" figure in W2.1-MATH is therefore not an edge case
+the operator has to dial in; it is a value the modulation visits continuously. Consequences:
+1. W2.2a's comb trim tracks `fb` per sample and remains correct under modulation (its smoother
+   lags ~16 samples, acceptable for a level trim, and it errs toward under-trim only briefly).
+2. **The PEAK branch is modulated to `height = 2.0` constantly and is UNTRIMMED** — W2.2a deferred
+   it as "one variable at a time". Under audio-rate modulation that deferral is untenable, which
+   is why B1 exists.
+3. Guard tests must sweep with modulation ACTIVE, not just static knobs at max.
+
 ### Execution order — this file is the single proposal layer
 
 1. **W1** modulation truth — *blocked on investigation report (dispatched 2026-08-05)*
