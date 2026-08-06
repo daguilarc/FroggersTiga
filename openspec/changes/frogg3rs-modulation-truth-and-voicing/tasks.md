@@ -1049,3 +1049,25 @@ copy): every operation is convex, pure attenuation, or already on the list. **Th
 gain-bearing operations in the entire chain are `DriveBlendPhase` (§K.1) and the reverb's
 `aIn/bIn = preOut + aFb*fb` sums** — the latter already on §K's Reverb row and being closed by B6.
 Nothing else was found.
+
+### §K.4 — CORRECTION to §K's attack guidance (measured twice, wrong twice)
+
+§K said attack should follow the *shape of the excess*: microseconds for single-sample transients,
+~1 ms for sustained buildup, and specifically that delay and reverb "should be caught fine at
+~1 ms." **B6 measured that and it is wrong.** The master's 1 ms attack left the delay at **1.673**
+and the reverb at **1.283**; both needed **2 µs** to reach ~1.0.
+
+**Why, and the generalized rule:** at a stage's *extreme* setting the round trip is short, so the
+ONSET of the excess is a fast transient even when the long-run climb is genuinely slow. The
+mechanism being sustained says nothing about how fast the first overshoot arrives. Every limiter
+added so far has needed a microsecond attack — peak 5 µs, delay 2 µs, reverb 2 µs.
+
+**Rule going forward: measure attack per stage; do not infer it from how the mechanism behaves in
+the general case.** Two consecutive predictions from mechanism-shape were wrong; the measurement
+was right both times. §K's per-stage table is corrected to microsecond attacks throughout.
+
+**Applies directly to B7.2 (`DriveBlendPhase`):** §K.1 currently suggests "sustained (~1 ms), not
+B5's 5 µs" for it. **Treat that as an untested guess, not guidance** — measure it. Given the
+pattern, a microsecond attack is the more likely answer there too. Note this does NOT change §K.1's
+main recommendation: smoothing the allpass coefficient is still the preferred root-cause fix, and a
+limiter is the fallback.
