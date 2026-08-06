@@ -58,11 +58,59 @@ S2 drill-in depth knobs all read 12 o'clock; S3 Randomize All inside level-1 sho
 
 ## W2 — Filter maxima, evidence-first
 
-- [ ] W2.0 **Gain-path audit** — dispatched 2026-08-05, read-only: all 9 Filter params +
-  Crispy/Crunchy, mapped ranges with math, worst-case at each maximum, limiter placement
-  (pumping vs tone-only), what the storm/blowup tests do and do not catch. **Findings land here.**
+- [x] W2.0 **Gain-path audit — LANDED 2026-08-05.** All claims file:line-cited; condensed here as
+  the binding §1 trace.
+
+  **The pumping mechanism, found.** `OutputLimiter` (`FroggersAppCore.hpp:1107-1179`: threshold
+  0.9, ceiling 1.0, attack 1 ms, release 100 ms, no lookahead) sits at the END of the entire
+  chain: Filter → Delay → Reverb → limiter. A sustained comb/peak resonance is therefore NOT
+  attenuated before it feeds Delay and Reverb; when the limiter engages continuously it ducks the
+  whole downstream mix — echoes and reverb tail included. That whole-mix ducking IS the audible
+  "sounds like shit," and **no per-stage headroom exists anywhere**: `ResonantBump` applies no
+  Q-dependent trim (`FilterFx.hpp:179-201`), no feedback-dependent wet attenuation exists
+  (grep-confirmed absent in the mapping block).
+
+  **Why "fixed" passed every test:** §A's fix removed absolute blowout, and the tests only check
+  that. The 200-draw storm test asserts finite / peak ≤ 1.001 / not-silent
+  (`FroggersAudioRoutingTests.cpp:613-672`) — an absolute-ceiling check that passes while the
+  limiter rides hard continuously. `FroggersRandomizeAllReproTests.cpp:107-113` watches RMS/peak/
+  NaN over random combinations, never a single-parameter endpoint. The peak ceiling test pins
+  height at **Q = 1.0 only** (`FroggersDspParityTests.cpp:574`). **No test sweeps any individual
+  Filter parameter to its endpoint while measuring sustained RMS or limiter engagement.** The
+  operator's symptom lives exactly in that untested region.
+
+  **Ranked offenders (math in the audit, key cites):**
+  1. **Comb feedback max = exactly 0.95** (`FilterFx.hpp:426-434`, `FroggersAppCore.hpp:1027`) —
+     near-unity loop gain, ring measured in thousands of samples even in isolation
+     (`FroggersDspParityTests.cpp:638-663`).
+  2. **Comb LP max, alpha ≈ 0.927** (`FroggersAppCore.hpp:1028-1031`) — removes the loop's ONE
+     damping mechanism, sustaining offender 1's ring across nearly the full band. Only ever tested
+     as an isolated transfer function, never through the audible chain.
+  3. **Peak Q max 10 × Peak gain max 2.0** (`FroggersAppCore.hpp:968,1002-1004`) — narrow +6 dB
+     spike with Q-proportional ring time; this COMBINATION is untested (ceiling test fixes Q=1).
+  4. **Comb/Peak blend = 1.0** (`:1032-1033`) — not independently harmful; the fader that routes
+     100 % of offenders 1-2 into the mix.
+  Tone-only (limiter can't help): Peak freq near Nyquist + high Q (thin whistle), comb delay at
+  ~4.8 samples (metallic ~10 kHz teeth). Harmless: Comb offset, Scoop (a dip, not gain).
+
+  **Latent defect found in passing (fix with W2.2, not before):** the Crunchy blowup repro's
+  shadow chain is STALE — `FroggersCrunchyBlowupReproTests.cpp:193` still hardcodes
+  `ExpMapCompute(1.0f, 10.0f, ...)` for peak height, predating §A's `kMaxResonantBumpHeight = 2.0`,
+  so its diagnostic thresholds no longer describe the real ceiling. A second definition site that
+  drifted, again.
 - [ ] W2.1 Operator triage of the ranked offenders — which are defects vs character. Per-offender
   decision: range trim / stage headroom / per-stage limiting / leave. **By ear, one at a time.**
+  Treatment candidates the trace supports (pick per offender, not wholesale):
+  - **Post-filter, pre-Delay limiter/soft-knee** — addresses the mechanism directly: the comb's
+    sustained ring gets caught BEFORE it smears through Delay/Reverb and forces whole-mix ducking.
+    This is the operator's own suggestion ("a limiter on the output of that parameter") and the
+    trace endorses its position.
+  - **Feedback-dependent comb wet trim** — attenuate the comb's contribution as |feedback| → max,
+    the standing DSP idiom for near-unity resonators; kills offenders 1-2's sustained level
+    without touching their character at moderate settings.
+  - **Q-dependent peak gain compensation** — offender 3; standard resonant-filter trim.
+  - **Range trims** (feedback 0.95 → lower, LP max → lower, Q max → lower) — bluntest tool,
+    changes reachable character; operator's call only.
 - [ ] W2.2 Implement the agreed treatments, sequentially, each with a guard that pins the property
   that was wrong (e.g. sustained-tone limiter engagement at max, not merely peak ceiling).
 - [ ] W2.3 Extend the storm test if W2.0 shows it cannot catch the operator's symptom (per-param
