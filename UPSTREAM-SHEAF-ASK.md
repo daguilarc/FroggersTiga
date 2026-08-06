@@ -54,11 +54,11 @@ it. "Landed" verdicts cite the re-check sections (evidence at `77a3019e` unless 
 | 10 | Same-source-twice randomize draw | email | no — our distinct-draw helper stays |
 | 11 | One-level drill-in pop | email | no — our synthesized pop stays (required behaviour regardless) |
 | 12 | Reusable direct-launch entry point | **issue #2** (with the realized G.4 drift cost) | no |
-| 13 | `APP_NAME`/`APP_INFO_PLIST` coupled but documented independent | **NOT YET SENT** | no |
-| 14 | `ControlStyle::caption` placement (below/trailing) | **NOT YET SENT** | no |
+| 13 | `APP_NAME`/`APP_INFO_PLIST` coupled but documented independent | **issue #3** | no |
+| 14 | `ControlStyle::caption` placement (below/trailing) | **issue #3** | no |
 | 15 | Embedded surfaces can't resolve a live extent | **issue #1** | no |
 
-**Not yet sent to jvictor0: items 13 and 14 only.** Both are written up below, ready to file.
+**All 15 asks are now in front of jvictor0** (2026-08-05): 1-11 by email, 15 as issue #1, 7+12 as issue #2, 13+14 as issue #3. Issues deliberately do not use this file's item numbers -- they are internal.
 
 ---
 
