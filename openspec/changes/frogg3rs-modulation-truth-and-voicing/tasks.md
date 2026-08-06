@@ -594,3 +594,35 @@ S2 drill-in depth knobs all read 12 o'clock; S3 Randomize All inside level-1 sho
   display-order repack is the viable route; hardware meaning UNCLEAR — ask first).
 - §I VST layer (DAW owns audio/MIDI routing; W4.2's gating must stay swappable for it).
 - D.4 publish pipeline.
+
+## §J — DEFERRED: delay bank expansion to 14 params + Crispy + Crunchy (operator research, 2026-08-05)
+
+Operator explored a 15-param delay design with ChatGPT (14 was the intent — 14 + Crispy(14) +
+Crunchy(15) fills all 16 slots; today's Delay bank has 9 named + 5 empty). Not scheduled; recorded
+with the engine facts that decide what is cheap, so the future design starts from evidence.
+
+**Our delay line, classified** (`app/dsp/Delay.hpp:218-233`): a fractional circular buffer with
+LINEAR interpolation — ChatGPT's "standard interpolated circular buffer", NOT a tape-style
+variable-speed head. Consequences, per its own ranking:
+- **True static detune is NOT free here.** And honestly: our existing `ddet` knob is a static
+  time-RATIO (`timeL /= ratioL`, opposite sign per channel, `:157-162`) — on an interpolated
+  buffer a static ratio shifts pitch ONLY while time changes (doppler). What `ddet` actually does
+  today is an L/R delay-time spread (width/Haas), plus slightly asymmetric wobble because the
+  ratio scales the LFO term too. The knob is mislabeled by its own math.
+- **Wow / flutter / jitter / drift are nearly free** — read-time modulation, which the line
+  already does for one LFO (`dmod`, `:147-153`). ChatGPT's recommendation for exactly this
+  architecture is to spend slots there instead of on true detune. Note: with feedback high, a
+  moving read head re-shifts each repeat — per-repeat pitch drift ("feedback detune") emerges
+  naturally from time modulation + feedback, no pitch shifter needed.
+- **Feedback Drive is half-built already:** B2's in-loop saturator IS the mechanism ("drive only
+  inside the feedback path, colors every repeat cumulatively — tape → dub self-oscillation").
+  Once B2 lands, Feedback Drive is one pre-saturator gain knob. Safety fix and character feature
+  are the same code.
+- Cheap on this architecture: Crossfeed (the `dwid` cross-feed exists, `:167-169`), Crush (Drive
+  bank's DigitalReorganizer/SampleRateReducer are portable), Feedback Tone (the loop needs a
+  damping filter anyway — the comb's `lp()` is the in-house precedent).
+- NOT cheap: Diffusion (allpass network), Halo (early reflections), true Freeze (needs loop-mute
+  + write-disable semantics — relates to B4's Stop wiring), Reverse.
+
+When this is picked up: it is a bank-topology change (fills slots 9-13), so the §H mobile
+re-pack constraint and the cell map are upstream of it.
