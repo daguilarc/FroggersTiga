@@ -741,3 +741,35 @@ Also recorded from the same exchange:
 - **Comb-trim smoother rate stays INTERNAL** (operator: "definitely don't expose"). It is W2.2a's
   anti-zipper safety constant; a knob on it is a way to turn the bug back on.
 - Envelope arithmetic: A/S/R ×3 = 9, plus Decay ×3 = 12, leaving **2 free** of the 14.
+
+#### §J.4 — Envelope bank: ADSR ×3, DECIDED (operator, 2026-08-05)
+
+**Decay ×3 is in. A/D/S/R × 3 = 12 of the 14 slots; 2 remain.** One new state in a machine that
+already has Idle/Attack/Hold/Release (`VoiceEnvelope.hpp:126-162`), and ADSR is the shape every
+player already expects.
+
+**Correction to the record.** The research agent proposed avoiding Decay in favour of
+Curve/Cycle/Grace, describing Decay as the move "the operator flagged as naive." That inverted
+what the operator actually said — *"decay is an obvious one, yeah, but adding a decay encoder for
+each, that still leaves 2 encoder slots open"* — which was approval plus a question about the
+REMAINDER. The lead relayed the agent's framing without catching the inversion. Operator's
+response: *"that's so stupid. why not just add decay."*
+
+**Lesson, and it is a repeat:** an agent given latitude to "reconsider from scratch" will build an
+argument against a decision the operator already made, and it will sound reasoned. Quote the
+operator's words into the brief when a decision is already taken, and check a proposal against
+those words before relaying it — this is the same failure shape as F.6's B12 episode, where an
+instruction's letter was honoured after its rationale died. Here the rationale never existed; it
+was invented.
+
+**The 2 remaining slots are the only open question.** Candidates, from the same research, now
+scoped to fit two rather than replace Decay:
+- **Curve** — ONE global knob blending log ↔ linear ↔ exponential across all three envelopes
+  (per-envelope would cost 3 slots and there are 2). Reshapes existing ramp math, cheap, and it is
+  the single biggest character change available here (Befaco Rampage, Make Noise Maths
+  "Vari-Response", Mutable Tides "Shape").
+- **Cycle** — self-retrigger at end of Release, turning the ASR/ADSR into a looping envelope-LFO.
+  Reuses the existing state machine as-is (Maths ch. 1/4, Stages loopable segments).
+- **Grace** — minimum Hold duration so very short gates do not clip the peak (Stages' fixed-length
+  hold). Needs a small new timed floor in the Hold state.
+- Velocity/accent depth — needs upstream plumbing that may not exist; unverified.
