@@ -1740,6 +1740,158 @@ TEST_CASE(drive_blend_phase_default_phase_impulse_response_decays_not_rings_fore
     REQUIRE_TRUE(magnitudeAt2000 < 1.0e-6f);
 }
 
+// -----------------------------------------------------------------------
+// B7.2 (openspec/changes/frogg3rs-modulation-truth-and-voicing/tasks.md
+// §K.1/§K.4): FAILING-FIRST for the property this task fixes. §K.1 measured
+// DriveBlendPhase's allpass coefficient `a` -- read fresh from the Phase
+// knob every sample, unsmoothed -- produces gain up to 4.15x under
+// full-bank per-sample-random modulation and 50.5x under a periodic
+// phase/content coincidence (an LFO landing near the note's own period),
+// against bounded (+-1) input. A fixed-coefficient allpass is unity-gain;
+// a time-varying one is not.
+//
+// Two adversarial patterns, matching §K.1's own two cases:
+//   (A) `wet` AND `phaseKnob01` both redrawn per-sample-random -- the
+//       "full-bank per-sample-random modulation" case (`knob()` refreshes
+//       every sample in production, FroggersAppCore.hpp:1008-1009 /
+//       tasks.md's "Audio-rate modulation" section -- this is not an edge
+//       case, it is what audio-rate noise modulation of this knob does
+//       continuously).
+//   (B) a periodic phase/content coincidence -- `wet` a bounded sine at
+//       fWet, `phaseKnob01` a synced duty-cycled square-ish LFO at 2*fWet
+//       -- reproducing §K.1's own "LFO near the note's period" mechanism.
+//       A scratch harness sweep (not this file) found this exact
+//       configuration reaches 61.2x unsmoothed -- EXCEEDS §K.1's own
+//       recorded 50.5x -- verified bounded/plateauing (buildup complete
+//       within ~500 samples, unchanged out to 20M samples), not divergent,
+//       matching §K.1's own plateau finding.
+//
+// MEASURED with this exact test (reverting dsp::DriveBlendPhase's
+// coeffSmoother/outputLimiter to confirm the failing-first requirement,
+// then restoring the fix):
+//   BEFORE the fix: pattern A worst = 4.810x, pattern B worst = 61.214x
+//     (both against bound 1.0) -- FAILS (exceeds bound+0.02 on both).
+//   AFTER the fix:  pattern A worst = 0.962x, pattern B worst = 0.892x
+//     -- PASSES.
+// -----------------------------------------------------------------------
+TEST_CASE(drive_blend_phase_output_stays_at_or_below_computed_bound_under_audio_rate_phase_modulation) {
+    const float inputAmplitude = 1.0f;  // FrogBlock's own bound (W2.1-MATH; dsp/Drive.hpp class comment).
+    const float bound = inputAmplitude;
+
+    // Pattern A: full-bank per-sample-random modulation. blendKnob01=1
+    // isolates the allpass/wet path exactly as the existing allpass-
+    // stability test above does.
+    {
+        dsp::DriveBlendPhase bp;
+        std::uint32_t rngState = 0xC0FFEEu;
+        const auto nextUniform01 = [&rngState]() {
+            rngState ^= rngState << 13;
+            rngState ^= rngState >> 17;
+            rngState ^= rngState << 5;
+            return static_cast<float>(rngState % 1000000u) / 1000000.0f;
+        };
+        constexpr int kSamples = 200000;
+        for (int i = 0; i < kSamples; ++i) {
+            const float wet = (2.0f * nextUniform01() - 1.0f) * inputAmplitude;
+            const float phase = nextUniform01();
+            const float out = bp.Process(/*dry=*/0.0f, wet, /*blendKnob01=*/1.0f, phase);
+            REQUIRE_TRUE(std::isfinite(out));
+            REQUIRE_TRUE(std::fabs(out) <= bound + 0.02f);
+        }
+    }
+
+    // Pattern B: periodic phase/content coincidence -- the exact
+    // fWet/fLfo/offset/duty configuration a scratch sweep found worst
+    // (see this TEST_CASE's own header comment).
+    {
+        dsp::DriveBlendPhase bp;
+        constexpr float fWet = 0.2f;
+        constexpr float fLfo = 0.4f;
+        constexpr float phaseOffCycles = 0.4f;
+        constexpr float duty = 0.25f;
+        constexpr int kSamples = 200000;
+        for (int i = 0; i < kSamples; ++i) {
+            const float wet = inputAmplitude * std::sin(2.0f * static_cast<float>(M_PI) * fWet * static_cast<float>(i));
+            float lfoPhase = fLfo * static_cast<float>(i) + phaseOffCycles;
+            lfoPhase -= std::floor(lfoPhase);
+            const float phase = lfoPhase < duty ? 0.0f : 1.0f;
+            const float out = bp.Process(/*dry=*/0.0f, wet, /*blendKnob01=*/1.0f, phase);
+            REQUIRE_TRUE(std::isfinite(out));
+            REQUIRE_TRUE(std::fabs(out) <= bound + 0.02f);
+        }
+    }
+}
+
+// -----------------------------------------------------------------------
+// B7.2 tonal-neutrality proof: coeffSmoother/outputLimiter (dsp/Drive.hpp)
+// only matter when `a`/the stage output move at audio rate. At a STATIC
+// Phase knob the fixed-coefficient allpass was already unity-gain (class
+// header comment), so the fix must leave a static-Phase patch unchanged --
+// this is what makes the fix tonally free rather than a new colouration.
+//
+// Reference input amplitude (0.3) is kept safely under outputLimiter's own
+// 0.7 threshold so the limiter's identity branch applies throughout
+// (Limiter.hpp's own comment: absX <= threshold keeps envelope at exactly
+// 1.0f, bit for bit) -- isolating this test to the smoother's effect only,
+// not conflating it with the limiter's.
+// -----------------------------------------------------------------------
+TEST_CASE(drive_blend_phase_static_phase_output_unchanged_by_smoothing_and_limiter_fix) {
+    constexpr float kRefAmplitude = 0.3f;  // well under outputLimiter's 0.7 threshold.
+
+    // Case 1: default phase (0.0). coeffSmoother is seeded to exactly `a`
+    // at phaseKnob01==0 (dsp/Drive.hpp constructor/Configure()), so there
+    // is no startup transient at all -- bit-identical from the FIRST
+    // sample against a manual replica of the pre-fix formula (fixed a, no
+    // limiter needed as a reference here since a provably-unity-gain
+    // static allpass at this amplitude never approaches 0.7).
+    {
+        dsp::DriveBlendPhase bp;
+        float refX1 = 0.0f;
+        float refY1 = 0.0f;
+        const float a = 0.98f * (2.0f * 0.0f - 1.0f);  // == -0.98, matches the constructor's seed.
+        for (int i = 0; i < 2000; ++i) {
+            const float wet = kRefAmplitude * std::sin(0.31f * static_cast<float>(i));
+            const float actual = bp.Process(/*dry=*/0.0f, wet, /*blendKnob01=*/1.0f, /*phaseKnob01=*/0.0f);
+            const float refPhased = -a * wet + refX1 + a * refY1;
+            refX1 = wet;
+            refY1 = refPhased;
+            REQUIRE_NEAR(actual, refPhased, 1e-5);
+        }
+    }
+
+    // Case 2: a representative NON-default static phase (0.7). coeffSmoother
+    // starts seeded at a(phase=0) and has to glide to a(phase=0.7) first, so
+    // exact match only holds in STEADY STATE, not from sample 1 -- warm up
+    // well past coeffSmoother's own time constant (glide 0.0035 cycles/
+    // sample -> ~1/(2*pi*0.0035) =~ 45 samples; 1000 samples is >20 time
+    // constants, i.e. the residual gap is negligible well below float
+    // precision) before comparing.
+    {
+        dsp::DriveBlendPhase bp;
+        constexpr float phaseKnob01 = 0.7f;
+        const float a = 0.98f * (2.0f * phaseKnob01 - 1.0f);
+        float refX1 = 0.0f;
+        float refY1 = 0.0f;
+        constexpr int kWarmupSamples = 1000;
+        int i = 0;
+        for (; i < kWarmupSamples; ++i) {
+            const float wet = kRefAmplitude * std::sin(0.31f * static_cast<float>(i));
+            bp.Process(/*dry=*/0.0f, wet, /*blendKnob01=*/1.0f, phaseKnob01);
+            const float refPhased = -a * wet + refX1 + a * refY1;
+            refX1 = wet;
+            refY1 = refPhased;
+        }
+        for (int j = 0; j < 500; ++j, ++i) {
+            const float wet = kRefAmplitude * std::sin(0.31f * static_cast<float>(i));
+            const float actual = bp.Process(/*dry=*/0.0f, wet, /*blendKnob01=*/1.0f, phaseKnob01);
+            const float refPhased = -a * wet + refX1 + a * refY1;
+            refX1 = wet;
+            refY1 = refPhased;
+            REQUIRE_NEAR(actual, refPhased, 1e-4);
+        }
+    }
+}
+
 // =========================================================================
 // 3.10 -- Delay (sim/StereoDelay.hpp whole file; sim/DelayState.hpp:165-198
 // row->DelayParams mapping and Color/Halo fold at :180-193). A full

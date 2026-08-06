@@ -302,6 +302,7 @@ public:
         outputLimiter_.Configure(sampleRate_);  // item 3: attack/release coeffs are sample-rate-dependent.
         filterChain_.Configure(sampleRate_);  // B5: peak-branch limiter's own coeffs, same reason.
         reverb_.Configure(sampleRate_);  // B6b: reverb's own wetLimiter coeffs, same reason.
+        driveBlendPhase_.Configure(sampleRate_);  // B7.2: this stage's own outputLimiter coeffs, same reason.
 
         // Root-cause fix (D17 robustness gap, found while diagnosing "Play
         // produces no audio in the real Runtime"): `synth::Engine::Prepare()`

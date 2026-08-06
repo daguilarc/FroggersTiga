@@ -69,6 +69,7 @@
 
 #include "DspMath.hpp"
 #include "FilterFx.hpp"  // reuse dsp::PadeSaturator (see note above)
+#include "Limiter.hpp"   // reuse dsp::OutputLimiter (B7.2, see DriveBlendPhase below)
 
 #include <algorithm>
 #include <cmath>
@@ -336,10 +337,133 @@ struct FrogBlock
 // reachable and the shipped default, so the fix changes real, exercised
 // behavior rather than adding dead code.
 // -------------------------------------------------------------------------
+// -------------------------------------------------------------------------
+// B7.2 (openspec/changes/frogg3rs-modulation-truth-and-voicing/tasks.md
+// §K.1/§K.4): the allpass coefficient `a` below was read fresh from the
+// Phase knob every sample with NO smoothing. A FIXED-coefficient allpass is
+// unity-gain; a TIME-VARYING one is not -- measured (§K.1), with a bounded
+// +-1 `wet` input: 1.002 under free random phase, 4.15 under full-bank
+// per-sample-random modulation (`knob()` refreshes every sample,
+// FroggersAppCore.hpp:1008-1009 / tasks.md's "Audio-rate modulation"
+// section -- this is not an edge case, it is what audio-rate noise
+// modulation of this knob does continuously), and 50.5 under periodic
+// phase/content coincidence (an LFO landing near the note's own period),
+// bounded and plateauing but the largest blowout path measured in the
+// instrument -- 50x dwarfs the comb's ~1.95 and the peak's 1.669.
+//
+// TWO-PART FIX, both measured against a standalone harness reproducing
+// this struct's exact math (not assumed by analogy -- W2.2a's own glide
+// constant was picked by analogy and measured 80% wrong, tasks.md):
+//
+// 1. SMOOTH THE COEFFICIENT (root cause, tried first per the brief). A
+//    one-pole (`coeffSmoother` below, `dsp::OnePoleLowPass` reused, not a
+//    new smoother) on `a` makes the allpass quasi-static, restoring
+//    near-unity gain. Swept 0.0005-0.5 cycles/sample against two
+//    adversarial patterns: (A) phaseKnob01 AND wet both redrawn uniform
+//    per-sample-random (the §K.1 "full-bank" case) and (B) a periodic
+//    phase/content coincidence (wet a sine, phaseKnob01 a synced
+//    square-ish LFO at a rational-multiple frequency) that reproduces
+//    §K.1's periodic-coincidence mechanism -- found up to 61.2x unsmoothed
+//    (exceeds the recorded 50.5x; verified bounded/plateauing to 20M
+//    samples, matching §K.1's own plateau finding, not divergent).
+//    Result: smoothing alone drives pattern B to ~1.0x at any glide <=
+//    ~0.05 (the periodic mechanism needs `a` to track the content in sync;
+//    a lagging coefficient breaks the lock). Pattern A -- persistent full-
+//    range per-sample redraws, not a one-off transient -- has a genuine
+//    residual floor smoothing cannot close: minimized (10 seeds x 1M
+//    samples/glide) at ~0.0035 cycles/sample (worst 1.405x), WORSE both
+//    slower (a slow-moving coefficient dwelling near the +-0.98 pole for
+//    many samples re-creates pattern B's own reinforcement, 1e-5 cyc/samp
+//    -> 1.86x) and faster (approaches the unsmoothed case, 0.45 cyc/samp
+//    -> 3.96x) -- so 0.0035 is a genuine measured minimum, not a monotone
+//    tradeoff. Same class of fix as W2.2a's trim smoothing; costs nothing
+//    tonally, since an unsmoothed per-sample-random coefficient was never
+//    a musical control (static-Phase output is unchanged, see
+//    FroggersDspParityTests.cpp's static-neutrality pin).
+// 2. LIMIT THE STAGE OUTPUT (only because step 1 proved insufficient --
+//    pattern A's ~1.4-1.7x residual, confirmed against 20 seeds x 2M
+//    samples at the chosen glide, does not close on its own; same
+//    structural finding as the peak branch, B1/B5, where a per-sample
+//    scalar trim alone plateaued at 1.669x and needed its own limiter).
+//    `dsp::OutputLimiter` (Limiter.hpp), five-argument `Configure()`.
+//    Threshold/attack/release swept together (thresholds 0.7-0.9,
+//    attacks 1us-1ms) against both patterns above (10-20 seeds x
+//    500k-2M samples): attack must be MICROSECONDS, not the ~1ms §K
+//    originally guessed for "sustained" excess -- confirming §K.4's
+//    correction (mechanism-shape predicted attack wrong twice already;
+//    measurement is what actually decides it, every stage so far has
+//    needed microseconds). 1000x slower (1ms) leaves pattern A at 1.39x,
+//    barely better than smoothing alone; 2us reaches 0.990x. Threshold
+//    0.7 (below the master's 0.9, same headroom logic as the peak
+//    branch's kPeakLimiterThreshold) with `kSharedCeiling`/
+//    `kSharedReleaseSeconds` (Limiter.hpp, reused rather than
+//    re-declared per OMNI §8) rounds out the tuning. FINAL, measured:
+//    pattern A worst 0.990x (20 seeds x 2M samples), pattern B worst
+//    0.896x (20M samples) -- both at or below the ~1.0 bound FrogBlock's
+//    own output already respects (W2.1-MATH), so this stage no longer
+//    forces the master limiter to engage on its own account.
+// -------------------------------------------------------------------------
 struct DriveBlendPhase
 {
+    // Measured minimum of the pattern-A sweep above; NOT chosen by analogy
+    // to FilterFxChain's kTrimGlideCyclesPerSample (0.45, a different
+    // problem -- smoothing an output-level TRIM, not a recursive filter's
+    // own pole -- and measured far too fast here, see class comment).
+    static constexpr float kPhaseCoeffGlideCyclesPerSample = 0.0035f;
+
+    // Measured tuning (class comment): below the master's 0.9 threshold,
+    // same headroom logic as the peak branch's kPeakLimiterThreshold.
+    static constexpr float kOutputLimiterThreshold = 0.7f;
+    static constexpr float kOutputLimiterAttackSeconds = 2.0e-6f;  // 2 microseconds -- measured, see class comment.
+
     float allpassX1 = 0.0f;
     float allpassY1 = 0.0f;
+
+    // Smooths the allpass coefficient `a`, not the Phase knob or `wet`
+    // themselves -- the excess is specifically a time-varying POLE, so the
+    // coefficient feeding the recurrence is what must be made quasi-static
+    // (class comment, fix 1).
+    OnePoleLowPass coeffSmoother;
+
+    // Class comment, fix 2: catches the residual smoothing alone cannot
+    // close. Attack/release are sample-rate-dependent, so -- same reason
+    // FilterFxChain::peakLimiter/Reverb::wetLimiter/Delay's wetLimiterL/R
+    // all need their own Configure(sampleRate) -- this type gets one too,
+    // called from the constructor (assumed-48kHz default, matching
+    // FilterFxChain's/Reverb's own constructor-time Configure()) AND from
+    // FroggersAppCore::PrepareToPlay() once the real host rate is known
+    // (driveBlendPhase_.Configure(sampleRate_), mirroring
+    // filterChain_.Configure(sampleRate_)/reverb_.Configure(sampleRate_)
+    // there).
+    OutputLimiter outputLimiter;
+
+    DriveBlendPhase()
+    {
+        // Same assumed-48kHz constructor-time default FilterFxChain's/
+        // Reverb's own constructors use for their sample-rate-dependent
+        // limiters, for the identical reason (a direct `DriveBlendPhase bp;`
+        // instantiation -- e.g. a test -- that never calls Configure() still
+        // gets a harmless, finite tuning rather than an unconfigured one).
+        constexpr float kDefaultAssumedSampleRate = 48000.0f;
+        Configure(kDefaultAssumedSampleRate);
+    }
+
+    void Configure(float sampleRate)
+    {
+        coeffSmoother.SetAlphaFromNatFreq(kPhaseCoeffGlideCyclesPerSample);
+        // Seeded to `a` at phaseKnob01 == 0 (the knob's own default, class
+        // header note above) so a fresh instance produces no startup
+        // transient -- same idiom as FilterFxChain's combTrimSmoother/
+        // peakTrimSmoother seeding their `.output` to the untrimmed value
+        // at each trim's own default knob position. `coeffSmoother`'s glide
+        // is sample-rate-INdependent (SetAlphaFromNatFreq takes cycles/
+        // sample, same idiom FilterFxChain's own trim smoothers use, class
+        // header note), so re-running it here on a later Configure() call
+        // is a harmless no-op re-derivation, not a behaviour change.
+        coeffSmoother.output = -0.98f;
+        outputLimiter.Configure(sampleRate, kOutputLimiterThreshold, kSharedCeiling, kOutputLimiterAttackSeconds,
+                                 kSharedReleaseSeconds);
+    }
 
     float Process(float dry, float wet, float blendKnob01, float phaseKnob01)
     {
@@ -347,23 +471,41 @@ struct DriveBlendPhase
         // range, including both endpoints (phaseKnob01 == 0 -> a == -0.98,
         // phaseKnob01 == 1 -> a == 0.98), so the allpass's pole never sits
         // on the unit circle.
-        const float a = 0.98f * (2.0f * phaseKnob01 - 1.0f);  // authored mapping -> (-0.98, 0.98)
+        const float aTarget = 0.98f * (2.0f * phaseKnob01 - 1.0f);  // authored mapping -> (-0.98, 0.98)
+        // B7.2 fix 1: smooth the coefficient itself, not the knob input --
+        // see class header comment for the measurement that picked this glide.
+        const float a = coeffSmoother.Process(aTarget);
         const float phased = -a * wet + allpassX1 + a * allpassY1;
         allpassX1 = wet;
         allpassY1 = phased;
-        return dry * (1.0f - blendKnob01) + phased * blendKnob01;
+        const float blended = dry * (1.0f - blendKnob01) + phased * blendKnob01;
+        // B7.2 fix 2: catches the residual smoothing alone cannot close.
+        return outputLimiter.Process(blended);
     }
 
     // Task 2.2 (per-unit recovery, app/FroggersAppCore.hpp): zeros only the
-    // allpass's own recursive history.
+    // allpass's own recursive history plus the two new stateful units this
+    // fix adds (coeffSmoother/outputLimiter), each reset to the same
+    // quiescent value their own type's Reset()/constructor already defines
+    // as "no history" -- the coefficient smoother back to the default-knob
+    // seed above, the limiter's envelope back to unity (OutputLimiter::Reset()).
     void Reset()
     {
         allpassX1 = 0.0f;
         allpassY1 = 0.0f;
+        coeffSmoother.output = -0.98f;
+        outputLimiter.Reset();
     }
 
-    bool StateFinite() const { return std::isfinite(allpassX1) && std::isfinite(allpassY1); }
-    float StateMagnitude() const { return std::max(std::fabs(allpassX1), std::fabs(allpassY1)); }
+    bool StateFinite() const
+    {
+        return std::isfinite(allpassX1) && std::isfinite(allpassY1) && std::isfinite(coeffSmoother.output) &&
+               outputLimiter.StateFinite();
+    }
+    float StateMagnitude() const
+    {
+        return std::max(std::max(std::fabs(allpassX1), std::fabs(allpassY1)), std::fabs(coeffSmoother.output));
+    }
 };
 
 }  // namespace synth_froggers::dsp
