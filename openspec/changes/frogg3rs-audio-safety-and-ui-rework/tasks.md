@@ -850,12 +850,31 @@ transformation stage (cond. 2), prevents repetition of structurally similar code
 
 ### Options
 
-**F.6-A — one `AppendLabelledSlider(builder, spec)` emitter, placement as a parameter.
-RECOMMENDED.** One function emits both rows; a `LabelPlacement` field (`Below` / `Trailing`)
-selects the container. **The slider's own `LayoutOptions` are declared once, inside that emitter**,
-so both sliders are the same width *by construction* — not by two constants kept in agreement.
-Preserves both standing instructions unchanged: scene-blend label below (cell-map amendment), BPM
-label trailing (B12). Eliminates the §8 duplication that caused this.
+**F.6-A — one `AppendLabelledSlider(builder, spec)` emitter. BOTH LABELS BELOW. No placement
+parameter. CORRECTED 2026-08-05 after operator review; see the B12 supersession note below.**
+One function emits both rows: a `Column` holding `[Slider(cross = Fraction(kSliderWidthFraction)),
+Label]`, called twice. **The slider's width is declared once, inside that emitter**, so both
+sliders are the same width *by construction* — not by two constants kept in agreement.
+
+**B12 IS SUPERSEDED, and its cause is dead — this is not a reversal of a live instruction.**
+B12 (2026-07-29) reads: *"BPM label moved to trail its slider. **Leading it put it between the two
+sliders and nearer the scene-blend one, reading as labelling the wrong control.** The two labels
+are now deliberately asymmetric — do not 'fix' that."* The stated rationale is entirely about
+**leading** being ambiguous; trailing was the only alternative available when both labels shared a
+horizontal band. Once the cell map moved scene-blend's label **below** its slider, that ambiguity
+no longer exists: a label directly beneath its own control cannot be mistaken for its neighbour's.
+**Both labels below satisfies B12's actual concern better than trailing does**, and the asymmetry
+B12 protected was a means, not the goal.
+
+**Recorded process failure (mine).** The first draft of this proposal kept BPM trailing and
+introduced a `LabelPlacement { Below, Trailing }` parameter to honour B12's literal words. That is
+the workaround-outliving-its-cause pattern this change has now hit four times — and it is the exact
+inverse of the lesson written into F.2 eight commits earlier: *"delete the workaround needs EVERY
+cause dead, not the first one found."* Here the single cause WAS dead and the workaround was kept
+anyway, by reading an instruction's letter instead of its recorded reason. The invented placement
+parameter was itself the tell: two branches of duplicated transformation logic (§5 cond. 2, §8) for
+a decision that should not exist. **An instruction's stated rationale is part of the instruction;
+when the rationale dies, the instruction is up for re-derivation, not mechanical preservation.**
 
 **F.6-B — declare each slider's width separately, keep both emitters.** Give the BPM slider
 `main = Weight(1)` and its label `main = Intrinsic()`, then give the scene-blend slider a matching
@@ -863,11 +882,10 @@ explicit cross extent. **NOT RECOMMENDED:** the two widths would be equal only w
 two numbers in agreement — the exact hand-synced-geometry defect F.3 just deleted
 (`uiHeight == RequiredHeight()`), reintroduced at smaller scale.
 
-**F.6-C — make both labels sit the same way** (both below, or both trailing). Structurally
-symmetric and also kills the duplication, but it reverses one of two recorded operator
-instructions — B12's trailing BPM, or the cell-map's below scene-blend. **Not proposed as a
-default**; if the operator wants uniform placement, F.6-A implements it by changing one enum value
-at one call site, which is the point of making placement a parameter.
+**F.6-C — WITHDRAWN.** This option existed only because the first draft treated B12's trailing
+label as still binding, so uniform placement looked like a separate choice requiring its own
+approval. It is not a separate option: uniform placement IS F.6-A now that B12's cause is
+understood to be dead. Kept as a record of the wrong framing, not as a live alternative.
 
 ### OMNI self-review of this proposal (requested by the operator)
 
@@ -877,6 +895,10 @@ at one call site, which is the point of making placement a parameter.
   across levels: no. Duplicated transformation logic across branches: **no — that is what it
   removes.** Loss of input→output traceability: no, one emitter, one spec in. Decomposition not
   matching real stages: no, each level is a real grid region. **0 of 4 → nesting valid.** PASS.
+  *(The withdrawn placement-parameter draft would have scored cond. 2 — two container branches for
+  one conceptual emission — which is how the error should have been caught at review time. It was
+  not; the operator caught it. Recorded so the next §5 pass actually counts branches introduced by
+  the proposal itself, not only branches inherited from the code being replaced.)*
 - **§6 helper rule (2-of-4).** 3 of 4 as counted above. PASS.
 - **§7 full pipeline, not incremental patch.** F.6-A rewrites the whole labelled-slider path;
   F.6-B would be the incremental patch §7 warns against. PASS for A, FAIL for B.
@@ -898,7 +920,12 @@ its own slider (both grow to the current scene-blend width, but that is F.6-C). 
 says scene-blend is too wide AND BPM too narrow, which reads as wanting something between the two
 — so this needs the operator's answer, not an implementer's pick.**
 
-### OPERATOR DECISION 2026-08-05 — F.6-A with candidate 3, dynamic
+### OPERATOR DECISION 2026-08-05 — F.6-A, BOTH LABELS BELOW, candidate 3, dynamic
+
+Operator, on the first draft's asymmetry: *"the labels should BOTH be below, omni rule."* Correct
+— see the B12 supersession note above. The design is now strictly simpler than what was first
+proposed: one emitter, one container kind (`Column`), **no placement parameter and no branch.**
+Both `AppendSceneBlendGroup` and `AppendBpmGroup` collapse into two calls of the same function.
 
 Operator approved option 3 and confirmed the mechanism: **"dynamically based on the left side with
 a buffer"** — a fraction of the left block resolved at layout time, **not** a pixel constant. Both
