@@ -850,3 +850,43 @@ same blowout profile.)
 | PM Shape | sine → triangle → S&H as a continuous morph, not a select | Fits only if built as a morph; a 3-way select is disqualified |
 | **Hard sync** | partial phase reset: `phase *= (1 - amount)` on the master's zero-crossing | **Marginal.** The event stays discrete; only the depth is continuous. Low end is plausibly inaudible (sync's character IS the discontinuity), so the bottom third of the knob may do nothing. Prototype before spending a slot. |
 | **Reverb `Clear`/Purge** | none — it is a momentary event | **CUT by this constraint.** Already covered anyway: B4 must flush delay + reverb buffers on Stop, so the mechanism exists as transport behaviour rather than a parameter. |
+
+### Group B outcomes — two findings that outrank the code (2026-08-05)
+
+**B1 PARTIALLY WORKS, and the reason is structural.** The peak trim mirrors W2.2a's comb trim, but
+under a per-sample random height sweep — how noise modulation actually behaves — worst-case
+overshoot measures **1.669 trimmed vs 1.819 untrimmed, against an ideal of 1.0** (500k trials, ten
+seeds). Hard steps converge fine; random sweeps do not.
+
+Cause: **the comb's raw branch is memorylessly bounded** (its saturator is inside the loop), so any
+sufficiently fast trim closes the gap. **The peak is a stateful 2-pole biquad** whose stored energy
+persists across a height *drop*, and a fast-tracking trim under-attenuates that residual. This is
+the mirror image of the comb's original problem and **cannot be closed by retuning the same
+constant** — a static per-sample scalar cannot correct energy that is already in the filter's state.
+
+**Consequence for the plan: a scalar trim is the wrong tool for the peak.** What corrects stateful
+residual energy is something with its own release — i.e. the **post-filter limiter** (the original
+"Option A", operator's own suggestion, deferred when Option D looked sufficient). Option D was
+sufficient for the comb and is provably insufficient for the peak. If blowouts persist after this
+round, the peak branch is the remaining path and a limiter at `filterOut` is the treatment.
+Recorded, not built — one variable at a time now that the rest has landed.
+
+**B4 WAS ALREADY FIXED — the operator's diagnosis was wrong, but the observation may not be.**
+Traced, not assumed: while the transport is stopped, `releaseKnob()` substitutes a forced ~50 ms
+release (`FroggersAppCore.hpp:970-976`), derived from `mapRelease`'s own formula so it stays 50 ms
+if the ceiling is retuned; `delay_.ClearBuffers()` + `reverb_.Reset()` then fire at `AllIdle()`
+(`:652-653`, `:679-680`). The in-source comment cites the operator's *earlier* Stop report
+(2026-07-29) and states explicitly that lowering `kMaxReleaseSeconds` does not fix it. Two existing
+tests drive delay fb→0.98 and reverb Hold→0.99998 and assert silence after Stop; both green.
+
+So *"stop hasn't been wired to the delay buffer"* is factually incorrect — it is wired in four
+places. **But the operator heard something.** Do not close this on the strength of a green test;
+this project has six green-while-wrong guards on record. Candidate explanations to check AT THE
+WALKTHROUGH, with the operator describing what they actually heard:
+1. They may have been hearing the limiter-pumped blowout decaying, not the transport failing to
+   stop — a different bug with the same symptom.
+2. Rapid Stop→Play cancels `delayReverbClearPending_` by design (`:663-666`), so a quick
+   re-trigger legitimately preserves the tail. Correct behaviour, possibly surprising.
+3. If a voice never reaches `AllIdle()` the clear never fires — worth checking whether audio-rate
+   modulation of envelope parameters can hold a voice out of Idle indefinitely.
+**Ask what they heard before changing anything.**
