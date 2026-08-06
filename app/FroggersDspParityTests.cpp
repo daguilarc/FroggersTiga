@@ -737,17 +737,27 @@ TEST_CASE(filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend) {
     // `1/(1+|fb|)`, smoothed by a one-pole (FilterFxChain::combTrimSmoother,
     // FilterFx.hpp) before the blend below. OLD expectation: `combPath =
     // refComb.Process(...)`, untrimmed. NEW expectation: `combPath =
-    // refComb.Process(...) * trimState`, where `trimState` is the SAME
-    // one-pole recurrence `alpha*raw + (1-alpha)*prev` production runs,
-    // seeded at 1.0 (combTrimSmoother's construction-time initial value,
-    // matching the untrimmed branch -- no fade-in) and driven each sample
-    // by the constant raw target `1/(1+|0.3|)` (feedback is fixed at 0.3
-    // for this whole test, never changes). `alpha` is read from
+    // refComb.Process(...) * trimState`, where `trimState` comes from
+    // `refTrimSmoother`, an actual `dsp::OnePoleLowPass` instance (R2, OMNI
+    // REVIEW W2.2a -- REVISED from re-implementing the one-pole recurrence
+    // by hand here, which made the recurrence exist twice and risked
+    // silently desyncing from `OnePoleLowPass::Process` on a future change
+    // to it). Seeded identically to production: `alpha` copied from
     // `chain.combTrimSmoother.alpha` (public field, set once by
-    // FilterFxChain's own constructor) rather than re-hardcoding the
-    // smoothing constant here a second time.
-    const float trimAlpha = chain.combTrimSmoother.alpha;
-    float trimState = 1.0f;
+    // FilterFxChain's own constructor -- read, never re-hardcoded a second
+    // time here) and `output` at 1.0 (combTrimSmoother's construction-time
+    // initial value, matching the untrimmed branch -- no fade-in), driven
+    // each sample by the constant raw target `1/(1+|0.3|)` (feedback is
+    // fixed at 0.3 for this whole test, never changes). The reference chain
+    // otherwise stays independent of production (refComb/refPureDelay/
+    // refPeak/refScoop below are all separate instances) -- a parity test's
+    // job is to be an independent check, so only the recurrence itself
+    // (which W2.2a introduced and which must exist exactly once on the
+    // production side, not be re-derived here too) is shared via the same
+    // reusable `dsp::OnePoleLowPass` type, not shared state.
+    dsp::OnePoleLowPass refTrimSmoother;
+    refTrimSmoother.alpha = chain.combTrimSmoother.alpha;
+    refTrimSmoother.output = 1.0f;
     const float rawCombTrim = 1.0f / (1.0f + std::fabs(0.3f));
 
     for (int i = 0; i < 8; ++i) {
@@ -755,7 +765,7 @@ TEST_CASE(filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend) {
         const float actual = chain.Process(input, /*useParallel=*/true, combPeakBlend, scoopMix);
 
         const float combRaw = refComb.Process(refPureDelay.Process(input));
-        trimState = trimAlpha * rawCombTrim + (1.0f - trimAlpha) * trimState;
+        const float trimState = refTrimSmoother.Process(rawCombTrim);
         const float combPath = combRaw * trimState;
         const float peakPath = refPeak.Process(input);
         const float mixed = peakPath * (1.0f - combPeakBlend) + combPath * combPeakBlend;
@@ -806,6 +816,102 @@ TEST_CASE(comb_branch_output_stays_at_or_below_computed_bound_at_max_feedback) {
         const float combPath =
             chain.Process(inputAmplitude, /*useParallel=*/true, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
         REQUIRE_TRUE(std::fabs(combPath) <= bound + 1.0e-4f);
+    }
+}
+
+// -----------------------------------------------------------------------
+// R1 (OMNI REVIEW W2.2a, tasks.md "OMNI REVIEW -- W2.2a"): the test above
+// holds `fb` STATIC and settles for 2000 samples before asserting, so it
+// cannot see the trim smoother's lag -- and in the real app `fb` is NOT
+// static: `Comb::SetFeedback` is called from `RouteAudioSample()` once per
+// SAMPLE (FroggersAppCore.hpp:521,647), so a fast modulation source (audio-
+// rate noise being the extreme case -- `NoiseModulatorProcessor` draws a
+// fresh independent value every sample, DspNoise.hpp) can swing `fb` across
+// its whole range sample-to-sample, and an abrupt scramble (Crispy,
+// randomize) can step it instantly. This test asserts the SAME `(A +
+// fb)/(1 + fb)` bound the test above pins, but evaluated against each
+// sample's OWN currently-set `fb` (not a fixed one), from sample zero --
+// deliberately NOT skipping a settle window, because the transient
+// immediately following a fast swing is exactly what a static-feedback test
+// cannot catch and this one exists to.
+//
+// Two feedback drive patterns, both audio-rate (one new `SetFeedback` call
+// per `Process` call, matching production's per-sample cadence exactly):
+//   1. A hard step: settle at fb=0 (matching the trim smoother's own
+//      construction-time initial state, `output=1.0`, i.e. "at rest"), then
+//      jump straight to the maximum magnitude and hold -- the single
+//      sharpest possible transient, the shape a Crispy/randomize scramble
+//      produces.
+//   2. A fixed-seed audio-rate sweep: `fb` redrawn every sample, uniformly
+//      across its full [-kMaxFeedbackMagnitude, +kMaxFeedbackMagnitude]
+//      range -- the worst realistic case, a 100%-depth Noise source
+//      modulating this parameter (deterministic xorshift32, not
+//      `<random>`, so this TU stays dependency-free per its own header
+//      comment; a fixed seed keeps the test reproducible).
+//
+// Measured at the pre-fix constant (kCombTrimGlideCyclesPerSample = 0.01,
+// analogy-derived from RandomShLane, ~16-sample time constant): worst-case
+// overshoot over the bound was ~0.80 for the hard step and ~0.53 for the
+// audio-rate sweep (delaySamples=1, same adversarial single-sample-delay
+// setup the test above already uses to isolate loop gain) -- both fail this
+// test outright. Sweeping the constant (scratch measurement, not checked
+// in) found overshoot reaches exactly 0.0 (to measurement precision, 50000
+// trials x 7 seeds for the sweep pattern) at glide >= ~0.33 cycles/sample;
+// `kCombTrimGlideCyclesPerSample` is now 0.45, comfortably above that
+// crossover while staying below `OnePoleLowPass::kMaxCutoff` (0.499, the
+// hard clamp). At 0.45 both patterns below measure exactly 0.0 overshoot.
+// -----------------------------------------------------------------------
+TEST_CASE(comb_branch_output_stays_at_or_below_computed_bound_under_audio_rate_feedback_modulation) {
+    const float inputAmplitude = 1.0f;  // A: filter input is bounded |A| <= 1 (Drive output, W2.1-MATH).
+    const float kMaxFb = dsp::Comb::GetFeedback(1.0f);  // +0.95, kMaxFeedbackMagnitude.
+
+    auto boundFor = [&](float fb) { return (inputAmplitude + std::fabs(fb)) / (1.0f + std::fabs(fb)); };
+    auto makeChain = [&]() {
+        dsp::FilterFxChain chain;
+        chain.comb.delaySamples = 1;
+        chain.comb.SetCutoffAlpha(1.0f);  // identity lowpass -- isolates the feedback loop gain itself.
+        chain.pureDelay.delaySamples = 0.0f;
+        return chain;
+    };
+
+    // Pattern 1: hard step from rest (fb=0) to max, held -- the sharpest
+    // transient a scramble can produce.
+    {
+        dsp::FilterFxChain chain = makeChain();
+        chain.comb.SetFeedback(0.0f);
+        constexpr int kSettleSamples = 500;
+        for (int i = 0; i < kSettleSamples; ++i) {
+            chain.Process(inputAmplitude, /*useParallel=*/true, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
+        }
+        chain.comb.SetFeedback(kMaxFb);
+        constexpr int kPostJumpSamples = 500;
+        const float bound = boundFor(kMaxFb);
+        for (int i = 0; i < kPostJumpSamples; ++i) {
+            const float combPath =
+                chain.Process(inputAmplitude, /*useParallel=*/true, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
+            REQUIRE_TRUE(std::fabs(combPath) <= bound + 1.0e-4f);
+        }
+    }
+
+    // Pattern 2: audio-rate sweep, `fb` redrawn every sample across its full
+    // range -- the worst realistic case (a 100%-depth Noise source).
+    {
+        dsp::FilterFxChain chain = makeChain();
+        std::uint32_t rngState = 0xC0FFEEu;
+        const auto nextUniform01 = [&rngState]() {
+            rngState ^= rngState << 13;
+            rngState ^= rngState >> 17;
+            rngState ^= rngState << 5;
+            return static_cast<float>(rngState % 1000000u) / 1000000.0f;
+        };
+        constexpr int kSamples = 20000;
+        for (int i = 0; i < kSamples; ++i) {
+            const float fb = (2.0f * nextUniform01() - 1.0f) * kMaxFb;  // [-kMaxFb, kMaxFb)
+            chain.comb.SetFeedback(fb);
+            const float combPath =
+                chain.Process(inputAmplitude, /*useParallel=*/true, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
+            REQUIRE_TRUE(std::fabs(combPath) <= boundFor(fb) + 1.0e-4f);
+        }
     }
 }
 

@@ -509,54 +509,54 @@ TEST_CASE(randomize_page_on_mod_detail_grid_changes_only_that_parameters_own_dep
 // properties below are statistical, not single-sample: a probability
 // distribution cannot be verified from one draw.
 
-TEST_CASE(randomize_page_mod_detail_is_never_a_no_op_across_500_trials) {
+// W1.2/A2 (design A6, REVISED from this test's original
+// "randomize_page_mod_detail_is_never_a_no_op_across_500_trials"): the
+// sixth green-while-wrong guard (tasks.md W1.0's own citation of THIS test,
+// FroggersModulationTests.cpp:524-624 in the pre-fix file) pinned only
+// `SceneCenter(0)` -- the raw commanded value RandomizeVisibleValue writes
+// directly and immediately -- and so stayed green while the drill-in knob
+// (which reads `UIDisplayCenter`, populated only by a smoothed one-shot
+// nudge inside RandomizeVisibleValue itself, never ticked again for a
+// parameter that is never in `topLevelParameters_`) stayed visually stuck at
+// center. This rewrite pins `UIDisplayCenter` instead -- the property that
+// was actually wrong (W1.0/W1.1a) -- while keeping the original "never a
+// no-op" property alive too, since A1's zero-then-draw still guarantees at
+// least one source is always drawn (`count` is never 0 in
+// RandomizeParameterModulationDepths's weighted table).
+//
+// `fx.manager.ComputeAllParameters()` is still called per trial, but for a
+// DIFFERENT reason than the pre-fix version of this test used it for (see
+// the median-count test below, where the old reason -- settling
+// cross-call SceneCenter drift -- no longer applies and the call was
+// removed entirely). Here it stands in for A2's fix, which in the real app
+// lives in `FroggersAppCore::ProcessFrame()` (the audio-thread drain) and
+// is therefore NOT exercised by this file's bare-ParameterManager fixture at
+// all -- without this call, `UIDisplayCenter` would stay stale by
+// construction, exactly reproducing W1.0's S2 symptom.
+TEST_CASE(randomize_page_mod_detail_is_never_a_no_op_and_updates_the_display_across_500_trials) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);  // 15 connected sources
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
     drillIn.PressEncoder(0);  // -> level 1; eagerly materializes all 15 depth cells (Bank::OpenModulationView)
     synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
+    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;  // F3: single named constant
+    constexpr float kTolerance = 1e-4f;
 
     constexpr int kTrials = 500;
     for (int trial = 0; trial < kTrials; ++trial) {
-        std::array<float, FroggersParameterModel::kNumModulators> before{};
-        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
-            synth::Parameter* depth = focused.ModulationDepthParameter(modIx);
-            before[modIx] = depth != nullptr ? depth->SceneCenter(0) : 0.0f;
-        }
         RandomizePage(fx.manager, drillIn);
-        // `ParameterManager::ComputeAllParameters()` (ParameterModulation.cpp:3165-3173):
-        // hard-syncs every registered parameter's targetCenter_ to its
-        // current SceneCenter (smoothTargetCenter=false at ComputeAtDepth,
-        // :2201-2213). Modulation-depth parameters are NOT visited by the
-        // per-sample audio loop (ParameterGroup::ProcessSamplePhase1 walks
-        // only topLevelParameters_), so in the real app countless audio
-        // samples settle a TOP-LEVEL parameter's targetCenter_ between any
-        // two UI presses, but a DEPTH parameter's targetCenter_ only ever
-        // moves via its own local (smoothed, targetCenterAlpha-slewed)
-        // Compute() call inside RandomizeVisibleValue itself. Hammering
-        // RandomizePage on the same parameter hundreds of times with zero
-        // settling in between (this loop) starves that smoothing of the
-        // convergence real usage gets for free, which can occasionally walk
-        // a depth's SceneCenter to a range boundary and leave it stuck
-        // there for one draw -- a pre-existing Sheaf smoothing property of
-        // repeatedly-randomized depth parameters, unrelated to and not
-        // introduced by this helper (confirmed by reproducing it with a
-        // fixed-seed trace: FroggersModulation.hpp's
-        // RandomizeParameterModulationDepths always drew a fresh distinct
-        // value; ComputeAtDepth's un-synced smoothing accumulated the
-        // discrepancy). Calling this here stands in for that real-app
-        // settling between presses.
-        fx.manager.ComputeAllParameters();
-        bool anyChanged = false;
+        fx.manager.ComputeAllParameters();  // A2's reseed -- see this test's header comment.
+
+        bool anyDisplayMoved = false;
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
             synth::Parameter* depth = focused.ModulationDepthParameter(modIx);
-            if (depth != nullptr && depth->SceneCenter(0) != before[modIx]) {
-                anyChanged = true;
+            if (depth != nullptr && std::fabs(depth->UIDisplayCenter(0) - kNeutral) > kTolerance) {
+                anyDisplayMoved = true;
             }
         }
-        // ZERO no-ops across all 500 trials -- this is the exact bug A6
-        // reports (Sheaf's coin loop was a complete no-op 50% of the time).
-        REQUIRE_TRUE(anyChanged);
+        // ZERO no-ops across all 500 trials, and the DISPLAY (not just the
+        // commanded value) reflects it -- W1.2's own requirement.
+        REQUIRE_TRUE(anyDisplayMoved);
     }
 }
 
@@ -598,36 +598,50 @@ TEST_CASE(randomize_depth_helper_draws_distinct_sources_even_from_an_adversarial
     REQUIRE_TRUE(touchedCount == 4);
 }
 
+// REVISED for A1 (non-additive randomize): the pre-fix version of this test
+// measured the draw count as a round-to-round SceneCenter DIFF ("before" vs
+// "after"), and relied on a per-trial `fx.manager.ComputeAllParameters()`
+// call to keep that diff meaningful -- without it, repeated hammering left
+// `targetCenter_` stale relative to the just-written `SceneCenter`, so the
+// NEXT call's internal `RandomizeVisibleValue` (which derives its delta from
+// the stale `TargetValue(0)`, not from `SceneCenter` directly) could
+// occasionally walk `SceneCenter` to a range boundary rather than the drawn
+// target and corrupt the diff.
+//
+// A1 makes that whole mechanism moot for this test: RandomizeParameterModulationDepths
+// now zeroes `focused`'s existing depths (both scene poles) BEFORE every
+// draw, so each call starts from a known, exact baseline (`SceneCenter(0) ==
+// 0.5`) regardless of what the previous call did. The draw count for a
+// single call is therefore just "how many depths are non-neutral
+// immediately after it" -- no diffing against a remembered "before" state,
+// and consequently no dependency on the previous call's `targetCenter_`
+// having settled. The manual `ComputeAllParameters()` call is REMOVED here
+// (not just left in defensively): it was pure workaround for the
+// round-to-round drift A1's zeroing now eliminates by construction, and
+// keeping a workaround the fix has made unnecessary would obscure that the
+// per-call SceneCenter write is already exact on its own.
 TEST_CASE(randomize_depth_helper_median_count_is_three_across_1000_trials) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);  // 15 connected sources -- N for the tail
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
     drillIn.PressEncoder(0);  // -> level 1; eagerly materializes all 15 depth cells
     synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
+    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;  // F3: single named constant
+    constexpr float kTolerance = 1e-4f;
 
     constexpr int kTrials = 1000;
     std::vector<int> counts;
     counts.reserve(kTrials);
-    std::array<float, FroggersParameterModel::kNumModulators> before{};
-    for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
-        before[modIx] = focused.ModulationDepthParameter(modIx)->SceneCenter(0);
-    }
     for (int trial = 0; trial < kTrials; ++trial) {
         RandomizePage(fx.manager, drillIn);
-        // See the "never a no-op" test above for why this is here: it
-        // hard-syncs depth parameters' targetCenter_ to their SceneCenter
-        // between presses, standing in for the settling real audio-thread
-        // ticks give top-level parameters for free.
-        fx.manager.ComputeAllParameters();
-        int changed = 0;
+        int nonNeutral = 0;
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
-            const float now = focused.ModulationDepthParameter(modIx)->SceneCenter(0);
-            if (now != before[modIx]) {
-                ++changed;
+            synth::Parameter* depth = focused.ModulationDepthParameter(modIx);
+            if (depth != nullptr && std::fabs(depth->SceneCenter(0) - kNeutral) > kTolerance) {
+                ++nonNeutral;
             }
-            before[modIx] = now;
         }
-        counts.push_back(changed);
+        counts.push_back(nonNeutral);
     }
 
     std::sort(counts.begin(), counts.end());
@@ -639,6 +653,111 @@ TEST_CASE(randomize_depth_helper_median_count_is_three_across_1000_trials) {
     // distribution (a regression back toward Sheaf's mean-1.0 shape would
     // land the median at 0 or 1, well outside this band).
     REQUIRE_TRUE(median >= 2 && median <= 4);
+}
+
+// ============================================================================
+// A1/A3 (tasks.md CONSOLIDATED PUSH) -- non-additivity and scene-pair
+// semantics
+// ============================================================================
+
+// A1: pins non-additivity directly (not just "never a no-op," which A1
+// itself does not change) -- two successive Randomize All presses must NOT
+// exhibit the old bug's signature, where the nonzero-source count for a
+// given parameter can only ever grow (nothing ever zeroed a previously-
+// randomized source, tasks.md W1.0's S1). Checked at BOTH scene poles
+// (A3's own non-additivity requirement -- "non-additive in both scenes").
+TEST_CASE(randomize_all_is_non_additive_two_successive_presses_can_decrease_the_count) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/true);
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+    synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
+    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;  // F3: single named constant
+    constexpr float kTolerance = 1e-4f;
+
+    auto countNonNeutral = [&](std::size_t sceneIx) {
+        int count = 0;
+        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+            synth::Parameter* depth = focused.ModulationDepthParameter(modIx);
+            if (depth != nullptr && std::fabs(depth->SceneCenter(sceneIx) - kNeutral) > kTolerance) {
+                ++count;
+            }
+        }
+        return count;
+    };
+
+    // Under the pre-A1 additive bug, `count2 < count1` could never happen --
+    // a previously-drawn source is never zeroed, so the set (and therefore
+    // the count) can only grow or stay the same across repeated presses.
+    // Under the A1 fix, each press draws an independent fresh set, so a
+    // strictly smaller count on the second press must eventually be
+    // observed across enough trial pairs if the fix is real.
+    bool sawDecreaseScene0 = false;
+    bool sawDecreaseScene1 = false;
+    constexpr int kTrialPairs = 200;
+    for (int trial = 0; trial < kTrialPairs; ++trial) {
+        RandomizeAll(fx.manager, drillIn, fx.model);
+        const int count1Scene0 = countNonNeutral(0);
+        const int count1Scene1 = countNonNeutral(1);
+
+        RandomizeAll(fx.manager, drillIn, fx.model);
+        const int count2Scene0 = countNonNeutral(0);
+        const int count2Scene1 = countNonNeutral(1);
+
+        if (count2Scene0 < count1Scene0) {
+            sawDecreaseScene0 = true;
+        }
+        if (count2Scene1 < count1Scene1) {
+            sawDecreaseScene1 = true;
+        }
+        if (sawDecreaseScene0 && sawDecreaseScene1) {
+            break;
+        }
+    }
+    REQUIRE_TRUE(sawDecreaseScene0);
+    REQUIRE_TRUE(sawDecreaseScene1);
+}
+
+// A3: for each parameter Randomize All touches, the SET of nonzero-depth
+// sources must be IDENTICAL in both scene poles (so the badge, which is
+// true if ANY scene is nonzero, never disagrees with what a specific scene
+// actually holds), while the VALUES differ per pole (so blending between
+// scenes is audible). tasks.md's own A3 decision, taken from the operator's
+// proposal.
+TEST_CASE(randomize_all_scene_pair_has_identical_source_membership_but_different_values) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/true);
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;  // F3: single named constant
+    constexpr float kTolerance = 1e-4f;
+
+    RandomizeAll(fx.manager, drillIn, fx.model);
+
+    bool checkedAtLeastOneParameter = false;
+    bool foundAValueDifference = false;
+    ForEachTopLevelParameter(fx.model, [&](synth::Parameter& parameter) {
+        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+            synth::Parameter* depth = parameter.ModulationDepthParameter(modIx);
+            if (depth == nullptr) {
+                continue;
+            }
+            checkedAtLeastOneParameter = true;
+            const bool nonzeroScene0 = std::fabs(depth->SceneCenter(0) - kNeutral) > kTolerance;
+            const bool nonzeroScene1 = std::fabs(depth->SceneCenter(1) - kNeutral) > kTolerance;
+            // Identical source membership: a materialized depth that was
+            // actually drawn this operation must be nonzero in BOTH poles,
+            // never just one (that mismatch is exactly W1.0's badge/depth
+            // symptom: "randomizing only scene 0 therefore lights the badge
+            // in both scenes while scene 1 reads zero").
+            REQUIRE_TRUE(nonzeroScene0 == nonzeroScene1);
+            if (nonzeroScene0 && depth->SceneCenter(0) != depth->SceneCenter(1)) {
+                foundAValueDifference = true;
+            }
+        }
+    });
+    REQUIRE_TRUE(checkedAtLeastOneParameter);
+    // Different values per pole -- otherwise scene-blending this parameter
+    // would be silently inaudible despite the badge being lit.
+    REQUIRE_TRUE(foundAValueDifference);
 }
 
 // ============================================================================

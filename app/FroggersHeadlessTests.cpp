@@ -113,6 +113,69 @@ TEST_CASE(froggers_config_requests_exactly_one_audio_input_channel) {
     REQUIRE_TRUE(config.numAudioInputs == 1);
 }
 
+// A2 (tasks.md CONSOLIDATED PUSH) -- end-to-end proof that the
+// ComputeAllParameters() reseed added to FroggersAppCore::ProcessFrame()
+// (FroggersAppCore.hpp) actually reaches the display through the REAL
+// production path: RequestRandomizeAll() (UI/message thread) ->
+// ProcessFrame() (audio thread, drained by synth::Engine once per block,
+// before ProcessBlock() -- this class's own header comment) -> the reseed.
+// FroggersModulationTests.cpp's own randomize tests call
+// FroggersModulation.hpp's RandomizeAll()/RandomizePage() directly against a
+// bare ParameterManager, which never exercises FroggersAppCore::
+// ProcessFrame() at all -- this is the one place in the suite that proves
+// the fix is wired into the real request-bridge path, not just correct in
+// isolation.
+TEST_CASE(randomize_all_request_through_process_frame_updates_the_display) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64,
+        UseScratchRuntimeDataPaths("randomize_all_updates_display"));
+    rig.RunBlocks(2);  // let Init()'s default patch / first ProcessFrame settle.
+
+    rig.Application().RequestRandomizeAll();
+    rig.RunBlocks(1);  // ProcessFrame() drains the request and reseeds, same block.
+
+    // Randomize All (drill-in level 0) touches every top-level parameter
+    // across all six banks (design D14) -- find any depth it materialized
+    // and confirm the DISPLAY (not just the commanded value) moved.
+    constexpr float kNeutral = 0.5f;
+    constexpr float kTolerance = 1e-4f;
+    bool foundMovedDisplay = false;
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount && !foundMovedDisplay; ++bankIx) {
+        const auto bankId = static_cast<synth_froggers::FroggersBankId>(bankIx);
+        for (std::size_t paramIx = 0; paramIx < synth_froggers::kFroggersParamsPerBank; ++paramIx) {
+            synth::Parameter& parameter = rig.Application().Parameters().PageParameter(bankId, paramIx);
+            for (std::size_t modIx = 0; modIx < synth_froggers::FroggersParameterModel::kNumModulators; ++modIx) {
+                synth::Parameter* depth = parameter.ModulationDepthParameter(modIx);
+                if (depth != nullptr && std::fabs(depth->UIDisplayCenter(0) - kNeutral) > kTolerance) {
+                    foundMovedDisplay = true;
+                    break;
+                }
+            }
+            if (foundMovedDisplay) {
+                break;
+            }
+        }
+    }
+    REQUIRE_TRUE(foundMovedDisplay);
+}
+
+// A4 -- LastRandomizePartial() defaults false and stays false across an
+// ordinary Randomize All request with ample storage headroom (the default
+// FroggersModulationSlate::kDepthParameterStorageCapacity, 1200, is well
+// above the 793-915 ceiling design D14 documents), proving the accessor is
+// wired and does not false-positive on a healthy randomize.
+TEST_CASE(randomize_all_with_ample_capacity_reports_not_partial) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64,
+        UseScratchRuntimeDataPaths("randomize_all_not_partial"));
+    rig.RunBlocks(2);
+
+    REQUIRE_TRUE(!rig.Application().LastRandomizePartial());
+    rig.Application().RequestRandomizeAll();
+    rig.RunBlocks(1);
+    REQUIRE_TRUE(!rig.Application().LastRandomizePartial());
+}
+
 }  // namespace
 
 int main() {

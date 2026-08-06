@@ -470,11 +470,15 @@ struct FilterFxChain
 
     // W2.2a (openspec/changes/frogg3rs-modulation-truth-and-voicing/
     // tasks.md): smooths the comb branch's exact output trim computed in
-    // Process() below. `fb` (Comb::feedback) is a per-block cached knob
-    // read (FroggersAppCore.hpp:1027) that steps at every block boundary
-    // and every Crispy/randomize scramble -- smoothing the TRIM value here
-    // (never `fb` itself, which would change the filter's behaviour, not
-    // just its level) erases that zipper.
+    // Process() below. `fb` (Comb::feedback) is set from
+    // `Comb::SetFeedback`, called from `RouteAudioSample()` once per SAMPLE
+    // (FroggersAppCore.hpp:521,647; R1, OMNI REVIEW W2.2a -- CORRECTING this
+    // comment's earlier "per-block cached knob read" claim, which was the
+    // wrong premise the original 0.01 constant below was chosen under).
+    // Smoothing the TRIM value here (never `fb` itself, which would change
+    // the filter's behaviour, not just its level) erases the step every
+    // `SetFeedback` call would otherwise put directly into the output level,
+    // including the abrupt jumps a Crispy/randomize scramble produces.
     OnePoleLowPass combTrimSmoother;
 
     FilterFxChain()
@@ -485,11 +489,36 @@ struct FilterFxChain
         // call, :274-275 kFastCutoff/kSlowCutoff constants) -- FilterFxChain
         // has no SetSampleRate() of its own, so a fixed cycles/sample cutoff
         // is the only option without threading a new parameter down from
-        // FroggersAppCore (W2.2a constraint). 0.01 cycles/sample sits
-        // between RandomShLane's kFastCutoff (0.45, near-instant) and
-        // kSlowCutoff (0.002, audible glide): fast enough to track knob
-        // motion, slow enough to erase the per-block trim step.
-        constexpr float kCombTrimGlideCyclesPerSample = 0.01f;
+        // FroggersAppCore (W2.2a constraint).
+        //
+        // R1 (OMNI REVIEW W2.2a, tasks.md): this was 0.01 cycles/sample --
+        // chosen by analogy to RandomShLane's own glide constants, under the
+        // (wrong, see combTrimSmoother's own comment above) assumption that
+        // `fb` only steps once per BLOCK. It actually steps once per SAMPLE,
+        // so under fast audio-rate modulation of this parameter (a 100%-
+        // depth Noise source being the worst realistic case) the trim can
+        // lag far enough behind a fast upward swing that the comb branch
+        // goes measurably UNDER-trimmed during the lag -- pinned by
+        // FroggersDspParityTests.cpp's TEST_CASE
+        // "comb_branch_output_stays_at_or_below_computed_bound_under_audio_
+        // rate_feedback_modulation" (name split across lines here only for
+        // width; it is one identifier), which failed outright at 0.01 (measured
+        // worst-case overshoot over the intended bound: ~0.80 for a hard
+        // step from rest to max feedback, ~0.53 for a continuous full-range
+        // audio-rate sweep, both against the single-sample-delay comb
+        // configuration that test and the static-feedback bound test above
+        // it both use to isolate loop gain). A scratch sweep of the constant
+        // found overshoot reaches exactly 0.0 (to measurement precision,
+        // tens of thousands of trials across multiple seeds) at glide >=
+        // ~0.33 cycles/sample; 0.45 below sits comfortably above that
+        // crossover while staying under `OnePoleLowPass::kMaxCutoff` (0.499,
+        // the hard clamp) -- fast enough that this is barely still
+        // "smoothing" in the RandomShLane-glide sense (its own kFastCutoff
+        // is 0.45, "near-instant"), which is the honest consequence of the
+        // premise correction above, not a separate design choice: once `fb`
+        // is known to step every sample rather than every block, matching
+        // its own update rate is what the safety bound requires.
+        constexpr float kCombTrimGlideCyclesPerSample = 0.45f;
         combTrimSmoother.SetAlphaFromNatFreq(kCombTrimGlideCyclesPerSample);
         combTrimSmoother.output = 1.0f;  // unity at fb=0 -- matches the untrimmed branch (no initial fade-in).
     }

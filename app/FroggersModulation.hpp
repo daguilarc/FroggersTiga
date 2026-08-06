@@ -795,6 +795,72 @@ inline bool CapacityExhausted(const synth::ParameterGroup& group) {
     return !group.CanAllocate();
 }
 
+// A3 (scene-pair semantics, tasks.md's A3 decision): Randomize All/Page is
+// "agnostic to scene-slider position" -- every depth write below targets one
+// of these two FIXED scene poles directly, never the live (possibly
+// mid-blend) `manager.Scene()`. leftScene==rightScene on each, so
+// `ApplySceneDistribution`'s own `&left==&right` special case
+// (ParameterModulation.cpp:369-374) applies the write to exactly that one
+// scene index regardless of blend -- the same pattern
+// `ApplyFroggersDefaultPatch`'s own `kScene` constant already relies on for
+// pole 0 (this file, further down). Matches `FroggersParameterModel::
+// kNumScenes == 2` and the app's fixed `SetSceneEndpoints(0, 1)`
+// (FroggersParameters.hpp; scene index 0 = "Scene 1", 1 = "Scene 2").
+inline constexpr synth::SceneState kScenePole0{0, 0, 0.0f};
+inline constexpr synth::SceneState kScenePole1{1, 1, 0.0f};
+
+// F2: the single definition site for "how many scene poles exist." Both
+// ZeroExistingModulationDepths and RandomizeParameterModulationDepths below
+// used to hardcode kScenePole0/kScenePole1 as two separate consecutive
+// statements; both now iterate this array instead, so a future change to
+// `FroggersParameterModel::kNumScenes` trips the static_assert right below
+// (a build break) instead of silently leaving both call sites still
+// handling exactly two poles. Size is deduced from the initializer list
+// (currently 2, matching kScenePole0/kScenePole1 above) and cross-checked
+// against kNumScenes, the actual authority (FroggersParameters.hpp).
+inline constexpr std::array kScenePoles{kScenePole0, kScenePole1};
+static_assert(kScenePoles.size() == FroggersParameterModel::kNumScenes,
+              "kScenePoles must enumerate exactly kNumScenes scene poles");
+
+// F3: the bipolar-neutral commanded value, named once. Sheaf's own
+// `kNeutralModulationDepthCenter` (ParameterModulation.cpp:258) is
+// file-private and not reachable from here, so this is a legitimate
+// separate definition -- but it must exist exactly once on this side, not
+// as a bare `0.5f` repeated at every call site (W1.0: "depths are
+// RangeKind::Bipolar, 0.5 IS zero"). Referenced by
+// ZeroExistingModulationDepths below and by FroggersModulationTests.cpp.
+inline constexpr float kNeutralModulationDepthCenter = 0.5f;
+
+// A1 (non-additive randomize) + A3 (scene-pair semantics): zeroes
+// `parameter`'s EXISTING (already-materialized) modulation depths at BOTH
+// scene poles, immediately before RandomizeParameterModulationDepths below
+// draws a fresh set. Only touches depths that are already materialized --
+// `ModulationDepthParameter` (unlike `EnsureModulationDepth`) never
+// allocates, so an unmaterialized source (never touched, or already at
+// storage capacity) is left alone rather than burning a slot on a write that
+// would be a no-op anyway (an unmaterialized depth has no Parameter to carry
+// a nonzero commanded value in the first place). `kNeutralModulationDepthCenter`
+// is the bipolar neutral commanded value (see its own comment above).
+// A raw `SceneCenter` write (not `RandomizeVisibleValue`/`HandleSetAbsolute`)
+// is deliberate: it is the exact commanded-value write W1.0 identifies
+// `sceneCenters_` as being, with no dependency on the depth's own
+// (currently stale) `targetCenter_`, and the single `ComputeAllParameters()`
+// call A2 adds at the end of the whole randomize operation resyncs
+// `currentCenter_`/`targetCenter_`/the UI display for every parameter this
+// touches -- including these zeroed ones -- in one pass, so nothing here
+// needs to re-converge anything itself.
+inline void ZeroExistingModulationDepths(synth::Parameter& parameter) {
+    for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+        synth::Parameter* depth = parameter.ModulationDepthParameter(modIx);
+        if (depth == nullptr) {
+            continue;
+        }
+        for (const synth::SceneState& pole : kScenePoles) {
+            depth->SceneCenter(pole.leftScene) = kNeutralModulationDepthCenter;
+        }
+    }
+}
+
 // E.1 (design A6) -- the shared count/source-selection helper used by all
 // four RandomMod dispatch sites in this file (RandomizeBankLevel1Depths,
 // RandomizePage's drill-in branch, and both RandomizeAll drill-in branches).
@@ -823,6 +889,20 @@ inline bool CapacityExhausted(const synth::ParameterGroup& group) {
 inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager, synth::Parameter& parameter) {
     synth::ParameterGroup& group = parameter.Group();
     bool partial = CapacityExhausted(group);
+
+    // A1 (non-additive, Option A -- operator 2026-08-05: "the randomization
+    // should never have been additive"): zero this parameter's own existing
+    // depths, BOTH scene poles (A3), before drawing the fresh set below.
+    // Scope note: this function is the single call site every RandomizeAll/
+    // RandomizePage branch below routes through per parameter, so "zero in
+    // scope, then draw" naturally becomes "zero ALL depths this operation
+    // touches" for Randomize All (RandomizeBankLevel1Depths calls this once
+    // per top-level parameter, across every bank) and "zero only that page's
+    // parameter's depths" for Randomize Page (RandomizePage's level-1/2
+    // branch calls this exactly once, on the one selected parameter) -- no
+    // separate wide "zero everything up front" pass is needed, since one
+    // parameter's depths never affect another's.
+    ZeroExistingModulationDepths(parameter);
 
     // Built once per call (not cached across calls: `connected` changes at
     // runtime, e.g. external-audio cabling) and reserved to the modulator
@@ -874,7 +954,18 @@ inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager,
             partial = true;
             break;  // storage exhausted mid-call -- partial, not a silent short-count.
         }
-        depth->RandomizeVisibleValue(manager.Scene(), manager.NextRandomValue());
+        // A3 (scene-pair semantics): the SAME chosen source (`eligible[i]`)
+        // gets an INDEPENDENT random value in EACH scene pole -- identical
+        // source membership (so the badge, true if ANY scene is nonzero,
+        // agrees with what every scene actually holds), different values per
+        // pole (so blending sweeps between two distinct modulation states).
+        // Deliberately NOT `manager.Scene()` (the live, possibly mid-blend
+        // scene) -- see kScenePole0/kScenePole1's own comment. F2: iterates
+        // kScenePoles rather than naming each pole in its own statement --
+        // see that array's own comment.
+        for (const synth::SceneState& pole : kScenePoles) {
+            depth->RandomizeVisibleValue(pole, manager.NextRandomValue());
+        }
     }
     return partial;
 }

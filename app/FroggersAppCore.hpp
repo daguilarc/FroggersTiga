@@ -399,6 +399,20 @@ public:
     // change, this is a read-only discoverability aid.
     bool TransportRunning() const { return transportRunningDisplay_.load(std::memory_order_acquire); }
 
+    // A4 (tasks.md CONSOLIDATED PUSH, "surface partial randomize"): true when
+    // the MOST RECENT Randomize All/Page operation left
+    // `FroggersRandomizeResult.partial` true -- i.e. `EnsureModulationDepth`
+    // hit `!group_.CanAllocate()` (Sheaf, ParameterModulation.cpp:2790-2792)
+    // and stopped that operation short of drawing its full chosen set.
+    // Published from ProcessFrame() (audio thread) alongside the
+    // ComputeAllParameters() reseed below, same cross-thread contract as
+    // TransportRunning() above -- makes a silent partial randomize
+    // observable to tests, without inventing any new UI element the operator
+    // did not ask for. Any operator-visible logging must read this atomic
+    // from the UI thread -- ProcessFrame() itself never logs (F1: fprintf on
+    // the audio thread can allocate/lock/block, which is a dropout risk).
+    bool LastRandomizePartial() const { return lastRandomizePartial_.load(std::memory_order_acquire); }
+
     // Packet 10 (design D11/D14): detected via AppConcepts.hpp's
     // HasProcessFrame concept; synth::Engine invokes this once per block,
     // after message drains and before ProcessBlock() (AppConcepts.hpp's own
@@ -454,11 +468,64 @@ public:
         }
 
         if (context_ != nullptr && context_->parameterManager != nullptr) {
+            // A1/A2/A4 (tasks.md CONSOLIDATED PUSH): both branches below now
+            // return a `FroggersRandomizeResult` whose `.partial` flag used
+            // to be discarded entirely (W1.0 S3's "left un-surfaced" citation
+            // of this exact call site) -- captured into `anyPartial` and
+            // published below instead.
+            bool randomizeRan = false;
+            bool anyPartial = false;
+            // F4: each call's result is hoisted into its own named local
+            // BEFORE combining, so both RandomizeAll/RandomizePage always run
+            // when their request is pending -- `anyPartial = a.partial ||
+            // anyPartial` reads fine but is only correct because the call
+            // sits on the left of `||`; swapping the combine order (or a
+            // future edit that does) would short-circuit and skip the second
+            // call whenever the first's `.partial` was already true.
             if (pendingRandomizeAll_.exchange(false, std::memory_order_acq_rel)) {
-                RandomizeAll(*context_->parameterManager, *drillIn_, parameters_);
+                const bool allPartial = RandomizeAll(*context_->parameterManager, *drillIn_, parameters_).partial;
+                anyPartial = anyPartial || allPartial;
+                randomizeRan = true;
             }
             if (pendingRandomizePage_.exchange(false, std::memory_order_acq_rel)) {
-                RandomizePage(*context_->parameterManager, *drillIn_);
+                const bool pagePartial = RandomizePage(*context_->parameterManager, *drillIn_).partial;
+                anyPartial = anyPartial || pagePartial;
+                randomizeRan = true;
+            }
+            if (randomizeRan) {
+                // A4: surface a partial randomize -- observable to tests via
+                // LastRandomizePartial(). Not a per-parameter/per-press
+                // signal (design D14's own randomize helper can be called
+                // dozens of times per operation); one publish per Randomize
+                // All/Page press that actually ran short. F1: no log is
+                // emitted here -- ProcessFrame() runs on the audio thread
+                // (this method's own header comment), and any operator-
+                // visible logging must instead read this atomic from the UI
+                // thread.
+                lastRandomizePartial_.store(anyPartial, std::memory_order_release);
+                // A2 (W1.1a/W1.1d): the display-staleness fix. `Parameter::
+                // RandomizeVisibleValue` writes `sceneCenters_` (the commanded
+                // value) directly and immediately, but the drill-in knob
+                // reads `uiDisplayCenters_`, which a depth parameter only
+                // ever gets seeded into via a smoothed, one-shot nudge inside
+                // RandomizeVisibleValue itself (Sheaf, pinned; see tasks.md
+                // W1.0/W1.1a for the full trace) -- it is never touched again
+                // by the per-sample loop, because depth parameters are not in
+                // `topLevelParameters_`. `ComputeAllParameters()` (public,
+                // ParameterModulation.hpp:796) is the one call that reseeds
+                // it exactly, for every parameter including depth children
+                // (ComputeAtDepth's recursionDepth_>0 branch takes the
+                // instant snap-and-seed path, not the smoothed one -- see
+                // W1.1a's derivation). Called ONCE here, after both branches
+                // above have made every write for this frame's request(s),
+                // never per-parameter and never from the UI thread:
+                // ProcessFrame() itself only ever runs on the audio thread
+                // (this method's own header comment; `synth::Engine` invokes
+                // it once per block, after message drains and before
+                // ProcessBlock()), and `ComputeAllParameters()` is a full,
+                // non-lock-free graph traversal that `ParameterManager`
+                // requires to run there (ParameterModulation.hpp:484-485).
+                context_->parameterManager->ComputeAllParameters();
             }
         }
 
@@ -1494,6 +1561,9 @@ private:
     // Task 3.6 (design E3e): published once per block, same contract as the
     // two atomics above -- see TransportRunning()'s own comment.
     std::atomic<bool> transportRunningDisplay_{false};
+    // A4: published once per Randomize All/Page press from ProcessFrame() --
+    // see LastRandomizePartial()'s own comment.
+    std::atomic<bool> lastRandomizePartial_{false};
 
     // D17 robustness fix (see PrepareToPlay()'s own comment): the surface's
     // last explicit Play(true)/Stop(false) request, independent of
