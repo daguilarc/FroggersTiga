@@ -898,7 +898,31 @@ its own slider (both grow to the current scene-blend width, but that is F.6-C). 
 says scene-blend is too wide AND BPM too narrow, which reads as wanting something between the two
 — so this needs the operator's answer, not an implementer's pick.**
 
-- [ ] F.6 Implement the approved option. **Blocked on the width answer above.**
+### OPERATOR DECISION 2026-08-05 — F.6-A with candidate 3, dynamic
+
+Operator approved option 3 and confirmed the mechanism: **"dynamically based on the left side with
+a buffer"** — a fraction of the left block resolved at layout time, **not** a pixel constant. Both
+sliders take the same declared fraction, so they track the left block automatically if it ever
+changes width (upstream reflow landing, or the §H mobile topology).
+
+**Mechanism verified before dispatch (OMNI §1 — the design depends on it):** `Extent::Fraction(f)`
+resolves as `contentExtent * f` on the MAIN axis (`ResolveSimpleExtent`,
+`PortableUILayout.hpp:154-155`) and **identically on the CROSS axis** (`ResolveCrossExtent`,
+`:318-347`, `Fraction` case `:333-335`), with `ClampExtent` applying `.Min()`/`.Max()` in both
+(`:346`). So one width value works for both placements: it lands in `cross` for the Below/Column
+case and in `main` for the Trailing/Row case. Also confirmed while reading: a cross-axis
+`Weight` behaves as a fill fraction clamped to [0,1] (`:336-340`) — which is exactly why the
+scene-blend slider currently fills the full width and BPM's does not.
+
+**Overflow risk to validate, not assume.** In the Trailing/Row case the slider takes `Fraction(f)`
+of the row and the label takes `Intrinsic`, so they fit only while `labelWidth <= (1-f) * rowWidth`.
+At f=0.8 and the smallest fit size that is roughly 64 px for the word "BPM" — comfortable, but
+**this is a prediction, not a measurement.** The three fit tests (900×632 / 640×480 / 1440×900) are
+what prove it: layout resolution throws on overflow, so a bad fraction fails loudly rather than
+rendering wrong. If it throws, lower `f` or add `.Max()` to the label — **do not delete the fit
+test.**
+
+- [x] F.6 Implement F.6-A with a dynamic fraction — dispatched 2026-08-05.
 
 ## §G-PLAN — direct launch, no app picker (written 2026-08-01)
 
