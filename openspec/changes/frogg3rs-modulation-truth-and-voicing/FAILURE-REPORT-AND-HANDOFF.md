@@ -209,6 +209,55 @@ not-implemented produce the identical symptom, and only reading the code disting
 
 ---
 
+### F4 ADDENDUM — SCOPE ANSWERED, AND A LIKELY ROOT CAUSE (read 2026-08-05, lead read the code directly)
+
+**Operator's question: at level 1, does Randomize All affect level-2 for EVERY parameter, or just
+the drilldown you are in? ANSWER: just the drilldown you are in.**
+`RandomizeAll`'s `Level()==1` branch (`app/FroggersModulation.hpp:~1097-1150`) operates solely on
+`drillIn.BankRef().SelectedParameter()`:
+- Step 1 randomizes that one parameter's own 15 depths (median-3 helper).
+- Step 3 loops `modIx` 0..14 and, for each depth that is materialized (`ModulationDepthParameter`
+  non-null — i.e. roughly the ~3 Step 1 just chose, plus any pre-existing), presses into level 2
+  and randomizes ITS 15 sub-depths.
+- Total 15 + 15×15 = **240 parameters, all belonging to the ONE focused parameter.** The in-source
+  comment calls this "the only path in the design that creates level-2 storage."
+
+**CONFIRMED CONSEQUENCE: a level-0 Randomize All creates NO level-2 state.** This definitively
+kills the subtree hypothesis for F1 on a fresh patch — the operator was right.
+
+**LIKELY ROOT CAUSE OF F4's SYMPTOM — the function navigates the operator OUT of the drilldown.**
+Step 2 calls `drillIn.Back()` (exit to level 0) to locate the parameter's encoder id in the
+parameter grid, then `PressEncoder` to reopen level 1. The Step-3 loop then does
+`PressEncoder(modIx)` → level 2, randomize, `Back()` → level 1, per source. **After the loop there
+is a final `drillIn.Back()`, which drops the level to 0.** So pressing Randomize All inside a
+level-1 drilldown ends with the operator on the MAIN BANK PAGE.
+
+That matches the report exactly: *"i only see the knob positions change and the badges change for
+the main bank page."* **They are seeing the main bank page because the operation put them there.**
+The level-2 work may well be happening correctly and simply not be visible, because the view they
+would need to see it in has been exited.
+
+**Verify before fixing:** after a level-1 Randomize All, check (a) `drillIn.Level()` — expect 0,
+which is the bug; (b) whether the focused parameter's depths actually have non-neutral level-2
+sub-depths; (c) `LastRandomizePartial()`. If (b) is populated and (a) is 0, this is purely a
+navigation defect and the randomization is fine.
+
+**Also note the allocation pressure:** the comment records that `PressEncoder`'s view-open
+**eagerly materializes ALL of a depth's connected sub-depths**, not just the ones randomize picks.
+So the 240 figure is materialization, not selection — and against a ~1200-slot pool, a few level-1
+randomizes could plausibly exhaust it. That remains the secondary hypothesis if (b) comes back
+empty.
+
+### F1 ADDENDUM — distribution target agreed with the operator (2026-08-05)
+
+**"mode 2, rarely above 4 is good enough."** That supersedes the predecessor's median-3 spec.
+Current spec is 10/30/30/20 + geometric r=0.7 tail, giving **P(≥4) = 30%** — which is what the
+operator is seeing and objecting to. Target instead: **mode 2**, with 4+ genuinely rare (single
+digits of percent, not 30%), and 7 essentially never. Still never zero, still distinct sources,
+**and the same distribution must apply at EVERY level, not just level 0** (operator, explicit).
+Re-derive the table to hit mode 2 and re-pin the tests on the new distribution — including a test
+that the SAME distribution governs the level-1 and level-2 draws.
+
 ## 3. What was attempted, and what each fix actually proved
 
 | Fix | Measured result | What it actually proved |
