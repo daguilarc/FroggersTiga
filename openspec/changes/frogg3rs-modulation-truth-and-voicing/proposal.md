@@ -1,5 +1,25 @@
 # Proposal — `frogg3rs-modulation-truth-and-voicing`
 
+> # ⚠ STOP — THIS PLAN IS SUPERSEDED AND ITS COMPLETED ITEMS ARE NOT VERIFIED WORKING
+>
+> **Read `FAILURE-REPORT-AND-HANDOFF.md` in this directory BEFORE anything else in this file.**
+>
+> The operator ran the final consolidated build on 2026-08-05 and reports **four failures still
+> present**, every one of which this plan records as fixed and green:
+> 1. Randomize All still produces far more than the intended count of modulation badges.
+> 2. Filter Crispy at max still blows out.
+> 3. **Stop does not stop** — audio continues over a minute after the transport is stopped.
+> 4. Randomize All inside a level-1 drilldown ejects the operator to the main page.
+>
+> **176 tests pass. Four reported symptoms remain.** Every checkbox and every "measured green"
+> claim below describes an isolated stage under synthetic input, never the real signal path.
+> Treat completion marks in this file as *"code was written and a narrow test passed"*, NOT as
+> *"the instrument works"*.
+>
+> Superseded by: **`frogg3rs-blowout-and-drilldown-repair`** (scope F1-F5, carried from the
+> failure report).
+
+
 **Created 2026-08-05. Supersedes `frogg3rs-audio-safety-and-ui-rework`** — see
 `SUPERSESSION-RECORD.md` for exactly what carried over, what stays open, and why supersession
 rather than extension.
