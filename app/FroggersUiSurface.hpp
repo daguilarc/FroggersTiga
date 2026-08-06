@@ -135,20 +135,26 @@ inline constexpr const char* kSceneBlendGroup = "froggers.scene.blend.group";
 inline constexpr const char* kSceneBlendLabel = "froggers.scene.blend.label";
 
 inline constexpr const char* kBpm = "froggers.bpm";
-// Row 6 of the left block: the BPM slider with its label TRAILING it (B12,
-// unchanged by the CELL MAP -- see AppendBpmGroup()'s own comment).
+// Row 6 of the left block: the BPM slider with its label BELOW it, the same
+// shape as row 5 -- task F.6 (2026-08-05) superseded B12's trailing label
+// once scene-blend's moved below removed the ambiguity B12 existed to
+// prevent. See AppendLabelledSlider()'s own comment for the full reasoning.
 inline constexpr const char* kBpmGroup = "froggers.bpm.group";
-// Survives F.2d's caption conversion on purpose. The scene-blend label's
-// hand-rolled node went away because its ONLY cause -- upstream never drawing
-// slider captions -- is dead at pin 77a3019e. This one had a SECOND cause,
-// B12 (tasks.md, 2026-07-29): the BPM label must TRAIL its slider, because
-// leading it puts it between the two sliders and reads as labelling the
-// scene-blend one. `ControlStyle::caption` always emits the caption before
-// its control (`Builder::FinishControl`, PortableUIBuilders.hpp:428-465) and
-// offers no trailing option, so B12's cause is still live and this node stays.
-// Deleting it would have silently reversed an explicit operator instruction.
-// Tracked upstream as ask 14 (caption placement); when that lands, this
-// collapses into `ControlStyle::caption` like the scene-blend one already has.
+// A hand-rolled Label node rather than `ControlStyle::caption`, exactly like
+// scene-blend's (kSceneBlendLabel above). Both sit BELOW their slider, and
+// `Builder::FinishControl` (PortableUIBuilders.hpp:428-465) always emits a
+// caption BEFORE its control with no option to place it after -- so neither
+// can be a caption while the labels sit below. Tracked upstream as ask 14
+// (caption placement); when that lands, BOTH collapse into captions
+// together.
+//
+// History worth keeping, because this comment previously said the opposite:
+// F.2d converted scene-blend to a caption and left this one hand-rolled,
+// citing B12's trailing-label instruction as a second live cause. F.3's CELL
+// MAP then moved scene-blend's label below (retiring its caption and
+// restoring its hand-rolled node), and F.6 moved this one below to match --
+// which retired B12, since B12's stated reason was that a LEADING label read
+// as labelling the wrong control, and a label beneath its own control cannot.
 inline constexpr const char* kBpmLabel = "froggers.bpm.label";
 
 inline constexpr const char* kVcoScope = "froggers.scope.vco";
@@ -226,6 +232,30 @@ struct FroggersPageLayout {
     static constexpr float kScopeWidth = 340.0f;
     static constexpr float kScopeHeight = 64.0f;
 
+    // The ONE declared width for every labelled slider in the left block
+    // (task F.6, operator 2026-08-05). Before F.6 neither slider declared a
+    // width at all: Scene blend emitted a Column (horizontal is the CROSS
+    // axis, so its slider filled the block) while BPM emitted a Row
+    // (horizontal is the MAIN axis, so its slider split the width with its
+    // label). The operator's report -- "the scene slider is too wide and the
+    // bpm slider is too narrow. grid design fail" -- was two symptoms of that
+    // one cause: width was a side effect of label placement rather than a
+    // declared property.
+    //
+    // Deliberately a FRACTION, not a pixel count. `Extent::Fraction(f)`
+    // resolves as `contentExtent * f` (ResolveCrossExtent,
+    // PortableUILayout.hpp:318-347, Fraction case :333-335, with ClampExtent
+    // applying Min/Max at :346), so this tracks the left block's real
+    // resolved width and keeps working if that ever changes -- the upstream
+    // reflow of ask 15, or the deferred mobile topology (tasks.md section H).
+    // A pixel width would have to be re-tuned for each.
+    //
+    // Sliders are equal to each other BY CONSTRUCTION because this is the
+    // single definition site, read once in AppendLabelledSlider(). Do not add
+    // a second per-control width: two values kept in agreement by hand is the
+    // defect F.3 deleted when it removed `uiHeight == RequiredHeight()`.
+    static constexpr float kSliderWidthFraction = 0.8f;
+
     static synth::ui::Bounds RootBounds(const synth::AppContext* context) {
         const float width = context != nullptr && context->config != nullptr
                                  ? static_cast<float>(context->config->uiWidth)
@@ -271,7 +301,10 @@ static_assert(FroggersEncoderGridLayout::kEncoderCount == kFroggersSlotsPerBank,
 //   3   | Play                        | Stop| slot 4 | slot 5 | slot 6 | slot 7
 //   4   | Scene 1                     | Scene 2 | slot 8 | slot 9 | slot 10 | slot 11
 //   5   | Scene blend (label below)   | <-  | slot 12 | slot 13 | slot 14 CRIS | slot 15 CRNC
-//   6   | BPM (label trailing right)  | <-  | Randomize page (span 2) | Randomize all (span 2)
+//   6   | BPM (label below)           | <-  | Randomize page (span 2) | Randomize all (span 2)
+// Rows 5 and 6 are the same shape on purpose (task F.6): both labels below,
+// both sliders one declared width. The CELL MAP originally had row 6's label
+// trailing, per B12; F.6 superseded that -- see AppendLabelledSlider().
 struct FroggersCellMap {
     enum class LeftKind { Scope, Transport, Scenes, SceneBlend, Bpm };
     enum class RightKind { BankTabs, EncoderRow, Randomize };
@@ -606,8 +639,10 @@ private:
     // 2026-08-04): "the Scene blend label sits BELOW its slider. This
     // supersedes the F.2d caption for scene-blend (a `ControlStyle::caption`
     // can only lead, so scene-blend returns to a hand-rolled label, now
-    // placed under the slider)." B12 (BPM's label trailing) is refined, not
-    // reversed -- see AppendBpmGroup() below.
+    // placed under the slider)." Row 6 now has the identical shape -- task
+    // F.6 (2026-08-05) moved BPM's label below too, superseding B12; see
+    // AppendLabelledSlider() above for why that honours B12 rather than
+    // overriding it.
     //
     // NOTE ON A STALE TEST-ENUMERATION ENTRY: task F.3's own test
     // enumeration table classified
@@ -618,39 +653,84 @@ private:
     // specific and more recently affirmed instruction, so it governs; the
     // test was rewritten in FroggersSurfaceTests.cpp to match, and this is
     // called out in the task report as a place the traced table was wrong.
-    void AppendSceneBlendGroup(synth::ui::Builder& builder, float rowWeight) const {
+    // ROWS 5 AND 6 SHARE THIS ONE EMITTER (task F.6, tasks.md F.6-PLAN).
+    //
+    // One container kind (`Column`), one declared slider width, called twice.
+    // There is deliberately **no placement parameter and no branch on
+    // container kind**: both labels sit BELOW their slider. Two emitters is
+    // what produced the defect -- they drifted into a Column and a Row, and
+    // since neither declared a width, "how wide is this slider" was answered
+    // by which container it happened to live in.
+    //
+    // B12 IS SUPERSEDED, NOT IGNORED (operator 2026-08-05, "the labels should
+    // BOTH be below"). B12 (2026-07-29) read: "BPM label moved to trail its
+    // slider. LEADING it put it between the two sliders and nearer the
+    // scene-blend one, reading as labelling the wrong control. The two labels
+    // are now deliberately asymmetric -- do not 'fix' that." Its stated reason
+    // is entirely about LEADING being ambiguous; trailing was simply the only
+    // alternative while both labels shared a horizontal band. Once the CELL
+    // MAP put scene-blend's label BELOW its slider, that ambiguity was gone --
+    // a label directly beneath its own control cannot be read as its
+    // neighbour's. Both-below therefore serves B12's actual concern better
+    // than trailing did, and the asymmetry B12 protected was a means, not the
+    // goal. An earlier draft of F.6 kept trailing and invented a
+    // `LabelPlacement{Below,Trailing}` parameter to honour B12's literal
+    // words; that is a workaround kept alive after its cause died, and the
+    // extra branch was the tell. An instruction's rationale is part of the
+    // instruction.
+    //
+    // `emitControl` receives the shared slider style, so the width is read
+    // from its single definition site exactly once, here, while each caller
+    // keeps its own control logic -- BPM has a read-only StatusText state
+    // this row must not flatten away.
+    void AppendLabelledSlider(
+        synth::ui::Builder& builder,
+        float rowWeight,
+        const char* groupId,
+        const std::function<void(synth::ui::Builder&, const synth::ui::ControlStyle&)>& emitControl) const {
         synth::ui::LayoutOptions groupLayout;
         groupLayout.main = synth::ui::Extent::Weight(rowWeight);
         groupLayout.cross = synth::ui::Extent::Weight(1.0f);
         groupLayout.padding = 0.0f;
         groupLayout.gap = FroggersPageLayout::kGap;
-        const float sceneBlend = context_ != nullptr && context_->uiState != nullptr
-                                      ? context_->uiState->sceneBlend.load(std::memory_order_relaxed)
-                                      : 0.0f;
-        builder.Column(FroggersNodeIds::kSceneBlendGroup, groupLayout, [sceneBlend](synth::ui::Builder& b) {
-            b.Slider(FroggersNodeIds::kSceneBlend, "Scene blend", sceneBlend, 0.0f, 1.0f, 0.001f,
-                     synth::ui::Action::Named(FroggersActions::kSceneBlend), synth::ui::ControlStyle{});
-            // Label-visibility fix (2026-07-28): `NodeKind::Slider` routes
-            // `node.label` to `juce::Slider::setName()` only
-            // (PortableJuceBackend.hpp:1229-1232) -- no `juce::Label` is
-            // attached, so the slider's own label argument never draws; this
-            // adjacent Label node is what actually renders "Scene blend".
-            b.Label(FroggersNodeIds::kSceneBlendLabel, "Scene blend", synth::ui::ControlStyle{});
+
+        // In a Column the CROSS axis is the horizontal one, so this is where
+        // the shared width lands. See kSliderWidthFraction's own comment for
+        // why it is a fraction rather than a pixel count.
+        synth::ui::ControlStyle sliderStyle;
+        sliderStyle.layout.cross = synth::ui::Extent::Fraction(FroggersPageLayout::kSliderWidthFraction);
+
+        builder.Column(groupId, groupLayout, [&emitControl, &sliderStyle](synth::ui::Builder& b) {
+            emitControl(b, sliderStyle);
         });
     }
 
-    // Row 6: the BPM slider with its label TRAILING it (B12, tasks.md
-    // 2026-07-29 -- unchanged by task F.3's CELL MAP: "BPM's label still
-    // trails to the right of its slider; the two labels remain asymmetric
-    // with each other and neither leads"), or a read-only StatusText while
-    // slaved to external MIDI clock.
+    void AppendSceneBlendGroup(synth::ui::Builder& builder, float rowWeight) const {
+        const float sceneBlend = context_ != nullptr && context_->uiState != nullptr
+                                      ? context_->uiState->sceneBlend.load(std::memory_order_relaxed)
+                                      : 0.0f;
+        AppendLabelledSlider(
+            builder, rowWeight, FroggersNodeIds::kSceneBlendGroup,
+            [sceneBlend](synth::ui::Builder& b, const synth::ui::ControlStyle& sliderStyle) {
+                b.Slider(FroggersNodeIds::kSceneBlend, "Scene blend", sceneBlend, 0.0f, 1.0f, 0.001f,
+                         synth::ui::Action::Named(FroggersActions::kSceneBlend), sliderStyle);
+                // Label-visibility fix (2026-07-28): `NodeKind::Slider` routes
+                // `node.label` to `juce::Slider::setName()` only
+                // (PortableJuceBackend.hpp:1229-1232) -- no `juce::Label` is
+                // attached, so the slider's own label argument never draws;
+                // this adjacent Label node is what actually renders the text.
+                b.Label(FroggersNodeIds::kSceneBlendLabel, "Scene blend", synth::ui::ControlStyle{});
+            });
+    }
+
+    // Row 6: the BPM slider with its label BELOW it, exactly like row 5 --
+    // see AppendLabelledSlider()'s B12 supersession note. Still a read-only
+    // StatusText while slaved to external MIDI clock.
     void AppendBpmGroup(synth::ui::Builder& builder, float rowWeight) const {
-        synth::ui::LayoutOptions groupLayout;
-        groupLayout.main = synth::ui::Extent::Weight(rowWeight);
-        groupLayout.cross = synth::ui::Extent::Weight(1.0f);
-        groupLayout.padding = 0.0f;
-        groupLayout.gap = FroggersPageLayout::kGap;
-        builder.Row(FroggersNodeIds::kBpmGroup, groupLayout, [this](synth::ui::Builder& b) { AppendBpmControl(b); });
+        AppendLabelledSlider(builder, rowWeight, FroggersNodeIds::kBpmGroup,
+                             [this](synth::ui::Builder& b, const synth::ui::ControlStyle& sliderStyle) {
+                                 AppendBpmControl(b, sliderStyle);
+                             });
     }
 
     // Task 10.6 (design cited MasterClock.hpp:318/:321, MasterClock.cpp:
@@ -659,12 +739,16 @@ private:
     // display TempoBpm(). Unchanged in substance from before task F.3 --
     // only its container moved (from the old auto-flowed chrome band into
     // this row's own group, see AppendBpmGroup() above).
-    void AppendBpmControl(synth::ui::Builder& builder) const {
+    void AppendBpmControl(synth::ui::Builder& builder, const synth::ui::ControlStyle& sliderStyle) const {
         const double tempoBpm = app_ != nullptr ? app_->DisplayTempoBpm() : synth::MasterClock::kDefaultTempoBpm;
         const bool externallyClocked = app_ != nullptr && app_->TempoExternallyClocked();
         if (externallyClocked) {
+            // Takes the same declared width as the interactive slider it
+            // replaces, so the row does not change shape when the clock is
+            // slaved. There is no adjacent Label in this state (the status
+            // text names itself) -- unchanged from before task F.6.
             builder.StatusText(FroggersNodeIds::kBpm, "BPM " + FormatFroggersBpm(tempoBpm) + " (external clock)",
-                               synth::ui::ControlStyle{});
+                               sliderStyle);
             return;
         }
         // Task 3.6 (design E3e): the control genuinely IS labelled "BPM"
@@ -673,14 +757,15 @@ private:
         // was never requested and is not to be reintroduced without asking
         // first).
         constexpr const char* kLabel = "BPM";
-        // NOT converted to `ControlStyle::caption`, unlike the scene-blend
-        // slider (AppendSceneBlendGroup() above) -- B12 requires this label
-        // to TRAIL its slider, and `Builder::FinishControl`
-        // (PortableUIBuilders.hpp:428-465) always emits a caption BEFORE its
-        // control. Filed as upstream ask 14 (caption placement); when it
-        // lands this collapses to a caption like its neighbour.
+        // Still a hand-rolled adjacent Label rather than
+        // `ControlStyle::caption`, for the same reason as scene-blend's:
+        // `Builder::FinishControl` (PortableUIBuilders.hpp:428-465) always
+        // emits a caption BEFORE its control, and both labels now sit BELOW
+        // theirs. Upstream ask 14 (caption placement) would let both of these
+        // collapse into captions; until it lands, both stay hand-rolled --
+        // and they stay hand-rolled TOGETHER, which is the point of task F.6.
         builder.Slider(FroggersNodeIds::kBpm, kLabel, static_cast<float>(tempoBpm), 30.0f, 300.0f, 1.0f,
-                       synth::ui::Action::Named(FroggersActions::kBpm), synth::ui::ControlStyle{});
+                       synth::ui::Action::Named(FroggersActions::kBpm), sliderStyle);
         builder.Label(FroggersNodeIds::kBpmLabel, kLabel, synth::ui::ControlStyle{});
     }
 

@@ -385,6 +385,49 @@ TEST_CASE(surface_resolves_without_overflow_at_a_large_window_size) {
     REQUIRE_TRUE(diagnostic.empty());
 }
 
+// --- F.6: the two labelled sliders resolve to the same width ----------------
+
+// The guard for the defect task F.6 fixed. Operator, on the F.3 build: "the
+// scene slider is too wide and the bpm slider is too narrow. grid design
+// fail." Neither slider declared a width at all, so each inherited whatever
+// its container implied -- scene-blend filled a Column's cross axis while BPM
+// split a Row's main axis with its label. Both now come from the single
+// `kSliderWidthFraction` read once in `AppendLabelledSlider()`.
+//
+// This asserts the two sliders against EACH OTHER, never against a pixel
+// literal. A hardcoded expected width would be two numbers kept in agreement
+// by hand -- the exact defect F.3 deleted when it removed
+// `uiHeight == RequiredHeight()`, and it would keep passing if both sliders
+// drifted together. Comparing them to each other is what actually pins
+// "equal by construction."
+//
+// Checked at three window sizes because the width is a FRACTION of the left
+// block: equality has to survive the block resizing, which is the property a
+// fraction buys over a pixel count.
+TEST_CASE(scene_blend_and_bpm_sliders_resolve_to_the_same_width) {
+    const std::array<std::pair<float, float>, 3> sizes{{
+        {synth_froggers::FroggersPageLayout::kDefaultWidth,
+         synth_froggers::FroggersPageLayout::kDefaultHeight},
+        {640.0f, 480.0f},
+        {1440.0f, 900.0f},
+    }};
+
+    for (const auto& [width, height] : sizes) {
+        const synth::ui::NodeTree tree = BuildFroggersTreeAt(width, height);
+        const synth::ui::Bounds sceneBlend =
+            AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kSceneBlend);
+        const synth::ui::Bounds bpm = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kBpm);
+
+        REQUIRE_TRUE(sceneBlend.width > 0.0f);
+        REQUIRE_TRUE(bpm.width > 0.0f);
+        REQUIRE_TRUE(std::fabs(sceneBlend.width - bpm.width) < 0.5f);
+        // Both are left-aligned in the same column, so equal width with equal
+        // x means they genuinely occupy the same horizontal span -- not two
+        // equal-width sliders sitting in different places.
+        REQUIRE_TRUE(std::fabs(sceneBlend.x - bpm.x) < 0.5f);
+    }
+}
+
 // --- 6.3-test: bank buttons are Button nodes again --------------------------
 
 // Task 6.3 (operator 2026-07-28 revert): at the pinned Sheaf version,
@@ -722,8 +765,11 @@ TEST_CASE(scene_blend_slider_has_an_adjacent_label_node_carrying_its_text) {
         FindNodeIndexById(tree, synth_froggers::FroggersNodeIds::kSceneBlend);
     REQUIRE_TRUE(labelIx.has_value());
     REQUIRE_TRUE(sliderIx.has_value());
-    // The label TRAILS the slider (built after it, AppendSceneBlendGroup()) --
-    // the opposite order from the retired F.2d caption, which always led.
+    // The label FOLLOWS its slider in node order, which in the Column both
+    // rows now use (AppendLabelledSlider(), task F.6) renders it BELOW the
+    // slider -- the opposite order from the retired F.2d caption, which
+    // always led. Row 6 asserts the identical relationship; the two rows are
+    // deliberately the same shape now.
     REQUIRE_TRUE(*labelIx == *sliderIx + 1);
 }
 
@@ -855,24 +901,31 @@ TEST_CASE(bpm_label_is_constant_across_transport_state) {
 // annotation this test used to track is gone, see
 // `bpm_label_is_constant_across_transport_state`'s comment for why).
 //
-// THIS PAIR IS DELIBERATELY NOT CONVERTED TO `ControlStyle::caption`, unlike
-// its scene-blend neighbour. F.2d converts the hand-rolled adjacent `Label`
-// wherever its ONLY cause was upstream never drawing slider captions -- dead
-// at pin 77a3019e. Here a second cause is still live: B12 (tasks.md,
-// 2026-07-29) requires this label to TRAIL its slider, opposite the
-// scene-blend pair, because leading it reads as labelling the wrong control.
-// Operator: "the two labels are now deliberately asymmetric -- do not 'fix'
-// that." `Builder::FinishControl` (PortableUIBuilders.hpp:428-465) always
-// emits a caption BEFORE its control and offers no trailing option, so
-// converting here would silently reverse an explicit operator instruction.
+// NEITHER this pair NOR its scene-blend neighbour is a `ControlStyle::
+// caption`, and for the same single reason: `Builder::FinishControl`
+// (PortableUIBuilders.hpp:428-465) always emits a caption BEFORE its control
+// with no option to place it after, and since task F.6 (2026-08-05) BOTH
+// labels sit BELOW their slider. Filed as upstream ask 14 (caption
+// placement); when it lands, both collapse into captions together.
 //
-// F.2d's brief named this test for conversion by line number; an implementer
-// executed that literally, flipped the order, and flagged it rather than
-// absorbing it. The flip was then reverted here. The brief was wrong, not
-// the implementation -- "delete the workaround" only holds once EVERY cause
-// behind it is dead, and enumerating just the first one is the §1 failure
-// this change keeps re-learning. Filed as upstream ask 14 (caption
-// placement); when it lands, this collapses to a caption like its neighbour.
+// THE HISTORY HERE IS THE POINT, because this comment has twice asserted the
+// opposite. F.2d converted scene-blend to a caption and left this one
+// hand-rolled, citing B12's trailing-label instruction as a second live
+// cause; an implementer following F.2d's brief literally flipped this
+// label's order and flagged it rather than absorbing it, and the flip was
+// reverted. Then F.3's CELL MAP moved scene-blend's label BELOW its slider,
+// and F.6 moved this one below to match -- which retired B12 outright.
+//
+// B12's stated reason was that a LEADING label sat between the two sliders
+// and read as labelling the wrong control; trailing was merely the only
+// alternative available while both labels shared a horizontal band. A label
+// directly beneath its own control cannot be misread that way, so both-below
+// serves B12's concern better than trailing did. The asymmetry B12 protected
+// was a means, not the goal -- and an earlier draft of F.6 missed exactly
+// that, keeping trailing and inventing a placement parameter to honour B12's
+// literal words. An instruction's rationale is part of the instruction: when
+// the rationale dies, the instruction is up for re-derivation rather than
+// mechanical preservation.
 TEST_CASE(bpm_slider_has_an_adjacent_label_node_with_the_constant_bpm_text) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
         /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("bpm_adjacent_label"));
@@ -894,11 +947,13 @@ TEST_CASE(bpm_slider_has_an_adjacent_label_node_with_the_constant_bpm_text) {
             FindNodeIndexById(tree, synth_froggers::FroggersNodeIds::kBpm);
         REQUIRE_TRUE(labelIx.has_value());
         REQUIRE_TRUE(sliderIx.has_value());
-        // B12: the BPM label TRAILS its slider, deliberately asymmetric with
-        // the scene-blend one, because leading it reads as labelling the
-        // scene-blend slider. This ordering assertion is the guard that
-        // caught F.2d reversing B12 -- keep it pinned to the ORDER, not just
-        // to the label's existence, or the reversal becomes invisible again.
+        // The label FOLLOWS its slider in node order, which inside the Column
+        // AppendLabelledSlider() emits renders it BELOW the slider -- the
+        // same relationship the scene-blend row asserts. Keep this pinned to
+        // the ORDER, not merely to the label's existence: an ordering
+        // assertion is what caught F.2d silently moving this label once
+        // already, and order is what distinguishes "labels its own control"
+        // from "labels its neighbour's."
         REQUIRE_TRUE(*labelIx == *sliderIx + 1);
     };
 
