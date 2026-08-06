@@ -566,7 +566,23 @@ TEST_CASE(limiter_engages_on_overdriven_patch_and_stays_bounded) {
 
     auto& limiter = rig.Application().TestOutputLimiter();
     float minEnvelopeSeen = 1.0f;
-    for (int block = 0; block < 64; ++block) {
+    // Window widened 64 -> 256 by W2.2a, from measurement, not from
+    // enlarging it until the assertion passed. The comb branch now carries
+    // an exact `1/(1+|fb|)` trim (FilterFx.hpp), so this patch's comb feeds
+    // LESS signal into the fully-wet Hold reverb that actually drives the
+    // limiter here -- and that reverb's buildup at fb ~= 0.99998 is slow.
+    // Measured first engagement on this exact patch: **block 101** (min
+    // envelope 0.809). 256 leaves ~2.5x headroom over the measured value
+    // without becoming a fishing expedition; a reverb-only patch engages at
+    // block 43, so this window is generous for every driver in the chain.
+    //
+    // The assertion below is UNCHANGED and still the point of the test: the
+    // limiter must genuinely engage, not no-op. W2.2a moved WHEN it engages
+    // (by removing the comb's excess level, which was the fix's whole
+    // purpose); it did not stop it engaging. If a future change pushes this
+    // past 256, re-measure and understand why -- do not widen again by
+    // reflex.
+    for (int block = 0; block < 256; ++block) {
         rig.RunBlocks(1);
         minEnvelopeSeen = std::min(minEnvelopeSeen, limiter.envelope);
     }

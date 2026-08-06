@@ -370,6 +370,29 @@ S2 drill-in depth knobs all read 12 o'clock; S3 Randomize All inside level-1 sho
     height ≤ 1.8 at A = 0.5 — i.e. it can contribute, but the operator's symptom was traced to the
     comb and one variable moves at a time. Recorded, not done.
 
+- [ ] **W2.2-ANOMALY — investigate before W2.2b, it may invalidate W2.2b's premise.** The W2.2a
+  limiter-engagement diagnostic (4096-block cap, four patches) returned **bit-identical**
+  `first_engage_block` (133), `min_envelope` (0.976694) and `peak_output` (0.998264) for two
+  structurally different patches: **P2 delay-driven** (Delay slot 2 Feedback = 1.0, slot 1 Send =
+  1.0 — slot indices verified correct against `FroggersBankLayouts()`: 0 Delay time, 1 Send,
+  2 Feedback) and **P4 drive-only** (Drive slot 0 = 1.0). Two different patches producing
+  byte-identical trajectories means at least one set of writes is not reaching the DSP.
+
+  **Why this matters beyond a curiosity:** the test-patch idiom
+  `model.PageParameter(bank, slot).SceneCenter(0) = value` writes the *commanded* value — and W1.0
+  established that commanded values do not reach the display without a `ComputeAllParameters()`
+  pass. **If they also do not reach the DSP without one, then every test using this idiom is
+  asserting against a patch it never actually applied** — green-while-wrong at a scale far beyond
+  the six instances already recorded. Note P1 vs P3 DID differ (101 vs 43), so writes are not
+  wholly inert; the failure is partial and therefore worse, because it looks like it works.
+
+  Also: W2.2b assumes delay feedback at max is a real 50× resonator. If P2's writes never landed,
+  that premise is unverified by this diagnostic — the arithmetic still stands on the code read
+  (`Delay.hpp:170,174-175`), but the empirical leg does not.
+
+  **Do not fix anything under this item — investigate and report first** (systematic debugging is
+  binding here per §0).
+
 - [ ] **W2.2b — Delay: in-loop saturation, matching the comb's own idiom.**
   - `app/dsp/Delay.hpp:174-175` currently writes `inSignal + fbL * fbk` with **no bounding**;
     `fbk ≤ 0.98` (`:170`) gives an unbounded 50× steady state. Wrap the fed-back term in the

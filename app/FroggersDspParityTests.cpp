@@ -732,17 +732,80 @@ TEST_CASE(filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend) {
     const float combPeakBlend = 0.4f;
     const float scoopMix = 0.6f;
 
+    // W2.2a (openspec/changes/frogg3rs-modulation-truth-and-voicing/
+    // tasks.md): the comb branch now carries an exact output trim
+    // `1/(1+|fb|)`, smoothed by a one-pole (FilterFxChain::combTrimSmoother,
+    // FilterFx.hpp) before the blend below. OLD expectation: `combPath =
+    // refComb.Process(...)`, untrimmed. NEW expectation: `combPath =
+    // refComb.Process(...) * trimState`, where `trimState` is the SAME
+    // one-pole recurrence `alpha*raw + (1-alpha)*prev` production runs,
+    // seeded at 1.0 (combTrimSmoother's construction-time initial value,
+    // matching the untrimmed branch -- no fade-in) and driven each sample
+    // by the constant raw target `1/(1+|0.3|)` (feedback is fixed at 0.3
+    // for this whole test, never changes). `alpha` is read from
+    // `chain.combTrimSmoother.alpha` (public field, set once by
+    // FilterFxChain's own constructor) rather than re-hardcoding the
+    // smoothing constant here a second time.
+    const float trimAlpha = chain.combTrimSmoother.alpha;
+    float trimState = 1.0f;
+    const float rawCombTrim = 1.0f / (1.0f + std::fabs(0.3f));
+
     for (int i = 0; i < 8; ++i) {
         const float input = 0.1f * static_cast<float>(i + 1);
         const float actual = chain.Process(input, /*useParallel=*/true, combPeakBlend, scoopMix);
 
-        const float combPath = refComb.Process(refPureDelay.Process(input));
+        const float combRaw = refComb.Process(refPureDelay.Process(input));
+        trimState = trimAlpha * rawCombTrim + (1.0f - trimAlpha) * trimState;
+        const float combPath = combRaw * trimState;
         const float peakPath = refPeak.Process(input);
         const float mixed = peakPath * (1.0f - combPeakBlend) + combPath * combPeakBlend;
         const float scooped = refScoop.Process(mixed);
         const float expected = mixed * (1.0f - scoopMix) + scooped * scoopMix;
 
         REQUIRE_NEAR(actual, expected, 1e-5);
+    }
+}
+
+// -----------------------------------------------------------------------
+// W2.2a (openspec/changes/frogg3rs-modulation-truth-and-voicing/tasks.md):
+// pins the fix itself. With comb feedback pinned at its maximum magnitude
+// (kMaxFeedbackMagnitude, 0.95) and a sustained full-scale input, the comb
+// branch must never exceed the computed bound `(A + fb) / (1 + fb)` -- the
+// exact worst case the trim was designed to normalize to 1.0. The bound is
+// COMPUTED from A and fb, never a hardcoded literal (W2 standing
+// constraint: a pin asserts the property that broke, not a typed-in
+// number). combPeakBlend=1.0/scoopMix=0.0 isolate the comb branch through
+// the real FilterFxChain::Process code path: mixed = peakPath*(1-1) +
+// combPath*1 == combPath, and the return is mixed*(1-0) + scooped*0 ==
+// mixed -- so chain.Process's return value IS combPath. A settle period
+// precedes the assertion window: the trim smoother starts at unity
+// (matching feedback's own default of 0) and glides toward its new,
+// lower target over several time constants once feedback jumps to its
+// maximum -- asserting mid-glide would catch the transient, not the
+// steady-state bound this test exists to pin.
+// -----------------------------------------------------------------------
+TEST_CASE(comb_branch_output_stays_at_or_below_computed_bound_at_max_feedback) {
+    dsp::FilterFxChain chain;
+    chain.comb.delaySamples = 1;
+    chain.comb.SetFeedback(dsp::Comb::GetFeedback(1.0f));  // +0.95, kMaxFeedbackMagnitude.
+    chain.comb.SetCutoffAlpha(1.0f);  // identity lowpass -- isolates the feedback loop gain itself.
+    chain.pureDelay.delaySamples = 0.0f;
+
+    const float fb = std::fabs(chain.comb.feedback);
+    const float inputAmplitude = 1.0f;  // A: filter input is bounded |A| <= 1 (Drive output, W2.1-MATH).
+    const float bound = (inputAmplitude + fb) / (1.0f + fb);
+
+    constexpr int kSettleSamples = 2000;   // many comb-loop + trim-smoother time constants.
+    constexpr int kAssertSamples = 2000;
+
+    for (int i = 0; i < kSettleSamples; ++i) {
+        chain.Process(inputAmplitude, /*useParallel=*/true, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
+    }
+
+    for (int i = 0; i < kAssertSamples; ++i) {
+        const float combPath =
+            chain.Process(inputAmplitude, /*useParallel=*/true, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
+        REQUIRE_TRUE(std::fabs(combPath) <= bound + 1.0e-4f);
     }
 }
 

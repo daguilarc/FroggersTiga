@@ -468,6 +468,32 @@ struct FilterFxChain
     Comb comb;
     PureDelay pureDelay;
 
+    // W2.2a (openspec/changes/frogg3rs-modulation-truth-and-voicing/
+    // tasks.md): smooths the comb branch's exact output trim computed in
+    // Process() below. `fb` (Comb::feedback) is a per-block cached knob
+    // read (FroggersAppCore.hpp:1027) that steps at every block boundary
+    // and every Crispy/randomize scramble -- smoothing the TRIM value here
+    // (never `fb` itself, which would change the filter's behaviour, not
+    // just its level) erases that zipper.
+    OnePoleLowPass combTrimSmoother;
+
+    FilterFxChain()
+    {
+        // Sample-rate-independent knob-glide idiom this codebase already
+        // uses when a DSP unit has no sample-rate handle to convert a real
+        // Hz cutoff into alpha (RandomShLane.hpp:183 SetAlphaFromNatFreq
+        // call, :274-275 kFastCutoff/kSlowCutoff constants) -- FilterFxChain
+        // has no SetSampleRate() of its own, so a fixed cycles/sample cutoff
+        // is the only option without threading a new parameter down from
+        // FroggersAppCore (W2.2a constraint). 0.01 cycles/sample sits
+        // between RandomShLane's kFastCutoff (0.45, near-instant) and
+        // kSlowCutoff (0.002, audible glide): fast enough to track knob
+        // motion, slow enough to erase the per-block trim step.
+        constexpr float kCombTrimGlideCyclesPerSample = 0.01f;
+        combTrimSmoother.SetAlphaFromNatFreq(kCombTrimGlideCyclesPerSample);
+        combTrimSmoother.output = 1.0f;  // unity at fb=0 -- matches the untrimmed branch (no initial fade-in).
+    }
+
     // combPeakBlend/scoopMix are precomputed 0..1 control values (the
     // frozen engine derives them from smoothed knob reads via RuntimeParam,
     // which is parameter-smoothing infrastructure, not a DSP unit in scope
@@ -477,7 +503,22 @@ struct FilterFxChain
         if (useParallel)
         {
             // :824-833
-            const float combPath = comb.Process(pureDelay.Process(input));
+            const float combRaw = comb.Process(pureDelay.Process(input));
+            // W2.2a: exact output trim `1/(1+|fb|)` on the comb branch
+            // ONLY, before the blend with peakPath below. `|comb| <= A +
+            // |fb|` (PadeSaturator bounds the fed-back term to +-1,
+            // Comb::Process above), so this normalizes the worst case
+            // (A=0, i.e. the comb's own decaying tail with no input) to
+            // exactly 1.0 at |fb| == kMaxFeedbackMagnitude (0.95), while
+            // leaving +3.5 dB of bloom across the rest of the feedback
+            // travel. A scalar on a branch output moves level, not
+            // frequency response -- the comb's peaks/notches/ring/decay
+            // are unchanged. `fb` is read as a MAGNITUDE (GetFeedback is
+            // asymmetric +-0.95) directly from Comb's own state, not
+            // threaded as a new parameter.
+            const float rawCombTrim = 1.0f / (1.0f + std::fabs(comb.feedback));
+            const float combTrim = combTrimSmoother.Process(rawCombTrim);
+            const float combPath = combRaw * combTrim;
             const float peakPath = peak.Process(input);
             const float mixed = peakPath * (1.0f - combPeakBlend) + combPath * combPeakBlend;
             const float scooped = scoopNotch.Process(mixed);
