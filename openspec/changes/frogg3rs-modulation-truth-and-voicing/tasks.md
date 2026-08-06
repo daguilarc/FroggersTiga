@@ -312,9 +312,44 @@ S2 drill-in depth knobs all read 12 o'clock; S3 Randomize All inside level-1 sho
   plus smoothing of the trim so a moving `fb` knob does not zipper. **This preserves character
   strictly better than B and adds no compression artifacts at all, unlike A.**
 
+- [x] W2.1-MATH-2 **"Does exact trim make the limiter superfluous?" — NO. Checked 2026-08-05 at
+  the operator's prompting, and it found two larger unbounded resonators.** The instinct was right
+  about the FILTER's contribution and wrong about the conclusion; acting on it without this check
+  would have relaxed the one guard holding the rest of the chain together.
+
+  **The comb is the ONLY feedback stage in the chain with a bounded loop.** Its saturator sits
+  inside the loop (`out = in + fb · Saturate(lp(delayed))`), capping the feedback term at ±1 — which
+  is exactly why its worst case is a mild `A + 0.95`.
+
+  **Delay — linear, unsaturated, `fbk ≤ 0.98`** (`app/dsp/Delay.hpp:170,174-175`):
+  `WriteSample(inSignal + fbL * fbk, lineL)` has **no saturator anywhere in the loop**. Steady
+  state is `in·send/(1 − 0.98)` = **50× input**, unbounded. At A = 0.5 that is 25.0 against a 0.9
+  threshold — **≈ +29 dB of sustained gain reduction**, an order of magnitude past anything the
+  filter can do. T60 ≈ 342 round trips.
+
+  **Reverb — worse, by design** (`app/dsp/Reverb.hpp:167,237-238,244-245`):
+  `decayFb = ExpMap(0.1, 0.98)` and `fb = decayFb + (1 − decayFb)·min(hold, 0.999)`, so with Hold
+  at max **fb ≈ 0.99998** → steady-state gain ≈ **50 000×** at frequencies the in-loop damping
+  filter passes. `aIn = preOut + aFb · fb` is likewise linear. The in-source comment concedes the
+  intent — "reaching true self-oscillation (bounded/finite requirement)" — i.e. Hold is deliberately
+  parked just under self-oscillation. That is a freeze feature, not a defect, **but it means the
+  master limiter is the only thing between Hold-at-max and the output.**
+
+  **Consequences for the plan:**
+  1. **The master limiter STAYS, unchanged.** It is the backstop it was designed to be. Nothing in
+     W2 relaxes its threshold, and no task may propose removing it.
+  2. **Option D generalizes:** the defect is "no gain staging at any feedback stage," not "the comb
+     is too hot." Comb trim is the first application, not the whole fix.
+  3. **The operator's Crispy-on-Filter repro may not be filter-only.** A filter jump feeds Delay and
+     Reverb, which multiply it by up to 50× / 50 000×. **W2.2's guard must isolate the stage** —
+     hold Delay send and Reverb wet at zero while sweeping a filter parameter, then repeat with
+     them engaged — or the test cannot tell which stage caused the engagement it observes.
+  4. Delay/Reverb trims are **not** in W2's approved scope. Recorded as candidates only; they
+     change time-effect character and need their own operator hearing.
+
 - [ ] W2.2 Implement the agreed treatments, sequentially, each with a guard that pins the property
   that was wrong (sustained-tone limiter engagement at max, not merely peak ceiling), using the
-  observable `envelope` above.
+  observable `envelope` above, **with the per-stage isolation required by W2.1-MATH-2 item 3.**
 - [ ] W2.3 Extend the storm test if W2.0 shows it cannot catch the operator's symptom (per-param
   endpoint dwell + limiter-engagement assertion, not just >1.0 samples).
 
