@@ -890,3 +890,91 @@ WALKTHROUGH, with the operator describing what they actually heard:
 3. If a voice never reaches `AllIdle()` the clear never fires — worth checking whether audio-rate
    modulation of envelope parameters can hold a voice out of Idle indefinitely.
 **Ask what they heard before changing anything.**
+
+## §K — PER-STAGE HEADROOM ARCHITECTURE (operator directive, 2026-08-05)
+
+*"structurally we just need limiters on every bank that is potentially causing blowouts, so
+everything other than audio and envelope."*
+
+**This is the general form of everything W2 did piecemeal, and it should be the standing
+architecture.** Written to survive the session.
+
+### The principle
+
+The master limiter pumps because it is the ONLY bounded point: one stage's excess forces it to duck
+the entire downstream mix, tails included. **Bound every stage at its own output and the master
+stops having to.** It becomes a rarely-firing backstop rather than a choke point.
+
+**The load-bearing arithmetic (W2.1-MATH):** the master's threshold is **0.9**, which is BELOW the
+level a *correctly working* stage produces. Drive is bounded to ±1.0 by its sine-fold — and 1.0 >
+0.9, so even a perfectly behaved Drive engages the master. This is a headroom-budget defect, not a
+per-parameter defect, which is why per-parameter range trims were the wrong tool.
+
+### Why the chain tolerates one shared ceiling
+
+Signal flow is **serial**, and every internal mix is **convex**:
+`VCO → envelope gate → Drive → Filter → Delay → Reverb → master`.
+Convex blends (filter's comb/peak, delay dry/wet, reverb dry/wet) cannot exceed the max of their
+inputs. So if every stage limits to a common ceiling `C`, each stage sees at most `C` in, applies
+its own gain, and is bounded back to `C` out. A single budget therefore holds the whole chain —
+**pick `C` once, below the master's 0.9.**
+
+### Two-layer treatment per stage — both, not either
+
+1. **Trim (cheap, tonally neutral):** a settings-derived scalar that removes *predictable* excess.
+   `1/(1+|fb|)` for the comb, `1/height` for the peak. Costs one multiply, changes level not
+   frequency response, and does the bulk so the limiter rarely engages.
+2. **Limiter (catches what a scalar structurally cannot):** stateful residual energy. Proven
+   necessary at B5 — a per-sample scalar cannot scale away energy already stored in a biquad, which
+   is why the peak trim plateaued at 1.669 and the limiter took it to 0.990.
+
+**Attack is chosen by the SHAPE of the stage's excess, not by convention:**
+- **Single-sample transients** (peak branch under per-sample-random modulation) need ~5 µs. The
+  master's 1 ms is 48 samples — 48× too slow, measured as no help at all.
+- **Sustained buildup** (delay, reverb tails) is caught fine by ~1 ms, and slower attack is far more
+  transparent. Do not copy B5's 5 µs where it is not needed; it trades distortion for speed.
+
+### Current state per bank
+
+| Bank | Trim | Limiter | Status |
+|---|---|---|---|
+| Audio | n/a | n/a | **No limiter needed** — oscillators are bounded and envelope-gated |
+| Envelope | n/a | n/a | **Not a signal stage** — it is a gain envelope, nothing to bound |
+| Filter (comb) | `1/(1+\|fb\|)` W2.2a | in-loop saturator (pre-existing) | Done — overshoot 0.0 |
+| Filter (peak) | `1/height` B1 | B5 peak limiter | Done — 1.669 → 0.990 |
+| Filter (composite) | — | **GAP** | comb+peak blend is convex so bounded by max, but that max is ~1.0 > 0.9 |
+| Drive | — | **GAP — the main one** | Bounded to ±1.0 by the sine-fold, but 1.0 > 0.9, so it engages the master unaided |
+| Delay | — | B2 in-loop saturator + B6a output limiter | In flight |
+| Reverb | — | B6b output limiter | In flight |
+
+### Remaining work — B7
+
+- [ ] **B7.1 Choose the shared ceiling `C`** and apply it consistently to every stage limiter.
+      Must sit below 0.9 with enough margin that the master genuinely never fires in normal use.
+      Candidate 0.8; **measure rather than assume**, and check what it costs in output loudness —
+      a chain of stages each limiting at `C` cannot exceed `C`, so the instrument gets quieter and
+      may want compensating make-up gain at the very end (AFTER the master limiter, or as part of
+      it).
+- [ ] **B7.2 Drive output limiter.** The main gap. Verify the ±1.0 bound first
+      (`Sine01` fold + convex `PadeSaturator` blend, `app/dsp/Drive.hpp:283-289`) and measure its
+      real worst case under audio-rate modulation before choosing tuning. Sustained-shaped excess →
+      start at ~1 ms attack, not B5's 5 µs.
+- [ ] **B7.3 Decide the filter-composite question.** Comb and peak are each bounded, and their
+      blend is convex so cannot exceed the max — but that max is ~1.0. Either accept it (Drive's
+      limiter upstream and Delay's downstream both bound the neighbours) or add a composite limiter
+      at `filterOut`. **Cheapest correct answer is likely to lower the two branch ceilings to `C`
+      rather than add a third limiter in that stage.**
+- [ ] **B7.4 One guard per stage**, all asserting the same property: *stage output never exceeds
+      `C` under audio-rate modulation of its own parameters at their maxima.* Uniform assertion,
+      one per stage — that uniformity is the point of the architecture.
+- [ ] **B7.5 Verify the master genuinely stops firing.** With every stage bounded, add a test that
+      the master limiter's `envelope` stays at unity across a hostile patch (all maxima, modulation
+      active). **That test passing is the proof the architecture works**; it is the property the
+      operator has been reporting as broken from the beginning.
+
+### Standing rule going forward
+
+**Any new bank parameter that can raise a stage's output level ships with its trim/limiter budget
+re-derived.** Named prerequisites already on record: comb saturator drive (`C.Drive`) requires
+re-deriving W2.2a's trim, which is computed from feedback alone; series/parallel routing requires
+B1's peak trim because series makes the peak multiply the comb.
