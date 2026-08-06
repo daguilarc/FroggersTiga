@@ -703,3 +703,41 @@ probably the single highest musical payoff on this whole list despite not being 
 **Tier 3** (genuinely new DSP): sub-oscillator, hard sync, per-voice gates, true ping-pong, true
 reverb freeze (Hold is clamped `<0.999`, `Reverb.hpp:238`), multi-tap early reflections,
 state-variable/ladder filter.
+
+#### §J.3 — the rule that decides what belongs in a bank vs the modulation layer
+
+Operator, 2026-08-05: *"FM 1+2 / 2+3 / 1+3 knobs are kind of obviated by modulation layer 1, no?
+so maybe stuff like ring mod."* **Correct, and verified:** `VCO1 Audio` / `VCO2 Audio` /
+`VCO3 Audio` are already modulation SOURCES (`app/FroggersModulation.hpp:536-546`), alongside
+per-VCO envelope followers (`VCO1 EF` etc.). Modulation is audio-rate
+(`ProcessLitePhase1` refreshes cached knob values per sample) and VCO pitch is modulatable — so
+**cross-VCO FM is patchable today**, and a dedicated FM knob would be a preset for something the
+slate already does more flexibly.
+
+**Generalized rule, for every future bank-slot decision:**
+- The modulation layer expresses *"this parameter's VALUE varies over time"* — any of 15 sources,
+  audio-rate, arbitrary depth, per parameter. **Anything reducible to that is redundant as a
+  dedicated parameter.**
+- It CANNOT express operations on the **signal path**: multiplying two audio signals, summing
+  them, resetting one oscillator's phase from another, bit-combining them, routing one through
+  another. **Those are what bank slots are for.**
+
+Consequences already identified: **ring modulation is a genuine candidate** (A×B is a signal
+operation); so are hard sync (phase reset is an event, not a value), inter-oscillator wavefolding
+or XOR, sum-and-difference, and cross-oscillator feedback. Conversely, anything shaped like
+"source X modulates parameter Y" should be cut from bank proposals.
+
+Corollary for the Envelope bank: envelope outputs are likewise available as modulation sources, so
+its slots should shape the **envelope itself** (stages, curves, retrigger behaviour) rather than
+route it anywhere.
+
+Also recorded from the same exchange:
+- **Series/parallel filter routing can be a continuous knob, not a bool** — the only difference
+  between the two topologies is the peak's input, so `peak.Process(lerp(input, combPath, amount))`
+  morphs between them for one lerp; the peak is a stateful biquad and does not care that its input
+  source changes. **PREREQUISITE: B1 (peak trim `1/height`).** At full series the peak multiplies
+  the comb — the exact case W2.1-MATH flags as worst — so with both trims in place the series path
+  is bounded by construction, and without B1 it is a new blowout path.
+- **Comb-trim smoother rate stays INTERNAL** (operator: "definitely don't expose"). It is W2.2a's
+  anti-zipper safety constant; a knob on it is a way to turn the bug back on.
+- Envelope arithmetic: A/S/R ×3 = 9, plus Decay ×3 = 12, leaving **2 free** of the 14.
