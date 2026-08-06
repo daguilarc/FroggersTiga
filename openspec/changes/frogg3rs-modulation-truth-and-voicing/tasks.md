@@ -101,9 +101,6 @@ S2 drill-in depth knobs all read 12 o'clock; S3 Randomize All inside level-1 sho
 - [ ] W1.2 Guard tests pin `UIDisplayCenter`/knob-facing state after a randomize press — the
   property that was actually wrong — replacing the E.1 pins' layer; record the green-while-wrong
   instance in the ledger.
-- [ ] W1.2 Guard test pinning the RESULTING visible depth in the scene the UI reads, across a
-  randomize call — not helper call counts. Rewrite the E.1 tests' pins if W1.0 shows they assert
-  the wrong property; record the green-while-wrong instance if so.
 - [ ] W1.3 Operator confirms: badges, drill-in knobs, and audible modulation agree (criterion 1);
   S3 either fixed or explicitly accepted as designed (criterion 2).
 
