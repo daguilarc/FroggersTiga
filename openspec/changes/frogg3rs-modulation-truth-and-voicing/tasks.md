@@ -773,3 +773,47 @@ scoped to fit two rather than replace Decay:
 - **Grace** — minimum Hold duration so very short gates do not clip the peak (Stages' fixed-length
   hold). Needs a small new timed floor in the Hold state.
 - Velocity/accent depth — needs upstream plumbing that may not exist; unverified.
+
+#### §J.5 — Filter / Drive / Reverb 14-param research (2026-08-05)
+
+Full tables in the research report; recorded here are the standouts, the overlaps, and the
+convergences with work already in flight. Sources: Erbe-Verb, Night Sky, Plateau, Rings, Warps,
+uFold II, Chow Tape, Vult Freak/Debriatus, Erica Fusion VCF.
+
+**Best value-per-unit-work in the entire survey — Comb Polarity (`C.Sign`).** Flips the sign of the
+comb's feedback coefficient: reinforcing (peak comb) ↔ cancelling (notch comb / flanger). **A sign
+flip on a coefficient that already exists**, for an enormous timbral range. Nothing else on the
+list is this cheap for this much change.
+
+**Comb Saturator Drive (`C.Drive`) — near-free, and it is the same idea as the delay's.** Adds a
+pre-gain into the comb's ALREADY-EXISTING in-loop `PadeSaturator`. This is "Feedback Drive" for the
+comb, exactly analogous to what B2 makes possible for the delay. **Note the interaction with
+W2.2a:** driving harder into the saturator raises the comb branch's sustained level, which the
+`1/(1+fb)` trim does NOT account for (that trim is derived from feedback alone). Exposing
+`C.Drive` requires re-deriving the trim to include it, or it becomes a new blowout path — same
+class of prerequisite as B1-before-series/parallel.
+
+**Reverb `Clear`/Purge converges with B4.** A momentary that flushes the tank buffers to silence is
+the same mechanism B4 needs for "Stop must actually stop" — Stop should flush delay AND reverb.
+Build the flush once for B4, expose it as a parameter later if wanted.
+
+**Reverb `ModRate` is near-free** — `kModLfoHz` is a fixed constant (`Reverb.hpp:74-75`), so the
+LFO exists and only its rate is unreachable. With `ModDepth` already a knob, adding Rate completes
+a real LFO section instead of one fixed-character wobble.
+
+**Identity-giving but genuinely expensive:** reverb `Shimmer` (pitch-shifted copy into the feedback
+path — Night Sky) and `Tuned` mode (tank delays retuned to 1V/oct so the reverb rings at a played
+pitch — Plateau). Both need a pitch shifter, which this codebase does not have. They are the two
+most distinctive ideas in the survey; price them honestly.
+
+**Drive additions, all small-new-DSP:** `Sym` (DC bias before the waveshaper → asymmetric clipping,
+even harmonics — uFold II/Chow Tape), `Stages` (recursive passes through the existing sine-fold —
+uFold II), `SRR Ratio` (link SRR2 to SRR1 for beating aliasing), `Comp` (zero-crossing
+comparator/squarer — Warps), `Wear` (level-correlated dropout noise — Chow Tape/ToTape).
+
+**Overlaps the agent flagged, to resolve before any of this is built:**
+- Reverb `InDiff` (input diffusion) duplicates Delay's `Halo` — **drop InDiff**, keep Halo
+  exclusive to Delay.
+- `C.Drive`/`P.Drive` could converge sonically with the Drive bank's Fuzz/Shape — distinguishable
+  curves, or pick one home.
+- Drive `Sym` and Filter `C.Sign` are both "bias/flip a nonlinearity" — keep them audibly distinct.
