@@ -347,9 +347,63 @@ S2 drill-in depth knobs all read 12 o'clock; S3 Randomize All inside level-1 sho
   4. Delay/Reverb trims are **not** in W2's approved scope. Recorded as candidates only; they
      change time-effect character and need their own operator hearing.
 
-- [ ] W2.2 Implement the agreed treatments, sequentially, each with a guard that pins the property
-  that was wrong (sustained-tone limiter engagement at max, not merely peak ceiling), using the
-  observable `envelope` above, **with the per-stage isolation required by W2.1-MATH-2 item 3.**
+### W2.2 — APPROVED TREATMENTS (operator, 2026-08-05). Two changes, sequential, one at a time.
+
+**Approved: (a) exact trim on the comb branch, (b) in-loop saturation on the delay.**
+**Explicitly NOT approved: reverb changes, delay output trim, any limiter change, any range trim.**
+
+- [ ] **W2.2a — Comb branch: exact output trim `1/(1 + fb)`.**
+  - Applies to the comb branch only, inside `FilterFxChain::Process`'s parallel path
+    (`app/dsp/FilterFx.hpp:475-484`), before the convex blend with the peak path — so the blend
+    still receives comparable levels.
+  - **Why exact, not partial** (operator chose exact): output at A = 0.5 rises 0.50 → 0.74 across
+    the whole feedback travel (+3.5 dB of bloom retained) and never crosses the 0.9 threshold.
+    Partial (`1/(1+0.5·fb)`) reaches 0.98 and still pumps above fb ≈ 0.87.
+  - **Tone is provably unchanged:** a scalar on a branch output moves level, not frequency
+    response. The comb's peaks, notches and 6.7 s ring at max are identical.
+  - **Smoothing is REQUIRED, not optional.** `fb` is a per-block knob read
+    (`FroggersAppCore.hpp:1027`); applying `1/(1+fb)` unsmoothed makes the trim jump on every knob
+    move and every randomize — audible zipper, and Crispy's discontinuous jumps would make it
+    worse. Smooth the trim itself at the same order as the app's existing parameter smoothing;
+    do not smooth `fb` and derive from it (that changes the filter, not just the level).
+  - **Peak branch: NO trim in this task.** The arithmetic shows `A · height ≤ 0.9` needs
+    height ≤ 1.8 at A = 0.5 — i.e. it can contribute, but the operator's symptom was traced to the
+    comb and one variable moves at a time. Recorded, not done.
+
+- [ ] **W2.2b — Delay: in-loop saturation, matching the comb's own idiom.**
+  - `app/dsp/Delay.hpp:174-175` currently writes `inSignal + fbL * fbk` with **no bounding**;
+    `fbk ≤ 0.98` (`:170`) gives an unbounded 50× steady state. Wrap the fed-back term in the
+    existing `PadeSaturator::Saturate` — the identical construction `Comb::Process` already uses
+    (`out = in + fb · Saturate(lp(delayed))`), so the loop becomes bounded by `|in| + 0.98`.
+  - **Why saturation and not a trim:** a normalizing trim would be `1 − 0.98 = 0.02`, a 50×
+    reduction that guts the first echoes and turns a repeat into a slow swell. Saturation leaves
+    early-echo level untouched and engages only when the loop actually runs away.
+  - **Reuse the existing saturator; do not write a new one.** `PadeSaturator::Saturate`
+    (`app/dsp/FilterFx.hpp:97-102`) is already the in-loop bound for the comb — a second
+    implementation would be a second definition site (§8).
+  - **This is a tone change at high feedback** (a runaway loop now saturates instead of growing).
+    The operator reported no delay problems by ear, so this is a **latent-safety** fix: it must be
+    inaudible at ordinary feedback settings. Verify that in W2.2c, and it is the operator's ear
+    that closes it.
+  - **Both lines** (`lineL` and `lineR`) — the cross-feed already blends convexly, so bounding one
+    channel and not the other would be an asymmetry bug.
+
+- [ ] **W2.2c — Guard tests, stage-isolated.** Per W2.1-MATH-2 item 3, a filter sweep whose delay
+  and reverb are live cannot attribute what it measures — those stages multiply by up to 50× /
+  50 000×.
+  - Sweep EACH Filter parameter to its max individually, others default, **delay send = 0 and
+    reverb wet = 0**, sustained tone, and assert `TestOutputLimiter().envelope` never indicates
+    continuous engagement across the run (the field is public and already read per-block at
+    `FroggersAudioRoutingTests.cpp:567,571`).
+  - Separately: delay feedback at max, filter neutral, assert the loop stays bounded (the property
+    W2.2b adds) — this test must FAIL before W2.2b and pass after (TDD; it is the pin for a
+    latent defect nobody has heard).
+  - Fix `FroggersCrunchyBlowupReproTests.cpp:193`, whose shadow chain still hardcodes the
+    pre-§A `ExpMapCompute(1.0f, 10.0f, ...)` peak-height ceiling instead of
+    `kMaxResonantBumpHeight` — a drifted second definition site found during W2.0.
+  - **The master limiter is untouched by all of the above.** Its threshold, attack, release and
+    position stay exactly as they are; it remains the backstop for reverb Hold, which is
+    deliberately parked just under self-oscillation.
 - [ ] W2.3 Extend the storm test if W2.0 shows it cannot catch the operator's symptom (per-param
   endpoint dwell + limiter-engagement assertion, not just >1.0 samples).
 
