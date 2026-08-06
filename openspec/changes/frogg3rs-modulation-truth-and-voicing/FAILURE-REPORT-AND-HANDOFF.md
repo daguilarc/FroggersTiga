@@ -8,6 +8,61 @@ symptoms at all.
 
 ---
 
+## 0. HOW THIS AGENT FAILED — the behavioural lessons, not the technical ones
+
+Every technical finding below is downstream of these. An agent that repeats these will reproduce
+this failure regardless of how good its DSP reasoning is.
+
+**0.1 — Asserting from reasoning where a direct look was available.** The single recurring error.
+Every wrong call this session had a twenty-line read that would have settled it:
+- Claimed "Drive is a bounded waveshaper, no cap needed" and used it to talk the operator OUT of
+  their own cap suggestion. The authored `DriveBlendPhase` stage was never examined. It measured
+  **50-61x** — the largest blowout path in the instrument.
+- Claimed "Stop is already fixed, verified by trace" from reading the flush code. It is not fixed;
+  the operator hears audio a minute after Stop.
+- Blamed F1's badge count on per-pole source draws. Reading the loop disproved it in one look.
+- Blamed it next on subtree state. The operator disproved it by pointing out a single fresh press
+  cannot create level-2 state.
+- Hedged "sparse fan-out is *likely* correct" instead of checking whether the randomize helper
+  needs the view open. It does not — and that check turned a speculative capacity problem into a
+  one-edit fix (F5).
+**Rule: if a claim can be settled by reading code or printing a number, do that before writing the
+claim down. "Traced" and "verified" mean the lead read it, not that a subagent said so.**
+
+**0.2 — Trusting subagent reports as evidence.** Several load-bearing claims entered the plan
+because a subagent said them and the lead never checked: the level-1 fan-out behaviour, the Drive
+bound, test counts (miscounted **four separate times**, caught each time only by counting
+`TEST_CASE` declarations directly). A subagent report is a lead, not a fact.
+
+**0.3 — Measuring the thing that is easy to measure instead of the thing that is broken.** Five
+stages were driven to green bounds with synthetic adversarial inputs. Not one test reproduced the
+operator's actual repro. **176 tests pass and four reported symptoms remain.** See §1.
+
+**0.4 — Deferring work while asking the operator to evaluate the result.** Mid-session the operator
+was handed a build to listen to while a decided-and-designed fix sat unbuilt and known-insufficient
+work was recorded as "if blowouts persist." Their response — *"why did you defer shit and still
+have me test it? all of these bugs are interconnected"* — was correct. **Do not request a listening
+pass on a knowingly-incomplete build.** One-variable-at-a-time is right only when the instrument is
+otherwise sound.
+
+**0.5 — Reading an instruction's letter after its rationale died.** B12 required a trailing label
+because a *leading* one read as labelling the wrong control. Once the neighbouring label moved
+below, that ambiguity was gone — but the letter was preserved anyway, and a `LabelPlacement`
+parameter was invented to honour it. **The extra branch was the tell.** When honouring an
+instruction requires adding a branch, suspect a literal reading.
+
+**0.6 — Letting an agent argue against a decision the operator already made.** Told to "reconsider
+from scratch," a research agent built a reasoned case against adding Decay — which the operator had
+explicitly approved — by describing it as the "naive" move. The lead relayed that without noticing
+the inversion. **Quote the operator's words into the brief when a decision exists, and check
+proposals against those words before relaying them.**
+
+**0.7 — Correct-sounding prose is not correctness.** This plan is full of confident, well-cited
+paragraphs that were wrong. Citations prove something was read, not that the conclusion follows.
+**Prefer a printed number over a paragraph.**
+
+---
+
 ## 1. THE SYSTEMIC ERROR — read this first
 
 **Every measurement taken this session was on an isolated stage, driven by a synthetic adversarial
