@@ -118,6 +118,36 @@ the operator has to dial in; it is a value the modulation visits continuously. C
    is why B1 exists.
 3. Guard tests must sweep with modulation ACTIVE, not just static knobs at max.
 
+### OMNI REVIEW — W2.2a (landed `20838b7`), reviewed 2026-08-05
+
+Two findings; both fold into the single post-Group-A fix dispatch, not a separate one.
+
+**R1 — the trim's smoothing constant is an unvalidated magic number, and the gap matters under
+exactly the operator's repro (§1 trace-don't-assert, §14).** `kCombTrimGlideCyclesPerSample = 0.01`
+was chosen by analogy to `RandomShLane`'s glide constants — a *different* use case — giving a time
+constant of ~1/(2π·0.01) ≈ **16 samples** (0.33 ms at 48 kHz). Nothing pins that this is fast
+enough. It matters because `fb` is modulated **per sample** (confirmed: `SetFeedback` is called
+inside `RouteAudioSample()`, which runs inside `ProcessBlock`'s per-frame loop,
+`FroggersAppCore.hpp:521,647`): when audio-rate modulation — including noise — swings `fb` upward
+fast, the trim lags ~16 samples behind and the comb branch is **under-trimmed during the lag**,
+producing exactly the transient overshoot the operator reports as "still blows out after noodling."
+The new bound test uses a STATIC `fb` and therefore cannot see this. **Fix: pin the bound with `fb`
+modulated at audio rate, and size the constant from that measurement rather than by analogy.**
+
+**R2 — the parity test re-implements the smoothing recurrence (§8, second definition site).**
+`FroggersDspParityTests.cpp` runs `trimState = trimAlpha*rawCombTrim + (1-trimAlpha)*trimState`
+alongside production's `OnePoleLowPass::Process`. It reads `alpha` from the production object
+rather than hardcoding it, which was the right instinct and limits the damage — but the recurrence
+itself is now written twice, and a change to `OnePoleLowPass` would silently desync the reference.
+**Lower severity than R1: a parity test's job IS an independent reference**, so this is a judgement
+call, not a clear violation. Preferred fix: have the reference drive an actual `OnePoleLowPass`
+instance seeded identically, so the recurrence exists once.
+
+**Not findings** (checked and clean): no defensive branch added around the divisor — `|fb| ≤ 0.95`
+so `1 + |fb| ∈ [1, 1.95]` and can never be zero (§12 satisfied by tracing, not by guarding); no new
+helper function (§6 n/a); nesting unchanged (§5); the per-sample divide is justified by per-sample
+`fb`, and at 48 kHz it is not a cost worth trading readability for (§10).
+
 ### Execution order — this file is the single proposal layer
 
 1. **W1** modulation truth — *blocked on investigation report (dispatched 2026-08-05)*
