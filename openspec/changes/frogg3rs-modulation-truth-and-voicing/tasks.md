@@ -81,12 +81,53 @@ S2 drill-in depth knobs all read 12 o'clock; S3 Randomize All inside level-1 sho
 
 - [ ] W1.1 Fix design — constrained by **no-Sheaf-patch**: every implicated mechanism
   (`uiDisplayCenters_`, `ProcessLitePhase1`, the seed path) lives in Sheaf.
-  - [ ] W1.1a **Trace how patch LOAD displays depth knobs correctly** (it must — or the same
-    staleness would afflict every loaded patch, which the operator has not reported). Whatever
-    public mechanism reseeds displays on load is the app-callable fix candidate for S2. If none
-    exists, S2 becomes **upstream ask 16** (depth display never ticks outside top-level
-    registration) with an interim app-side settle (bounded `ComputeAllParameters()` calls — ugly,
-    ~46 iterations to converge at alpha 0.0994; record the cost honestly if chosen).
+  - [x] W1.1a **LANDED 2026-08-05 — an app-callable fix exists; NO upstream ask needed.**
+
+    **Patch load is NOT bugged, and is the working reference.**
+    `ParameterManager::LoadParameterValuesFromJSON` writes values then calls
+    `ComputeAllParameters()` (`ParameterModulation.cpp:3141-3155`, the call at `:3153`). That is
+    exactly the reseed randomize is missing.
+
+    **CORRECTION to this plan's earlier estimate.** W1.0 recorded an interim settle costing "~46
+    iterations to converge at alpha 0.0994". **Wrong — one call converges exactly.**
+    `ComputeAllParameters` (`:3165-3173`, public, `ParameterModulation.hpp:796`) calls
+    `ComputeAtDepth(scene_, 0, /*smoothTargetCenter=*/false)`, and the smoothing branch is gated
+    `if (smoothTargetCenter && recursionDepth == 0)` (`:2207-2213`) — so alpha is bypassed
+    entirely, `targetCenter_ = rawCenter` instantly, and depth children (at `recursionDepth_ > 0`)
+    take the unconditional snap-and-seed branch (`:2295-2304`), with `SnapCurrentToTarget`
+    re-snapping recursively (`:2317-2321`). **Exact convergence, one call.**
+
+    **THE PRECISE MECHANISM, which the drag path reveals.** Dragging a depth knob displays
+    correctly not because `HandleTick` refreshes anything — it calls only `HandleIncDec`
+    (`:2652-2658`) — but because the depth's **top-level ancestor** runs a periodic
+    `Compute(scene)` in `ProcessSamplePhase1` (`:1486-1491`), whose recursion reaches each depth
+    child at `recursionDepth_ > 0` and therefore always takes the *instant* branch, re-seeding the
+    display every few milliseconds while audio runs.
+    **`RandomizeVisibleValue` breaks precisely because it calls `Compute()` directly ON the depth
+    parameter** (`:1727/:1731`), making that call `recursionDepth == 0` **for the depth itself** —
+    which is the one path that takes the smoothed branch. The bug is a recursion-depth accident,
+    not a missing feature.
+
+    **Threading constraint — binding.** `ComputeAllParameters` is a full graph traversal and is
+    explicitly NOT in the lock-free class that `ProcessLitePhase1` documents
+    (`ParameterModulation.hpp:484-485`), and `ParameterManager` is audio-thread-owned once running
+    (`app/FroggersAppCore.hpp:23`). **It must not be called from the UI thread.** Fortunately
+    randomize already crosses correctly: Randomize All/Page go through
+    `FroggersAppCore::Request*`, a pending-atomic bridge the audio thread drains in `ProcessFrame`
+    (`app/FroggersAppCore.hpp:336-337, 1483-1484`) — so the reseed lands on the audio thread by
+    construction if it is added at the end of that drain, not at the UI call site.
+
+    **No lighter API exists:** `SnapCurrentToTarget`/`SeedCachedKnobAndUiDisplayState` are private
+    (`ParameterModulation.hpp:548-549`); `ComputeAllParameters` is the only public, deterministic
+    reseed. Broader than ideal (whole tree) but correct, and the same call load already makes.
+
+- [ ] W1.1d **Fix design, derived from W1.1a/W1.1b (write the brief from this, not from symptoms):**
+  1. Option A zeroing: before drawing, zero the depths in scope (all, for Randomize All; the page's
+     own, for Randomize Page).
+  2. Draw the median-3 per parameter exactly as today — the distribution is not the defect.
+  3. **Reseed once, at the end of the audio-thread drain**, via `ComputeAllParameters()` — one
+     call, whole tree, after all writes; not per-parameter, not from the UI thread.
+  4. Do NOT touch `RandomizeVisibleValue`'s internals or anything in Sheaf.
   - [x] W1.1b **DECIDED 2026-08-05 — Option A, fresh sculpture.** Operator: *"option A is what it
     should have always been, the randomization should never have been additive (and it was still
     too much to start with)."* Randomize All zeroes ALL modulation depths first, then draws the
