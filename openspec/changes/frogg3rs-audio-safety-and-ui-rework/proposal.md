@@ -1,5 +1,9 @@
 # Proposal — `frogg3rs-audio-safety-and-ui-rework`
 
+> **SUPERSEDED 2026-08-05 by `frogg3rs-modulation-truth-and-voicing`** — see that change's
+> `SUPERSESSION-RECORD.md` for what carried, what stays open, and why. This directory is history;
+> do not execute from it. Its §0 execution order is superseded by the successor's.
+
 **Created 2026-07-28. Supersedes `frogg3rs-gui-and-dsp-robustness`**, which is archived
 *superseded, not done* — see `SUPERSESSION-RECORD.md` in this directory for exactly what carried
 over, what was finished, and what was thrown away.

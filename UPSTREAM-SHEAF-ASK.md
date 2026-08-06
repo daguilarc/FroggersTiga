@@ -263,7 +263,7 @@ so apps stop needing the adjacent-Label workaround.
 
 ---
 
-## 7. The runtime chrome shows an unlabelled percentage
+## 7. The runtime chrome shows an unlabelled percentage — **FILED as jvictor0/Sheaf#2** (2026-08-05, verified still open at 508d9d68)
 
 **What we see:** a bare `NN%` under the File button, with nothing saying what it
 measures. Our operator's reaction on first seeing it was, verbatim, *"what the fuck
@@ -382,7 +382,7 @@ the level-1 parameter, `Deselect()`, then re-open it), so this is **not blocking
 one-level pop would be less fragile than an app re-deriving the intermediate state, and any app
 with multi-level drill-in will want it.
 
-## 12. No way to launch a single app without the picker — every out-of-tree app rebuilds `Main.cpp`
+## 12. No way to launch a single app without the picker — **FILED as jvictor0/Sheaf#2** (2026-08-05, with the realized drift cost: the G.4 window-size bug our copy inherited from Main.cpp:87-99, which still carries it upstream)
 
 `apps/sheaf-patch/Main.cpp:35-51` always builds the full app vector and always constructs
 `LauncherComponent`; `initialise(const juce::String&)` (`:29`) discards its command-line argument,

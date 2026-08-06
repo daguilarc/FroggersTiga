@@ -1,5 +1,9 @@
 # Handoff — next agent, 2026-07-31
 
+> **SUPERSEDED 2026-08-05.** The live change is `../frogg3rs-modulation-truth-and-voicing/`
+> (`SUPERSESSION-RECORD.md` there maps every open item). Nothing in this file is an instruction
+> anymore.
+
 Read `/Users/diegoaguilar-canabal/Desktop/omni-rule.md` first. It is binding.
 
 Then: `proposal.md`, `design.md`, `tasks.md`, `SUPERSESSION-RECORD.md` in this directory.
