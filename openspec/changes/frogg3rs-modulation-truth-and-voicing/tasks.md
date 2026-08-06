@@ -169,8 +169,51 @@ S2 drill-in depth knobs all read 12 o'clock; S3 Randomize All inside level-1 sho
   - **Q-dependent peak gain compensation** — offender 3; standard resonant-filter trim.
   - **Range trims** (feedback 0.95 → lower, LP max → lower, Q max → lower) — bluntest tool,
     changes reachable character; operator's call only.
+- [x] W2.2-PREP **Treatment scoping — LANDED 2026-08-05.** File:line cited; binding for W2.2.
+
+  **Insertion point exists and is clean.** `filterOut` is computed at `FroggersAppCore.hpp:
+  1032-1033` and consumed at `:1050` by `delay_.Process(filterOut, ...)`. It is a **single mono
+  `float`** — the whole path is mono here (`FilterFxChain::Process` returns `float`,
+  `FilterFx.hpp:475-492`). A limiter inserted between those two lines sees exactly what Delay and
+  Reverb see today, before their tails can be ducked.
+
+  **`OutputLimiter` is state-safe to instantiate twice but NOT parametrically a drop-in.**
+  `Process()` (`:1160-1166`) is a pure per-sample envelope follower with all state in instance
+  fields, so a second instance is isolated and correct. **But `kThreshold` 0.9 / `kCeiling` 1.0 /
+  `kHeadroom` / `kAttackSeconds` 1 ms / `kReleaseSeconds` 100 ms are `static constexpr`
+  (`:1108-1112`)** and `Configure()` takes only `sampleRate` (`:1120-1124`) — every instance of the
+  type shares one tuning. A second instance copied verbatim would duck **identically, one stage
+  earlier**, which is not the goal. Making it independently tunable (template params or instance
+  fields) is a real edit to the struct, and it must be counted as part of the work rather than
+  discovered mid-implementation. Per-sample cost either way is trivial (`fabs`, compare,
+  multiply-add; `std::exp` only when above threshold, `:1134-1139`).
+
+  **DRIVE NEEDS NO CAP — operator's instinct confirmed with the math.** Drive runs BEFORE Filter
+  (`:942-943` feeds `:1032`). `PolynomialDrive` is internally unbounded (`gain = ExpMap(1,5)`,
+  `Drive.hpp:86`; shape coefficients to ~11, `:96-100`) **but its output never escapes**: the
+  `FrogBlock` lambda always folds it through `Sine01(out/4)` — bounded to [-1,1] for any real input
+  (`DspMath.hpp:28-33`) — convex-blended with a hard-clamped `PadeSaturator` (`FilterFx.hpp:97-102`)
+  by weights summing to 1 (`Drive.hpp:283-289`). Downstream Drive stages add no gain: bit-crusher
+  (`:239-267`), sample-and-hold (`:169-208`), convex blend through a stable `|a|<0.98` allpass
+  (`:339-367`). **Drive is a bounded waveshaper, not a net-gain stage. Dropping the cap idea on
+  evidence, not intuition.**
+
+  **No headroom anywhere, confirmed and extended.** Nothing between VCO output and the limiter
+  reduces level: `FilterFxChain` convex-blends only (`FilterFx.hpp:475-492`), `StereoDelay` clamps
+  *parameters* but never scales signal (`Delay.hpp:170`), `Reverb` blends dry/wet only
+  (`Reverb.hpp:262-263`).
+
+  **The guard can assert the STRONG claim.** `TestOutputLimiter()` returns a live reference and
+  `envelope` is a public field, already read per-block by an existing test
+  (`FroggersAudioRoutingTests.cpp:567,571`). So W2.2's test can pin *"the limiter never engages
+  continuously across a sustained run"* — the property that actually broke — rather than an
+  output-RMS proxy. Single-parameter setup pattern exists too
+  (`model.PageParameter(bank, slot).SceneCenter(0) = value`, `:559-563`) plus
+  `rig.StartAt(0)`/`RunBlocks(n)`.
+
 - [ ] W2.2 Implement the agreed treatments, sequentially, each with a guard that pins the property
-  that was wrong (e.g. sustained-tone limiter engagement at max, not merely peak ceiling).
+  that was wrong (sustained-tone limiter engagement at max, not merely peak ceiling), using the
+  observable `envelope` above.
 - [ ] W2.3 Extend the storm test if W2.0 shows it cannot catch the operator's symptom (per-param
   endpoint dwell + limiter-engagement assertion, not just >1.0 samples).
 
