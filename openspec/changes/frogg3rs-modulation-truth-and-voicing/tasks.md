@@ -68,6 +68,30 @@ poles** — different values per pole (so blending sweeps between two different 
 identical source membership (so badges are true in both scenes and blending never reveals a source
 that was invisible at one pole). Non-additive in both scenes.
 
+#### A3 alternative CONSIDERED AND REJECTED — per-scene source SETS with depth-graded badges
+
+Raised by the operator 2026-08-05. Recorded because "why aren't modulation sources per-scene?" is
+the obvious question a future reader will ask, and the answer is not "it was hard."
+
+**It is buildable, app-side, with no upstream change.** `Parameter::UIState.modulatorsAffectingMask`
+is a bitmask, so graded badges would need a parallel per-source magnitude array; the app can
+already read each depth itself via `ModulationDepthParameter(modIx)` and render alpha proportional
+to depth at the current blend, recomputed per UI frame. Cost is ~16 params × 15 sources per frame
+at 30 Hz — negligible.
+
+**Rejected on legibility and on randomize semantics, not on difficulty:**
+1. At mid-blend — the position the instrument is most used at — every source from either scene
+   renders at partial alpha. Fifteen half-lit badges per parameter, with no way to distinguish
+   "faint because shallow" from "faint because it belongs to the other pole." Binary badges are
+   scannable; graded ones smear exactly where it matters most.
+2. It reintroduces the ambiguity that caused the original bug: randomize would have to choose
+   source MEMBERSHIP per scene, which is precisely what produced badges-in-scene-2-without-depths.
+3. Fixed membership means blending morphs the AMOUNT of one modulation architecture, which reads
+   as a coherent sweep. Cross-fading between two different architectures does not.
+
+If this is ever revisited, revisit it for expressiveness (scene 1 and scene 2 as genuinely
+different modulation topologies), not because the graded badge looks prettier.
+
 ### B4 — Stop does not stop
 
 Operator: *"stop hasn't been wired to the delay buffer yet... so stop hasn't stopped anything."*
