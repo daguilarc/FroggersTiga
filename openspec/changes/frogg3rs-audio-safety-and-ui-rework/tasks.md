@@ -1002,6 +1002,19 @@ domain concept and does not obscure data flow).
   upstream because the picker is still on screen; here there is no fallback, so a startup failure
   presents as a silent blank window. Inherited structure, not introduced — but it should either quit
   with a return value or surface the error. **Behaviour decision, operator's call.**
+- [x] G.4 **Window opened 96px too narrow, clipping the runtime sidebar** — fixed 2026-08-05.
+  Operator: *"i still had to resize the window to see the buttons on the right hand side."* **Ours,
+  not upstream** — worth recording because it was easy to mistake for ask 15's fixed-size shell.
+  `RuntimeShellSession` sizes its component to `MainPane::IntrinsicBounds()` (`runtime/Shell.hpp:
+  86-87`) = `config.uiWidth + kSidebarWidth (96)` × `config.uiHeight`
+  (`RuntimeMainComponent.hpp:212-218`); `FroggersMain.cpp` then sized the WINDOW from `config`
+  alone, so the Audio/Controllers/Sync/File sidebar sat exactly one sidebar-width off the right
+  edge. Now reads the component's own size, so it stays correct if `kSidebarWidth` ever changes.
+  **Root cause was copying the wrong reference:** Sheaf ships two window paths and
+  `apps/sheaf-patch/Main.cpp:87-99` — the one G.1 was modelled on — has the same defect, while
+  `runtime/Shell.hpp:193-197` reads the intrinsic bounds and is correct. G.1's §G-PLAN recorded
+  the near-copy as accepted duplication under §8; this is that duplication's first real cost, and
+  it argues for upstream ask 12 (a reusable direct-launch entry point) rather than against it.
 - [ ] G.3 **Operator confirms an existing saved patch still loads** from
   `~/Library/Sheaf/synth/sheaf-patch/`. Not self-certifiable and not cheaply testable; it is the
   failure that would actually hurt.
