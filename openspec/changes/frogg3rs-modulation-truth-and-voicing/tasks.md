@@ -817,3 +817,36 @@ comparator/squarer — Warps), `Wear` (level-correlated dropout noise — Chow T
 - `C.Drive`/`P.Drive` could converge sonically with the Drive bank's Fuzz/Shape — distinguishable
   curves, or pick one home.
 - Drive `Sym` and Filter `C.Sign` are both "bias/flip a nonlinearity" — keep them audibly distinct.
+
+#### §J.6 — BINDING CONSTRAINT: every parameter must be continuous (operator, 2026-08-05)
+
+*"it wouldn't be useful as an encoder with modulation layers like all the other continuous
+parameters. i think continuous parameters are our only choice here."*
+
+**No switch-type parameters, even though Sheaf supports them** (`Parameter::GetSwitchVal`). A
+discrete parameter is a dead spot in this instrument: it cannot be meaningfully modulated by the
+15-source slate, cannot be randomized into anything but a coin flip, and wastes an encoder's range.
+Every proposed parameter must have a musically meaningful continuous reading or it does not ship.
+
+**CORRECTION — `C.Sign` (comb polarity) is REDUNDANT, and it was §J.5's headline find.** Verified
+`Comb::GetFeedback` (`app/dsp/FilterFx.hpp`): the knob is **already bipolar** — 0.0 → −0.95
+(cancelling comb), 0.5 → 0 (no feedback), 1.0 → +0.95 (reinforcing comb), via `ZeroedExpCompute`
+on each half. The existing Comb Feedback knob already sweeps notch-comb → none → peak-comb
+continuously. The research agent saw the parameter name and assumed unipolar without reading the
+mapping. **Delete C.Sign from consideration.** (Aside: W2.2a's trim uses `fabs(comb.feedback)`, so
+it already handles the negative half correctly — negative feedback has identical magnitude and the
+same blowout profile.)
+
+**Applying the constraint to the outstanding proposals:**
+
+| Proposal | Continuous reading | Verdict |
+|---|---|---|
+| Ring mod | dry ↔ 4-quadrant product crossfade | **Natural fit** — every knob position useful |
+| Envelope Curve | log ↔ linear ↔ exp | Natural fit |
+| Cycle | **burst count**: 0 = one-shot, mid = 2-8 repeats, max = infinite loop (modulatable burst length) | Fits; preferred over retrigger-probability, which is the generative alternative |
+| Comb sat drive | pre-gain into the existing in-loop saturator | Fits — **but requires re-deriving W2.2a's trim**, which is computed from feedback alone |
+| Reverb ModRate / Delay feedback tone / Drive Sym (bias) / Shimmer blend / Reverb Spread | all natively continuous | Fit |
+| Reverb Tuned | 0 = free-running tanks → 1 = fully pitch-tracked | Fits as a tracking AMOUNT |
+| PM Shape | sine → triangle → S&H as a continuous morph, not a select | Fits only if built as a morph; a 3-way select is disqualified |
+| **Hard sync** | partial phase reset: `phase *= (1 - amount)` on the master's zero-crossing | **Marginal.** The event stays discrete; only the depth is continuous. Low end is plausibly inaudible (sync's character IS the discontinuity), so the bottom third of the knob may do nothing. Prototype before spending a slot. |
+| **Reverb `Clear`/Purge** | none — it is a momentary event | **CUT by this constraint.** Already covered anyway: B4 must flush delay + reverb buffers on Stop, so the mechanism exists as transport behaviour rather than a parameter. |
