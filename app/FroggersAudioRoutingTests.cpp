@@ -543,16 +543,56 @@ TEST_CASE(limiter_reduces_gain_smoothly_not_squared_off) {
 }
 
 // -----------------------------------------------------------------------
+// B7.5 Step 1 (2026-08-06 ruling): re-homed from
+// limiter_engages_on_overdriven_patch_and_stays_bounded (below), which
+// bundled two properties -- "the limiter itself does real gain reduction,
+// not a no-op" and "this particular hostile patch runs the master hot
+// enough to need it". The second is F2/B7.1's symptom (see
+// overdriven_patch_stays_bounded's comment below) and was struck from the
+// chain-level test. This property is independent of gain staging, so it
+// moves here, driven directly via TestOutputLimiter() -- same convention as
+// limiter_passes_below_threshold_signal_bit_identical (:448 above) and
+// limiter_reduces_gain_smoothly_not_squared_off (:498 above).
+// -----------------------------------------------------------------------
+TEST_CASE(limiter_engages_and_envelope_drops_below_unity) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("limiter_engages_direct"));
+    auto& limiter = rig.Application().TestOutputLimiter();
+    limiter.Reset();
+
+    // A steady tone well above the 0.9 threshold, run long enough for the
+    // 1ms-attack envelope to settle away from its 1.0f rest state.
+    constexpr float kSampleRate = 48000.0f;
+    constexpr float kToneHz = 200.0f;
+    constexpr float kAmplitude = 1.5f;
+    constexpr int kSamplesPerCycle = static_cast<int>(kSampleRate / kToneHz);
+    constexpr int kCycles = 20;
+    for (int i = 0; i < kCycles * kSamplesPerCycle; ++i) {
+        const float x = kAmplitude * std::sin(2.0f * static_cast<float>(M_PI) * kToneHz *
+                                               static_cast<float>(i) / kSampleRate);
+        limiter.Process(x);
+    }
+
+    REQUIRE_TRUE(limiter.envelope < 1.0f);  // the limiter genuinely engaged, not a no-op.
+}
+
+// -----------------------------------------------------------------------
 // ITEM 3 -- the same deliberately overdriven patch
 // output_clamp_bounds_overdriven_patch_to_full_scale uses (self-oscillating
-// Comb, Reverb Hold at ceiling, maximum Drive), but now also confirming the
-// LIMITER (not just the final bound) is the mechanism holding it there:
-// `envelope` must actually dip below unity at some point during the run
-// (proving gain reduction is doing real work on this patch, not sitting
-// idle as a no-op), while every sample still stays within the same
-// rounding-headroom bound the pre-limiter clamp test already established.
+// Comb, Reverb Hold at ceiling, maximum Drive). B7.5 Step 1 (2026-08-06
+// ruling): this test used to also assert `minEnvelopeSeen < 0.999f` --
+// "the master limiter engages on this patch". That assertion IS F2/B7.1's
+// symptom: it pins the master sitting in continuous gain reduction on an
+// ordinary hostile patch, which is precisely what the per-stage headroom
+// architecture (C = 0.80) exists to remove -- so it was destined to fail
+// the moment the real fix landed. The "limiter genuinely does gain
+// reduction" property it also asserted is independent and is re-homed to
+// limiter_engages_and_envelope_drops_below_unity above. This test keeps
+// only the boundedness claim, and its name (formerly
+// limiter_engages_on_overdriven_patch_and_stays_bounded) was changed to
+// match -- a test whose name claims a property it no longer checks is its
+// own trap.
 // -----------------------------------------------------------------------
-TEST_CASE(limiter_engages_on_overdriven_patch_and_stays_bounded) {
+TEST_CASE(overdriven_patch_stays_bounded) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("limiter_overdriven_engages"));
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
 
@@ -563,29 +603,11 @@ TEST_CASE(limiter_engages_on_overdriven_patch_and_stays_bounded) {
     model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 1.0f;   // maximum Drive.
 
     rig.StartAt(0);
-
-    auto& limiter = rig.Application().TestOutputLimiter();
-    float minEnvelopeSeen = 1.0f;
-    // Window widened 64 -> 256 by W2.2a, from measurement, not from
-    // enlarging it until the assertion passed. The comb branch now carries
-    // an exact `1/(1+|fb|)` trim (FilterFx.hpp), so this patch's comb feeds
-    // LESS signal into the fully-wet Hold reverb that actually drives the
-    // limiter here -- and that reverb's buildup at fb ~= 0.99998 is slow.
-    // Measured first engagement on this exact patch: **block 101** (min
-    // envelope 0.809). 256 leaves ~2.5x headroom over the measured value
-    // without becoming a fishing expedition; a reverb-only patch engages at
-    // block 43, so this window is generous for every driver in the chain.
-    //
-    // The assertion below is UNCHANGED and still the point of the test: the
-    // limiter must genuinely engage, not no-op. W2.2a moved WHEN it engages
-    // (by removing the comb's excess level, which was the fix's whole
-    // purpose); it did not stop it engaging. If a future change pushes this
-    // past 256, re-measure and understand why -- do not widen again by
-    // reflex.
-    for (int block = 0; block < 256; ++block) {
-        rig.RunBlocks(1);
-        minEnvelopeSeen = std::min(minEnvelopeSeen, limiter.envelope);
-    }
+    // 256 blocks: the boundedness-stress window measured by W2.2a. No
+    // longer sampled per-block -- that per-block loop existed only to track
+    // `minEnvelopeSeen` for the engagement assertion removed above (B7.5
+    // Step 1), so it collapses to a single call.
+    rig.RunBlocks(256);
 
     REQUIRE_TRUE(!rig.SawNaN());
     const auto& output = rig.Output();
@@ -595,7 +617,6 @@ TEST_CASE(limiter_engages_on_overdriven_patch_and_stays_bounded) {
             REQUIRE_TRUE(std::fabs(sample) <= 1.0f + 1.0e-3f);
         }
     }
-    REQUIRE_TRUE(minEnvelopeSeen < 0.999f);  // gain reduction genuinely engaged, not a no-op.
 }
 
 // -----------------------------------------------------------------------
