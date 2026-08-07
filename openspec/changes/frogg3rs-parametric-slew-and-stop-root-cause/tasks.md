@@ -67,6 +67,49 @@ leading explanation for F2's blowout during play.
 
 ---
 
+## S1a — TRANSPORT-GATING THE MODULATION. Operator question, DECISION NOT TAKEN.
+
+**Added 2026-08-07 after the operator asked "so the modulation was never transport gated, does
+this plan and handoff address how to fix that?" — and it did not. That was an omission in the
+first draft of this plan**, which went straight from the measured root cause to S2's slew without
+ever considering the most direct lever. Recorded here rather than silently decided.
+
+**The fact, verified:** `modulation_.Step(...)` and `parameters_.ProcessSample(...)` are both
+called unconditionally in the per-sample loop (`grep -n "modulation_.Step" app/FroggersAppCore.hpp`).
+Transport state is passed *into* `Step` as an argument; it does not gate the call. So after Stop
+the ASR gate silences the VCOs while every modulation source keeps sweeping every modulated
+parameter at audio rate — which is precisely the energy source the `F3DIAG` capture shows
+re-pumping a fully reset chain to full scale.
+
+**The two calls are NOT equivalent and must not be gated together:**
+
+- **`parameters_.ProcessSample()` must NOT be gated.** It is what applies patch changes at all —
+  B7.5.0 established that a `SceneCenter` write only reaches the DSP through this call's periodic
+  smoothed `Compute()`. Gating it would freeze patch application whenever the transport is
+  stopped, so knob edits and Randomize All would appear to do nothing until Play. That is a worse
+  bug than the one being fixed.
+- **`modulation_.Step()` is the gateable one** — but it also drives the UI visualizers and the
+  modulation-source displays, so freezing it may simply make the instrument look dead while
+  stopped. **Trace what reads modulation state for display before gating it.**
+
+**Why this is a MASKING fix, and must be labelled as one:** a feedback loop whose gain is swept
+at audio rate is unstable *whether or not the transport is running*. Gating removes the symptom
+after Stop and **leaves F2's blowout during play completely untouched** — where the operator
+actually hears it. This is structurally the same move as F3.3, which reset all 14 units, made the
+Stop symptom vanish in the harness, and left the cause intact. **This project has already paid
+for that mistake once; do not describe transport-gating as fixing F3.**
+
+- [ ] **S1a.1 — OPERATOR DECISION, do not decide this at an implementer.** Should modulation
+      free-run while the transport is stopped at all? It is a musical question (free-running LFOs
+      that stay in motion vs. a frozen patch), not a correctness one, and both answers are
+      defensible. Bring the trade-off, not a recommendation dressed as a finding.
+- [ ] **S1a.2 — If gating is chosen, it is defense-in-depth ONLY**, and lands *after* S2 with S2's
+      measurement recorded first, so the slew's effect on F2 stays attributable. Gate
+      `modulation_.Step()` alone, never `parameters_.ProcessSample()`, and confirm the visualizers
+      still behave.
+
+---
+
 ## S2 — Narrow per-parameter slew on recursive-loop coefficients
 
 **Operator's design ruling, agreed 2026-08-07, not yet implemented.** Parametric pumping happens

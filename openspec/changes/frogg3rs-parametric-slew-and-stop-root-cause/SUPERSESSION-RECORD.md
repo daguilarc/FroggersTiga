@@ -143,7 +143,13 @@ resetting more state cannot fix either.
 
 ## 3. Carried forward as scope — see `tasks.md`
 
-- **S1 — F3 root cause**, via a real `F3DIAG` capture. Highest severity, blocks F6.
+- **S1 — F3 root cause: MEASURED** (see §2). Remaining: find what seeds the loop from silence.
+- **S1a — transport-gating the modulation.** Operator's question, **decision NOT taken.** The
+  first draft of this plan omitted it entirely and went straight to the slew; the operator caught
+  that. `modulation_.Step()` and `parameters_.ProcessSample()` are both ungated, but only the
+  first is safely gateable — gating the second would freeze patch application while stopped.
+  **Gating is a MASKING fix**: it removes the symptom after Stop and leaves F2's blowout during
+  play untouched, structurally the same move as F3.3. Labelled as such in `tasks.md`.
 - **S2 — narrow per-parameter slew on recursive-loop coefficients.** Operator's design ruling,
   agreed and NOT yet implemented. Slew only the coefficients inside feedback loops (comb
   feedback, delay feedback/send, peak Q, reverb Hold), read through `RouteAudioSample`'s single
