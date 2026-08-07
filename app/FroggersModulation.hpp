@@ -788,9 +788,13 @@ namespace detail {
 // `ParameterGroup::CanAllocate()` (public) is already false. Checking a
 // per-parameter "does every connected modulator have a materialized depth"
 // count instead would be wrong -- design D14's own bias table
-// (P(k)=0.5^(k+1), mean 1.0) means a HEALTHY randomize typically leaves most
-// of a parameter's 15 possible depths untouched; that is normal, not a
-// partial randomize. Only "no more storage was available to give" is.
+// (P(k)=0.5^(k+1), mean 1.0) is Sheaf's geometric loop, REPLACED on the app
+// side since E.1. The distribution actually in force is this file's own
+// RandomizeParameterModulationDepths draw below (10/30/30/20 for counts 1-4,
+// then a geometric r=0.7 tail for 5+; mean ~3.1) -- and that still means a
+// HEALTHY randomize typically leaves most of a parameter's 15 possible
+// depths untouched; that is normal, not a partial randomize. Only "no more
+// storage was available to give" is.
 inline bool CapacityExhausted(const synth::ParameterGroup& group) {
     return !group.CanAllocate();
 }
