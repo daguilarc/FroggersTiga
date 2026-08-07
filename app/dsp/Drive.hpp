@@ -447,6 +447,14 @@ struct DriveBlendPhase
     // Measured tuning (class comment): below the master's 0.9 threshold,
     // same headroom logic as the peak branch's kPeakLimiterThreshold.
     static constexpr float kOutputLimiterThreshold = 0.7f;
+    // F2.1a: this limiter is Configure()'d against kSharedCeiling (see the
+    // outputLimiter.Configure(...) call below), so that is the ceiling the
+    // invariant is checked against. See dsp::OutputLimiter::kDefaultThreshold's
+    // own static_assert (dsp/Limiter.hpp) for why a negative headroom is both
+    // catastrophic and invisible to every finiteness guard in the suite.
+    static_assert(kOutputLimiterThreshold < kSharedCeiling,
+                  "threshold must stay strictly below ceiling; a negative headroom turns "
+                  "DesiredMagnitude into an exponential amplifier -- see dsp/Limiter.hpp");
     static constexpr float kOutputLimiterAttackSeconds = 2.0e-6f;  // 2 microseconds -- measured, see class comment.
 
     float allpassX1 = 0.0f;

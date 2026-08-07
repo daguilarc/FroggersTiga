@@ -104,6 +104,12 @@ namespace synth_froggers::dsp {
 //     invented where the measurement gave no reason to move it.
 inline constexpr float kDelayWetLimiterThreshold = 0.9f;
 inline constexpr float kDelayWetLimiterCeiling = kSharedCeiling;
+// F2.1a: see dsp::OutputLimiter::kDefaultThreshold's own static_assert
+// (dsp/Limiter.hpp). THIS PAIR IS ONE OF THE TWO F2.1b MUST LOWER -- 0.9
+// against a retargeted ceiling of 0.80 is exactly the negative-headroom case.
+static_assert(kDelayWetLimiterThreshold < kDelayWetLimiterCeiling,
+              "threshold must stay strictly below ceiling; a negative headroom turns "
+              "DesiredMagnitude into an exponential amplifier -- see dsp/Limiter.hpp");
 inline constexpr float kDelayWetLimiterAttackSeconds = 2.0e-6f;   // 2 microseconds -- see comment above.
 inline constexpr float kDelayWetLimiterReleaseSeconds = kSharedReleaseSeconds;  // shared; see Limiter.hpp.
 

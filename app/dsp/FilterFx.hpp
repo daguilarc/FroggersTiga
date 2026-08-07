@@ -187,6 +187,11 @@ inline constexpr float kMaxResonantBumpHeight = 2.0f;
 //     second number where the measurement gave no reason to.
 inline constexpr float kPeakLimiterThreshold = 0.7f;
 inline constexpr float kPeakLimiterCeiling = kSharedCeiling;
+// F2.1a: see dsp::OutputLimiter::kDefaultThreshold's own static_assert
+// (dsp/Limiter.hpp) for why a negative headroom is catastrophic AND silent.
+static_assert(kPeakLimiterThreshold < kPeakLimiterCeiling,
+              "threshold must stay strictly below ceiling; a negative headroom turns "
+              "DesiredMagnitude into an exponential amplifier -- see dsp/Limiter.hpp");
 inline constexpr float kPeakLimiterAttackSeconds = 5.0e-6f;   // 5 microseconds -- see comment above.
 inline constexpr float kPeakLimiterReleaseSeconds = kSharedReleaseSeconds;  // shared; see Limiter.hpp.
 

@@ -87,6 +87,26 @@ struct OutputLimiter
     // argument Configure() overload instead of touching these.
     static constexpr float kDefaultThreshold = 0.9f;
     static constexpr float kDefaultCeiling = kSharedCeiling;
+    // F2.1a: threshold < ceiling is a HARD invariant of DesiredMagnitude(),
+    // not a style preference, and Configure() cannot check it (it takes
+    // runtime floats). `headroom = ceiling - threshold`, and the return is
+    // `threshold + headroom * (1 - exp(-(absX - threshold) / headroom))`:
+    //   headroom == 0 -> +x/0 is +inf, exp(-inf) is 0, the term vanishes and
+    //     this returns exactly `threshold`. A silent brickwall. Not a NaN --
+    //     an earlier version of this plan claimed 0/0 here and was wrong; the
+    //     `absX <= threshold` early return means the numerator is always
+    //     strictly positive by the time the division runs.
+    //   headroom < 0  -> the exponent's sign flips and this stops being a
+    //     limiter at all. It becomes an EXPONENTIAL AMPLIFIER: at threshold
+    //     0.9 against ceiling 0.80, |x| = 1.5 returns 41.1 (a 27x gain) and
+    //     |x| = 2.0 returns 2203. It stays FINITE until |x| ~ 9.8, so
+    //     SawNaN() and RequireFiniteStereo() both pass straight through it.
+    // That is F2's own symptom, reintroduced by F2's own fix, past every
+    // guard in the suite -- so it is pinned at compile time instead.
+    static_assert(kDefaultThreshold < kDefaultCeiling,
+                  "threshold must stay strictly below ceiling; a negative headroom turns "
+                  "DesiredMagnitude into an exponential amplifier that stays finite and "
+                  "therefore passes every NaN/finiteness guard in the suite");
     static constexpr float kDefaultAttackSeconds = 0.001f;  // fast: 1ms, per design.md A2a.
     static constexpr float kDefaultReleaseSeconds = kSharedReleaseSeconds;  // shared; design.md A2a ("so it does not pump").
 
