@@ -407,6 +407,62 @@ TEST_CASE(randomize_all_on_level_one_grid_materializes_that_parameters_own_level
     }
 }
 
+// F4.2 (frogg3rs-blowout-and-drilldown-repair; operator: "randomize all in
+// level 1 shouldn't navigate me out wtf"): F4.1 deleted the PressEncoder/
+// Back round trips that used to eject the operator back to level 0 by the
+// end of a level-1 Randomize All. This pins the fix directly: the level must
+// not move, and the deeper (level-2) randomization must still happen even
+// though no view is ever opened to reach it.
+TEST_CASE(randomize_all_on_level_one_grid_never_ejects_and_still_reaches_level_two) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/true);
+    synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
+    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;  // F3: single named constant
+    constexpr float kTolerance = 1e-4f;
+
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+    drillIn.PressEncoder(0);  // -> level 1 on `focused`
+    REQUIRE_TRUE(drillIn.Level() == 1);
+
+    // NOTE (brief/code contradiction -- reported, not silently resolved):
+    // the F4.2 task brief asked this assertion to read `LastRandomizePartial()`.
+    // That accessor lives on FroggersApp (FroggersAppCore.hpp:420), published
+    // from ProcessFrame() and reachable only via a SynthRig/rig.Application()
+    // fixture (as FroggersHeadlessTests.cpp uses) -- it does not exist on
+    // this file's bare manager+model+slate Fixture, and the same brief item
+    // separately says not to invent a new harness here. `result.partial`
+    // below is the exact underlying signal LastRandomizePartial() publishes
+    // (that accessor's own comment: true when "the MOST RECENT Randomize
+    // All/Page operation left FroggersRandomizeResult.partial true"), and is
+    // this file's own established idiom for the same check -- see the
+    // 793-ceiling test above.
+    const auto result = RandomizeAll(fx.manager, drillIn, fx.model);
+
+    // 1) Still at level 1 -- the whole point of F4: no navigation out.
+    REQUIRE_TRUE(drillIn.Level() == 1);
+
+    // 2) The deeper randomization still happened even though no view was
+    // opened: `focused`'s own depth parameters carry at least one
+    // non-neutral level-2 sub-depth.
+    bool anyLevelTwoNonNeutral = false;
+    for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+        synth::Parameter* depth = focused.ModulationDepthParameter(modIx);
+        if (depth == nullptr) {
+            continue;
+        }
+        for (std::size_t innerIx = 0; innerIx < FroggersParameterModel::kNumModulators; ++innerIx) {
+            synth::Parameter* subDepth = depth->ModulationDepthParameter(innerIx);
+            if (subDepth != nullptr && std::fabs(subDepth->SceneCenter(0) - kNeutral) > kTolerance) {
+                anyLevelTwoNonNeutral = true;
+            }
+        }
+    }
+    REQUIRE_TRUE(anyLevelTwoNonNeutral);
+
+    // 3) No silent allocation failure on a fresh patch.
+    REQUIRE_TRUE(!result.partial);
+}
+
 TEST_CASE(crunchy_is_never_randomized_by_either_button_in_any_view) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);

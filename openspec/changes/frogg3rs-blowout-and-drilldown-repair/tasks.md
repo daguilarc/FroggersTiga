@@ -23,6 +23,22 @@ ten test binaries.
 - **`nice make -j2`, never higher** (8-core/16 GB). Launcher only via `./app/build-launcher.sh`.
 - **Build/test runs go through a subagent** — counts and failure tails only, never raw logs
   (OMNI §16.1). Count that all ten binaries ran; `make test` has no `-k`.
+- **⚠ WHILE THE TWO ACCEPTANCE-GATE TESTS ARE RED, `make test` RUNS ONLY 6 OF THE 10 BINARIES.**
+  Found 2026-08-07. `test:` invokes them in order and has no `-k`, so it halts at
+  `froggers_audio_routing_tests` — binary 6 of 10, the one carrying both intentional reds. The last
+  four (`froggers_visualizer_tests`, `froggers_scope_advance_index_tests`,
+  `froggers_marbles_clock_tests`, `froggers_surface_tests`) **never execute at all.**
+  **Any dispatch that runs `make test`, sees only the two expected reds, and reports "suite green"
+  has silently skipped 36 tests across four binaries.** This is a green-while-wrong of the exact
+  class §0 already warns about, and it is live right now for every remaining task in this change.
+  **Until F2 turns the gates green, every verification step MUST additionally run the last four
+  directly** and report their counts:
+```bash
+cd app && for b in froggers_visualizer_tests froggers_scope_advance_index_tests \
+                   froggers_marbles_clock_tests froggers_surface_tests; do \
+    printf '%s: ' "$b"; ./build/$b 2>&1 | grep -c '\[FAIL\]'; done
+```
+  Baseline as of `2329b69`: 4 / 2 / 8 / 22 tests, **0 failures** in all four.
 - **`External/Sheaf` pinned at `77a3019e` and clean.** We do not patch Sheaf; needs go to
   `/UPSTREAM-SHEAF-ASK.md`.
 - **Frozen trees byte-identical:** `desktop-v2/ desktop/ src/ sim/ wasm/ vcv/ web/`.
@@ -867,15 +883,76 @@ ejection.
       - **The final bare `drillIn.Back()` at `:1178`** — the one that actually drops level 1 → 0
         and ejects the operator.
 
-      Find the encoder id without leaving the view, or cache it. The whole operation must be
-      **visually atomic**: press it, stay put, see the badges change on the page you are on.
+      > **⚠ INSTRUCTION RETRACTED 2026-08-07 — "find the encoder id without leaving the view, or
+      > cache it" is MOOT, and following it would add work for nothing.** Traced before dispatch
+      > (OMNI §1: a structural instruction is itself a claim). `originalEncoderId` exists for
+      > exactly one purpose — the `PressEncoder(originalEncoderId)` at `:1142` that re-enters the
+      > L1 view after Step 2's `Back()` left it. **Delete the round trip and nothing needs the id
+      > at all**: Step 3's presses go too (the randomize helper takes `Parameter&` and never reads
+      > view state), so no code remains that must re-enter anything. `originalParam` is already
+      > bound at `:1121`, before any `Back()`.
+      >
+      > **The level-1 branch collapses to a pure deletion** — Step 2 vanishes entirely, Step 3
+      > keeps only its `ModulationDepthParameter` / randomize / `partial` lines, and the ejecting
+      > `Back()` at `:1178` goes:
+      >
+      > ```cpp
+      > if (drillIn.Level() == 1) {
+      >     synth::Parameter& originalParam = *drillIn.BankRef().SelectedParameter();
+      >     bool partial = detail::RandomizeParameterModulationDepths(manager, originalParam);
+      >     for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+      >         synth::Parameter* depthParam = originalParam.ModulationDepthParameter(modIx);
+      >         if (depthParam == nullptr) { continue; }
+      >         const bool depthPartial = detail::RandomizeParameterModulationDepths(manager, *depthParam);
+      >         partial = partial || depthPartial;
+      >     }
+      >     return {partial};
+      > }
+      > ```
+      >
+      > No encoder id, no `PressEncoder`, no `Back()`, no level movement — which IS the fix.
+      > Rewrite the surrounding comments to describe this shape; several of them
+      > (`:1128-1133`, `:1156-1175`) exist solely to explain round trips that no longer happen.
+
+      The whole operation must be **visually atomic**: press it, stay put, see the badges change on
+      the page you are on.
 - [ ] **F4.2: Test** that level is unchanged across a level-1 Randomize All, and that the focused
       parameter's depths carry non-neutral level-2 sub-depths afterward. Also assert
       `LastRandomizePartial()` is false on a fresh patch — silent allocation failure is its own
       defect.
-- [ ] **F4.3: Re-measure allocation.** Materialization should fall from 15 per depth to ~2, i.e.
-      level-2 cost from 15 + 15×15 = **240** to roughly 15 + 15×2 ≈ **45** per focused parameter.
-      Record the measured number.
+- [x] **F4.3: Re-measure allocation. MEASURED 2026-08-07 — and the predicted win was NOT a
+      steady-state win. The prediction's mechanism was wrong.**
+
+      Predicted: level-2 cost falls from 15 + 15×15 = **240** to ≈ **45** per focused parameter.
+      **Measured: ≈48 both before AND after the fix.** The steady state never was 240.
+
+      **Why, traced into Sheaf and verified by the lead (M2 — this began as a subagent finding):**
+      `Bank::OpenModulationView` does eagerly materialize all 15 sub-depths
+      (`EnsureModulationDepthParameter` per cell, `ParameterModulation.cpp:2843`) — but
+      `Bank::Deselect()`, which `Back()` calls, ends with
+      `affectedGroup->CollectNeutralLocalParameters()` (`:2706`) after unpinning the view's cells.
+      **Every `Back()` therefore reclaimed every depth the randomize helper had not actually
+      written.** The 240 was a transient peak that existed only between the press and the pop; the
+      steady state was always "whatever was written."
+
+      **What F4 actually removes** is (a) the level movement — the operator-visible bug, which was
+      always the point — and (b) up to 225 wasted `EnsureModulationDepth` calls per press that were
+      allocated and immediately pruned. Real, but churn, not footprint.
+
+      **Consequence for F5, and it makes level 3 EASIER, not harder — re-derive rather than reuse
+      the old number.** The plan's `3615 → ~105` framing inherits the same wrong mechanism.
+      Two separate quantities matter and the plan conflated them:
+      - **Manual drill-in** still eagerly opens one view per level: 15 pinned per level, so a
+        level-3 descent peaks at ≈45 pinned — nowhere near 3615, which assumed a full traversal
+        nobody performs.
+      - **Randomize at depth**, after F4, performs no traversal at all: it writes only what it
+        selects, ≈3 per parameter, so a level-3 randomize is ≈3 + 9 + 27 = **~39 written**.
+
+      **The real level-3 risk is neither of those — it is `OpenModulationView`'s early return**
+      (`:2825-2828`): when `available < missing` it calls `RequestParameterStorageBatch` and
+      **returns without opening the view**. F5.3 must therefore assert that a level-3 view actually
+      OPENS, not merely that an allocation count is small. A silent failure-to-open is exactly the
+      shape of bug this change exists to stop shipping.
 - [ ] **F4.4: Commit.** F4 may be the whole visible symptom — the randomization was likely working
       all along and simply never visible.
 
@@ -898,9 +975,19 @@ std::array<synth::PhysicalEncoderId, kMaxDrillLevel> levelEncoders_{};
 - [ ] **F5.2:** Land the refactor **with `kMaxDrillLevel` still 2** and confirm the suite is green.
       The refactor is a strict improvement independent of the new maximum, and separating the two
       keeps any breakage attributable.
-- [ ] **F5.3:** Raise `kMaxDrillLevel` to 3. One constant. Confirm allocation against
-      `CanAllocate()` — sparse fan-out should be ~15 + 30 + 60 ≈ **105**, not the 3615 that eager
-      materialization would have cost. Record the measured number.
+- [ ] **F5.3:** Raise `kMaxDrillLevel` to 3. One constant.
+      **Acceptance criterion CORRECTED 2026-08-07 by F4.3's measurement — do not use the old
+      `~105 vs 3615` allocation target, its mechanism was wrong.** Both figures described a
+      traversal nobody performs, and the steady-state count was never the binding constraint
+      (`Bank::Deselect()` has always pruned unwritten depths — see F4.3).
+
+      **Assert the thing that can actually fail:** that a level-3 modulation view **opens**.
+      `Bank::OpenModulationView` returns early WITHOUT opening when `available < missing`
+      (`External/Sheaf/.../ParameterModulation.cpp:2825-2828`), so storage exhaustion presents as a
+      silent no-op, not as an exception or a bad count. The test must therefore drill 0→1→2→3 and
+      assert `Level() == 3` **and** `ShowingModulation()` is true at each step — a count assertion
+      passes even when the view never opened. Record the peak materialized count as an observation,
+      not as the pass condition.
 - [ ] **F5.4: Commit.**
 
 ---

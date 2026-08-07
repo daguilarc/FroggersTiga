@@ -1094,9 +1094,21 @@ inline FroggersRandomizeResult RandomizePage(synth::ParameterManager& manager, F
 //     BankSlot currently displays, so the active/displayed bank is left
 //     completely undisturbed by this global operation.
 //   - level-1 grid (Level()==1): that ONE parameter's 15 depths (as
-//     RandomizePage would do) PLUS materializes and randomizes each of
-//     those (now-existing) depth parameters' OWN 15 depths (level 2) --
-//     240 parameters total for this one focused parameter (task 6.8).
+//     RandomizePage would do) PLUS one more RandomizeParameterModulationDepths
+//     call directly on each of those (now-existing) depth parameters' OWN
+//     depths (level 2). F4 (operator: "randomize all in level 1 shouldn't
+//     navigate me out"): called directly on the Parameter&, never through a
+//     view (no PressEncoder/Back), so the level counter never moves. F4.3
+//     measured this against the pre-fix PressEncoder/Back shape: the
+//     STEADY-STATE level-2 count this leaves behind is UNCHANGED either way
+//     (~48 of the theoretical 15+15*15=240 ceiling, both before and after --
+//     Bank::Deselect(), which Back() calls, already pruned the old shape's
+//     transient 15-per-depth-parameter eager materialization back down to
+//     whatever RandomizeParameterModulationDepths actually wrote, every
+//     single time, even before this fix). What this fix actually removes is
+//     that wasted transient allocate-then-prune churn (up to 225
+//     EnsureModulationDepth calls per press that used to happen and then get
+//     discarded on the way out) and, the point of F4, the level movement.
 //   - level-2 grid (Level()==2): coincides with RandomizePage.
 inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, FroggersModulationDrillIn& drillIn,
                                             FroggersParameterModel& model) {
@@ -1118,64 +1130,39 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
     }
 
     if (drillIn.Level() == 1) {
+        // F4 (frogg3rs-blowout-and-drilldown-repair; operator: "randomize
+        // all in level 1 shouldn't navigate me out wtf"): this branch used
+        // to Back() out to level 0 to look up originalParam's encoder id,
+        // PressEncoder back in, then PressEncoder/Back once per depth
+        // parameter to reach level 2 -- round trips whose ONLY permanent
+        // effect was driving the level counter down to 0, which was the
+        // ejection (F4.3: Bank::Deselect(), which Back() calls, already
+        // pruned each PressEncoder's transient 15-sub-depth eager
+        // materialization back down to whatever RandomizeParameterModulationDepths
+        // actually wrote, every time, even before this fix -- so removing
+        // the round trips leaves the steady-state materialized count
+        // unchanged; it only drops the wasted allocate-then-prune churn).
+        // None of it was needed: RandomizeParameterModulationDepths takes
+        // `Parameter&` directly, reads eligibility from
+        // `group.GetModulators().Metadata()`, and calls EnsureModulationDepth
+        // itself -- nothing in it reads view state. So this branch now only
+        // ever calls that helper, first on originalParam (its own depths,
+        // level 1), then once more per materialized depth parameter (that
+        // depth parameter's own depths, level 2) -- no PressEncoder, no
+        // Back, no level movement.
         synth::Parameter& originalParam = *drillIn.BankRef().SelectedParameter();
-
-        // Step 1: the L1 parameter's own 15 depths (same op RandomizePage
-        // does at level 1). E.1: RandomizeParameterModulationDepths is
-        // called directly on originalParam -- no press, level stays at 1.
         bool partial = detail::RandomizeParameterModulationDepths(manager, originalParam);
-
-        // Step 2: find originalParam's own encoder id in the PARAMETER GRID.
-        // Level() is 1 on entry to this branch, so this Back() is still the
-        // unchanged (E.2) full exit to level 0 -- needed here regardless,
-        // since the PARAMETER GRID's own encoder layout (what this loop
-        // below scans) only exists at level 0, not inside originalParam's
-        // L1 view.
-        drillIn.Back();
-        synth::PhysicalEncoderId originalEncoderId = 0;
-        for (synth::PhysicalEncoderId e = 0; e < kFroggersSlotsPerBank; ++e) {
-            if (drillIn.BankRef().VisibleParameter(e) == &originalParam) {
-                originalEncoderId = e;
-                break;
-            }
-        }
-        drillIn.PressEncoder(originalEncoderId);  // reopen L1 view
-
-        // Step 3: for each of the (now-materialized, where allocation
-        // succeeded) 15 depth parameters, open ITS OWN view and randomize
-        // ITS OWN 15 depths (level 2) -- 15 + 15*15 = 240 total for this one
-        // focused parameter (task 6.8), the only path in the design that
-        // creates level-2 storage.
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
             synth::Parameter* depthParam = originalParam.ModulationDepthParameter(modIx);
             if (depthParam == nullptr) {
                 continue;  // not connected, or step 1 already hit CanAllocate()==false
             }
-            drillIn.PressEncoder(static_cast<synth::PhysicalEncoderId>(modIx));  // -> level 2
-            // E.1: RandomizeParameterModulationDepths on depthParam directly
-            // (design A6's count/source-selection helper) -- the PressEncoder
-            // above still does its usual eager view-open materialization of
-            // ALL of depthParam's own connected sub-depths (Bank::OpenModulationView,
-            // unrelated to randomize selection), matching the pre-existing
-            // 15+15*15=240 ceiling this comment block already describes.
             // F0.1: hoisted for the same reason (mirrors FroggersAppCore.hpp:482-488)
-            // -- this loop is the 15-depth-parameter sweep, so a short-circuited
+            // -- this loop is the depth-parameter sweep, so a short-circuited
             // `||` here would skip randomizing every remaining depth parameter.
             const bool depthPartial = detail::RandomizeParameterModulationDepths(manager, *depthParam);
             partial = partial || depthPartial;
-            // E.2 (design A7a): Back() from level 2 now pops to level 1 on
-            // its own, re-opening originalParam's L1 view via the SAME
-            // remembered `level1Encoder_` this loop set at Step 2 above (it
-            // survives the level-2 excursion by construction -- PressEncoder
-            // only overwrites it on a 0->1 transition, never on 1->2). A
-            // second manual `PressEncoder(originalEncoderId)` here would now
-            // be a stray press INSIDE the just-reopened L1 view (wrong grid
-            // -- that view's cells are modulation sources, not top-level
-            // parameters), so it is no longer needed and has been removed;
-            // this single Back() call is both the exit and the reopen.
-            drillIn.Back();
         }
-        drillIn.Back();
         return {partial};
     }
 
