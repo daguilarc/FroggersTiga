@@ -136,19 +136,68 @@ proof that the per-stage headroom architecture works in the binary rather than o
 `rig.Application().TestOutputLimiter()` returns a live reference and `envelope` is a public field,
 already read per-block at `:567,587`.
 
-- [ ] **Step 1: Resolve the collision with the existing test — decide BEFORE writing.**
-      `limiter_engages_on_overdriven_patch_and_stays_bounded` (`:555-599`) ends on
-      `REQUIRE_TRUE(minEnvelopeSeen < 0.999f)` — *"gain reduction genuinely engaged, not a
-      no-op."* **That is the exact opposite of B7.5's property on a similar patch.** Both cannot
-      hold once B7.1 lands. Decide now and record the decision here:
-      the existing test's real subject is *the master still works as a backstop*, so retarget it to
-      a patch that defeats the per-stage ceilings deliberately (e.g. reverb Hold at max, which
-      `proposal.md` records as parked just under self-oscillation by design), and leave B7.5 to own
-      the ordinary-hostile-patch case. **Do not delete it, and do not discover this collision when
-      the suite goes red after F2.**
+- [ ] **Step 1: Split the existing test. RULING TAKEN 2026-08-06 — implement it, do not re-decide.**
 
-- [ ] **Step 2: Write the failing test.** Use the operator's real repro, not a synthetic sweep
-      (M3): Filter bank Crispy at max, modulation live, transport running.
+      `limiter_engages_on_overdriven_patch_and_stays_bounded`
+      (`app/FroggersAudioRoutingTests.cpp:555-599`) bundles **two different properties**:
+      1. *the master limiter functions* — it is wired in and does real work, not a silent no-op;
+      2. *the chain gets hot enough to need it* — `REQUIRE_TRUE(minEnvelopeSeen < 0.999f)`.
+
+      **Property 2 IS F2's symptom.** That assertion says the master sits in continuous gain
+      reduction on an ordinary patch, which is precisely what B7.1 exists to remove. **The test
+      pins the broken behaviour**, so it is supposed to fail when the bug is fixed. Property 1 is
+      real and worth keeping; the test's NaN / finite / `≤ 1.0` assertions are independent and
+      valid regardless.
+
+      **Do all three of these:**
+      - **Re-home property 1 to a direct unit test of `dsp::OutputLimiter`.** Feed it a signal
+        above threshold and assert `envelope` drops below unity. Precedent exists in this same
+        file — two tests already drive `TestOutputLimiter()` directly, "bypassing that hard bound
+        entirely" (`:450`, `:500`). This makes the property permanently immune to gain-staging
+        changes, which is why it belongs there rather than in a chain test.
+      - **Strip the chain-level `REQUIRE_TRUE(minEnvelopeSeen < 0.999f)`**, and with it the
+        now-unused `minEnvelopeSeen` accumulation. Leave a comment recording that it pinned the
+        defect and was removed by B7.1's ruling, not by convenience.
+      - **RENAME the stripped test** to describe what it now checks — it keeps its hostile patch
+        (comb feedback max, comb/peak all-comb, reverb Hold max, fully wet, Drive max) and its
+        boundedness assertions, so `overdriven_patch_stays_bounded` or similar. **A test whose
+        name claims a property it no longer checks is its own trap** — that is exactly the class
+        of defect this change is repairing.
+
+      **Do NOT** retarget it to a "deliberately master-defeating" patch to preserve the engagement
+      assertion. Whether ANY patch can still engage the master after B7.1 is an open empirical
+      question, answered at **F2.4** by measurement, not predicted here. Two outcomes are both
+      acceptable there: something can (pin it), or nothing can (record that the master is
+      reachable only by fault, which `RecoverIfNonFinite` already covers, and write no test).
+
+      **After this step the suite must still be fully green.** The split changes which layer each
+      property is asserted at; it does not change any behaviour.
+
+- [ ] **Step 2: Write the failing test — and the `ApplyPatchNow` helper it is the first consumer
+      of.** Use the operator's real repro, not a synthetic sweep (M3): Filter bank Crispy at max,
+      modulation live, transport running.
+
+      Add the helper once, beside the `Rig` type in `app/FroggersAudioRoutingTests.cpp`, so the
+      "apply the patch exactly" idiom has a single definition site (OMNI §8) rather than a
+      `ComputeAllParameters()` call copied into every future test. F0.5 sweeps existing tests onto
+      it later; **it is defined here, once.**
+
+```cpp
+// B7.5.0: SceneCenter writes are applied through a SMOOTHED periodic Compute
+// (Parameter::ProcessSamplePhase1, alpha 0.0994 every 16 samples), so a patch
+// is only ~81% applied one block after it is written. ComputeAllParameters()
+// passes smoothTargetCenter=false and therefore converges exactly, in one
+// call. Call this after the SceneCenter writes and before the first
+// RunBlocks() whenever a test asserts on a patch rather than on a ramp.
+inline void ApplyPatchNow(Rig& rig) {
+    rig.Application().Context().parameterManager->ComputeAllParameters();
+}
+```
+
+      **Verify that accessor path before writing it** — the exact route from `Rig` to the live
+      `ParameterManager` must be read from `FroggersAppCore.hpp`, not assumed from this snippet
+      (M1). If no public route exists, add the narrowest test-only accessor, matching
+      `TestOutputLimiter()`'s existing precedent.
 
 ```cpp
 // B7.5 (proposal.md, "the acceptance criterion that governs everything"): the
@@ -254,34 +303,18 @@ partial = partial || bankPartial;
       distribution in force since E.1. The conclusion (most depths untouched is healthy) still
       holds; restate it from the actual current distribution.
 
-- [ ] **F0.5 — Patch settling: one shared helper, and a sweep for the narrow hazard.**
+- [ ] **F0.5 — Patch settling: sweep for the narrow hazard.**
       From B7.5.0: a `SceneCenter` write is ~81 % applied after one block and converged after ~30,
       because `Parameter::ProcessSamplePhase1` advances it through a smoothed `Compute()`
       (alpha 0.0994, every 16 samples). Long-running tests are fine; short ones are not.
-  - Add ONE shared helper beside the `Rig` type in `app/FroggersAudioRoutingTests.cpp`, so the
-    "apply the patch exactly" idiom has a single definition site (OMNI §8) instead of a
-    `ComputeAllParameters()` call copied into each new test:
-
-```cpp
-// B7.5.0: SceneCenter writes are applied through a SMOOTHED periodic Compute
-// (Parameter::ProcessSamplePhase1, alpha 0.0994 every 16 samples), so a patch
-// is only ~81% applied one block after it is written. ComputeAllParameters()
-// passes smoothTargetCenter=false and therefore converges exactly, in one
-// call. Call this after the SceneCenter writes and before the first
-// RunBlocks() whenever a test asserts on a patch rather than on a ramp.
-inline void ApplyPatchNow(Rig& rig) {
-    rig.Application().Context().parameterManager->ComputeAllParameters();
-}
-```
-
-  - **Verify that accessor path before writing it** — the exact route from `Rig` to the live
-    `ParameterManager` must be read from `FroggersAppCore.hpp`, not assumed from this snippet
-    (M1). If no public route exists, add the narrowest test-only accessor, matching
-    `TestOutputLimiter()`'s existing precedent.
+  - **`ApplyPatchNow` already exists** — B7.5 Step 2 adds it, since B7.5 is its first consumer.
+    Do not define a second one (OMNI §8).
   - **Sweep, do not mass-edit:** find tests that assert on patch-dependent behaviour within
     roughly the first 30 blocks (`grep -n "RunBlocks" app/*Tests.cpp`, cross-referenced against
     the 76 `SceneCenter(0) =` sites). Fix only those, with the helper. **Report the count found
     and the count changed.** Most of the 76 are expected to need nothing.
+  - A test that is *deliberately* measuring the ramp (if any exists) keeps its current behaviour;
+    say so in the report rather than converting it.
 
 - [ ] **F0.6: Run the suite, confirm ten binaries green, commit.**
 
