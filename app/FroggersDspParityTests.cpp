@@ -180,7 +180,13 @@ TEST_CASE(vco_adsr_state_attacks_holds_and_releases) {
         REQUIRE_TRUE(level >= last - 1e-6f);  // monotonic rise during attack/hold
         last = level;
     }
-    REQUIRE_NEAR(last, 0.8f, 1e-3);  // settled at sustain level
+    // F3-adjacent (2026-08-07): sustain is now floored by
+    // dsp::VcoAdsrState::kMinSustainLevel so audio-rate modulation cannot gate
+    // a voice to silence, so a 0.8 KNOB no longer settles at a 0.8 LEVEL.
+    // Deliberate parity divergence, same class as this struct's own
+    // kMaxAttackSeconds (2.5s -> 1.0s) and kMaxReleaseSeconds (10s -> 5s).
+    // Read the expectation from the map, never retype it.
+    REQUIRE_NEAR(last, dsp::VcoAdsrState::MapSustain(0.8f), 1e-3);  // settled at sustain level
 
     adsr.setGate(false);
     for (int i = 0; i < 20000; ++i) {
@@ -217,7 +223,7 @@ TEST_CASE(max_attack_knob_reaches_sustain_within_the_new_one_second_ceiling) {
     for (int i = 0; i < samplesAt2s; ++i) {
         level = adsr.apply(0, 1.0f, /*attack=*/1.0f, /*sustain=*/kSustain, /*release=*/0.0f);
     }
-    REQUIRE_NEAR(level, kSustain, 1e-6);
+    REQUIRE_NEAR(level, dsp::VcoAdsrState::MapSustain(kSustain), 1e-6);
 }
 
 TEST_CASE(mix_osc_voices_applies_asr_per_voice_then_averages) {

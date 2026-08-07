@@ -32,6 +32,30 @@ struct VcoAdsrState
 {
     static constexpr size_t kNumVoices = 3;
     static constexpr float kMinTimeSeconds = 0.0005f;
+    // Operator, 2026-08-07: "the sustain minimum value is too low. i'm
+    // concerned that audio rate modulation in some of the envelope parameters
+    // would result in silence."
+    //
+    // This is the MISSING SIBLING of kMinTimeSeconds. Attack and release are
+    // both floored (mapAttack/mapRelease below) precisely so modulation cannot
+    // drive them to a degenerate zero; sustain -- the third ASR parameter, and
+    // the only per-voice LEVEL control -- was read straight through as
+    // `clamp(knob, 0, 1)` with no floor at all. Two of three had the guard,
+    // one did not (OMNI §1: duplication is symmetric, go find the sibling).
+    //
+    // Degenerate at zero is not merely quiet, it is structurally broken:
+    // `attackStep` is `sustainLevel / attackTime`, so at sustainLevel 0 the
+    // step is 0 AND `m_level >= sustainLevel` is immediately true, dropping the
+    // voice straight to Hold at silence with no attack at all. Worse, Attack's
+    // own `m_level = min(sustainLevel, m_level + attackStep)` CLAMPS DOWN to a
+    // falling sustain, so audio-rate modulation does not ride the envelope --
+    // it hard-gates it to zero on every trough.
+    //
+    // 0.05 is about -26 dB: audible, unmistakably quiet, and far enough above
+    // zero that a full-depth modulation trough still passes signal.
+    // TRADE-OFF, operator-accepted: sustain 0 is no longer a hard mute for a
+    // voice, it is this floor.
+    static constexpr float kMinSustainLevel = 0.05f;
     // ITEM 4 (design.md A2, 2026-07-29, operator judgement -- deliberate
     // parity divergence, same treatment as Fuegoize.hpp's own D6 note):
     // lowered from 2.5s to 1.0s. 1.0s still comfortably covers a slow pad
@@ -132,6 +156,27 @@ struct VcoAdsrState
         return true;
     }
 
+    // The third of the three ASR range maps, and the one that was missing.
+    // Same shape as mapAttack/mapRelease below: clamp the knob, then map onto
+    // [floor, max] so the floor cannot be modulated through. See
+    // kMinSustainLevel's own comment for why zero is degenerate here.
+    //
+    // PUBLIC and static, unlike its two private siblings, for one reason: the
+    // parity tests assert the settled level a given sustain KNOB produces, and
+    // they must read that from this one function rather than re-deriving
+    // `kMinSustainLevel + knob * (1 - kMinSustainLevel)` themselves. A test
+    // that retypes the formula is a second definition site of it, and would go
+    // on passing against the old shape if this map were ever changed (e.g. to
+    // an exponential curve). dsp::kMaxResonantBumpHeight's own comment records
+    // this project already shipping exactly that bug: a test that computed its
+    // expectation with its own hardcoded copy of the constant and therefore
+    // passed unchanged when the real value moved.
+    static constexpr float MapSustain(float knob)
+    {
+        const float clamped = std::min(std::max(knob, 0.0f), 1.0f);
+        return kMinSustainLevel + clamped * (1.0f - kMinSustainLevel);
+    }
+
 private:
     float mapAttack(float knob) const
     {
@@ -147,7 +192,7 @@ private:
 
     void stepVoice(size_t voiceIndex, float attackKnob, float sustainKnob, float releaseKnob)
     {
-        const float sustainLevel = std::min(std::max(sustainKnob, 0.0f), 1.0f);
+        const float sustainLevel = MapSustain(sustainKnob);
         const float attackStep = sustainLevel / std::max(mapAttack(attackKnob) * m_sampleRate, 1.0f);
         const float releaseStep = 1.0f / std::max(mapRelease(releaseKnob) * m_sampleRate, 1.0f);
 
