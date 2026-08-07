@@ -31,6 +31,12 @@ ten test binaries.
 - **No unrequested user-visible behaviour. Propose first.**
 - **An implementer may not close a task whose spec requires operator eyes or ears.**
 - **Systematic debugging is binding for F1–F3:** no fix before the recorded root cause.
+- **A test whose property is "X did not happen" MUST assert that the conditions for X were
+  present.** Otherwise it passes on silence, on a patch that never applied, on a code path never
+  reached. B7.5's first version asserted "the master limiter never engaged" with no liveness
+  check and passed at `minEnvelopeSeen` exactly 1.0 while proving nothing. `PeakMagnitude()`
+  exists in `FroggersAudioRoutingTests.cpp` for precisely this; use it. **This is the single most
+  common shape of the green-while-wrong guards on this project's record.**
 - **The operator's runtime data root is `~/Library/Sheaf/synth/sheaf-patch/`.**
 - **Nothing goes to the operator until the whole list lands** (M4). One build, one listening pass.
 
@@ -190,14 +196,38 @@ already read per-block at `:567,587`.
 // call. Call this after the SceneCenter writes and before the first
 // RunBlocks() whenever a test asserts on a patch rather than on a ramp.
 inline void ApplyPatchNow(Rig& rig) {
-    rig.Application().Context().parameterManager->ComputeAllParameters();
+    rig.Application().TestParameterManager().ComputeAllParameters();
 }
 ```
 
-      **Verify that accessor path before writing it** — the exact route from `Rig` to the live
-      `ParameterManager` must be read from `FroggersAppCore.hpp`, not assumed from this snippet
-      (M1). If no public route exists, add the narrowest test-only accessor, matching
-      `TestOutputLimiter()`'s existing precedent.
+      **Route VERIFIED 2026-08-06 and already landed.** `context_` is private in `FroggersAppCore`
+      with no public accessor, so the lead's original `rig.Application().Context().parameterManager`
+      snippet did not compile. The narrow test-only accessor `TestParameterManager()` was added
+      beside `TestOutputLimiter()`, matching its precedent exactly. Both the accessor and
+      `ApplyPatchNow` are in the tree — do not re-add them.
+
+> ### ⚠ SPEC CORRECTED 2026-08-06 — the first version of this test was VACUOUS
+>
+> The original spec asserted only `!SawNaN`, `RequireFiniteStereo`, and
+> `minEnvelopeSeen > 0.999f`. **All three pass on silence.** A test asserting *"the limiter never
+> engages"* is trivially satisfied by an instrument that makes no sound at all — a green-while-wrong
+> test of exactly the class this change exists to eliminate, written into the plan by the lead.
+> It passed on first run with `minEnvelopeSeen` **exactly 1.0**.
+>
+> Two defects, both now fixed below:
+> 1. **No liveness assertion.** This file already carries the antidote — `PeakMagnitude`, whose own
+>    comment says it exists to "assert some output sample exceeds a small epsilon in magnitude,
+>    which plain finiteness does not require." Use it. **Any test whose property is "X did not
+>    happen" needs a companion assertion that the conditions for X were actually present.**
+> 2. **The patch was not hostile.** Crispy + Drive alone, with every other parameter at default,
+>    is not the operator's repro. The patch below is the one the pre-existing chain test measured
+>    engaging the master at block 101 (min envelope 0.809) — comb feedback max, comb/peak all-comb,
+>    reverb Hold max, fully wet, Drive max — **plus** Filter Crispy at max on top. That patch is
+>    known-hostile by measurement, not by assumption.
+>
+> Also corrected: `PageParameter(Filter, 14)` **throws `std::out_of_range`**. `pageParameters_` is
+> only 9 wide (`FroggersParameters.hpp:407-408`); Crispy lives in a separate `crispy_` array
+> reached via `Crispy(bankId)` (`:413-414`). Found by the implementer, verified by the lead.
 
 ```cpp
 // B7.5 (proposal.md, "the acceptance criterion that governs everything"): the
@@ -209,16 +239,24 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("b7_5_hostile"));
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
 
-    // The operator's actual repro: Filter bank Crispy at max scrambles all 8
-    // bits of every Filter parameter per read, so this reaches the comb
-    // feedback / LP maxima continuously rather than as an edge case.
-    model.PageParameter(synth_froggers::FroggersBankId::Filter, 14).SceneCenter(0) = 1.0f;
-    model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 1.0f;
+    // The SAME hostile patch `overdriven_patch_stays_bounded` uses -- measured
+    // to engage the master at block 101, min envelope 0.809, so it is
+    // known-hostile by measurement rather than by assumption.
+    model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95
+    model.PageParameter(synth_froggers::FroggersBankId::Filter, 7).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb
+    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 8).SceneCenter(0) = 1.0f;  // Hold -> ceiling
+    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;  // fully wet
+    model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 1.0f;   // maximum Drive
+    // PLUS the operator's stated repro on top: Filter bank Crispy at max
+    // scrambles all 8 bits of every Filter parameter per read. NOTE the
+    // accessor -- Crispy is NOT in pageParameters_ (9 wide); it lives in its
+    // own `crispy_` array (FroggersParameters.hpp:413-414), and
+    // PageParameter(Filter, 14) throws std::out_of_range.
+    model.Crispy(synth_froggers::FroggersBankId::Filter).SceneCenter(0) = 1.0f;
     // B7.5.0: a SceneCenter write is only ~81% applied after one block
     // (Parameter::ProcessSamplePhase1's periodic smoothed Compute, alpha
     // 0.0994 every 16 samples). This test must measure the patch it declares,
-    // not a ramp into it, so apply it exactly before the first block. Uses
-    // F0.5's shared helper.
+    // not a ramp into it, so apply it exactly before the first block.
     ApplyPatchNow(rig);
 
     rig.StartAt(0);
@@ -232,6 +270,11 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
 
     REQUIRE_TRUE(!rig.SawNaN());
     RequireFiniteStereo(rig.Output());
+    // LIVENESS -- without this the assertion below passes on silence, which is
+    // how the first version of this test passed while proving nothing. The
+    // instrument must actually be sounding for "the master never engaged" to
+    // mean anything.
+    REQUIRE_TRUE(PeakMagnitude(rig.Output()) > 0.1f);
     // The property. Unity means the master never had to do anything.
     REQUIRE_TRUE(minEnvelopeSeen > 0.999f);
 }
