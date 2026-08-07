@@ -34,7 +34,7 @@ ten test binaries.
 - **A test whose property is "X did not happen" MUST assert that the conditions for X were
   present.** Otherwise it passes on silence, on a patch that never applied, on a code path never
   reached. B7.5's first version asserted "the master limiter never engaged" with no liveness
-  check and passed at `minEnvelopeSeen` exactly 1.0 while proving nothing. `PeakMagnitude()`
+  check and passed at `minEnvelopeSeen` exactly 1.0 while proving nothing. `PeakAbs()`
   exists in `FroggersAudioRoutingTests.cpp` for precisely this; use it. **This is the single most
   common shape of the green-while-wrong guards on this project's record.**
 - **The operator's runtime data root is `~/Library/Sheaf/synth/sheaf-patch/`.**
@@ -215,7 +215,7 @@ inline void ApplyPatchNow(Rig& rig) {
 > It passed on first run with `minEnvelopeSeen` **exactly 1.0**.
 >
 > Two defects, both now fixed below:
-> 1. **No liveness assertion.** This file already carries the antidote — `PeakMagnitude`, whose own
+> 1. **No liveness assertion.** This file already carries the antidote — `PeakAbs`, whose own
 >    comment says it exists to "assert some output sample exceeds a small epsilon in magnitude,
 >    which plain finiteness does not require." Use it. **Any test whose property is "X did not
 >    happen" needs a companion assertion that the conditions for X were actually present.**
@@ -274,11 +274,66 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
     // how the first version of this test passed while proving nothing. The
     // instrument must actually be sounding for "the master never engaged" to
     // mean anything.
-    REQUIRE_TRUE(PeakMagnitude(rig.Output()) > 0.1f);
+    REQUIRE_TRUE(PeakAbs(rig.Output()) > 0.1f);
     // The property. Unity means the master never had to do anything.
     REQUIRE_TRUE(minEnvelopeSeen > 0.999f);
 }
 ```
+
+- [ ] **Step 6 — B7.5 IS NOT COMPLETE WITHOUT LIVE MODULATION. Added 2026-08-06.**
+
+      **Status: Steps 1-5 landed (`6195a41`). The test is red at `minEnvelopeSeen = 0.985796`,
+      `PeakAbs = 0.991599`. But it exercises STATIC knobs only.**
+
+      This change's own acceptance criterion, in `proposal.md` and `SUPERSESSION-RECORD.md`, is
+      *"all maxima, **modulation live**, transport running, the operator's real Crispy repro."*
+      The landed test has maxima, Crispy and transport. **It has no modulation at all** — no
+      randomize, no depths set. That is the one ingredient most likely to produce the reported
+      symptom, and it is missing from the gate that judges whether the symptom is fixed.
+
+      **Why this is not "iterating the test until it is redder"** — a trap this plan explicitly
+      forbids. Nothing here tunes a threshold or a block count to force an outcome. It implements
+      a clause of the spec that was written down and then omitted. The distinction matters: the
+      first is fishing, the second is finishing.
+
+      **Why it is load-bearing:**
+      - §K.1 measured `DriveBlendPhase` at **1.002** under free random phase but **4.15** under
+        full-bank per-sample-random modulation and **50.5** under periodic phase/content
+        coincidence. Its allpass coefficient is read fresh every sample from the Phase knob. **The
+        single largest known blowout path in the instrument only appears under modulation** — and
+        the current test does not exercise it at all.
+      - `0.985796` is about **0.12 dB** of gain reduction. That is inaudible, and it does not
+        match the operator's report of audible pumping. A gate that goes green on 0.12 dB while
+        the real mechanism is untested would manufacture exactly the false confidence this change
+        exists to destroy.
+      - **An incomplete acceptance gate is worse than no gate.** If B7.5 passes after F2 while
+        modulation-driven blowout persists, we ship a green suite and a broken instrument — the
+        predecessor's failure, reproduced with more ceremony.
+
+      **Add a SECOND end-to-end test, `master_limiter_stays_at_unity_under_live_modulation`**,
+      alongside the existing one rather than replacing it. They discriminate different failures:
+      static gain staging vs. modulation-driven transients. Same hostile patch, same liveness
+      assertion, same unity assertion, plus deep audio-rate modulation on the two parameters the
+      evidence names:
+      - **Drive slot 8 (Phase)** — §K.1's 50× path, from an audio-rate source (`kModSlotNoise`).
+      - **Filter slot 5 (Comb feedback)** — W2.2a's trim smoother was tuned against `rand()`
+        sweeps, never against real modulation.
+
+```cpp
+// UNVERIFIED ROUTE (M1) -- read FroggersModulation.hpp and confirm before
+// writing. `EnsureModulationDepth` returns nullptr at storage capacity, so
+// check it. Depth centers are BIPOLAR: 0.5 is zero, 1.0 is full positive.
+synth::Parameter* phaseDepth =
+    model.PageParameter(synth_froggers::FroggersBankId::Drive, 8)
+         .EnsureModulationDepth(synth_froggers::kModSlotNoise);
+REQUIRE_TRUE(phaseDepth != nullptr);
+phaseDepth->SceneCenter(0) = 1.0f;
+```
+
+      **Report both numbers for the new test too.** Expected: red, with a LARGER gain reduction
+      than the static test's 0.0142. **If the modulated test is no worse than the static one,
+      stop and report** — that would contradict §K.1's measurement and means the modulation is
+      not reaching `DriveBlendPhase`, which is its own defect.
 
 - [ ] **Step 3: Run it and confirm it FAILS**, and record the actual `minEnvelopeSeen` in this
       file. A number, not a paragraph (M7).
