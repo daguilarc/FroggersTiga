@@ -111,6 +111,19 @@ struct Vco
     float carrierPhase = 0.0f;
     float pmLfoPhase = 0.0f;
 
+    // F3.3 SPEC CORRECTED 2026-08-07 (openspec/changes/
+    // frogg3rs-blowout-and-drilldown-repair/tasks.md): Tier 2's "how many
+    // consecutive seconds has this unit's state stayed over
+    // kMaxUnitStateMagnitude" counter (app/FroggersAppCore.hpp's
+    // RecoverUnitIfNeeded), owned HERE rather than in FroggersAppCore --
+    // it is this unit's own recovery bookkeeping, not shared state, so it
+    // belongs with the rest of this struct's state rather than in a
+    // parallel member on the enumerating parent (the original placement
+    // required a second, address-keyed lookup table to pair a unit back to
+    // its own counter once the enumeration went hierarchical; see this
+    // task's own SPEC CORRECTED note for why that was wrong).
+    float overCeilingSeconds = 0.0f;
+
     // FroggersEngine.hpp:439-441 -- one VCO's pitch knob (0..1) mapped
     // exponentially across 20 Hz-20 kHz, expressed as a phase increment
     // (cycles/sample: freq/sampleRate) so Process() only adds-and-wraps.
@@ -211,6 +224,7 @@ struct Vco
     {
         carrierPhase = 0.0f;
         pmLfoPhase = 0.0f;
+        overCeilingSeconds = 0.0f;
     }
 
     // Tasks 2.3/2.4 (Tier 1/Tier 2 recovery): both are pure recursive state,

@@ -52,6 +52,7 @@
 
 #include "DspMath.hpp"
 #include "Limiter.hpp"
+#include "RecoveryTier.hpp"  // F3.3: dsp::FiniteOnly/dsp::Magnitude, this struct's own ForEachStatefulUnit below.
 
 #include "synth/DspTransferFunction.hpp"
 
@@ -223,6 +224,15 @@ struct ResonantBump
     float height = 1.0f;
     float width = 1.0f;
 
+    // F3.3 SPEC CORRECTED 2026-08-07 (openspec/changes/
+    // frogg3rs-blowout-and-drilldown-repair/tasks.md): Tier 2's per-unit
+    // sustained-over-ceiling counter, owned here rather than in
+    // FroggersAppCore -- see dsp::Vco::overCeilingSeconds's own comment
+    // (app/dsp/Vco.hpp) for the full rationale. This struct has two
+    // independent instances (FilterFxChain's peak/scoopNotch), each with
+    // its own counter, same as any other member.
+    float overCeilingSeconds = 0.0f;
+
     ResonantBump() { UpdateCoefficients(); }
 
     void SetFreq(float f)
@@ -314,6 +324,7 @@ struct ResonantBump
         biquad.x2 = 0.0f;
         biquad.y1 = 0.0f;
         biquad.y2 = 0.0f;
+        overCeilingSeconds = 0.0f;
     }
 
     // Tasks 2.3/2.4 (Tier 1/Tier 2 recovery): checks recursive state only
@@ -373,6 +384,12 @@ struct Comb
     float feedback = 0.0f;
     PadeSaturator saturator;
 
+    // F3.3 SPEC CORRECTED 2026-08-07: Tier 2's per-unit sustained-over-
+    // ceiling counter, owned here rather than in FroggersAppCore -- see
+    // dsp::Vco::overCeilingSeconds's own comment (app/dsp/Vco.hpp) for the
+    // full rationale.
+    float overCeilingSeconds = 0.0f;
+
     void SetFeedback(float fb) { feedback = fb; }
     void SetCutoffAlpha(float cutoff) { filter.alpha = cutoff; }
 
@@ -430,6 +447,7 @@ struct Comb
         filter.output = 0.0f;
         std::fill(delayLine, delayLine + kSize, 0.0f);
         index = 0;
+        overCeilingSeconds = 0.0f;
     }
 
     // Tasks 2.3/2.4 (Tier 1/Tier 2 recovery). O(kSize) per call by
@@ -581,6 +599,22 @@ struct FilterFxChain
     // sound for no measured benefit -- the measurement traced the offender
     // to the peak specifically, so only the peak gets treated.
     OutputLimiter peakLimiter;
+
+    // F3.3: this struct's own contribution to the "every stateful unit in
+    // the audio path" enumeration -- lists ONLY the members declared above
+    // (not pureDelay/combTrimSmoother/peakTrimSmoother, which
+    // RecoverPoisonedUnitState never watched either -- see
+    // app/FroggersAppCore.hpp's own RecoverPoisonedUnitState comment for
+    // which units that was and why). Composed, not re-listed, by
+    // FroggersAppCore::ForEachStatefulUnit below.
+    template <typename Visitor>
+    void ForEachStatefulUnit(Visitor&& visit)
+    {
+        visit(comb, Magnitude{});
+        visit(peak, Magnitude{});
+        visit(scoopNotch, Magnitude{});
+        visit(peakLimiter, FiniteOnly{});
+    }
 
     FilterFxChain()
     {

@@ -70,6 +70,9 @@
 #include "DspMath.hpp"
 #include "FilterFx.hpp"  // reuse dsp::PadeSaturator (see note above)
 #include "Limiter.hpp"   // reuse dsp::OutputLimiter (B7.2, see DriveBlendPhase below)
+#include "RecoveryTier.hpp"  // F3.3: dsp::FiniteOnly/dsp::Magnitude, this file's own ForEachStatefulUnit calls below
+                              // (already reachable transitively via FilterFx.hpp; included directly since this
+                              // file names both types itself, not just through FilterFx.hpp's own use of them).
 
 #include <algorithm>
 #include <cmath>
@@ -121,6 +124,12 @@ struct Oversampler2x
     bool firstSample = true;
     OnePoleLowPass antiAlias;
 
+    // F3.3 SPEC CORRECTED 2026-08-07: Tier 2's per-unit sustained-over-
+    // ceiling counter, owned here rather than in FroggersAppCore -- see
+    // dsp::Vco::overCeilingSeconds's own comment (Vco.hpp) for the full
+    // rationale.
+    float overCeilingSeconds = 0.0f;
+
     Oversampler2x() { antiAlias.SetAlphaFromNatFreq(0.4f); }
 
     template <typename ProcessFunc>
@@ -160,6 +169,7 @@ struct Oversampler2x
         prevInput = 0.0f;
         firstSample = true;
         antiAlias.output = 0.0f;
+        overCeilingSeconds = 0.0f;
     }
 
     bool StateFinite() const { return std::isfinite(prevInput) && std::isfinite(antiAlias.output); }
@@ -172,6 +182,13 @@ struct SampleRateReducer
     float freq = 0.0f;
     float phase = 0.0f;
     float output = 0.0f;
+
+    // F3.3 SPEC CORRECTED 2026-08-07: Tier 2's per-unit sustained-over-
+    // ceiling counter, owned here rather than in FroggersAppCore -- see
+    // dsp::Vco::overCeilingSeconds's own comment (Vco.hpp) for the full
+    // rationale. This struct has two independent instances (sampleRateReducer1/2
+    // on dsp::FrogBlock), each with its own counter, same as any other member.
+    float overCeilingSeconds = 0.0f;
 
     void SetFreq(float f) { freq = f; }
 
@@ -202,6 +219,7 @@ struct SampleRateReducer
     {
         phase = 0.0f;
         output = 0.0f;
+        overCeilingSeconds = 0.0f;
     }
 
     bool StateFinite() const { return std::isfinite(phase) && std::isfinite(output); }
@@ -279,6 +297,21 @@ struct FrogBlock
     DigitalReorganizer digitalReorganizer;
     Oversampler2x oversampler;
     float fuzz = 0.0f;
+
+    // F3.3 (openspec/changes/frogg3rs-blowout-and-drilldown-repair/tasks.md):
+    // this struct's own contribution to the "every stateful unit in the
+    // audio path" enumeration -- lists ONLY the members declared above that
+    // RecoverPoisonedUnitState ever watched (not polynomialDrive/
+    // digitalReorganizer/fuzz -- see app/FroggersAppCore.hpp's own
+    // RecoverPoisonedUnitState comment for which units that was and why).
+    // Composed, not re-listed, by FroggersAppCore::ForEachStatefulUnit below.
+    template <typename Visitor>
+    void ForEachStatefulUnit(Visitor&& visit)
+    {
+        visit(sampleRateReducer1, Magnitude{});
+        visit(sampleRateReducer2, Magnitude{});
+        visit(oversampler, Magnitude{});
+    }
 
     // PolynomialDrive.hpp:187-202 (FrogBlock::Process), verbatim order.
     float Process(float input)
@@ -419,6 +452,12 @@ struct DriveBlendPhase
     float allpassX1 = 0.0f;
     float allpassY1 = 0.0f;
 
+    // F3.3 SPEC CORRECTED 2026-08-07: Tier 2's per-unit sustained-over-
+    // ceiling counter, owned here rather than in FroggersAppCore -- see
+    // dsp::Vco::overCeilingSeconds's own comment (Vco.hpp) for the full
+    // rationale.
+    float overCeilingSeconds = 0.0f;
+
     // Smooths the allpass coefficient `a`, not the Phase knob or `wet`
     // themselves -- the excess is specifically a time-varying POLE, so the
     // coefficient feeding the recurrence is what must be made quasi-static
@@ -495,6 +534,7 @@ struct DriveBlendPhase
         allpassY1 = 0.0f;
         coeffSmoother.output = -0.98f;
         outputLimiter.Reset();
+        overCeilingSeconds = 0.0f;
     }
 
     bool StateFinite() const

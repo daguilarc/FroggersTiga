@@ -79,6 +79,7 @@
 #include "dsp/DspMath.hpp"
 #include "dsp/FilterFx.hpp"
 #include "dsp/Limiter.hpp"
+#include "dsp/RecoveryTier.hpp"
 #include "dsp/Reverb.hpp"
 #include "dsp/Vco.hpp"
 #include "dsp/VoiceEnvelope.hpp"
@@ -100,6 +101,7 @@
 #include <limits>
 #include <optional>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 
 namespace synth_froggers {
@@ -622,9 +624,20 @@ public:
             // caller of both), so there is no data race with the UI thread's
             // kStop handler (FroggersUiSurface.hpp's HandleAction), which
             // only pushes a MessageIn::Stop and never touches DSP state
-            // directly. Resets only delay_/reverb_ -- the two feedback
-            // structures that self-sustain on their own; VCOs/filters/drive
-            // do not, so resetting them here would be unrequested work.
+            // directly. F3.3 (openspec/changes/
+            // frogg3rs-blowout-and-drilldown-repair/tasks.md): resets every
+            // unit ForEachStatefulUnit() enumerates (all 14 -- see that
+            // method's own comment), not just delay_/reverb_. The comment
+            // this replaces claimed "VCOs/filters/drive do not [self-
+            // sustain]" as the reason to skip them; F3.1's own measurement
+            // (this task's own tasks.md) found that claim false for the
+            // comb (a recirculating delay line, 6.7s T60 at its longest
+            // delay) and driveBlendPhase_ (a recursive allpass) -- both are
+            // upstream of delay_/reverb_ and both have Reset(). The tag each
+            // unit carries is ignored here on purpose: Stop is a hard
+            // silence request, not a fault-recovery decision, so every unit
+            // gets the same unconditional Reset() regardless of its
+            // Recovery tier.
             const bool transportRunningNow = transportQuarterNotes.has_value();
             if (wasTransportRunning_ && !transportRunningNow) {
                 // ITEM 1 (revised, superseding the old "clear every block
@@ -647,14 +660,14 @@ public:
                 // naturally.
                 if (audioAdsr_.AllIdle()) {
                     // Nothing is left to inject further energy into
-                    // delay_/reverb_ -- gate closed, every voice Idle -- so
-                    // one clear right here is permanent. This is the
-                    // "already idle at the stop edge" case: with no future
-                    // Release to wait for, the pending-clear-on-AllIdle
-                    // logic below would never get a false->true transition
-                    // to fire on, so the clear has to happen here instead.
-                    delay_.ClearBuffers();
-                    reverb_.Reset();
+                    // delay_/reverb_ (or anything upstream of them) -- gate
+                    // closed, every voice Idle -- so one clear right here is
+                    // permanent. This is the "already idle at the stop edge"
+                    // case: with no future Release to wait for, the
+                    // pending-clear-on-AllIdle logic below would never get a
+                    // false->true transition to fire on, so the clear has to
+                    // happen here instead.
+                    ForEachStatefulUnit([](auto& unit, auto) { unit.Reset(); });
                     delayReverbClearPending_ = false;
                 } else {
                     // Still releasing: defer. Arms the sample-accurate watch
@@ -672,16 +685,15 @@ public:
                 } else if (audioAdsr_.AllIdle()) {
                     // The moment every voice reaches Idle while still
                     // stopped: the release can no longer inject anything
-                    // into delay_/reverb_, so this single clear is
-                    // permanent. Checked per-sample (cheap: AllIdle() is
-                    // just three stage comparisons) so the expensive part
-                    // (ClearBuffers()/Reset(), O(capacity) fills,
-                    // dsp/Delay.hpp:77-84) still runs exactly once for the
+                    // into delay_/reverb_ (or anything upstream of them), so
+                    // this single clear is permanent. Checked per-sample
+                    // (cheap: AllIdle() is just three stage comparisons) so
+                    // the expensive part (every unit's own Reset(), O(its
+                    // own state size) each) still runs exactly once for the
                     // whole release, not once per block for up to
                     // kMaxReleaseSeconds (10s, VoiceEnvelope.hpp:36) the way
                     // the old policy did.
-                    delay_.ClearBuffers();
-                    reverb_.Reset();
+                    ForEachStatefulUnit([](auto& unit, auto) { unit.Reset(); });
                     delayReverbClearPending_ = false;
                 }
             }
@@ -1365,18 +1377,38 @@ private:
     // time accounting, hence taking it as a parameter rather than being
     // folded into the per-sample loop itself).
     //
-    // Tier 1 + Tier 2 (RecoverUnitIfNeeded): exactly the unit set Item 2
-    // gave a Reset() to -- the three audio-path VCOs, the authored
-    // DriveBlendPhase allpass, the Drive bank's Oversampler2x and both
-    // SampleRateReducers, and the Filter bank's two ResonantBumps (peak,
-    // scoopNotch) and Comb.
+    // F3.3 SPEC CORRECTED 2026-08-07 (openspec/changes/
+    // frogg3rs-blowout-and-drilldown-repair/tasks.md): the unit set this
+    // watches is no longer listed here directly -- it walks
+    // ForEachStatefulUnit() below, the single definition site (see that
+    // method's own comment). Tier 2's per-unit sustained-over-ceiling
+    // counter now lives ON each Magnitude-tagged unit itself
+    // (`unit.overCeilingSeconds`, dsp::Vco/dsp::ResonantBump/dsp::Comb/
+    // dsp::Oversampler2x/dsp::SampleRateReducer/dsp::DriveBlendPhase's own
+    // member -- see dsp::Vco::overCeilingSeconds's own comment, Vco.hpp,
+    // for why it moved there instead of staying a parallel member here) --
+    // so no lookup/adapter is needed to pair a visited unit back to its own
+    // counter; the visitor just reads it directly off whichever unit it was
+    // called with.
     //
-    // Tier 1 ONLY (RecoverIfNonFinite): `delay_`/`reverb_`, reusing their
+    // The tier passed to `visit` is a COMPILE-TIME tag type
+    // (dsp::FiniteOnly/dsp::Magnitude, dsp/RecoveryTier.hpp), not a runtime
+    // enum -- `if constexpr` below is what makes that necessary: it is the
+    // only way to guard RecoverUnitIfNeeded() (which requires
+    // `unit.StateMagnitude()`) from being instantiated for FiniteOnly-tagged
+    // units that never defined that method (`outputLimiter_`,
+    // `filterChain_.peakLimiter`) -- a runtime `if` on an enum value does
+    // NOT prevent instantiation, since the compiler still has to type-check
+    // both branches' bodies for every concrete `unit` type the generic
+    // lambda below gets called with.
+    //
+    // Tier 1 ONLY (RecoverIfNonFinite, FiniteOnly-tagged units): `delay_`/
+    // `reverb_`/`outputLimiter_`/`filterChain_.peakLimiter`, reusing their
     // EXISTING Reset()/ClearBuffers() (StereoDelay::Reset() is a thin alias
     // for ClearBuffers(), added so the same generic call works uniformly --
     // see that method's own comment) rather than adding duplicates, per
-    // task 2.2's explicit instruction. This is IN ADDITION to their
-    // existing, separate, transport-edge-gated reset
+    // task 2.2's explicit instruction. For `delay_`/`reverb_`, this is IN
+    // ADDITION to their existing, separate, transport-edge-gated reset
     // (`wasTransportRunning_`/`delayReverbClearPending_` above, which exists
     // for a different reason -- silencing self-sustaining feedback on Stop,
     // not fault recovery). The two do not conflict: Reset()/ClearBuffers()
@@ -1384,31 +1416,20 @@ private:
     // actually go non-finite on their own (both are BIBO-stable by
     // construction, per the comment above) -- Tier 1 only ever fires here
     // when a genuine upstream fault cascaded a non-finite sample into them,
-    // exactly the case with no other recovery path.
+    // exactly the case with no other recovery path. `outputLimiter_`'s and
+    // `filterChain_.peakLimiter`'s envelopes get the same Tier-1-only
+    // treatment: a finite input always keeps `envelope` in (0, 1] by
+    // construction (dsp::OutputLimiter's own comment), so there is no
+    // analogous "legitimately very large but finite" case Tier 2 would need
+    // to tolerate.
     void RecoverPoisonedUnitState(std::size_t blockFrames) {
-        RecoverUnitIfNeeded(audioVco1_, vco1OverCeilingSeconds_, blockFrames);
-        RecoverUnitIfNeeded(audioVco2_, vco2OverCeilingSeconds_, blockFrames);
-        RecoverUnitIfNeeded(audioVco3_, vco3OverCeilingSeconds_, blockFrames);
-        RecoverUnitIfNeeded(driveBlendPhase_, driveBlendPhaseOverCeilingSeconds_, blockFrames);
-        RecoverUnitIfNeeded(drive_.oversampler, driveOversamplerOverCeilingSeconds_, blockFrames);
-        RecoverUnitIfNeeded(drive_.sampleRateReducer1, sampleRateReducer1OverCeilingSeconds_, blockFrames);
-        RecoverUnitIfNeeded(drive_.sampleRateReducer2, sampleRateReducer2OverCeilingSeconds_, blockFrames);
-        RecoverUnitIfNeeded(filterChain_.peak, filterPeakOverCeilingSeconds_, blockFrames);
-        RecoverUnitIfNeeded(filterChain_.scoopNotch, filterScoopNotchOverCeilingSeconds_, blockFrames);
-        RecoverUnitIfNeeded(filterChain_.comb, filterCombOverCeilingSeconds_, blockFrames);
-        RecoverIfNonFinite(delay_);
-        RecoverIfNonFinite(reverb_);
-        // Item 3: the limiter's envelope is per-sample state too, so it
-        // participates in the same per-unit recovery path as every other
-        // stage -- Tier 1 only (like delay_/reverb_ above), since a finite
-        // input always keeps `envelope` in (0, 1] by construction (this
-        // struct's own comment) and there is no analogous "legitimately
-        // very large but finite" case Tier 2 would need to tolerate.
-        RecoverIfNonFinite(outputLimiter_);
-        // B5: the peak branch's own limiter carries the identical per-
-        // sample `envelope` state as the master above -- same Tier-1-only
-        // treatment, same reasoning, independent instance.
-        RecoverIfNonFinite(filterChain_.peakLimiter);
+        ForEachStatefulUnit([this, blockFrames](auto& unit, auto tier) {
+            if constexpr (std::is_same_v<decltype(tier), dsp::Magnitude>) {
+                RecoverUnitIfNeeded(unit, unit.overCeilingSeconds, blockFrames);
+            } else {
+                RecoverIfNonFinite(unit);
+            }
+        });
     }
 
     FroggersParameterModel parameters_;
@@ -1434,21 +1455,40 @@ private:
     // definition (`dsp/Limiter.hpp`, moved out by B5) for the struct itself.
     dsp::OutputLimiter outputLimiter_;
 
-    // Tasks 2.4/2.5 (Tier 2 recovery): per-unit "how many consecutive
-    // seconds of real audio has this unit's state stayed over
-    // kMaxUnitStateMagnitude" counters, one per unit RecoverPoisonedUnitState()
-    // watches -- see RecoverUnitIfNeeded()'s own comment for why this is
-    // tracked in seconds (block-size-independent) rather than a block count.
-    float vco1OverCeilingSeconds_ = 0.0f;
-    float vco2OverCeilingSeconds_ = 0.0f;
-    float vco3OverCeilingSeconds_ = 0.0f;
-    float driveBlendPhaseOverCeilingSeconds_ = 0.0f;
-    float driveOversamplerOverCeilingSeconds_ = 0.0f;
-    float sampleRateReducer1OverCeilingSeconds_ = 0.0f;
-    float sampleRateReducer2OverCeilingSeconds_ = 0.0f;
-    float filterPeakOverCeilingSeconds_ = 0.0f;
-    float filterScoopNotchOverCeilingSeconds_ = 0.0f;
-    float filterCombOverCeilingSeconds_ = 0.0f;
+    // F3.3 (openspec/changes/frogg3rs-blowout-and-drilldown-repair/tasks.md,
+    // OMNI Sec1/Sec8): this class's own contribution to the "every stateful
+    // unit in the audio path" enumeration, COMPOSED from the members
+    // declared above rather than re-listing dsp::FrogBlock's/
+    // dsp::FilterFxChain's own sub-units here a second time (see those
+    // structs' own ForEachStatefulUnit, dsp/Drive.hpp, dsp/FilterFx.hpp).
+    // This is now the SINGLE definition site both RecoverPoisonedUnitState
+    // (below) and the Stop flush (ProcessBlock, above) call -- the defect
+    // this task fixes is that the Stop flush used to be a SECOND,
+    // independent, truncated definition of this same concept (2 units, only
+    // delay_/reverb_) instead of calling this one. The tier passed to
+    // `visit` is DECLARED here, never inferred from the unit's interface
+    // (dsp::FiniteOnly's/dsp::Magnitude's own comment, dsp/RecoveryTier.hpp,
+    // explains why). SPEC CORRECTED 2026-08-07: these are compile-time tag
+    // TYPES, not a runtime enum value -- see RecoverPoisonedUnitState()'s
+    // own comment below for why that distinction is load-bearing. Per-unit
+    // Tier-2 sustained-over-ceiling bookkeeping (task 2.4/2.5's original
+    // ask) now lives ON each Magnitude-tagged unit itself
+    // (`unit.overCeilingSeconds`) rather than as ten parallel members here,
+    // so unlike the first version of this method there is nothing else this
+    // class needs to own alongside the unit references themselves.
+    template <typename Visitor>
+    void ForEachStatefulUnit(Visitor&& visit)
+    {
+        visit(audioVco1_, dsp::Magnitude{});
+        visit(audioVco2_, dsp::Magnitude{});
+        visit(audioVco3_, dsp::Magnitude{});
+        visit(driveBlendPhase_, dsp::Magnitude{});
+        drive_.ForEachStatefulUnit(visit);
+        filterChain_.ForEachStatefulUnit(visit);
+        visit(delay_, dsp::FiniteOnly{});
+        visit(reverb_, dsp::FiniteOnly{});
+        visit(outputLimiter_, dsp::FiniteOnly{});
+    }
 
     // Stop-transport reset (operator report "Stop doesn't work" -- the ASR
     // gate closes on Stop but delay_/reverb_ are feedback structures that
