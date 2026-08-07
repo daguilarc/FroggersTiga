@@ -910,10 +910,26 @@ inline constexpr float kModulationNeutralEpsilon = 0.000001f;
 // this reads the commanded values the app itself writes -- the same
 // `kNeutralModulationDepthCenter` / `kScenePoles` idiom
 // ZeroExistingModulationDepths below uses, so the two agree by construction.
+// Per-scene form: is this depth non-neutral in ONE specific scene? Separate
+// from the any-scene form below because two distinct properties are asserted
+// across this codebase's tests and they must not be conflated:
+//   - "is this source modulating at all" (any pole) -- what the badge shows,
+//     and what RandomizeAll's descent gates on;
+//   - "is this source modulating in scene N" (this one) -- used to compare the
+//     two poles against each other, which is W1.0's badge/depth symmetry
+//     property ("randomizing only scene 0 lights the badge in both scenes
+//     while scene 1 reads zero"). Expressing THAT with the any-pole form would
+//     make its own assertion trivially true and silently gut the test.
+// Both share this one neutral-value/epsilon comparison, so the threshold that
+// decides "neutral" has exactly one definition site (OMNI §8).
+inline bool DepthIsModulatingInScene(const synth::Parameter& depth, std::size_t sceneIx) {
+    return std::fabs(depth.SceneCenter(sceneIx) - kNeutralModulationDepthCenter) >
+           kModulationNeutralEpsilon;
+}
+
 inline bool DepthIsModulating(const synth::Parameter& depth) {
     for (const synth::SceneState& pole : kScenePoles) {
-        if (std::fabs(depth.SceneCenter(pole.leftScene) - kNeutralModulationDepthCenter) >
-            kModulationNeutralEpsilon) {
+        if (DepthIsModulatingInScene(depth, pole.leftScene)) {
             return true;
         }
     }

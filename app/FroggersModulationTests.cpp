@@ -588,7 +588,7 @@ TEST_CASE(randomize_all_leaves_local_crispy_alone_but_randomize_page_moves_it) {
     // Randomize All must NOT move it. Run several times: a single pass leaving
     // it untouched could be luck if the behaviour regressed, since a random
     // draw could in principle land back on the same value.
-    constexpr float kNeutral = 0.5f;
+    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;
     for (int attempt = 0; attempt < 8; ++attempt) {
         crispyReverb.SceneCenter(0) = kNeutral;
         RandomizeAll(fx.manager, drillIn, fx.model);
@@ -923,14 +923,12 @@ TEST_CASE(randomize_all_is_non_additive_two_successive_presses_can_decrease_the_
     fx.StepOnce(/*externalConnected=*/true);
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
     synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
-    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;  // F3: single named constant
-    constexpr float kTolerance = 1e-4f;
 
     auto countNonNeutral = [&](std::size_t sceneIx) {
         int count = 0;
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
             synth::Parameter* depth = focused.ModulationDepthParameter(modIx);
-            if (depth != nullptr && std::fabs(depth->SceneCenter(sceneIx) - kNeutral) > kTolerance) {
+            if (depth != nullptr && detail::DepthIsModulatingInScene(*depth, sceneIx)) {
                 ++count;
             }
         }
@@ -979,8 +977,6 @@ TEST_CASE(randomize_all_scene_pair_has_identical_source_membership_but_different
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
-    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;  // F3: single named constant
-    constexpr float kTolerance = 1e-4f;
 
     RandomizeAll(fx.manager, drillIn, fx.model);
 
@@ -993,8 +989,8 @@ TEST_CASE(randomize_all_scene_pair_has_identical_source_membership_but_different
                 continue;
             }
             checkedAtLeastOneParameter = true;
-            const bool nonzeroScene0 = std::fabs(depth->SceneCenter(0) - kNeutral) > kTolerance;
-            const bool nonzeroScene1 = std::fabs(depth->SceneCenter(1) - kNeutral) > kTolerance;
+            const bool nonzeroScene0 = detail::DepthIsModulatingInScene(*depth, 0);
+            const bool nonzeroScene1 = detail::DepthIsModulatingInScene(*depth, 1);
             // Identical source membership: a materialized depth that was
             // actually drawn this operation must be nonzero in BOTH poles,
             // never just one (that mismatch is exactly W1.0's badge/depth
@@ -1052,7 +1048,7 @@ TEST_CASE(default_patch_cross_vco_pitch_depths_have_correct_sign_and_source) {
     synth::Parameter& vco2Pitch = fx.model.PageParameter(FroggersBankId::Audio, 1);
     synth::Parameter& vco3Pitch = fx.model.PageParameter(FroggersBankId::Audio, 2);
 
-    constexpr float kNeutral = 0.5f;
+    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;
 
     // VCO1 pitch <- +1 detent from VCO2 audio (7) and VCO3 audio (8).
     REQUIRE_TRUE(vco1Pitch.ModulationDepthParameter(kModSlotVco2Audio)->SceneCenter(0) > kNeutral);
