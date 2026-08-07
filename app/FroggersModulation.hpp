@@ -1056,8 +1056,13 @@ inline void RandomizeBankValues(synth::ParameterManager& manager, synth::Bank& b
     }
 }
 
-// Randomizes one bank's 9 page parameters' + Crispy's LEVEL-1 depths --
-// again never Crunchy.
+// Randomizes one bank's 9 page parameters' LEVEL-1 depths -- and only those.
+// Crispy (encoder 14) is deliberately EXCLUDED here, as is Crunchy (encoder
+// 15), so unlike RandomizeBankValues above there is no `includeCrispy` knob:
+// that function randomizes VALUES and its two callers differ on Crispy, while
+// this one randomizes DEPTHS and its sole caller (RandomizeAll's level-0
+// branch, which runs it once per bank) always wants Crispy out. The why is
+// spelled out at this function's tail (operator 2026-07-29).
 // E.1 (design A6): no longer presses through Bank::HandlePress at all --
 // `bank.VisibleParameter(paramIx)` reads the top-level parameter directly
 // (this bank is never drilled into here, so `visible_ == topLevel_`, per
