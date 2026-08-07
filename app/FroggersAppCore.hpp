@@ -97,6 +97,8 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <cstdio>   // F3 diagnostic (stopDiagBlocks_): std::fprintf.
+#include <cstdlib>  // F3 diagnostic (stopDiagEnabled_): std::getenv.
 #include <cstddef>
 #include <limits>
 #include <optional>
@@ -691,6 +693,20 @@ public:
             // gets the same unconditional Reset() regardless of its
             // Recovery tier.
             const bool transportRunningNow = transportQuarterNotes.has_value();
+            // F3 DIAGNOSTIC: open the logging window on the Stop edge. The app
+            // is the only place F3 reproduces -- F3.1 and F3.2c both measured
+            // Stop working in the harness, and F3.2c refuted the parametric
+            // hypothesis with the swept knob proven live -- so the remaining
+            // question is which of these two the real failure is, and that can
+            // only be read from a real session:
+            //   pending stays true / AllIdle stays false -> the flush NEVER
+            //     FIRES, and the bug is in the gate, not in what gets reset;
+            //   flush fires (pending false) but peak stays up -> something
+            //     REGENERATES after a full 14-unit reset with no input, and
+            //     the only ungated energy source left is modulation.
+            if (stopDiagEnabled_ && wasTransportRunning_ && !transportRunningNow) {
+                stopDiagBlocks_ = kStopDiagBlocks;
+            }
             if (wasTransportRunning_ && !transportRunningNow) {
                 // ITEM 1 (revised, superseding the old "clear every block
                 // while releasing" policy): a releasing voice is still
@@ -781,6 +797,14 @@ public:
             // bus duplicates identically on both channels.
             const float sample = RouteAudioSample();
 
+            // F3 DIAGNOSTIC (2026-08-07), OFF unless FROGG3RS_STOP_DIAG is set
+            // in the environment -- see stopDiagBlocks_'s own comment. Tracks
+            // this block's output peak only while the diagnostic window is
+            // open, so a normal run pays one already-loaded bool test.
+            if (stopDiagBlocks_ > 0) {
+                stopDiagPeak_ = std::max(stopDiagPeak_, std::fabs(sample));
+            }
+
             if (hasOutputs) {
                 // C3 (§12 trace on the inner check): unlike `block.outputs`
                 // above, an individual `block.outputs[channelIx]` is NOT
@@ -844,6 +868,20 @@ public:
         // SanitizeOutputSample's clamp/zero at the very end of the chain
         // masked the symptom, it never cleared the cause.
         RecoverPoisonedUnitState(block.numFrames);
+
+        // F3 DIAGNOSTIC: one line per block while the post-Stop window is
+        // open. Once per BLOCK, never per sample, and entirely skipped unless
+        // FROGG3RS_STOP_DIAG is set. It does write to stderr from the audio
+        // thread, which is a real-time violation and exactly why it is
+        // env-gated and not on by default -- it exists to catch a bug that has
+        // never reproduced in the test harness.
+        if (stopDiagBlocks_ > 0) {
+            --stopDiagBlocks_;
+            std::fprintf(stderr, "F3DIAG block=%d allIdle=%d clearPending=%d peak=%.9g\n",
+                         kStopDiagBlocks - stopDiagBlocks_, audioAdsr_.AllIdle() ? 1 : 0,
+                         delayReverbClearPending_ ? 1 : 0, static_cast<double>(stopDiagPeak_));
+            stopDiagPeak_ = 0.0f;
+        }
 
         // Task 7.2/8.3/9.3: publish this block's UI-facing state, once per
         // block after the per-sample loop -- the same end-of-ProcessBlock
@@ -1658,6 +1696,23 @@ private:
     // `MasterClock::TransportState()` -- defaults false so a fresh app (or a
     // headless rig that never presses Play) stays silent exactly as before.
     std::atomic<bool> desiredTransportRunning_{false};
+
+    // F3 DIAGNOSTIC (2026-08-07). F3 -- "Stop does not stop" -- has never
+    // reproduced in the test harness: F3.1 measured a clean decay on a static
+    // patch, and F3.2c refuted the parametric-oscillation hypothesis with the
+    // modulated comb-feedback knob proven to sweep its full range while output
+    // held at exactly 0. The operator still hears it in the real app, so the
+    // harness is not reaching the real condition and the measurement has to
+    // happen in a real session. Enabled ONLY by setting FROGG3RS_STOP_DIAG in
+    // the environment; a normal launch reads the env var once at construction
+    // and then pays a single bool test per block.
+    //
+    // ~46s at 48kHz/512 -- long enough to cover the operator's "over a minute"
+    // report without unbounded logging.
+    static constexpr int kStopDiagBlocks = 4096;
+    const bool stopDiagEnabled_ = std::getenv("FROGG3RS_STOP_DIAG") != nullptr;
+    int stopDiagBlocks_ = 0;
+    float stopDiagPeak_ = 0.0f;
 
     std::size_t activeBankIx_ = 0;
     std::optional<FroggersModulationDrillIn> drillIn_;
