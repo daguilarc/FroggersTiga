@@ -919,10 +919,15 @@ inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager,
         return partial;
     }
 
-    // Design A6's exact draw -- reproduced verbatim, not re-derived. Do NOT
-    // tune for the resulting mean (~3.1); A6 records that as a consequence,
-    // not a target, and rules out reshaping toward it. Do not break the
-    // deliberate 30/30 tie between n=2 and n=3 toward a single peak.
+    // Design A6's original draw is reproduced below (10/30/30/20 for counts
+    // 1-4, geometric tail for 5+). SUPERSEDED 2026-08-06
+    // (frogg3rs-blowout-and-drilldown-repair, task F1): the operator's
+    // current ruling is mode 2, rarely above 4 -- which supersedes A6's old
+    // directives to not tune for the resulting mean (~3.1) and to not break
+    // the deliberate 30/30 tie between n=2 and n=3 toward a single peak.
+    // Breaking that tie toward n=2 is exactly what F1 requires. F1
+    // re-derives this table under the mode-2 ruling; until it lands, the
+    // draw below is still A6's original shape.
     const float u = manager.NextRandomCoin();
     std::size_t count;
     if (u < 0.10f) {
