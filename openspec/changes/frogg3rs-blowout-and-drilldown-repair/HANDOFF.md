@@ -170,16 +170,30 @@ trap, that is NOT a claim that F3 is fixed.** F6.1 decides by ear. If Stop still
 next suspect is whether `AllIdle()` ever fails to latch — the flush is gated on it, and F3.3
 changed *what* is reset, never *whether* the clear fires.
 
-### New defect found, NOT fixed — needs an upstream decision
-**The badge criterion over-counts, and it is a separate bug from F1's distribution.** Measured:
-after a level-1 Randomize All, the drilled parameter's own badge shows **13** while only **1** of
-its depths is non-neutral. `ModulatorsAffectingMask()` counts a depth as affecting if the depth
-parameter *exists*, and `Bank::OpenModulationView` eagerly materialises one per connected source on
-drill-in. So the badge reports **connectedness, not modulation**. At level 0 it is correct (20 vs 20).
-Both `ModulatorsAffectingMask` and `OpenModulationView` live in `External/Sheaf`, which is pinned
-and unpatchable, **so this is an upstream ask, not an app fix** — file it against
-`/UPSTREAM-SHEAF-ASK.md`. It may well be a large part of the operator's original "far more badges
-per parameter than intended."
+### Badge over-count — FOUND, DIAGNOSED WRONG ONCE, NOW FIXED APP-SIDE (`9bfe731`)
+
+**An earlier version of this section said `ModulatorsAffectingMask()` "counts a depth as affecting
+if the depth parameter exists" and concluded this was an unpatchable upstream Sheaf ask. Both
+halves were wrong, and the error was taking a subagent's summary instead of reading the function.**
+
+What it actually does (`ParameterModulation.cpp:2356-2365`): it sets a bit when the depth is
+non-null **AND `HasNonZeroState()`**. And `HasNonZeroState()` (`:2367`) returns true if the depth's
+**own `currentDepths_`/`targetDepths_`** are non-zero — so a depth counts as "affecting" because it
+carries **sub-modulation**, even when its own value is dead neutral.
+
+**So the 13 came from our own code, not from Sheaf.** `RandomizeAll` descended into every
+*materialized* depth (drill-in eagerly materialises one per connected source, 13 of 15) rather than
+every *modulating* one, handing sub-depths to 12 sources that were modulating nothing. Sheaf then
+correctly reported what it was told. **App-side defect, app-side fix, no upstream ask needed.**
+
+Fixed together with the operator's level-2→3 descent ruling, since both are the same loop.
+A neutral depth is now **cleared, not merely skipped** — randomize is non-additive, so a source
+picked last press is neutral this press, and `ZeroExistingModulationDepths` does not recurse;
+skipping alone stranded the previous press's sub-depths and left the badge lit. That hole was
+caught by the change's own test, which asserts the property directly.
+
+**Lesson, and it is the same one as §0.1 and F3.2c:** the wrong diagnosis survived because it was
+relayed rather than read. M2 is not satisfied by a subagent sounding confident.
 
 ---
 
