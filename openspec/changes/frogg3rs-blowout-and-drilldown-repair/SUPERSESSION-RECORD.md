@@ -31,10 +31,14 @@ execute it.**
 
 **Two items were added by the 2026-08-06 omni audit and come before F1–F5** (both in `tasks.md`):
 
-- **B7.5.0 — the patch-application anomaly.** The predecessor recorded that two structurally
-  different test patches produced *bit-identical* limiter trajectories, and never investigated it.
-  If the `SceneCenter(0) = value` test idiom does not reach the DSP, every test that sets up a
-  patch is asserting against a patch it never applied — including B7.5. **Blocking.**
+- **B7.5.0 — the patch-application anomaly. CLOSED 2026-08-06, no defect.** The predecessor
+  recorded that two structurally different test patches produced *bit-identical* limiter
+  trajectories and never investigated it. Investigated now: `SceneCenter` writes DO reach the DSP,
+  through `Parameter::ProcessSamplePhase1`'s periodic **smoothed** `Compute()` (alpha 0.0994 every
+  16 samples). A patch is ~81 % applied one block after it is written and converged after ~30, so
+  the two patches read identically because both were sampled at the same early point on the same
+  trajectory toward the same target. **The 76 sites using the idiom stand.** What this leaves is a
+  narrow hazard — tests asserting inside the first ~30 blocks — swept in F0.5.
 - **F0 — preflight remediation.** Five defects in shipped work: three surviving short-circuit
   sites, two `*Tests.cpp` files that run zero tests and are excluded from `make test`, a stale
   `ExpMapCompute(1.0f, 10.0f, …)` peak-height ceiling, and an in-code directive that forbids

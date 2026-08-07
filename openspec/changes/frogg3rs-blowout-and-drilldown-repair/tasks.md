@@ -38,53 +38,30 @@ ten test binaries.
 
 | # | Task | Why here |
 |---|---|---|
-| 1 | **B7.5.0** patch-application anomaly | Every test below is invalid if the test idiom does not reach the DSP |
-| 2 | **B7.5** end-to-end failing test | M3. Must be RED before any fix. The only acceptance criterion that matters |
-| 3 | **F0** preflight remediation | Mechanical; F0.3 is a hard prerequisite for F1 |
-| 4 | **F3** Stop does not stop | Highest severity, fully traced |
-| 5 | **F4 + F5** drilldown | One shared edit; highest value per line |
-| 6 | **F1** randomize distribution | Needs F0.3 |
-| 7 | **F2** B7.1 ceiling retarget | Turns B7.5 green. Last, because it is the one B7.5 exists to judge |
-| 8 | **F6** operator verification | Single pass on the complete build |
+| — | ~~**B7.5.0** patch-application anomaly~~ | **CLOSED 2026-08-06, no defect.** Establishes the settling rule every test below depends on: a `SceneCenter` write is ~81 % applied after one block, converged after ~30 |
+| 1 | **B7.5** end-to-end failing test | M3. Must be RED before any fix. The only acceptance criterion that matters |
+| 2 | **F0** preflight remediation | Mechanical; F0.3 is a hard prerequisite for F1 |
+| 3 | **F3** Stop does not stop | Highest severity, fully traced |
+| 4 | **F4 + F5** drilldown | One shared edit; highest value per line |
+| 5 | **F1** randomize distribution | Needs F0.3 |
+| 6 | **F2** B7.1 ceiling retarget | Turns B7.5 green. Last, because it is the one B7.5 exists to judge |
+| 7 | **F6** operator verification | Single pass on the complete build |
 
 ---
 
-## B7.5.0 — Resolve the patch-application anomaly (BLOCKING)
+## B7.5.0 — Patch-application anomaly. ✅ CLOSED 2026-08-06, no defect.
 
-The predecessor recorded this and never investigated it. **If it is real, every test in the suite
-that sets up a patch is asserting against a patch it never applied**, and B7.5 would be worthless.
+- [x] Investigated and closed. **The test idiom is sound.** Read this section for the mechanism —
+      it governs how every test in this plan sets up a patch — but there is no work left here.
 
-**The evidence:** a 4096-block limiter diagnostic returned **bit-identical** `first_engage_block`
-(133), `min_envelope` (0.976694) and `peak_output` (0.998264) for two structurally different
-patches — P2 delay-driven (Delay slot 2 Feedback = 1.0, slot 1 Send = 1.0) and P4 drive-only
-(Drive slot 0 = 1.0). Slot indices were verified correct against `FroggersBankLayouts()`. Two
-different patches producing byte-identical trajectories means at least one set of writes is not
-reaching the DSP. P1 vs P3 DID differ (101 vs 43), so the failure is **partial**, which is worse —
-it looks like it works.
+**What was suspected:** the predecessor recorded, and never investigated, that a 4096-block limiter
+diagnostic returned **bit-identical** `first_engage_block` (133), `min_envelope` (0.976694) and
+`peak_output` (0.998264) for two structurally different patches — P2 delay-driven (Delay slot 2
+Feedback = 1.0, slot 1 Send = 1.0) and P4 drive-only (Drive slot 0 = 1.0). The fear was that
+`model.PageParameter(bank, slot).SceneCenter(0) = value` never reaches the DSP, which would have
+made all 76 sites using that idiom green-while-wrong — and B7.5 worthless.
 
-**The mechanism to check first:** `model.PageParameter(bank, slot).SceneCenter(0) = value` writes
-the *commanded* value. W1.0 established that commanded values do not reach the *display* without a
-`ComputeAllParameters()` pass. The open question is whether they reach the **DSP** without one —
-`knob()` reads `currentKnobValues_`, refreshed by `ProcessLitePhase1` per sample, but only for
-parameters registered in `topLevelParameters_`.
-
-- [ ] **Step 1: Print, do not reason** (M1/M7). In a scratch harness, set
-      `model.PageParameter(FroggersBankId::Drive, 0).SceneCenter(0) = 1.0f`, run one block, and
-      print the value `knob(FroggersBankId::Drive, 0)` actually returns inside `RouteAudioSample`.
-      Repeat with `Delay` slot 2. Report the two numbers.
-- [ ] **Step 2:** Repeat both with a `ComputeAllParameters()` call inserted after the writes and
-      before the first block. Report the same two numbers.
-- [ ] **Step 3: Decide from the four numbers, not from a paragraph.**
-      - Values match the write in both cases → the idiom is sound; the anomaly is elsewhere
-        (re-run the original P2/P4 diagnostic and find it before proceeding).
-      - Values only match after `ComputeAllParameters()` → **the idiom is broken.** Every affected
-        test is green-while-wrong. Record which tests use it (`grep -rn "SceneCenter(0) =" app/`)
-        and fix the idiom once, in one shared test helper, not per test.
-- [ ] **Step 4: Commit** the finding into this file under this task before writing any test.
-
-**Do not fix anything under this task beyond the test idiom itself.** Report first.
-
-### RESOLVED 2026-08-06 — the idiom is SMOOTHED, not broken. No 76-site fix is needed.
+**It does reach the DSP. The write is smoothed, not inert.**
 
 **Measured** (diagnostic subagent, written value `1.0f` in every case, one block run):
 
@@ -131,16 +108,21 @@ sampled at the same early point on the same smoothing trajectory toward the same
 Nothing failed to reach the DSP. P1 vs P3 differed (101 vs 43) for the same reason it should —
 different targets converge differently once enough blocks elapse.
 
-**Consequences for the plan:**
+**The settling rule this establishes — every task below depends on it:**
+
+**A `SceneCenter` write reaches ~81 % of its target after one block and is effectively converged
+after roughly 30.** So:
+
 1. **The 76 `SceneCenter(0) =` sites are NOT invalid.** Do not "fix" them. A test that runs
    hundreds of blocks (B7.5 runs 256, the existing limiter test runs 256) is fully converged long
    before it asserts.
-2. **The real, narrower hazard: any test that asserts within roughly the first 30 blocks is
-   reading a partially-applied patch.** Sweep for those specifically rather than touching all 76.
-3. **B7.5 must call `ComputeAllParameters()` after its writes anyway** — not because the idiom is
-   broken, but so the hostile patch is exact from block 0 and the test measures the patch it
-   declares rather than a ramp into it. Add it as a shared test helper, used by new tests.
-4. **B7.5.0 is UNBLOCKED.** Proceed to B7.5.
+2. **Any test that asserts within roughly the first 30 blocks is reading a partially-applied
+   patch.** That is the real, narrow hazard — swept in **F0.5**, not by touching all 76.
+3. **New tests call `ComputeAllParameters()` after their writes** — not because the idiom is
+   broken, but so the patch is exact from block 0 and the test measures what it declares rather
+   than a ramp into it. One shared helper, per F0.5.
+
+**Nothing here blocks B7.5.** Proceed.
 
 ---
 
@@ -183,8 +165,12 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
     // feedback / LP maxima continuously rather than as an edge case.
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 14).SceneCenter(0) = 1.0f;
     model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 1.0f;
-    // (B7.5.0's ruling governs whether a ComputeAllParameters() pass is
-    // required here for these writes to reach the DSP. Follow it.)
+    // B7.5.0: a SceneCenter write is only ~81% applied after one block
+    // (Parameter::ProcessSamplePhase1's periodic smoothed Compute, alpha
+    // 0.0994 every 16 samples). This test must measure the patch it declares,
+    // not a ramp into it, so apply it exactly before the first block. Uses
+    // F0.5's shared helper.
+    ApplyPatchNow(rig);
 
     rig.StartAt(0);
     auto& limiter = rig.Application().TestOutputLimiter();
@@ -268,7 +254,36 @@ partial = partial || bankPartial;
       distribution in force since E.1. The conclusion (most depths untouched is healthy) still
       holds; restate it from the actual current distribution.
 
-- [ ] **F0.5: Run the suite, confirm ten binaries green, commit.**
+- [ ] **F0.5 — Patch settling: one shared helper, and a sweep for the narrow hazard.**
+      From B7.5.0: a `SceneCenter` write is ~81 % applied after one block and converged after ~30,
+      because `Parameter::ProcessSamplePhase1` advances it through a smoothed `Compute()`
+      (alpha 0.0994, every 16 samples). Long-running tests are fine; short ones are not.
+  - Add ONE shared helper beside the `Rig` type in `app/FroggersAudioRoutingTests.cpp`, so the
+    "apply the patch exactly" idiom has a single definition site (OMNI §8) instead of a
+    `ComputeAllParameters()` call copied into each new test:
+
+```cpp
+// B7.5.0: SceneCenter writes are applied through a SMOOTHED periodic Compute
+// (Parameter::ProcessSamplePhase1, alpha 0.0994 every 16 samples), so a patch
+// is only ~81% applied one block after it is written. ComputeAllParameters()
+// passes smoothTargetCenter=false and therefore converges exactly, in one
+// call. Call this after the SceneCenter writes and before the first
+// RunBlocks() whenever a test asserts on a patch rather than on a ramp.
+inline void ApplyPatchNow(Rig& rig) {
+    rig.Application().Context().parameterManager->ComputeAllParameters();
+}
+```
+
+  - **Verify that accessor path before writing it** — the exact route from `Rig` to the live
+    `ParameterManager` must be read from `FroggersAppCore.hpp`, not assumed from this snippet
+    (M1). If no public route exists, add the narrowest test-only accessor, matching
+    `TestOutputLimiter()`'s existing precedent.
+  - **Sweep, do not mass-edit:** find tests that assert on patch-dependent behaviour within
+    roughly the first 30 blocks (`grep -n "RunBlocks" app/*Tests.cpp`, cross-referenced against
+    the 76 `SceneCenter(0) =` sites). Fix only those, with the helper. **Report the count found
+    and the count changed.** Most of the 76 are expected to need nothing.
+
+- [ ] **F0.6: Run the suite, confirm ten binaries green, commit.**
 
 ---
 
