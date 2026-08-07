@@ -138,27 +138,6 @@ int main() {
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> max.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 8).SceneCenter(0) = 1.0f;  // Hold -> max.
 
-    // F3.2c (TEMPORARY -- reverted after measurement, tasks.md's own
-    // instruction): ONE delta from F3.1 -- an audio-rate modulation depth
-    // on Filter slot 5 (Comb feedback), so fb is swept while the transport
-    // is stopped. Route/bipolar-depth convention verified against the
-    // existing master_limiter_stays_at_unity_under_live_modulation test,
-    // FroggersAudioRoutingTests.cpp:749-759.
-#if defined(F32C_MOD_SOURCE_NOISE)
-    synth::Parameter* combFeedbackDepth =
-        model.PageParameter(synth_froggers::FroggersBankId::Filter, 5)
-             .EnsureModulationDepth(synth_froggers::kModSlotNoise);
-#else
-    synth::Parameter* combFeedbackDepth =
-        model.PageParameter(synth_froggers::FroggersBankId::Filter, 5)
-             .EnsureModulationDepth(synth_froggers::kModSlotVco1Audio);
-#endif
-    if (combFeedbackDepth == nullptr) {
-        std::printf("F3.2c: EnsureModulationDepth returned nullptr -- aborting.\n");
-        return 1;
-    }
-    combFeedbackDepth->SceneCenter(0) = 1.0f;  // Bipolar: 0.5 == zero depth, 1.0 == full positive.
-
     rig.Application().TestParameterManager().ComputeAllParameters();  // B7.5.0: converge exactly before RunBlocks.
 
     rig.StartAt(0);
