@@ -261,6 +261,23 @@ struct Reverb
         return true;
     }
 
+    // F3.1 (frogg3rs-blowout-and-drilldown-repair): read-only diagnostic,
+    // NOT wired into RecoverPoisonedUnitState's Tier 2, same reasoning as
+    // dsp::StereoDelay::StateMagnitude()'s own comment (BIBO-stable
+    // feedback loop, legitimately large-but-finite under sustained loud
+    // input -- Tier 2's ceiling would misfire here). Exists so the
+    // Stop-flush measurement harness can tell "cleared once and stayed
+    // clear" apart from "cleared once, then refilled."
+    float StateMagnitude() const
+    {
+        float magnitude = std::max({std::fabs(dampFilter.output), std::fabs(wetL), std::fabs(wetR)});
+        for (size_t i = 0; i < kSize; ++i)
+        {
+            magnitude = std::max({magnitude, std::fabs(lineA[i]), std::fabs(lineB[i]), std::fabs(preLine[i])});
+        }
+        return magnitude;
+    }
+
     // -- Ported formula helpers, exposed statically for direct pinning
     // (mirrors dsp::Vco's PitchToPhaseIncrement/PmDepthScale precedent) --
 

@@ -858,6 +858,17 @@ public:
     // (`TestFilterPeakLimiter()`, mirroring `TestFilterPeak()` above).
     auto& TestOutputLimiter() { return outputLimiter_; }
 
+    // F3.1 (frogg3rs-blowout-and-drilldown-repair): test/inspection access
+    // to `delay_`/`reverb_`, same convention as the accessors above --
+    // added because the Stop-flush measurement harness needs to read their
+    // internal state magnitude directly (their delay lines/tanks, not just
+    // the finiteness `RecoverIfNonFinite` already checks) to tell "cleared
+    // once and stayed clear" apart from "cleared once, then refilled by a
+    // still-ringing upstream unit." Read-only; does not change either
+    // unit's behaviour.
+    dsp::StereoDelay& TestDelay() { return delay_; }
+    dsp::Reverb& TestReverb() { return reverb_; }
+
     // B7.5: test/inspection access to the live synth::ParameterManager, same
     // convention as TestOutputLimiter() above. `context_` (below) is
     // private and there is no other public route to it; this is the

@@ -220,6 +220,30 @@ struct StereoDelay
         return true;
     }
 
+    // F3.1 (frogg3rs-blowout-and-drilldown-repair): read-only diagnostic,
+    // NOT wired into RecoverPoisonedUnitState's Tier 2 (this unit stays
+    // Tier-1-only, per the comment above StateFinite() -- a BIBO-stable
+    // feedback loop can legitimately settle to a large-but-finite steady
+    // state under sustained loud input, so the fault-recovery ceiling used
+    // for the other ten units would misfire here). Exists so the Stop-flush
+    // measurement harness can tell "cleared once and stayed clear" apart
+    // from "cleared once, then refilled by a still-ringing upstream unit"
+    // -- mirrors dsp::Comb::StateMagnitude()'s own shape (scan the
+    // recirculating line, the unit's actual memory).
+    float StateMagnitude() const
+    {
+        float magnitude = std::max(std::fabs(lastWet.l), std::fabs(lastWet.r));
+        for (const float sample : lineL)
+        {
+            magnitude = std::max(magnitude, std::fabs(sample));
+        }
+        for (const float sample : lineR)
+        {
+            magnitude = std::max(magnitude, std::fabs(sample));
+        }
+        return magnitude;
+    }
+
     // :42-56 (setSampleRate).
     void SetSampleRate(float hz)
     {
