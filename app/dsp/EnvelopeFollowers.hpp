@@ -29,14 +29,20 @@ struct VcoEnvelopeFollowers
     float attackCoeff = 0.05f;
     float releaseCoeff = 0.01f;
 
-    // sim/V2EnvelopeFollowerBank.hpp:19-26 (setSampleRate).
+    // sim/V2EnvelopeFollowerBank.hpp:19-26 (setSampleRate). C1
+    // (openspec/changes/frogg3rs-blowout-and-drilldown-repair/tasks.md
+    // F8.1): this struct's only production caller is
+    // FroggersModulationSlate::Prepare(), itself only ever called from
+    // FroggersAppCore::PrepareToPlay(), which now validates the host's
+    // sample rate ONCE before any downstream use (see that method's own
+    // §12 trace) -- so `sampleRate` here is always already positive, and
+    // the `44100.0f` re-guard this used to duplicate is unreachable.
     void SetSampleRate(float sampleRate)
     {
-        const float sr = sampleRate > 0.0f ? sampleRate : 44100.0f;
         constexpr float kAttackSeconds = 0.01f;
         constexpr float kReleaseSeconds = 0.05f;
-        attackCoeff = 1.0f - std::exp(-1.0f / (kAttackSeconds * sr));
-        releaseCoeff = 1.0f - std::exp(-1.0f / (kReleaseSeconds * sr));
+        attackCoeff = 1.0f - std::exp(-1.0f / (kAttackSeconds * sampleRate));
+        releaseCoeff = 1.0f - std::exp(-1.0f / (kReleaseSeconds * sampleRate));
     }
 
     // sim/V2EnvelopeFollowerBank.hpp:28-45 (Process), restricted to taps
@@ -69,13 +75,16 @@ struct SingleEnvelopeFollower
     float attackCoeff = 0.05f;
     float releaseCoeff = 0.01f;
 
+    // C1: same single-caller chain as VcoEnvelopeFollowers::SetSampleRate
+    // above (this app's other production caller of this struct), rooted at
+    // the same now-validating PrepareToPlay() -- the `44100.0f` re-guard is
+    // unreachable for the same reason.
     void SetSampleRate(float sampleRate)
     {
-        const float sr = sampleRate > 0.0f ? sampleRate : 44100.0f;
         constexpr float kAttackSeconds = 0.01f;
         constexpr float kReleaseSeconds = 0.05f;
-        attackCoeff = 1.0f - std::exp(-1.0f / (kAttackSeconds * sr));
-        releaseCoeff = 1.0f - std::exp(-1.0f / (kReleaseSeconds * sr));
+        attackCoeff = 1.0f - std::exp(-1.0f / (kAttackSeconds * sampleRate));
+        releaseCoeff = 1.0f - std::exp(-1.0f / (kReleaseSeconds * sampleRate));
     }
 
     float Process(float v)

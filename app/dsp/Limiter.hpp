@@ -152,6 +152,25 @@ struct OutputLimiter
     // independently-tuned instance (the peak-branch limiter, FilterFx.hpp)
     // calls this overload; the master keeps calling the single-argument
     // overload below, unchanged.
+    // C1 (openspec/changes/frogg3rs-blowout-and-drilldown-repair/tasks.md
+    // F8.1): every production caller of this overload passes an
+    // already-known-positive value. Five are rooted at
+    // FroggersAppCore::PrepareToPlay() (the master via the single-argument
+    // Configure() below, the peak branch via FilterFxChain::Configure(),
+    // delay/reverb wet via StereoDelay::SetSampleRate()/Reverb::Configure(),
+    // Drive's via DriveBlendPhase::Configure()), which now validates the
+    // host's sample rate ONCE before any downstream use (see that method's
+    // own §12 trace). The sixth, FilterFxChain's own constructor
+    // (dsp/FilterFx.hpp, `peakLimiter.Configure(kDefaultAssumedSampleRate,
+    // ...)`), never went through PrepareToPlay at all -- it passes a
+    // hardcoded, always-positive local constant, so it was never actually
+    // relying on this clamp either. No caller can reach this method with a
+    // non-positive value. The `std::max(1.0f, sampleRate)` clamp this used
+    // to apply was also the WRONG fallback for the defect it guarded
+    // against: at sr=1.0 (only reachable if this clamp actually fired),
+    // attackSeconds*sr collapses attack/release to near-instant rather than
+    // producing a working limiter -- 44100.0 (PrepareToPlay's fallback, see
+    // its own comment) is the value that survives that disagreement.
     void Configure(float sampleRate, float thresholdIn, float ceilingIn, float attackSecondsIn,
                    float releaseSecondsIn)
     {
@@ -160,9 +179,8 @@ struct OutputLimiter
         headroom = ceiling - threshold;
         attackSeconds = attackSecondsIn;
         releaseSeconds = releaseSecondsIn;
-        const float sr = std::max(1.0f, sampleRate);
-        attackCoeff = std::exp(-1.0f / (attackSeconds * sr));
-        releaseCoeff = std::exp(-1.0f / (releaseSeconds * sr));
+        attackCoeff = std::exp(-1.0f / (attackSeconds * sampleRate));
+        releaseCoeff = std::exp(-1.0f / (releaseSeconds * sampleRate));
     }
 
     // Master-limiter convenience overload (BEHAVIOUR-PRESERVING): sample-rate

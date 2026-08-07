@@ -256,10 +256,22 @@ struct StereoDelay
         return magnitude;
     }
 
-    // :42-56 (setSampleRate).
+    // :42-56 (setSampleRate). C1 (openspec/changes/
+    // frogg3rs-blowout-and-drilldown-repair/tasks.md F8.1): this struct's
+    // only production caller is FroggersAppCore::PrepareToPlay()
+    // (delay_.SetSampleRate(sampleRate_)), which now validates the host's
+    // sample rate ONCE before any downstream use (see its own §12 trace) --
+    // so `hz` here is always already positive, and the `44100.0f` re-guard
+    // this used to duplicate is unreachable. The bare `sampleRate = 44100.0f`
+    // member default (this struct's `sampleRate` field, declared near its
+    // other members below) is a different concern -- a harmless
+    // pre-`SetSampleRate()` placeholder; every caller already calls
+    // SetSampleRate() before Process() (see the wetLimiter configuration a
+    // few lines below this method for that citation), so it is never
+    // observably read unconfigured -- and is left as is.
     void SetSampleRate(float hz)
     {
-        sampleRate = hz > 0.0f ? hz : 44100.0f;
+        sampleRate = hz;
         capacity = std::min(kMaxDelaySamples, static_cast<size_t>(std::ceil(kMaxDelaySeconds * sampleRate)));
         if (capacity < 4)
         {

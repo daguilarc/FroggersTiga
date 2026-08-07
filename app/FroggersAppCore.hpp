@@ -250,7 +250,42 @@ public:
     // hook (AppConcepts.hpp:26-28) once the host negotiates a real sample
     // rate. Everything else in this class is sample-rate-independent at
     // Init() time.
+    // C1 (openspec/changes/frogg3rs-blowout-and-drilldown-repair/tasks.md
+    // F8.1): the fallback used when the host hands this hook a non-positive
+    // sample rate. See PrepareToPlay()'s own comment for why that is a real
+    // possibility, not a hypothetical -- this is now the ONE place that
+    // possibility is handled.
+    static constexpr double kFallbackSampleRateHz = 44100.0;
+
     void PrepareToPlay(double sampleRate, int /*blockSize*/) {
+        // C1 (§12 trace): `synth::Engine::Prepare()` (External/Sheaf/
+        // projects/synth/include/synth/Engine.hpp:280-301) guards
+        // `sampleRate > 0.0 && blockSize > 0` before its OWN two uses
+        // (MasterClock::Prepare, the uiPublishInterval_ computation) but
+        // forwards this hook's `sampleRate`/`blockSize` UNCONDITIONALLY --
+        // Sheaf's own engine treats a non-positive rate as real enough to
+        // guard twice, then hands the raw value to the app hook regardless.
+        // The real host origin is `synth_runtime::Runtime<App>::
+        // audioDeviceAboutToStart` (External/Sheaf/projects/synth/runtime/
+        // Runtime.hpp:502-511): `double sampleRate =
+        // device->getCurrentSampleRate();` straight into `engine_.Prepare(
+        // sampleRate, blockSize)`, no validation of its own -- a live
+        // `juce::AudioIODevice` query, not a compile-time constant. A
+        // non-positive rate is therefore genuinely reachable here, so it is
+        // validated ONCE, before any use (including ConfigureProcessingTiming
+        // below, which used to read the raw parameter directly), rather than
+        // re-guarded downstream. This makes every per-unit guard this same
+        // condition used to need (dsp/EnvelopeFollowers.hpp,
+        // dsp/VoiceEnvelope.hpp, dsp/Delay.hpp, dsp/Limiter.hpp,
+        // FroggersModulationSlate::Prepare) unreachable; each of those was
+        // deleted rather than left duplicating this check with its own
+        // fallback (44100.0, 1.0f via std::max, and 48000.0 all disagreed).
+        // 44100.0 is the value that survives: a standard audio rate, unlike
+        // Limiter's old 1.0f (which would have collapsed attack/release to
+        // near-instant, not "a limiter", had it ever actually fired).
+        if (!(sampleRate > 0.0)) {
+            sampleRate = kFallbackSampleRateHz;
+        }
         modulation_.Prepare(sampleRate);
 
         // Task 6a.1 (design D15): the audio-path DSP units below are a

@@ -279,8 +279,18 @@ public:
     // Sample-rate-dependent setup (VCO pitch mapping needs the real rate at
     // Process()-call time, not here; EF coefficients and the GangedRandomLfo
     // lookup table are the two pieces that must be prepared once up front).
+    // C1 (openspec/changes/frogg3rs-blowout-and-drilldown-repair/tasks.md
+    // F8.1 -- found during that task's required §12 trace, not in its
+    // original six-site enumeration): this method's only production caller
+    // is FroggersAppCore::PrepareToPlay() (`modulation_.Prepare(sampleRate)`,
+    // its very first statement), which now validates the host's sample rate
+    // ONCE before any downstream use, including this call (see that
+    // method's own §12 trace). So `sampleRate` here is always already
+    // positive, and the `48000.0` re-guard this used to duplicate --a THIRD
+    // fallback value, disagreeing with both the six 44100.0 sites and
+    // Limiter's 1.0f -- is unreachable.
     void Prepare(double sampleRate) {
-        sampleRate_ = sampleRate > 0.0 ? sampleRate : 48000.0;
+        sampleRate_ = sampleRate;
         vcoEnvelopeFollowers_.SetSampleRate(static_cast<float>(sampleRate_));
         externalAudioEf_.SetSampleRate(static_cast<float>(sampleRate_));
         gangedRandomLfo6_.Prepare(sampleRate_);

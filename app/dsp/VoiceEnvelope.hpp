@@ -76,9 +76,18 @@ struct VcoAdsrState
         }
     }
 
+    // C1 (openspec/changes/frogg3rs-blowout-and-drilldown-repair/tasks.md
+    // F8.1): this struct's only production caller is
+    // FroggersAppCore::PrepareToPlay() (audioAdsr_.init(sampleRate_), which
+    // calls this), and that method now validates the host's sample rate
+    // ONCE before any downstream use (see its own §12 trace) -- so the
+    // `44100.0f` re-guard this used to duplicate is unreachable. The bare
+    // `m_sampleRate = 44100.0f` default below is a different concern (a
+    // harmless pre-`init()` placeholder, not a re-guard of validated input)
+    // and is left as is.
     void setSampleRate(float sampleRate)
     {
-        m_sampleRate = sampleRate > 0.0f ? sampleRate : 44100.0f;
+        m_sampleRate = sampleRate;
     }
 
     void setGate(bool high)
