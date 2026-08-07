@@ -720,10 +720,12 @@ TEST_CASE(randomize_depth_helper_draws_distinct_sources_even_from_an_adversarial
     }
     synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
 
-    // Force count = 4 (a single NextRandomCoin() landing in the [0.70,0.90)
-    // bucket) and feed an ADVERSARIAL NextRandomIndex that always returns the
-    // LAST valid index of whatever range it's asked -- a "draw with
-    // replacement, no exclusion" loop (Sheaf's own private
+    // Force count = 4 (a single NextRandomCoin() landing in F1.2's mode-2
+    // table's [0.92,0.98) bucket -- retargeted 2026-08-07, was [0.70,0.90)
+    // under A6's superseded 10/30/30/20; see FroggersModulation.hpp's own
+    // table comment) and feed an ADVERSARIAL NextRandomIndex that always
+    // returns the LAST valid index of whatever range it's asked -- a "draw
+    // with replacement, no exclusion" loop (Sheaf's own private
     // Bank::RandomizeModulationDepths, design A6's "two properties... the
     // replacement should not inherit") would pick a fixed relative position
     // on every one of its independent draws under a feed like this; a
@@ -732,7 +734,7 @@ TEST_CASE(randomize_depth_helper_draws_distinct_sources_even_from_an_adversarial
     // exercise real swaps here rather than degenerating to a no-op permutation.
     fx.manager.SetRandomSource(
         []() { return 0.3f; },                                       // NextRandomValue (irrelevant to selection)
-        []() { return 0.75f; },                                      // NextRandomCoin -> count=4
+        []() { return 0.95f; },                                      // NextRandomCoin -> count=4 (F1.2 table)
         [](std::size_t exclusiveMax) { return exclusiveMax - 1; });  // NextRandomIndex: always top-of-range
 
     detail::RandomizeParameterModulationDepths(fx.manager, focused);
@@ -747,42 +749,80 @@ TEST_CASE(randomize_depth_helper_draws_distinct_sources_even_from_an_adversarial
     REQUIRE_TRUE(touchedCount == 4);
 }
 
-// REVISED for A1 (non-additive randomize): the pre-fix version of this test
-// measured the draw count as a round-to-round SceneCenter DIFF ("before" vs
-// "after"), and relied on a per-trial `fx.manager.ComputeAllParameters()`
-// call to keep that diff meaningful -- without it, repeated hammering left
-// `targetCenter_` stale relative to the just-written `SceneCenter`, so the
-// NEXT call's internal `RandomizeVisibleValue` (which derives its delta from
-// the stale `TargetValue(0)`, not from `SceneCenter` directly) could
-// occasionally walk `SceneCenter` to a range boundary rather than the drawn
-// target and corrupt the diff.
+// A1 (non-additive randomize) is why either histogram test below can measure
+// a call's draw count as "how many depths are non-neutral immediately after
+// it," with no round-to-round diffing: RandomizeParameterModulationDepths
+// zeroes the target's existing depths (both scene poles) BEFORE every draw,
+// so each call starts from a known, exact baseline (`SceneCenter(0) == 0.5`)
+// regardless of what any previous call did. No `ComputeAllParameters()` call
+// is needed here for the same reason (contrast the no-op/display test above,
+// which needs it for `UIDisplayCenter`, not `SceneCenter`).
 //
-// A1 makes that whole mechanism moot for this test: RandomizeParameterModulationDepths
-// now zeroes `focused`'s existing depths (both scene poles) BEFORE every
-// draw, so each call starts from a known, exact baseline (`SceneCenter(0) ==
-// 0.5`) regardless of what the previous call did. The draw count for a
-// single call is therefore just "how many depths are non-neutral
-// immediately after it" -- no diffing against a remembered "before" state,
-// and consequently no dependency on the previous call's `targetCenter_`
-// having settled. The manual `ComputeAllParameters()` call is REMOVED here
-// (not just left in defensively): it was pure workaround for the
-// round-to-round drift A1's zeroing now eliminates by construction, and
-// keeping a workaround the fix has made unnecessary would obscure that the
-// per-call SceneCenter write is already exact on its own.
-TEST_CASE(randomize_depth_helper_median_count_is_three_across_1000_trials) {
+// F1.2/F1.3 (frogg3rs-blowout-and-drilldown-repair, 2026-08-07): shared
+// assertions for a count histogram against the mode-2 table -- reused by the
+// level-0 test and the level-1/level-2 regression pin below, so the three
+// properties (mode, rare 4+, never zero) are pinned exactly once rather than
+// duplicated per level. Asserts on the resulting COUNT DISTRIBUTION, not on
+// call counts -- the predecessor's version of this test (median-based, one
+// vector of samples) is the sixth green-while-wrong guard on record for
+// pinning the wrong layer; this one pins the actual observable shape.
+void RequireModeTwoCountDistribution(const std::array<int, FroggersParameterModel::kNumModulators + 1>& histogram,
+                                      int trials, const char* label) {
+    REQUIRE_TRUE(histogram[0] == 0);  // F1.2: count is never 0.
+
+    std::size_t mode = 1;
+    for (std::size_t count = 2; count < histogram.size(); ++count) {
+        if (histogram[count] > histogram[mode]) {
+            mode = count;
+        }
+    }
+    REQUIRE_TRUE(mode == 2);  // F1.2: 46% > 26% > 20% > 6% > 2%, strictly.
+
+    int atLeastFour = 0;
+    int atLeastSeven = 0;
+    double sum = 0.0;
+    for (std::size_t count = 0; count < histogram.size(); ++count) {
+        if (count >= 4) {
+            atLeastFour += histogram[count];
+        }
+        if (count >= 7) {
+            atLeastSeven += histogram[count];
+        }
+        sum += static_cast<double>(count) * static_cast<double>(histogram[count]);
+    }
+    // F1.2 puts P(>=4) at 8%, against A6's old 30%. "Materially below 15%"
+    // (this task's own bar) leaves a wide, sample-size-appropriate margin
+    // rather than one tightened until it happens to pass: even at `trials`
+    // as low as 200 the binomial standard error at p=0.08 is ~1.9 points, so
+    // 15% sits roughly 3.7 standard errors above the true rate.
+    REQUIRE_TRUE(atLeastFour < trials * 0.15);
+
+    // [OBSERVED] -- not a pass condition (matches this file's own convention
+    // for recording a measurement alongside its pass condition, e.g. the
+    // level-three drill-in test's own peak-count print): the actual sampled
+    // shape, for a human to compare against F1.2's table in
+    // FroggersModulation.hpp.
+    std::cout << "[OBSERVED] " << label << " count histogram over " << trials << " trials:";
+    for (std::size_t count = 1; count <= 4 && count < histogram.size(); ++count) {
+        std::cout << " P(" << count << ")=" << (100.0 * histogram[count] / trials) << "%";
+    }
+    std::cout << " P(>=4)=" << (100.0 * atLeastFour / trials) << "%"
+              << " P(>=7)=" << (100.0 * atLeastSeven / trials) << "%"
+              << " mode=" << mode << " mean=" << (sum / trials) << "\n";
+}
+
+TEST_CASE(randomize_depth_helper_level_zero_count_distribution_has_mode_two_across_1000_trials) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);  // 15 connected sources -- N for the tail
-    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
-    drillIn.PressEncoder(0);  // -> level 1; eagerly materializes all 15 depth cells
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));  // default: Level()==0
     synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
     constexpr float kNeutral = detail::kNeutralModulationDepthCenter;  // F3: single named constant
     constexpr float kTolerance = 1e-4f;
 
     constexpr int kTrials = 1000;
-    std::vector<int> counts;
-    counts.reserve(kTrials);
+    std::array<int, FroggersParameterModel::kNumModulators + 1> histogram{};
     for (int trial = 0; trial < kTrials; ++trial) {
-        RandomizePage(fx.manager, drillIn);
+        RandomizeAll(fx.manager, drillIn, fx.model);  // Level()==0: the level-0 draw (F1.3 item 1).
         int nonNeutral = 0;
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
             synth::Parameter* depth = focused.ModulationDepthParameter(modIx);
@@ -790,18 +830,69 @@ TEST_CASE(randomize_depth_helper_median_count_is_three_across_1000_trials) {
                 ++nonNeutral;
             }
         }
-        counts.push_back(nonNeutral);
+        ++histogram[static_cast<std::size_t>(nonNeutral)];
     }
 
-    std::sort(counts.begin(), counts.end());
-    const int median = counts[counts.size() / 2];
-    // Design A6 specifies median 3 exactly (P(n<=2)=0.40 < 0.5 <= P(n<=3)=0.70).
-    // At 1000 trials the sample median should land on exactly 3 essentially
-    // every run; a tolerance of +-1 absorbs ordinary sampling noise near that
-    // 0.40/0.70 boundary without silently accepting a badly-shifted
-    // distribution (a regression back toward Sheaf's mean-1.0 shape would
-    // land the median at 0 or 1, well outside this band).
-    REQUIRE_TRUE(median >= 2 && median <= 4);
+    RequireModeTwoCountDistribution(histogram, kTrials, "level-0");
+}
+
+// F1.3 item 2 (frogg3rs-blowout-and-drilldown-repair): "the same distribution
+// must apply at EVERY level, not just level 0" -- a REGRESSION PIN, not a
+// fix, since all four RandomMod dispatch sites already share the one
+// `detail::RandomizeParameterModulationDepths` definition (retuning the table
+// changes every level by construction). Traced structurally in
+// FroggersModulation.hpp: RandomizeAll's Level()==1 branch calls that shared
+// helper TWICE per press -- once on the selected parameter itself (its own,
+// level-1 depths) and once more on each of that parameter's now-materialized
+// depth parameters (each one's own, level-2 sub-depths) -- so a single press
+// exercises both nesting depths at once, and this test histograms both.
+TEST_CASE(randomize_all_level_one_press_gives_its_own_depths_and_each_depths_subdepths_the_mode_two_distribution) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/true);  // 15 connected sources
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+    drillIn.PressEncoder(0);  // -> level 1
+    synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
+    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;  // F3: single named constant
+    constexpr float kTolerance = 1e-4f;
+
+    auto countNonNeutral = [&](synth::Parameter& parameter) {
+        int count = 0;
+        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+            synth::Parameter* depth = parameter.ModulationDepthParameter(modIx);
+            if (depth != nullptr && std::fabs(depth->SceneCenter(0) - kNeutral) > kTolerance) {
+                ++count;
+            }
+        }
+        return count;
+    };
+
+    constexpr int kTrials = 500;
+    std::array<int, FroggersParameterModel::kNumModulators + 1> level1Histogram{};
+    std::array<int, FroggersParameterModel::kNumModulators + 1> level2Histogram{};
+    int level2Samples = 0;
+    for (int trial = 0; trial < kTrials; ++trial) {
+        RandomizeAll(fx.manager, drillIn, fx.model);  // Level()==1: own depths + each depth's own sub-depths.
+        ++level1Histogram[static_cast<std::size_t>(countNonNeutral(focused))];
+        // Every ALREADY-materialized depth parameter gets a fresh level-2
+        // draw this press regardless of whether it was picked at level 1
+        // this time (the inner loop is unconditional over materialized
+        // depth parameters) -- so samples accumulate well past kTrials as
+        // more of the 15 sources get covered over successive presses.
+        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+            synth::Parameter* depthParam = focused.ModulationDepthParameter(modIx);
+            if (depthParam != nullptr) {
+                ++level2Histogram[static_cast<std::size_t>(countNonNeutral(*depthParam))];
+                ++level2Samples;
+            }
+        }
+    }
+
+    // Sanity floor: proves the level-2 loop actually fired repeatedly rather
+    // than the histogram being near-empty from a wiring regression.
+    REQUIRE_TRUE(level2Samples >= 200);
+
+    RequireModeTwoCountDistribution(level1Histogram, kTrials, "level-1");
+    RequireModeTwoCountDistribution(level2Histogram, level2Samples, "level-2");
 }
 
 // ============================================================================

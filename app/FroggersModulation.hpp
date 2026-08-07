@@ -758,8 +758,10 @@ private:
 // `detail::RandomizeParameterModulationDepths` below (used by all four call
 // sites: RandomizeBankLevel1Depths, RandomizePage's drill-in branch, and
 // both RandomizeAll drill-in branches) replaces this with an APP-SIDE count/
-// source selection -- design A6's weighted table (median 3, P(1)==P(>=5),
-// 10/30/30/20 for n=1..4, geometric r=0.7 tail for n=5..N) -- while Sheaf
+// source selection -- an app-owned weighted table, currently F1.2's mode-2
+// shape (frogg3rs-blowout-and-drilldown-repair, 2026-08-07; supersedes A6's
+// original median-3 10/30/30/20 -- see that function's own table comment for
+// the exact numbers) -- while Sheaf
 // still performs every actual write (`Parameter::EnsureModulationDepth` +
 // `Parameter::RandomizeVisibleValue`, the same two calls
 // `Bank::RandomizeModulationDepths` itself makes internally). This is design
@@ -794,11 +796,11 @@ namespace detail {
 // count instead would be wrong -- design D14's own bias table
 // (P(k)=0.5^(k+1), mean 1.0) is Sheaf's geometric loop, REPLACED on the app
 // side since E.1. The distribution actually in force is this file's own
-// RandomizeParameterModulationDepths draw below (10/30/30/20 for counts 1-4,
-// then a geometric r=0.7 tail for 5+; mean ~3.1) -- and that still means a
-// HEALTHY randomize typically leaves most of a parameter's 15 possible
-// depths untouched; that is normal, not a partial randomize. Only "no more
-// storage was available to give" is.
+// RandomizeParameterModulationDepths draw below (F1.2's mode-2 table as of
+// 2026-08-07, mean 2.25 -- see that draw's own comment for the exact
+// numbers) -- and that still means a HEALTHY randomize typically leaves
+// most of a parameter's 15 possible depths untouched; that is normal, not a
+// partial randomize. Only "no more storage was available to give" is.
 inline bool CapacityExhausted(const synth::ParameterGroup& group) {
     return !group.CanAllocate();
 }
@@ -872,10 +874,11 @@ inline void ZeroExistingModulationDepths(synth::Parameter& parameter) {
 // E.1 (design A6) -- the shared count/source-selection helper used by all
 // four RandomMod dispatch sites in this file (RandomizeBankLevel1Depths,
 // RandomizePage's drill-in branch, and both RandomizeAll drill-in branches).
-// Chooses a COUNT of `parameter`'s connected modulation sources using A6's
-// exact distribution (median 3, P(1)==P(n>=5), weighted 10/30/30/20 for
-// n=1..4, geometric r=0.7 tail for n=5..N where N is the connected-source
-// count), draws that many DISTINCT sources (partial Fisher-Yates -- Sheaf's
+// Chooses a COUNT of `parameter`'s connected modulation sources using the
+// mode-2 table below (F1.2, 2026-08-07 -- supersedes A6's original median-3
+// 10/30/30/20; see the table's own comment, right above the draw, for the
+// exact numbers and their derivation), draws that many DISTINCT sources
+// (partial Fisher-Yates -- Sheaf's
 // own private Bank::RandomizeModulationDepths loop can independently redraw
 // the same source twice, which this does not reproduce, per A6's "two
 // properties Sheaf's loop has that the replacement should not inherit"), and
@@ -927,28 +930,41 @@ inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager,
         return partial;
     }
 
-    // Design A6's original draw is reproduced below (10/30/30/20 for counts
-    // 1-4, geometric tail for 5+). SUPERSEDED 2026-08-06
-    // (frogg3rs-blowout-and-drilldown-repair, task F1): the operator's
-    // current ruling is mode 2, rarely above 4 -- which supersedes A6's old
-    // directives to not tune for the resulting mean (~3.1) and to not break
-    // the deliberate 30/30 tie between n=2 and n=3 toward a single peak.
-    // Breaking that tie toward n=2 is exactly what F1 requires. F1
-    // re-derives this table under the mode-2 ruling; until it lands, the
-    // draw below is still A6's original shape.
+    // F1.2 (frogg3rs-blowout-and-drilldown-repair, 2026-08-07) -- mode-2
+    // table. SUPERSEDES A6's 10/30/30/20: the operator's ruling -- "mode 2,
+    // rarely above 4 is good enough" -- explicitly authorizes breaking A6's
+    // deliberate 2/3 tie and tuning toward the resulting mean, both of which
+    // A6's own directives (retracted by F0.3) used to forbid. Never-zero and
+    // distinct-source draws are UNCHANGED from A6 -- see this function's own
+    // header comment for why distinctness matters.
+    //
+    // count=1: 20% (u<0.20f)     count=2: 46% (u<0.66f) <- the mode
+    // count=3: 26% (u<0.92f)     count=4:  6% (u<0.98f)
+    // count=5+: 2%, geometric r=0.30 (else branch below)
+    //
+    // Derivation (operator-approved numbers; recorded so a future retune
+    // starts from this arithmetic instead of re-deriving it):
+    //   P(>=4)                   = 6% + 2%               = 8%     (was 30% under A6)
+    //   P(count=7)               = 0.02 * 0.30^2 * 0.70   = 0.126%
+    //   P(>=7)                   = 0.02 * 0.30^2          = 0.18%  (was 4.9% under A6)
+    //   E[params at 7+ / press]  = 16 * 0.0018           = 0.029  (was 0.78, across 16
+    //                               visible params -- roughly one press in 35, i.e.
+    //                               "essentially never")
+    //   mean = 0.20(1)+0.46(2)+0.26(3)+0.06(4)+0.02(5+0.3/0.7) = 2.25 (was ~3.1)
+    //   mode = 2, strictly (46% > 26% > 20% > 6% > 2%); minimum is still 1, never 0
     const float u = manager.NextRandomCoin();
     std::size_t count;
-    if (u < 0.10f) {
+    if (u < 0.20f) {
         count = 1;
-    } else if (u < 0.40f) {
+    } else if (u < 0.66f) {
         count = 2;
-    } else if (u < 0.70f) {
+    } else if (u < 0.92f) {
         count = 3;
-    } else if (u < 0.90f) {
+    } else if (u < 0.98f) {
         count = 4;
     } else {
         count = 5;
-        while (count < eligible.size() && manager.NextRandomCoin() < 0.7f) {
+        while (count < eligible.size() && manager.NextRandomCoin() < 0.30f) {
             ++count;
         }
     }
