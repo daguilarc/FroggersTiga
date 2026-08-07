@@ -37,6 +37,12 @@ ten test binaries.
   check and passed at `minEnvelopeSeen` exactly 1.0 while proving nothing. `PeakAbs()`
   exists in `FroggersAudioRoutingTests.cpp` for precisely this; use it. **This is the single most
   common shape of the green-while-wrong guards on this project's record.**
+- **Cite by SYMBOL, not by line.** Line numbers in a living plan are stale the moment anything
+  above them changes, and this change rewrites the same files it cites. Prefer
+  `grep -n "drillIn.Back()" app/FroggersModulation.hpp` over `:1152`; where a line number is
+  genuinely useful, pin it to a commit ("as of `1c37657`"). **Every citation in the F4 block had
+  drifted by 2026-08-07 and two pointed at unrelated code** — the next dispatch would have edited
+  the wrong lines. This is the artifact-side form of the omni rule's refined §1 trace clause.
 - **The operator's runtime data root is `~/Library/Sheaf/synth/sheaf-patch/`.**
 - **Nothing goes to the operator until the whole list lands** (M4). One build, one listening pass.
 
@@ -132,7 +138,7 @@ lines.** Corrected in place against `1c37657`, with a verify-before-editing warn
 F5's citations (`:676`, `:723`, `:736`) were re-verified and are **accurate** — that code is
 untouched.
 
-- [ ] **F8.2a — STANDING RULE, add to §0 on the next artifact pass: cite by symbol, not by line.**
+- [x] **F8.2a — DONE: the cite-by-symbol rule is now in §0.**
       Line numbers in a living plan are stale the moment anything above them changes, and this
       change rewrites the same files it cites. Prefer
       `grep -n "drillIn.Back()" app/FroggersModulation.hpp` over `:1152`; where a line number is
