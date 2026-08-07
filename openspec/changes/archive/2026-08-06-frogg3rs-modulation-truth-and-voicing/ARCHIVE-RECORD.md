@@ -102,6 +102,13 @@ the successor as F0 preflight items or folded into the F-item they belong to.
    never runs. The former still carries the stale `ExpMapCompute(1.0f, 10.0f, …)` peak-height
    ceiling that W2.2c queued for repair (at `:212`; the plan cites `:193`, drifted).
 
+   > **Both were fixed by the successor's F0.2 (`52c2730`) and no longer exist under these
+   > names.** They are now `app/FroggersCrunchyBlowupRepro.cpp` and
+   > `app/FroggersRandomizeAllRepro.cpp`, and the stale ceiling now reads
+   > `dsp::kMaxResonantBumpHeight`. The old names are left in the text above because this is a
+   > record of state as found on 2026-08-06; this note exists so the paths above are not followed
+   > to files that are no longer there.
+
 ## Durable rulings extracted before archiving
 
 These are operator decisions with lasting force, not scoped research. Carried into the successor's

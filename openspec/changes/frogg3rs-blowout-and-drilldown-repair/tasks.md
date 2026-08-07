@@ -119,7 +119,7 @@ different targets converge differently once enough blocks elapse.
 **A `SceneCenter` write reaches ~81 % of its target after one block and is effectively converged
 after roughly 30.** So:
 
-1. **The 76 `SceneCenter(0) =` sites are NOT invalid.** Do not "fix" them. A test that runs
+1. **The `SceneCenter(0) =` sites (76 when counted 2026-08-06; 85 today and still growing as tests are added) are NOT invalid.** Do not "fix" them. A test that runs
    hundreds of blocks (B7.5 runs 256, the existing limiter test runs 256) is fully converged long
    before it asserts.
 2. **Any test that asserts within roughly the first 30 blocks is reading a partially-applied
@@ -388,7 +388,7 @@ well below 0.999 — the proposal's trace predicts continuous engagement.
 
 Five defects in shipped work. All mechanical. F0.3 blocks F1.
 
-- [ ] **F0.1 — Hoist the three remaining short-circuit sites (OMNI §1, §8).**
+- [x] **F0.1 — Hoist the three remaining short-circuit sites (OMNI §1, §8).**
       The Group A review's F4 finding was fixed at `app/FroggersAppCore.hpp:490-496` only. The
       identical pattern survives at `app/FroggersModulation.hpp:1037`, `:1093`, `:1139`, and two of
       those are **inside loops** — the obvious "cleanup" swap to `partial || Call(...)` would
@@ -405,7 +405,7 @@ const bool bankPartial = detail::RandomizeBankLevel1Depths(manager, bank);
 partial = partial || bankPartial;
 ```
 
-- [ ] **F0.2 — Two files named `*Tests.cpp` run zero tests.**
+- [x] **F0.2 — Two files named `*Tests.cpp` run zero tests.**
       `app/FroggersCrunchyBlowupReproTests.cpp` and `app/FroggersRandomizeAllReproTests.cpp` contain
       zero `TEST_CASE` — they are `int main()` diagnostic harnesses, and neither is in
       `app/Makefile:225`'s `test:` target. The predecessor's W2.0 cites
@@ -417,7 +417,7 @@ partial = partial || bankPartial;
       `dsp::ExpMapCompute(1.0f, 10.0f, knob(FroggersBankId::Filter, 2))`, predating
       `dsp::kMaxResonantBumpHeight = 2.0f`. Use the constant.
 
-- [ ] **F0.3 — Retract the stale distribution directive (OMNI §8, M5). PREREQUISITE FOR F1.**
+- [x] **F0.3 — Retract the stale distribution directive (OMNI §8, M5). PREREQUISITE FOR F1.**
       `app/FroggersModulation.hpp:922-925` currently reads:
       *"Do NOT tune for the resulting mean (~3.1); A6 records that as a consequence, not a target,
       and rules out reshaping toward it. Do not break the deliberate 30/30 tie between n=2 and n=3
@@ -427,26 +427,26 @@ partial = partial || bankPartial;
       **Do this before F1 dispatches**, or F1's implementer hits a forceful in-code prohibition
       against the thing they were told to build. This is M5 recurring inside the code.
 
-- [ ] **F0.4 — Retract the superseded premise in `CapacityExhausted`.**
+- [x] **F0.4 — Retract the superseded premise in `CapacityExhausted`.**
       `app/FroggersModulation.hpp:790-792` reasons from *"design D14's own bias table
       (P(k)=0.5^(k+1), mean 1.0)"* — that is Sheaf's **replaced** geometric loop, not the app-side
       distribution in force since E.1. The conclusion (most depths untouched is healthy) still
       holds; restate it from the actual current distribution.
 
-- [ ] **F0.5 — Patch settling: sweep for the narrow hazard.**
+- [x] **F0.5 — Patch settling: sweep for the narrow hazard.**
       From B7.5.0: a `SceneCenter` write is ~81 % applied after one block and converged after ~30,
       because `Parameter::ProcessSamplePhase1` advances it through a smoothed `Compute()`
       (alpha 0.0994, every 16 samples). Long-running tests are fine; short ones are not.
   - **`ApplyPatchNow` already exists** — B7.5 Step 2 adds it, since B7.5 is its first consumer.
     Do not define a second one (OMNI §8).
   - **Sweep, do not mass-edit:** find tests that assert on patch-dependent behaviour within
-    roughly the first 30 blocks (`grep -n "RunBlocks" app/*Tests.cpp`, cross-referenced against
+    roughly the first 30 blocks (`grep -n "RunBlocks" app/*Tests.cpp`, cross-referenced against the
     the 76 `SceneCenter(0) =` sites). Fix only those, with the helper. **Report the count found
     and the count changed.** Most of the 76 are expected to need nothing.
   - A test that is *deliberately* measuring the ramp (if any exists) keeps its current behaviour;
     say so in the report rather than converting it.
 
-- [ ] **F0.6: Run the suite, confirm ten binaries green, commit.**
+- [x] **F0.6: Run the suite, confirm ten binaries green, commit.**
 
 ---
 
