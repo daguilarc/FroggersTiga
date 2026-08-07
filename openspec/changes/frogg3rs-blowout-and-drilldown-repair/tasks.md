@@ -62,6 +62,10 @@ never reads or writes `desktop-v2/ desktop/ src/ sim/ wasm/ vcv/ web/` or `Exter
 
 ## F8 — Omni-rule structural sweep + handoff (closes this session, not the change)
 
+**Model exception (operator, 2026-08-07): F8's sweep subagents may run on Opus** — *"this can be
+an opus subagent."* Explicit operator override of §0's Sonnet/Haiku rule, scoped to F8 only; every
+other dispatch in this change stays under the standing rule.
+
 - [ ] **F8.1 — Code sweep** (read-only, parallelizable per §0): all of `app/` (17 files) against
       §5 structure depth (2-of-4), §6 helper rules, §8 repetition (2+ occurrences → loop or
       abstract; duplication is symmetric, find the sibling), §10 condition-check efficiency,
