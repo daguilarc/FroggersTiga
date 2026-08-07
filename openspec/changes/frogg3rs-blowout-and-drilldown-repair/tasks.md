@@ -79,6 +79,64 @@ other dispatch in this change stays under the standing rule.
       ("X is public", "Y is called from Z") re-read, M1 applied to the artifacts themselves —
       today's five lead errors were all spec text written from memory instead of from a read.
       Archive dirs are history: report drift there, never edit (F0.2's footnote precedent).
+### F8.1 FINDINGS — code sweep, lead, 2026-08-07 (post-`1c37657`)
+
+Swept all of `app/` against §1, §5, §6, §8, §10, §11, §12. Frozen trees, `External/Sheaf` and the
+Daisy field app untouched. **Production code is in better shape than the artifacts** — zero
+repeated 3-line sequences anywhere, and every helper passes §6's 2-of-4 (`ZeroExistingModulation
+Depths` and `CapacityExhausted` are single-use but each names a domain concept without obscuring
+data flow, which is the stated exception). Four findings, none blocking.
+
+- [ ] **C1 (§8 + §12, highest blast radius) — the sample-rate fallback is duplicated six times,
+      with TWO different values, and the source never validates.**
+      `sampleRate > 0.0f ? sampleRate : 44100.0f` appears identically at `dsp/Delay.hpp:250`,
+      `dsp/EnvelopeFollowers.hpp:35`, `:74`, `dsp/VoiceEnvelope.hpp:81`, plus bare `44100.0f`
+      defaults at `dsp/Delay.hpp:421` and `dsp/VoiceEnvelope.hpp:177`. But `dsp/Limiter.hpp:121`
+      guards the same condition as `std::max(1.0f, sampleRate)` — **a different fallback for the
+      same defect**, and 1.0 vs 44100.0 produce wildly different coefficients.
+      Meanwhile `FroggersAppCore::PrepareToPlay` (`:262`) casts the host's rate with **no
+      validation at all**. So five units re-guard a condition the source never checks and disagree
+      on the answer. **§12: trace the origin first** — if the host contract permits a non-positive
+      rate, validate ONCE in `PrepareToPlay` and delete the five downstream guards; if it does not,
+      delete all six. Either way one named constant, one site.
+
+- [ ] **C2 (§8) — three-VCO sequential duplication.** `FroggersAppCore.hpp:956-968` processes
+      `audioVco1_/2_/3_` in three structurally identical statements differing only by index
+      (`0,3,6` / `1,4,7` / `2,5,8`). The `(i, +3, +6)` grouping is a real concept expressed three
+      times as literals, and it appears a fourth time in `ProcessBlock`'s `vcoDrive` lambda
+      (`:711-713`) — whose own comment acknowledges the duplication. Blocked only by the VCOs
+      being individually-named members. **`std::array<dsp::Vco, 3>` collapses all three to a loop
+      and makes the grouping explicit** — and would collapse F3.3's three `visit(audioVcoN_, …)`
+      lines too. Check first whether `dsp::Vco` is copy/movable; the modulation slate's
+      visualizers are individually named precisely because `synth::ui::Visualizer` is not.
+
+- [ ] **C3 (§10/§11/§12) — a loop-invariant null check evaluated once per sample.**
+      `if (block.outputs != nullptr)` sits inside the per-frame loop (`FroggersAppCore.hpp:594`
+      opens it; the check is at `:739`), so a block-scoped pointer is re-tested 48,000×/second.
+      Hoist it out of the loop. The inner `if (channel != nullptr)` needs a §12 trace: if the
+      engine contract guarantees non-null channels, both branches are impossible and go.
+
+- [x] **C4 (§8) — per-stage limiter thresholds scattered (0.7 peak, 0.7 drive, 0.9 delay/reverb/
+      master). ALREADY TRACKED, not a new finding:** `dsp/Limiter.hpp:66-70` records it and ties
+      the consolidation to B7.1, i.e. to **F2.1**. Confirmed still accurate. No separate work item.
+
+### F8.2 FINDINGS — artifact drift, lead, 2026-08-07
+
+**Every line citation in the F4 block had drifted, and the two load-bearing ones pointed at
+unrelated code** — `:1112` at a Crispy comment, `:1152` at a `continue;`. F0.1's hoisting and
+F0.3/F0.4's comment rewrites moved them. **The next F4 dispatch would have edited the wrong
+lines.** Corrected in place against `1c37657`, with a verify-before-editing warning.
+
+F5's citations (`:676`, `:723`, `:736`) were re-verified and are **accurate** — that code is
+untouched.
+
+- [ ] **F8.2a — STANDING RULE, add to §0 on the next artifact pass: cite by symbol, not by line.**
+      Line numbers in a living plan are stale the moment anything above them changes, and this
+      change rewrites the same files it cites. Prefer
+      `grep -n "drillIn.Back()" app/FroggersModulation.hpp` over `:1152`; where a line number is
+      genuinely useful, pin it to a commit ("as of `1c37657`") so a reader knows what it was true
+      of. This is the artifact-side form of the omni rule's refined trace clause.
+
 - [ ] **F8.3 — Lead fixes the artifacts** from F8.1/F8.2 findings. Code findings that are real
       defects become tasks (or fold into existing F-items); artifact drift is corrected in place.
       Nothing in F8 lands code changes beyond what F3.3 already did.
@@ -741,23 +799,35 @@ template <typename V> void ForEachStatefulUnit(V&& visit) {
 2. **Navigating out is a BUG** — *"randomize all in level 1 shouldn't navigate me out wtf."*
 
 **The traced cause:** `RandomizeAll`'s `Level()==1` branch ends on a bare `drillIn.Back()`
-(`app/FroggersModulation.hpp:1152`), which drops level 1 → 0. Step 2 also leaves the view
-(`:1112`) purely to look up an encoder id in the parameter grid. The operator ends on the main bank
+(`app/FroggersModulation.hpp:1178`), which drops level 1 → 0. Step 2 also leaves the view
+(`:1134`) purely to look up an encoder id in the parameter grid. The operator ends on the main bank
 page because the operation put them there.
 
 **Verified, and it is what makes this cheap:** `detail::RandomizeParameterModulationDepths`
 **does not need the modulation view open.** It takes `Parameter&`, reads eligibility from
-`group.GetModulators().Metadata()` (`:910`), and calls `EnsureModulationDepth` itself (`:952`).
+`group.GetModulators().Metadata()` (`:914`), and calls `EnsureModulationDepth` itself (`:961`).
 Nothing in it reads view state. So the `PressEncoder`/`Back()` round trips accomplish nothing
 except (a) triggering `Bank::OpenModulationView`'s eager materialization of all 15 connected
 sub-depths when ~2 are wanted, and (b) driving the level counter up and down — which is the
 ejection.
 
-- [ ] **F4.1: Delete both round trips.** Step 3's `PressEncoder(modIx)` / `Back()` pair
-      (`:1132`, `:1150`) and Step 2's `Back()` / `PressEncoder(originalEncoderId)` pair
-      (`:1112`, `:1120`). Find the encoder id without leaving the view, or cache it. The whole
-      operation must be **visually atomic**: press it, stay put, see the badges change on the page
-      you are on.
+> **Line citations re-verified 2026-08-07 (F8.2).** Every number in this F4 block had drifted —
+> F0.1's hoisting and F0.3/F0.4's comment rewrites moved them, and the stale ones pointed at
+> unrelated code (`:1112` landed on a Crispy comment, `:1152` on a `continue;`). An implementer
+> following the old numbers would have edited the wrong lines. **Verify these before editing too;
+> anything committed between this note and your dispatch moves them again.** Locate by symbol,
+> not by line: `grep -n "drillIn.Back()\|drillIn.PressEncoder" app/FroggersModulation.hpp`.
+
+- [ ] **F4.1: Delete both round trips.** Verified line numbers as of `1c37657`:
+      - **Step 2's pair:** `drillIn.Back()` at **`:1134`**, then the encoder-id scan (`:1135-1141`),
+        then `drillIn.PressEncoder(originalEncoderId)` at **`:1142`**.
+      - **Step 3's pair:** `drillIn.PressEncoder(modIx)` at **`:1154`** and `drillIn.Back()` at
+        **`:1176`**, inside the per-source loop.
+      - **The final bare `drillIn.Back()` at `:1178`** — the one that actually drops level 1 → 0
+        and ejects the operator.
+
+      Find the encoder id without leaving the view, or cache it. The whole operation must be
+      **visually atomic**: press it, stay put, see the badges change on the page you are on.
 - [ ] **F4.2: Test** that level is unchanged across a level-1 Randomize All, and that the focused
       parameter's depths carry non-neutral level-2 sub-depths afterward. Also assert
       `LastRandomizePartial()` is false on a fresh patch — silent allocation failure is its own
