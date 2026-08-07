@@ -1275,7 +1275,7 @@ private:
     // as a genuine divergence rather than a transient. Tracked in seconds
     // (not a block count) so the definition does not silently change shape
     // with block size -- app/Makefile's own tests span both blockSize==1
-    // (FroggersCrunchyBlowupReproTests.cpp) and blockSize==256/512
+    // (FroggersCrunchyBlowupRepro.cpp) and blockSize==256/512
     // (everything else). 10ms is deliberately short: the ceiling's own
     // derivation above establishes that a real fault's exponential
     // divergence crosses from normal into "past 100" in milliseconds, so it

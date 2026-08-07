@@ -634,7 +634,7 @@ tests **by construction**. Therefore:
 1. **No task in this change is complete on unit tests alone.** Every user-visible task carries a
    GUI confirmation step.
 2. **Audio tests must drive the real path.** The existing repro
-   (`app/FroggersRandomizeAllReproTests.cpp`) drove a **shadow copy** of `RouteAudioSample()` —
+   (`app/FroggersRandomizeAllRepro.cpp`) drove a **shadow copy** of `RouteAudioSample()` —
    formulas copied into separate instances. That is the predecessor's trap #1 repeated, and it
    makes those numbers indicative only. Task 2.1 rebuilds the repro against the real
    `Engine`/`Runtime`.

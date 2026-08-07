@@ -1,4 +1,4 @@
-// FroggersCrunchyBlowupReproTests.cpp -- headless repro for the
+// FroggersCrunchyBlowupRepro.cpp -- headless repro for the
 // operator-confirmed "audio still blows out and gets permanently killed" bug
 // that survives the scoopNotch fix (FroggersAppCore.hpp:613-638). NOT part of
 // the regular suite (not wired into app/Makefile's `test` target) -- a
@@ -7,13 +7,13 @@
 //
 //   clang++ -std=c++20 -Wall -Wextra -Wpedantic -O2 \
 //     -IExternal/Sheaf/projects/synth/include -IExternal/Sheaf/projects/synth/tests \
-//     app/FroggersCrunchyBlowupReproTests.cpp External/Sheaf/projects/synth/build/libsynth.a \
+//     app/FroggersCrunchyBlowupRepro.cpp External/Sheaf/projects/synth/build/libsynth.a \
 //     -o app/build/froggers_crunchy_blowup_repro
 //
 // Repro steps, per the investigation brief:
 //   1. Start the transport the real way (SynthRig::StartAt pushes the same
 //      synth::MessageIn::Start(...) through the uiBus the real Play button
-//      does -- identical to FroggersRandomizeAllReproTests.cpp).
+//      does -- identical to FroggersRandomizeAllRepro.cpp).
 //   2. Sweep the global Crunchy control (bank slot 15, one shared
 //      synth::Parameter across all six banks -- FroggersParameters.hpp:80)
 //      across its full 0..1 range via synth::MessageIn::ParamSetAbsolute
@@ -45,7 +45,7 @@
 //      post-fuego/post-modulation values RouteAudioSample used for that same
 //      sample.
 //
-// Note (same caveat FroggersRandomizeAllReproTests.cpp documents):
+// Note (same caveat FroggersRandomizeAllRepro.cpp documents):
 // SanitizeOutputSample (FroggersAppCore.hpp:698-707) replaces any non-finite
 // OUTPUT sample with 0.0f before it reaches the stereo bus, so rig.SawNaN()
 // (which checks captured OUTPUT samples) can never observe an internal NaN
@@ -209,7 +209,8 @@ struct ShadowChain {
             dsp::ExpMapCompute(20.0f / sampleRate, 20000.0f / sampleRate, knob(FroggersBankId::Filter, 1));
         const float bumpWidth = dsp::ExpMapCompute(0.1f, 10.0f, knob(FroggersBankId::Filter, 3));
         filterChain.peak.SetFreq(bumpFreq);
-        filterChain.peak.SetHeight(dsp::ExpMapCompute(1.0f, 10.0f, knob(FroggersBankId::Filter, 2)));
+        filterChain.peak.SetHeight(
+            dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, knob(FroggersBankId::Filter, 2)));
         filterChain.peak.SetWidth(bumpWidth);
         filterChain.scoopNotch.SetFreq(bumpFreq);
         filterChain.scoopNotch.SetWidth(bumpWidth);
@@ -338,7 +339,7 @@ SweepResult RunSweepAndReport(const char* label, std::size_t position, const cha
     }
 
     // Optional compound scenario: fire Randomize All (the already-fixed
-    // scoopNotch bug's own trigger, FroggersRandomizeAllReproTests.cpp) BEFORE
+    // scoopNotch bug's own trigger, FroggersRandomizeAllRepro.cpp) BEFORE
     // sweeping this control, matching the operator's actual usage sequence
     // (Randomize All in an earlier session, Crunchy cranked in this one) --
     // not just a fresh default patch.

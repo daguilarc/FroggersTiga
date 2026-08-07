@@ -212,7 +212,7 @@ struct GatedVoices
 // `adsr.apply` a second time at a new call site, which would duplicate a
 // ported formula and create two sites that could drift). Defaults to
 // `nullptr` so the two existing test call sites
-// (FroggersCrunchyBlowupReproTests.cpp, FroggersDspParityTests.cpp) that
+// (FroggersCrunchyBlowupRepro.cpp, FroggersDspParityTests.cpp) that
 // only need the mixed average keep compiling unchanged.
 inline float MixOscVoices(VcoAdsrState& adsr,
                            float v1,

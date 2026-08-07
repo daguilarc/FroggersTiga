@@ -1,4 +1,4 @@
-// FroggersRandomizeAllReproTests.cpp -- headless repro for the
+// FroggersRandomizeAllRepro.cpp -- headless repro for the
 // operator-confirmed "audio peters out after Randomize All and never
 // returns" bug. NOT part of the regular suite (not wired into app/Makefile's
 // `test` target) -- this is a one-off investigation binary built directly
@@ -6,7 +6,7 @@
 //
 //   clang++ -std=c++20 -Wall -Wextra -Wpedantic -O2 \
 //     -IExternal/Sheaf/projects/synth/include -IExternal/Sheaf/projects/synth/tests \
-//     app/FroggersRandomizeAllReproTests.cpp External/Sheaf/projects/synth/build/libsynth.a \
+//     app/FroggersRandomizeAllRepro.cpp External/Sheaf/projects/synth/build/libsynth.a \
 //     -o app/build/froggers_randomize_all_repro
 //
 // Repro steps, exactly as the operator described:

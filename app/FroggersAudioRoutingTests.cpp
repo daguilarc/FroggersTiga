@@ -788,7 +788,7 @@ TEST_CASE(master_limiter_stays_at_unity_under_live_modulation) {
 // `FroggersUiSurface::HandleAction` calls for the Randomize All button
 // (FroggersUiSurface.hpp), consumed on the very next audio-thread
 // ProcessFrame() (FroggersAppCore.hpp's `pendingRandomizeAll_`) -- same
-// call FroggersRandomizeAllReproTests.cpp's proven repro uses, not a
+// call FroggersRandomizeAllRepro.cpp's proven repro uses, not a
 // shadow/copy of the DSP chain.
 //
 // Per draw: render a full second of audio (one full quarter-note gate
