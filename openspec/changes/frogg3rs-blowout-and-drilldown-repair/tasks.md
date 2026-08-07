@@ -681,6 +681,68 @@ geometric r=0.7 tail. **P(count ≥ 4) = 30%.** Across 16 visible parameters tha
 per-stage limiter currently ships `ceiling = kSharedCeiling = 1.0`, so every stage may legitimately
 deliver more than the master's 0.9 threshold, and the master rides continuously by construction.
 
+### F2 — OPERATOR EVIDENCE, 2026-08-07. Read before F2.0.
+
+Asked whether the blowout is rhythmic or constant, and whether Crispy misbehaves on other banks:
+
+> **"crispy blowout is specific to the filter bank. usually rhythmic."**
+
+**Both answers are load-bearing and they point the same way.**
+
+**"Rhythmic" means the pumping diagnosis is RIGHT and the harness is wrong.** A constant harshness
+would have killed the limiter theory outright. Rhythmic gain movement is a limiter with a release
+constant, so W2.0's mechanism stands — and the 0.12 dB the harness measures is simply not the
+operator's condition. **Do not weaken the pumping hypothesis on the strength of the harness
+numbers; strengthen the harness.**
+
+**REFINED by the operator moments later, and this is the more precise signature:**
+> *"it can get pretty rhythmic but still pretty darn loud the whole time."*
+
+**That is NOT pump-and-recover.** Classic pumping ducks audibly between pulses; this stays loud
+throughout with rhythmic movement riding on top. The signature is **continuous heavy gain
+reduction with periodic deeper dips** — i.e. the master never returns to unity at all, and the
+quarter-note gate modulates how far below unity it sits.
+
+**This is exactly what the plan's own §1 note predicted and nobody had confirmed by ear:**
+*"'each stage ≤ 1.0' combined with 'master threshold 0.9' still means the master is engaged
+essentially always."* The operator has now confirmed that audibly.
+
+**The mechanism, complete:** the comb at high feedback rings with a **6.7 s T60**, so it fills the
+gaps between gate pulses and holds the level up continuously — that is the "loud the whole time."
+The gate then pulses on top of that floor, driving periodic deeper reduction — that is the
+"rhythmic." Both halves of the description are accounted for, and both come from the same place.
+
+**Consequence: B7.1 becomes MORE likely to be the right fix, not less.** Continuous engagement is
+precisely the condition retargeting the ceiling to `C = 0.80` removes. F2.0's job is now to
+measure *how far below unity* the envelope sits in the operator's real condition — the harness's
+0.12 dB is the right shape and plainly the wrong magnitude.
+
+**The likely rhythm source, traced:** the ASR gate is open for the first half of every quarter
+note and closed for the second (`FroggersAppCore.hpp:607-612`, `gateOpen = phase < 0.5`). So the
+instrument pulses at the transport's quarter-note rate **by design**. Each pulse slams the master,
+whose release is **100 ms** (`kSharedReleaseSeconds`, `dsp/Limiter.hpp:64`) — long enough that at
+ordinary tempi the envelope has not recovered before the next pulse arrives. **That is
+tempo-locked pumping, and it is a property of the gate meeting the release, not of any one
+stage.** F2.0a's duty-cycle measurement should therefore be read against the quarter-note period,
+not against an arbitrary window.
+
+**"Specific to the Filter bank" narrows the amplifier.** Crispy scrambles all 8 bits of its own
+bank's parameters. On Drive that reaches parameters bounded by the sine fold; on Delay/Reverb,
+time-effect parameters behind wet limiters. **Only on Filter does it reach the comb feedback / LP
+/ peak-Q maxima continuously** — the resonant parameters W2.0 ranked as offenders 1-3. This is
+direct operator confirmation of that ranking, and it means the treatment target is the filter's
+resonant path, not Crispy.
+
+**Operator's objection to the isolation test, recorded because it is correct:**
+> *"i don't see why delay send and reverb wet aren't already clamped sufficiently by design"*
+
+They are clamped — B6a/B6b put wet limiters on both. **The point is the level they clamp TO.**
+Every per-stage limiter ships `ceiling = kSharedCeiling = 1.0` while the master's threshold is
+**0.9**, so a correctly-clamped stage still delivers above the level at which the master begins
+working. The stages are not unclamped; they are clamped just above the wrong line. That is the
+entire headroom-budget defect, and it is why B7.1 retargets the **ceiling** rather than adding
+more limiters.
+
 - [ ] **F2.0 — BLOCKING: B7.1 is not yet justified by measurement. Added 2026-08-06.**
 
       B7.5 is red and will discriminate B7.1 — that part works. **But the numbers say B7.1 alone
