@@ -548,7 +548,30 @@ hold the level up continuously between gate pulses — the operator's *"pretty d
 time"* floor — with the quarter-note gate riding on top as the *"rhythmic"* part. Filter-specific,
 exactly as reported.
 
-- [ ] **F3.2c — THE DECISIVE MEASUREMENT. Run this before anything else in F3.**
+> ### ⚠ F3.3 CAN MASK F3'S SYMPTOM WITHOUT FIXING ITS CAUSE — sequencing trap, found 2026-08-07
+>
+> F3.3 changes the Stop flush to reset **all 14** stateful units instead of 2, which means the comb
+> gets zeroed at Stop. **A parametric oscillator with zero state has nothing left to amplify**, so
+> F3's audible symptom may simply disappear once F3.3 lands — while the underlying instability is
+> completely untouched.
+>
+> That matters because the same instability is the leading explanation for **F2**, which happens
+> during PLAY, where no flush ever runs. Curing Stop and declaring the mechanism understood would
+> be a green-while-wrong at the design level rather than the test level: symptom gone, cause
+> intact, and the harder bug left looking unrelated.
+>
+> **Therefore:**
+> 1. **Never describe F3.3 as fixing F3.** It is an OMNI §1/§8 duplication fix. F3.1 already showed
+>    the enumeration defect is not F3's cause.
+> 2. **Run F3.2c AFTER F3.3 lands, against the new flush**, and read the result as follows:
+>    - **still sustains** → the pumping re-grows from numerical noise; root cause is real, present,
+>      and unfixed. F2 and F3 are the same bug.
+>    - **goes silent** → the reset is sufficient for the Stop symptom, but says **nothing** about
+>      play-time behaviour. F2 remains open and must be measured separately, during play.
+> 3. A measurement taken while F3.3 was half-applied would have been worthless in a way that
+>    produces a confident number — the lead dispatched exactly that by mistake and killed the run.
+
+- [ ] **F3.2c — THE DECISIVE MEASUREMENT. Run this AFTER F3.3 lands (see the trap above).**
       Re-run F3.1's harness with ONE delta: a modulation depth on **Filter slot 5 (Comb feedback)**
       from an audio-rate source, so `fb` is swept while the transport is stopped. Everything else
       identical. Report output magnitude and `filterChain.comb` at t+1 s, t+5 s, t+30 s, t+60 s
