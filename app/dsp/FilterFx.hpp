@@ -185,8 +185,8 @@ inline constexpr float kMaxResonantBumpHeight = 2.0f;
 //     this exact "gain reduction that does not pump" job (the master's own
 //     `kDefaultReleaseSeconds`, dsp/Limiter.hpp) rather than inventing a
 //     second number where the measurement gave no reason to.
-inline constexpr float kPeakLimiterThreshold = 0.7f;
-inline constexpr float kPeakLimiterCeiling = kSharedCeiling;
+inline constexpr float kPeakLimiterThreshold = 0.7f;  // F2.1b: unchanged -- MEASURED (above), already strictly below kStageCeiling.
+inline constexpr float kPeakLimiterCeiling = kStageCeiling;  // F2.1b: retargeted from kSharedCeiling.
 // F2.1a: see dsp::OutputLimiter::kDefaultThreshold's own static_assert
 // (dsp/Limiter.hpp) for why a negative headroom is catastrophic AND silent.
 static_assert(kPeakLimiterThreshold < kPeakLimiterCeiling,

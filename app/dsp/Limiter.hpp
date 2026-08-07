@@ -55,19 +55,41 @@ namespace synth_froggers::dsp {
 //
 // `kSharedCeiling` is full scale everywhere: a limiter's ceiling is what it
 // must never let through, and that is 1.0 for every stage regardless of
-// where the stage sits.
+// where the stage sits. F2.1b: this stays the MASTER's ceiling only
+// (dsp::OutputLimiter::kDefaultCeiling) -- the master is deliberately
+// unchanged by the retarget below.
 inline constexpr float kSharedCeiling = 1.0f;
+// F2.1b: the ceiling every NON-master per-stage limiter (peak, delay wet,
+// reverb wet, Drive's output limiter) budgets to. Before this landed, every
+// per-stage limiter shipped `ceiling = kSharedCeiling = 1.0` while the
+// master's own threshold sits at 0.9, so a correctly-clamped stage could
+// still legitimately deliver above the level the master starts working at
+// -- on the operator's post-RequestRandomizeAll() + Filter Crispy max
+// repro the master's envelope measured duty cycle 1.000 (it NEVER returned
+// to unity across 256 blocks; min 0.9666, mean 0.9784, range 0.0245).
+// Narrowing every per-stage budget to this ceiling is what F2.2's make-up
+// gain (1/kStageCeiling, applied once in FroggersAppCore.hpp) restores the
+// headroom for.
+inline constexpr float kStageCeiling = 0.80f;
 // `kSharedReleaseSeconds`: 100ms at all four sites. B5 derived it from the
 // peak's measured residual decay (-60dB in 11.79ms at max Q, so ~8.5x
 // margin) and B6 measured it as correct for delay and reverb too; each
 // stage's own comment already said "matches the master". One value.
 inline constexpr float kSharedReleaseSeconds = 0.1f;
 
-// NOTE for B7.1 (§K): the per-stage THRESHOLDS are currently scattered
-// (0.7 peak, 0.9 delay/reverb/master). B7.1 retargets every stage to the
-// measured shared ceiling C = 0.80. When that lands, the per-stage
-// threshold constants collapse into one shared value here too -- and the
-// master's stays 0.9, since it is the backstop that must fire LAST.
+// NOTE for B7.1 -- LANDED (F2.1b, this file's kStageCeiling above). The
+// per-stage THRESHOLDS did NOT collapse into one shared value, contrary to
+// what this note originally predicted: peak (0.7, dsp/FilterFx.hpp) and
+// Drive's output limiter (0.7, dsp/Drive.hpp) were already measured
+// strictly below the new ceiling and are unchanged; delay and reverb wet
+// (dsp/Delay.hpp, dsp/Reverb.hpp) were 0.9 -- ABOVE the new 0.80 ceiling,
+// the negative-headroom exponential-amplifier trap F2.1a's static_asserts
+// exist to catch -- and were lowered to 0.72, preserving each one's
+// original threshold/ceiling ratio (0.9/1.0 == 0.72/0.80) rather than being
+// re-tuned by accident. Every non-master stage's `ceiling` now points at
+// `kStageCeiling` above instead of `kSharedCeiling`; the master's stays
+// `kSharedCeiling` (1.0) with threshold 0.9, since it remains the backstop
+// that must fire LAST.
 
 // VST/PLUGIN NOTE (operator, 2026-07-29, design.md A2a -- required comment,
 // carried from this struct's original definition site): this stage does NOT

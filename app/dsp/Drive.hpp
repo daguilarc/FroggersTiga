@@ -447,12 +447,15 @@ struct DriveBlendPhase
     // Measured tuning (class comment): below the master's 0.9 threshold,
     // same headroom logic as the peak branch's kPeakLimiterThreshold.
     static constexpr float kOutputLimiterThreshold = 0.7f;
-    // F2.1a: this limiter is Configure()'d against kSharedCeiling (see the
-    // outputLimiter.Configure(...) call below), so that is the ceiling the
-    // invariant is checked against. See dsp::OutputLimiter::kDefaultThreshold's
-    // own static_assert (dsp/Limiter.hpp) for why a negative headroom is both
-    // catastrophic and invisible to every finiteness guard in the suite.
-    static_assert(kOutputLimiterThreshold < kSharedCeiling,
+    // F2.1a/F2.1b: this limiter is Configure()'d against kStageCeiling (see
+    // the outputLimiter.Configure(...) call below, retargeted off
+    // kSharedCeiling by F2.1b), so that is the ceiling the invariant is
+    // checked against -- unchanged threshold (0.7, MEASURED, class comment
+    // above), already strictly below kStageCeiling (0.80). See
+    // dsp::OutputLimiter::kDefaultThreshold's own static_assert
+    // (dsp/Limiter.hpp) for why a negative headroom is both catastrophic and
+    // invisible to every finiteness guard in the suite.
+    static_assert(kOutputLimiterThreshold < kStageCeiling,
                   "threshold must stay strictly below ceiling; a negative headroom turns "
                   "DesiredMagnitude into an exponential amplifier -- see dsp/Limiter.hpp");
     static constexpr float kOutputLimiterAttackSeconds = 2.0e-6f;  // 2 microseconds -- measured, see class comment.
@@ -508,7 +511,9 @@ struct DriveBlendPhase
         // header note), so re-running it here on a later Configure() call
         // is a harmless no-op re-derivation, not a behaviour change.
         coeffSmoother.output = -0.98f;
-        outputLimiter.Configure(sampleRate, kOutputLimiterThreshold, kSharedCeiling, kOutputLimiterAttackSeconds,
+        // F2.1b: retargeted from kSharedCeiling to kStageCeiling -- see the
+        // static_assert above.
+        outputLimiter.Configure(sampleRate, kOutputLimiterThreshold, kStageCeiling, kOutputLimiterAttackSeconds,
                                  kSharedReleaseSeconds);
     }
 

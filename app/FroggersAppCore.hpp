@@ -1259,7 +1259,20 @@ private:
         // guaranteed square wave); clamping a residual after gain
         // reduction has already brought the signal near 1.0 is a
         // different, harmless thing.
-        return std::clamp(outputLimiter_.Process(x), -1.0f, 1.0f);
+        //
+        // F2.2 make-up gain: F2.1b narrowed every per-stage limiter's
+        // ceiling to dsp::kStageCeiling (0.80, dsp/Limiter.hpp) so the
+        // master stops riding continuously below unity -- which also means
+        // a fully-driven chain now arrives here around 0.80 instead of
+        // 1.0. Restore that headroom AFTER the master limiter -- its
+        // threshold/headroom math (DesiredMagnitude, dsp/Limiter.hpp) is
+        // calibrated in absolute terms, so scaling BEFORE it would
+        // silently retune every stage's budget -- and BEFORE the trailing
+        // std::clamp, which stays as the residual-overshoot net. Derived
+        // from kStageCeiling rather than hardcoded so the two constants
+        // cannot drift apart.
+        constexpr float kMakeUpGain = 1.0f / dsp::kStageCeiling;  // F2.2: 1.25x, +1.9 dB.
+        return std::clamp(outputLimiter_.Process(x) * kMakeUpGain, -1.0f, 1.0f);
     }
 
     // Tasks 2.4/2.5 (Tier 2, magnitude recovery) -- the ceiling is DERIVED,

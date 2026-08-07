@@ -112,11 +112,17 @@ namespace synth_froggers::dsp {
 //     kDefaultReleaseSeconds, dsp::kPeakLimiterReleaseSeconds,
 //     dsp::kDelayWetLimiterReleaseSeconds) rather than inventing a fourth
 //     number where measurement gave no reason to move it.
-inline constexpr float kReverbWetLimiterThreshold = 0.9f;
-inline constexpr float kReverbWetLimiterCeiling = kSharedCeiling;
+// F2.1b: retargeted from 0.9 to 0.72, preserving the ORIGINAL
+// threshold/ceiling ratio (0.9/1.0 == 0.72/0.80) rather than picking a
+// round number, so this stage's measured knee (attack/release above) keeps
+// its character instead of being re-tuned by accident. 0.9 was strictly
+// below kSharedCeiling (1.0) but is ABOVE the retargeted kStageCeiling
+// (0.80) -- the negative-headroom exponential-amplifier trap F2.1a's
+// static_assert below exists to catch -- so it comes down in this same edit.
+inline constexpr float kReverbWetLimiterThreshold = 0.72f;
+inline constexpr float kReverbWetLimiterCeiling = kStageCeiling;
 // F2.1a: see dsp::OutputLimiter::kDefaultThreshold's own static_assert
-// (dsp/Limiter.hpp). THIS PAIR IS THE SECOND ONE F2.1b MUST LOWER -- 0.9
-// against a retargeted ceiling of 0.80 is exactly the negative-headroom case.
+// (dsp/Limiter.hpp).
 static_assert(kReverbWetLimiterThreshold < kReverbWetLimiterCeiling,
               "threshold must stay strictly below ceiling; a negative headroom turns "
               "DesiredMagnitude into an exponential amplifier -- see dsp/Limiter.hpp");
