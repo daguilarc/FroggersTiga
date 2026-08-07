@@ -635,6 +635,14 @@ public:
         }
         modulation_.PrepareBlockClock(quarterNotesPerSample);
 
+        // C3 (openspec/changes/frogg3rs-blowout-and-drilldown-repair/
+        // tasks.md F8.1): `block.outputs` is `AudioBlock`'s own field
+        // (External/Sheaf/projects/synth/include/synth/AppContext.hpp:70-85)
+        // -- set once for the whole callback, never reassigned inside this
+        // function -- so re-testing it every frame below was re-evaluating a
+        // loop-invariant up to 48,000x/second. Hoisted here, once per block.
+        const bool hasOutputs = block.outputs != nullptr;
+
         for (std::size_t frame = 0; frame < block.numFrames; ++frame) {
             const std::uint64_t absoluteOutputSample = block.startSample + frame;
             const float externalAudioSample =
@@ -773,7 +781,23 @@ public:
             // bus duplicates identically on both channels.
             const float sample = RouteAudioSample();
 
-            if (block.outputs != nullptr) {
+            if (hasOutputs) {
+                // C3 (§12 trace on the inner check): unlike `block.outputs`
+                // above, an individual `block.outputs[channelIx]` is NOT
+                // provably non-null by contract. `AudioBlock::outputs` is
+                // `float* const*` -- "Channel counts are the device's actual
+                // counts" (AppContext.hpp:68-69) says nothing about every
+                // slot in that count being populated, and Sheaf's own two
+                // reference apps that consume this exact contract both guard
+                // the identical way: `apps/braid-4/Braid4Core.hpp:678-689`
+                // checks `block.outputs[0]`/`[1]`/`[channel] != nullptr`
+                // individually even after already checking `block.outputs ==
+                // nullptr`, and `apps/miniapp/MiniAppCore.hpp:358-363` does
+                // `if (out == nullptr) { continue; }` per channel in the same
+                // shape as here. Two independent call sites in Sheaf's own
+                // codebase treating per-channel null as real is affirmative
+                // evidence, not just an unproven possibility -- so this check
+                // is real and stays, unlike the outer one above.
                 for (int channelIx = 0; channelIx < block.numOutputChannels; ++channelIx) {
                     float* const channel = block.outputs[static_cast<std::size_t>(channelIx)];
                     if (channel != nullptr) {
