@@ -1170,8 +1170,25 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
         return {partial};
     }
 
-    // Level 2: no deeper level exists (cap is 2, design D5) -- coincides
-    // with Randomize Page.
+    // Levels 2 and 3: coincides with Randomize Page -- randomize exactly the
+    // depths currently visible, one level, no descent.
+    //
+    // F5.3 (2026-08-07) raised kMaxDrillLevel from 2 to 3, so the old
+    // justification here ("no deeper level exists, cap is 2, design D5") is
+    // no longer why this branch is a fallthrough. The reason is now the
+    // OPERATOR'S SCOPE RULING, which F5 does not touch: "this is desired
+    // functionality for randomize all" -- Randomize All inside a drilldown
+    // acts on the drilled parameter, and only the level-1 branch above was
+    // ever specified to descend a further level. Levels 2 and 3 behave
+    // identically to each other and to Randomize Page, which is what raising
+    // the cap should leave unchanged.
+    //
+    // NOTE for F6, operator decision, deliberately NOT taken here: the
+    // level-1 branch descends one extra level (its own depths PLUS each of
+    // those depths' depths) while levels 2 and 3 do not. That asymmetry
+    // predates this change and is operator-approved at cap 2; whether level 2
+    // should now descend into the newly-reachable level 3 is a scope question
+    // for the operator, not an implementation detail. No behaviour changed.
     return RandomizePage(manager, drillIn);
 }
 

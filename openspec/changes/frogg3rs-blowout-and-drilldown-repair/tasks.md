@@ -875,7 +875,7 @@ ejection.
 > anything committed between this note and your dispatch moves them again.** Locate by symbol,
 > not by line: `grep -n "drillIn.Back()\|drillIn.PressEncoder" app/FroggersModulation.hpp`.
 
-- [ ] **F4.1: Delete both round trips.** Verified line numbers as of `1c37657`:
+- [x] **F4.1: Delete both round trips.** DONE (`06e2964`). Verified line numbers as of `1c37657`:
       - **Step 2's pair:** `drillIn.Back()` at **`:1134`**, then the encoder-id scan (`:1135-1141`),
         then `drillIn.PressEncoder(originalEncoderId)` at **`:1142`**.
       - **Step 3's pair:** `drillIn.PressEncoder(modIx)` at **`:1154`** and `drillIn.Back()` at
@@ -916,7 +916,7 @@ ejection.
 
       The whole operation must be **visually atomic**: press it, stay put, see the badges change on
       the page you are on.
-- [ ] **F4.2: Test** that level is unchanged across a level-1 Randomize All, and that the focused
+- [x] **F4.2: Test** DONE (`06e2964`). that level is unchanged across a level-1 Randomize All, and that the focused
       parameter's depths carry non-neutral level-2 sub-depths afterward. Also assert
       `LastRandomizePartial()` is false on a fresh patch — silent allocation failure is its own
       defect.
@@ -953,10 +953,10 @@ ejection.
       **returns without opening the view**. F5.3 must therefore assert that a level-3 view actually
       OPENS, not merely that an allocation count is small. A silent failure-to-open is exactly the
       shape of bug this change exists to stop shipping.
-- [ ] **F4.4: Commit.** F4 may be the whole visible symptom — the randomization was likely working
+- [x] **F4.4: Commit.** DONE (`06e2964`). F4 may be the whole visible symptom — the randomization was likely working
       all along and simply never visible.
 
-- [ ] **F5.1: Remove the §8 violation blocking level 3.** The cap is **two hardcoded `2`s with no
+- [x] **F5.1: Remove the §8 violation blocking level 3.** DONE (`49ce9af`) -- `kMaxDrillLevel` + `levelEncoders_` array; `wasLevelTwo` and `level1Encoder_` no longer appear anywhere in `app/`. The cap is **two hardcoded `2`s with no
       named constant**: `PressEncoder`'s `if (level_ >= 2)` (`:676`) and `Back()`'s
       `const bool wasLevelTwo = (level_ == 2)` (`:723`). Same concept, two definition sites, magic
       number both times. Replace with the array design the operator approved:
@@ -972,10 +972,10 @@ std::array<synth::PhysicalEncoderId, kMaxDrillLevel> levelEncoders_{};
     **a loop, not a special case.** This removes the `wasLevelTwo` branch entirely, which is the
     §5/§8 win: one mechanism at any depth instead of a hardcoded two-level special case.
 
-- [ ] **F5.2:** Land the refactor **with `kMaxDrillLevel` still 2** and confirm the suite is green.
+- [x] **F5.2:** DONE (`49ce9af`), landed at max=2 and verified green first. Land the refactor **with `kMaxDrillLevel` still 2** and confirm the suite is green.
       The refactor is a strict improvement independent of the new maximum, and separating the two
       keeps any breakage attributable.
-- [ ] **F5.3:** Raise `kMaxDrillLevel` to 3. One constant.
+- [x] **F5.3:** DONE (`9d0802c`). Raise `kMaxDrillLevel` to 3. One constant.
       **Acceptance criterion CORRECTED 2026-08-07 by F4.3's measurement — do not use the old
       `~105 vs 3615` allocation target, its mechanism was wrong.** Both figures described a
       traversal nobody performs, and the steady-state count was never the binding constraint
@@ -988,7 +988,7 @@ std::array<synth::PhysicalEncoderId, kMaxDrillLevel> levelEncoders_{};
       assert `Level() == 3` **and** `ShowingModulation()` is true at each step — a count assertion
       passes even when the view never opened. Record the peak materialized count as an observation,
       not as the pass condition.
-- [ ] **F5.4: Commit.**
+- [x] **F5.4: Commit.** DONE (`49ce9af`, `9d0802c` -- split so breakage stays attributable).
 
 ---
 
