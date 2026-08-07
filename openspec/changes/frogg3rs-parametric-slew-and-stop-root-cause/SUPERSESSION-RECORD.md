@@ -3,11 +3,16 @@
 **Created 2026-08-07. Supersedes `frogg3rs-blowout-and-drilldown-repair`**, which is
 **PARTIALLY DELIVERED — not failed.** That distinction is real and is argued below.
 
-The predecessor directory is left in place at
-`../frogg3rs-blowout-and-drilldown-repair/` rather than moved under `../archive/`. **Reason:
-its documents carry many `../archive/2026-08-06-.../` relative citations, and moving the
-directory would silently invalidate every one of them.** Physically archiving it is one
-`git mv` whenever someone wants it; nothing here depends on that happening.
+The predecessor is archived at `../archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/`.
+All 11 path references across `app/` and `openspec/` were rewritten to the archive path, and the
+3 now-one-level-too-deep `../archive/2026-08-06-` relative cites inside the moved directory were
+corrected. Verified: zero references to the old live path remain.
+
+*(An earlier revision of this record justified leaving it un-archived because "its documents
+carry many `../archive/` citations a move would invalidate." "Many" was three, and the
+already-archived predecessor contains zero such citations — the practice is that they get
+rewritten on the way in. It was a rationalization for skipping a fiddly move, caught by the
+operator. Recorded because §0 is about exactly this habit.)*
 
 ---
 
@@ -63,8 +68,9 @@ claimed success, did not work). **F3 is the exception and it is genuinely open.*
 
 ## 2. THE ONE BUG THAT IS STILL OPEN — F3, "Stop does not stop"
 
-**Root cause NOT identified. Three hypotheses have died, two of them to measurements that
-looked convincing.**
+**ROOT CAUSE IS NOW MEASURED — see the capture below.** What follows first is the history of
+three hypotheses that died on the way there, kept because two of them died to measurements that
+looked convincing and an auditor should know which conclusions were retracted and why.
 
 1. **Flush enumeration** (clears 2 of 14 units) — refuted by F3.1's measurement.
 2. **Parametric oscillation in the comb** — refuted by F3.2c, *validly* on the second attempt.
@@ -89,8 +95,14 @@ F3 may be the same bug," and it is the framing to work from.
 0→1) and still saw output exactly 0 at every post-Stop checkpoint.** *That is not a refutation.*
 It is the masking the predecessor's own trap box predicted: F3.3 zeroes all 14 units at the
 Stop edge, so the delay line starts at exactly 0 and a parametric oscillator with zero state
-has nothing to amplify. **The harness always fires the flush; the operator's app evidently does
-not.** Closing that gap is the whole remaining job.
+has nothing to amplify.
+
+**One inference in that paragraph was WRONG and the capture below disproves it.** It concluded
+"the harness always fires the flush; the operator's app evidently does not." **The app fires the
+flush too** — `allIdle=1`, `clearPending=0` from block 6. The real difference is that the app's
+chain supplies a *seed* the harness's does not, so the same zeroed loop re-grows there and stays
+silent here. Left visible rather than edited away: it is a clean example of a plausible inference
+drawn one step past the evidence, which is what §0 is about.
 
 ### ✅ ROOT CAUSE MEASURED 2026-08-07 — operator reproduced it, `F3DIAG` captured
 
