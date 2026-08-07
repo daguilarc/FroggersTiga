@@ -707,7 +707,71 @@ exactly as reported.
 > 3. A measurement taken while F3.3 was half-applied would have been worthless in a way that
 >    produces a confident number — the lead dispatched exactly that by mistake and killed the run.
 
-- [ ] **F3.2c — THE DECISIVE MEASUREMENT. Run this AFTER F3.3 lands (see the trap above).**
+> ### ⚠ F3.2c's FIRST RUN WAS INVALID — it measured a static patch and reported a refutation
+> **Found 2026-08-07 by the lead, on review. The reported "hypothesis refuted" does NOT stand;
+> the hypothesis is UNTESTED.**
+>
+> The run set Filter slot 5's own `SceneCenter(0) = 1.0f` — **comb feedback already at maximum** —
+> and then added a **full-positive** depth from `kModSlotVco1Audio` on top. Trace the arithmetic:
+> - `Parameter::GetRaw` is `ClampToRange(currentCenter_ * scale + offset + ApplyActive(...), range)`
+>   (`External/Sheaf/.../ParameterModulation.cpp:1211-1215`).
+> - `Modulators::ApplyActive` is `sum(values_[source] * depth)` (`:532-550`) — a plain product, with
+>   **no re-centering**.
+> - `kModSlotVco1Audio` is `NormalizeBipolarToUnit(vco1Raw)`, i.e. **[0,1], non-negative**.
+>
+> So the contribution is non-negative, the base is already at the top of the range, and the sum
+> clamps to maximum on **every single sample**. **`fb` was pinned, not swept.** The "modulated" run
+> was physically the same system as the control — which is exactly why it read *bit-identical* at
+> t+0.1 s. That bit-identity was the tell, and it was reported as corroboration.
+>
+> **This is §0's own rule violated in the measurement layer:** *"a test whose property is 'X did
+> not happen' MUST assert that the conditions for X were present."* The harness asserted AUDIO
+> liveness (pre-Stop peak 0.840133) and never asserted MODULATION liveness. Audio was live; the
+> modulation did nothing.
+>
+> **Re-run requirements — all three are mandatory:**
+> 1. **Put the base mid-range.** Set Filter slot 5's `SceneCenter(0)` to about **0.5**, not 1.0, so
+>    a non-negative contribution has somewhere to travel. Full depth then sweeps `fb` across roughly
+>    the upper half of its range instead of pinning it.
+> 2. **ASSERT MODULATION LIVENESS, and print it.** Record min and max of
+>    `PageParameter(Filter, 5).CachedKnobValue(0)` across the post-Stop window and require
+>    `max - min` to be materially non-zero. **If the knob does not move, the run is void — report
+>    that and stop.** No refutation may be recorded without this number.
+> 3. Keep everything else identical to F3.1, and keep the control run for comparison.
+
+- [x] **F3.2c — MEASURED 2026-08-07 (second, valid run). HYPOTHESIS REFUTED.** Harness committed at
+      `255db6f`, reproducible via `nice make -j2 build/froggers_stop_flush_repro`.
+
+      **Modulation liveness PROVEN this time** — comb-feedback `CachedKnobValue(0)` swept
+      **min 0.0 / max 1.0 / range 1.0** across the post-Stop window (control: flat 0.5, range 0).
+      That number is what the first run lacked and is why its refutation was retracted.
+
+      | t post-Stop | OUTPUT (mod) | OUTPUT (ctrl) | comb (mod) | comb (ctrl) |
+      |---|---|---|---|---|
+      | pre-Stop | 0.840133 | 0.840133 | — | — |
+      | +0.1 s | **0** | 0 | 3.21e-03 | 3.21e-03 |
+      | +1 s | **0** | 0 | 2.19e-15 | 6.59e-44 |
+      | +5 s … +60 s | **0** | 0 | 5.89e-44 | 6.59e-44 |
+
+      **Output is exactly 0.0 at every checkpoint with `fb` genuinely swept across its full range.**
+      No sustain, no re-growth from F3.3's zeroed state. `driveBlendPhase_` sits at its seeded 0.98
+      coefficient in both passes (F3.1's known artifact, not energy).
+
+      **Consequences, stated plainly:**
+      1. **F3's root cause is NOT parametric oscillation in the modulated comb path.** The leading
+         hypothesis in §F3.2 is dead. Do not carry it forward.
+      2. **F2 and F3 are therefore NOT the same bug** — that unification rested entirely on this
+         mechanism. F2 stands on its own evidence (F2.0b below), which is strong.
+      3. **The remaining untested F3 hypothesis is F3.2b** — the harness drives the transport
+         directly and never exercises the UI thread's `MessageIn::Stop` →
+         `desiredTransportRunning_` path the operator actually presses. Every existing Stop test
+         shares that blind spot. **That is now the ONLY open F3 lead.**
+      4. F3.3 (all 14 units reset at Stop) has landed, so the Stop symptom is expected to be gone
+         in the app. **Per the trap box, still do not describe F3.3 as fixing F3** — F6.1 decides
+         by ear, and the trap box's masking concern is now weaker only because the mechanism it
+         feared has been measured absent.
+
+- [ ] **F3.2c (superseded spec, kept for the refutation condition it states)**
       Re-run F3.1's harness with ONE delta: a modulation depth on **Filter slot 5 (Comb feedback)**
       from an audio-rate source, so `fb` is swept while the transport is stopped. Everything else
       identical. Report output magnitude and `filterChain.comb` at t+1 s, t+5 s, t+30 s, t+60 s
