@@ -84,6 +84,64 @@ parameters registered in `topLevelParameters_`.
 
 **Do not fix anything under this task beyond the test idiom itself.** Report first.
 
+### RESOLVED 2026-08-06 — the idiom is SMOOTHED, not broken. No 76-site fix is needed.
+
+**Measured** (diagnostic subagent, written value `1.0f` in every case, one block run):
+
+| Parameter | `ComputeAllParameters()`? | read back |
+|---|---|---|
+| `Drive, 0` | no | **0.80984** |
+| `Delay, 2` | no | **0.80984** |
+| `Drive, 0` | yes | **1.0** |
+| `Delay, 2` | yes | **1.0** |
+
+**The subagent's numbers are correct and its verdict ("IDIOM BROKEN", 76 invalid sites) is wrong.**
+Verified by the lead reading Sheaf directly (M1/M2 — a subagent report is a lead, not a fact):
+
+`Parameter::ProcessSamplePhase1` (`External/Sheaf/projects/synth/src/ParameterModulation.cpp:1486-1491`)
+**does** advance `currentCenter_` from a `SceneCenter` write, on a periodic interval:
+
+```cpp
+if (sampleIndex % group_.Config().targetComputeIntervalSamples == 0) {
+    Compute(group_.Manager().Scene());
+}
+```
+
+That call takes the **smoothed** branch of `ComputeAtDepth` (`:2205-2209`),
+`targetCenter_ += alpha*(rawCenter - targetCenter_)`, with
+`kDefaultTargetCenterAlpha = 0.0994231307` and `kDefaultTargetComputeIntervalSamples = 16`
+(`include/synth/ParameterModulation.hpp:171-172` — "about 50 Hz at 48 kHz").
+
+**The arithmetic confirms it exactly.** One block is 16 computes:
+`1 − (1 − 0.0994)^16 = 0.8127`, and `ProcessLitePhase1`'s second-stage `processLiteAlpha`
+smoothing pulls that to the measured **0.80984**. The value is a one-pole 81 % of the way to the
+commanded 1.0 — the signature of convergence, not of a write that never landed.
+
+`ComputeAllParameters()` reads 1.0 because it passes `smoothTargetCenter = false`, taking the
+`else` branch (`targetCenter_ = rawCenter`) — exact convergence in one call.
+
+**The two parameters reading an identical 0.80984 is NOT "coincidence of the default patch"**
+(the subagent's explanation, and it is wrong — `ApplyFroggersDefaultPatch` sets Drive slot 0 to
+0.2, not 0.80984). It is the deterministic result of the same one-pole taking the same number of
+steps toward the same target from the same starting state.
+
+**This also explains the original W2.2-ANOMALY properly, and it is not a defect.** P2 and P4
+produced bit-identical `first_engage_block` / `min_envelope` / `peak_output` because both were
+sampled at the same early point on the same smoothing trajectory toward the same target of 1.0.
+Nothing failed to reach the DSP. P1 vs P3 differed (101 vs 43) for the same reason it should —
+different targets converge differently once enough blocks elapse.
+
+**Consequences for the plan:**
+1. **The 76 `SceneCenter(0) =` sites are NOT invalid.** Do not "fix" them. A test that runs
+   hundreds of blocks (B7.5 runs 256, the existing limiter test runs 256) is fully converged long
+   before it asserts.
+2. **The real, narrower hazard: any test that asserts within roughly the first 30 blocks is
+   reading a partially-applied patch.** Sweep for those specifically rather than touching all 76.
+3. **B7.5 must call `ComputeAllParameters()` after its writes anyway** — not because the idiom is
+   broken, but so the hostile patch is exact from block 0 and the test measures the patch it
+   declares rather than a ramp into it. Add it as a shared test helper, used by new tests.
+4. **B7.5.0 is UNBLOCKED.** Proceed to B7.5.
+
 ---
 
 ## B7.5 — The end-to-end acceptance test. It MUST fail.
