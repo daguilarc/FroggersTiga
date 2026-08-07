@@ -732,7 +732,7 @@ public:
 private:
     synth::Bank* bank_;
     std::size_t level_ = 0;
-    static constexpr std::size_t kMaxDrillLevel = 2;   // F5.3 raises this to 3
+    static constexpr std::size_t kMaxDrillLevel = 3;   // F5.3: raised from 2, keeping the base-3 theme
     // E.2 (design A7a), generalised by F5.1: one remembered encoder id per
     // level of the current drill-in path -- `levelEncoders_[i]` is the
     // encoder id that opens level i+1. See PressEncoder's own comment for

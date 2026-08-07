@@ -212,7 +212,17 @@ TEST_CASE(depth_cells_materialize_on_level_one_open_for_connected_sources) {
     }
 }
 
-TEST_CASE(third_level_drill_in_is_refused) {
+// F5.3 (frogg3rs-blowout-and-drilldown-repair) retargeted this from "third
+// level refused" to "fourth level refused": kMaxDrillLevel moved from 2 to
+// 3, so the exact press sequence this test used to pin at level 2 now
+// legitimately succeeds and reaches level 3 (see
+// drill_in_reaches_level_three_with_genuinely_open_views_then_back_unwinds_one_level_at_a_time).
+// The cap-refusal behavior itself is unchanged -- only the depth it applies
+// at moved by exactly the same one level the cap itself moved by -- so this
+// keeps pinning "one press past the cap is refused" at the new boundary
+// rather than leaving a now-incorrect assertion red for a reason the F5.3
+// task packet did not call out by name.
+TEST_CASE(fourth_level_drill_in_is_refused) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);
 
@@ -221,11 +231,13 @@ TEST_CASE(third_level_drill_in_is_refused) {
     REQUIRE_TRUE(drillIn.Level() == 1);
     drillIn.PressEncoder(static_cast<synth::PhysicalEncoderId>(kModSlotVco1Audio));  // -> level 2
     REQUIRE_TRUE(drillIn.Level() == 2);
+    drillIn.PressEncoder(static_cast<synth::PhysicalEncoderId>(kModSlotVco2Audio));  // -> level 3
+    REQUIRE_TRUE(drillIn.Level() == 3);
 
-    synth::Parameter* levelTwoSelected = drillIn.BankRef().SelectedParameter();
-    drillIn.PressEncoder(static_cast<synth::PhysicalEncoderId>(kModSlotVco2Audio));  // would-be level 3: refused
-    REQUIRE_TRUE(drillIn.Level() == 2);
-    REQUIRE_TRUE(drillIn.BankRef().SelectedParameter() == levelTwoSelected);  // selection unchanged
+    synth::Parameter* levelThreeSelected = drillIn.BankRef().SelectedParameter();
+    drillIn.PressEncoder(static_cast<synth::PhysicalEncoderId>(kModSlotVco3Audio));  // would-be level 4: refused
+    REQUIRE_TRUE(drillIn.Level() == 3);
+    REQUIRE_TRUE(drillIn.BankRef().SelectedParameter() == levelThreeSelected);  // selection unchanged
 }
 
 TEST_CASE(back_exits_to_parameter_grid_from_level_one) {
@@ -267,6 +279,86 @@ TEST_CASE(back_from_level_two_returns_to_the_same_level_one_parameter_then_back_
     // Identity check, not just "some" level-1 parameter: the exact same
     // Parameter* that was selected before the level-2 press.
     REQUIRE_TRUE(drillIn.BankRef().SelectedParameter() == levelOneParam);
+
+    drillIn.Back();
+    REQUIRE_TRUE(drillIn.Level() == 0);
+    REQUIRE_TRUE(!drillIn.BankRef().ShowingModulation());
+}
+
+// F5.3 (frogg3rs-blowout-and-drilldown-repair): kMaxDrillLevel raised from 2
+// to 3. F4.3 traced the real level-3 risk -- Bank::OpenModulationView
+// returns early WITHOUT opening the view when parameter storage is short, so
+// a naive Level()-only check would pass even on a silent no-op. This test
+// therefore checks BankRef().ShowingModulation() at every step of the
+// descent, not just the level counter, then walks Back() down one level at a
+// time, and confirms the new cap refuses a fourth level exactly the way the
+// old cap refused a third (see fourth_level_drill_in_is_refused above). The
+// peak materialized-depth-parameter count is recorded as a reported
+// observation only -- F4.3 retracted the old "~105 vs 3615" allocation
+// target, its mechanism was measured wrong -- never as a pass condition.
+TEST_CASE(drill_in_reaches_level_three_with_genuinely_open_views_then_back_unwinds_one_level_at_a_time) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/true);
+
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+    REQUIRE_TRUE(drillIn.Level() == 0);
+
+    drillIn.PressEncoder(0);  // -> level 1, Reverb param 0
+    REQUIRE_TRUE(drillIn.Level() == 1);
+    REQUIRE_TRUE(drillIn.BankRef().ShowingModulation());
+    synth::Parameter* const levelOneParam = drillIn.BankRef().SelectedParameter();
+    REQUIRE_TRUE(levelOneParam != nullptr);
+
+    drillIn.PressEncoder(static_cast<synth::PhysicalEncoderId>(kModSlotVco1Audio));  // -> level 2
+    REQUIRE_TRUE(drillIn.Level() == 2);
+    REQUIRE_TRUE(drillIn.BankRef().ShowingModulation());
+    synth::Parameter* const levelTwoParam = drillIn.BankRef().SelectedParameter();
+    REQUIRE_TRUE(levelTwoParam != nullptr);
+
+    drillIn.PressEncoder(static_cast<synth::PhysicalEncoderId>(kModSlotVco2Audio));  // -> level 3 (only reachable since F5.3)
+    REQUIRE_TRUE(drillIn.Level() == 3);
+    REQUIRE_TRUE(drillIn.BankRef().ShowingModulation());
+    synth::Parameter* const levelThreeParam = drillIn.BankRef().SelectedParameter();
+    REQUIRE_TRUE(levelThreeParam != nullptr);
+
+    auto countMaterialized = [](synth::Parameter& parameter) {
+        std::size_t count = 0;
+        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+            if (parameter.ModulationDepthParameter(modIx) != nullptr) {
+                ++count;
+            }
+        }
+        return count;
+    };
+    const std::size_t peakMaterialized = countMaterialized(*levelOneParam) + countMaterialized(*levelTwoParam) +
+                                          countMaterialized(*levelThreeParam);
+    std::cout << "[OBSERVED] peak materialized depth parameters across a level-3 descent: " << peakMaterialized
+              << "\n";
+
+    // The cap is now 3: a press at level 3 that is not the Target/Back cell
+    // must be refused exactly the way a press at the old level-2 cap used to
+    // be refused.
+    drillIn.PressEncoder(static_cast<synth::PhysicalEncoderId>(kModSlotVco3Audio));  // would-be level 4: refused
+    REQUIRE_TRUE(drillIn.Level() == 3);
+    REQUIRE_TRUE(drillIn.BankRef().SelectedParameter() == levelThreeParam);
+
+    // Back() from here on is checked by Level() only (as specified), not by
+    // SelectedParameter() identity: Deselect() (which Back() calls) ends
+    // with CollectNeutralLocalParameters(), which reclaims any depth
+    // parameter still at its neutral default -- true here, since this test
+    // only navigates and never writes a value. levelTwoParam/levelThreeParam
+    // can therefore be pruned by the very first Back() below and a
+    // DIFFERENT depth parameter re-materialized at the same cell on replay;
+    // Back()'s job is to restore the LEVEL, not to guarantee pointer
+    // identity for a never-written depth parameter across that prune cycle.
+    // (levelOneParam is exempt from this -- it is a fixed top-level page
+    // parameter, never pruned -- see the sibling back_from_level_two_*
+    // test's own identity check for that already-covered case.)
+    drillIn.Back();
+    REQUIRE_TRUE(drillIn.Level() == 2);
+
+    drillIn.Back();
+    REQUIRE_TRUE(drillIn.Level() == 1);
 
     drillIn.Back();
     REQUIRE_TRUE(drillIn.Level() == 0);
