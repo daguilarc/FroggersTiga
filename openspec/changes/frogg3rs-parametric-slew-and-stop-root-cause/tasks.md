@@ -99,14 +99,44 @@ actually hears it. This is structurally the same move as F3.3, which reset all 1
 Stop symptom vanish in the harness, and left the cause intact. **This project has already paid
 for that mistake once; do not describe transport-gating as fixing F3.**
 
-- [ ] **S1a.1 — OPERATOR DECISION, do not decide this at an implementer.** Should modulation
-      free-run while the transport is stopped at all? It is a musical question (free-running LFOs
-      that stay in motion vs. a frozen patch), not a correctness one, and both answers are
-      defensible. Bring the trade-off, not a recommendation dressed as a finding.
-- [ ] **S1a.2 — If gating is chosen, it is defense-in-depth ONLY**, and lands *after* S2 with S2's
-      measurement recorded first, so the slew's effect on F2 stays attributable. Gate
-      `modulation_.Step()` alone, never `parameters_.ProcessSample()`, and confirm the visualizers
-      still behave.
+- [x] **S1a.1 — OPERATOR DECISION TAKEN 2026-08-07: modulation must NOT free-run while stopped.**
+      Verbatim: *"no, modulation should not free-run while stopped lol. come on."* Not open;
+      implement it.
+
+- [ ] **S1a.2 — Gate `modulation_.Step()` on the transport. NOT YET IMPLEMENTED.**
+      **Groundwork already traced by the lead — verified by reading, reuse it rather than
+      re-deriving:**
+      - The call site is `modulation_.Step(vcoDrive(0), …, transportQuarterNotes)` in
+        `FroggersAppCore::ProcessBlock`'s per-sample loop
+        (`grep -n "modulation_.Step" app/FroggersAppCore.hpp`). Transport state is passed *in* as
+        an argument today; it does not gate the call. Gating is `if (transportQuarterNotes.has_value())`
+        around it — the same predicate the ASR gate above already uses.
+      - **`Step()`'s own clock-driven lanes ALREADY do this.** `StepClockDrivenLanes` returns early
+        on `!transportQuarterNotes.has_value()` — its comment reads *"transport not running / no
+        clock plan: no tick, gate-closed-equivalent."* What kept running was the rest: the random
+        S&H lanes and the VCO audio sources — i.e. exactly what feeds `kModSlotVco1Audio`, the
+        audio-rate source that pumps the loops. **This change makes the rest of `Step()`
+        consistent with what its own clock lanes already did.**
+      - **The UI concern is settled, it does not block:** `modulation_.PublishUiState()` is called
+        once per block **independently of `Step()`**, so gating does not stop UI publication. The
+        visualizers show a held state rather than going dark.
+      - **`parameters_.ProcessSample()` must stay ungated** (B7.5.0: a `SceneCenter` write only
+        reaches the DSP through its periodic smoothed `Compute()`, so gating it would freeze knob
+        edits and Randomize All until Play). Only the SOURCES stop.
+      - Sources will hold their last value rather than resetting to neutral. That is what "not
+        free-running" means, and it is sufficient for F3: a held coefficient leaves the loop
+        STATIC, and a static `fbk <= 0.98` decays by construction.
+
+      **Still label it accurately in the commit: this removes the post-Stop symptom and leaves
+      F2's blowout DURING PLAY untouched**, because a loop whose gain is swept at audio rate is
+      unstable whether or not the transport runs. Same shape as F3.3, which reset all 14 units and
+      cured nothing. The causal fix is S2.
+
+      **Verification must be the `F3DIAG` capture, not the suite.** The harness has never
+      reproduced F3, so a green suite proves nothing here. Re-run with `FROGG3RS_STOP_DIAG=1` and
+      the operator's reproducing patch; the peak must decay after the flush instead of climbing to
+      0.999999 and pinning there. Compare against
+      `F3DIAG-capture-2026-08-07.txt` in this directory.
 
 ---
 
