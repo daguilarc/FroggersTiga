@@ -482,21 +482,96 @@ every voice to `Stage::Release` (`dsp/VoiceEnvelope.hpp:93`), and `releaseStep` 
 zero by `kMinTimeSeconds`, so `m_level` decrements monotonically to Idle regardless of modulation.
 Chase the flush, not the gate.
 
-- [ ] **F3.1: Print which stage is non-zero after Stop** (M1 — the predecessor never took this
-      one print). Instrument each of the thirteen units' output magnitude per block for 60 s after
-      Stop, in a scratch harness, on a patch with comb feedback at max and reverb Hold at max.
-      Report which are non-zero at t+5 s, t+30 s, t+60 s. **A table of numbers.**
-- [ ] **F3.2: Write the failing test.** Post-Stop, from that patch, assert output magnitude is
-      below a silence threshold after the ~50 ms stop fade plus a margin. It must FAIL.
-- [ ] **F3.3: Fix — single-source the stage enumeration (OMNI §1, §8).** Do **not** add two more
-      hand-written `Reset()` calls beside `delay_`/`reverb_`; that reproduces the defect one size
-      larger. Extract the unit list `RecoverPoisonedUnitState` already walks into one place with
-      two consumers — fault recovery and the Stop flush — so "every stateful stage" has exactly one
-      definition site. Correct the false comment at `:623-626` in the same edit.
-- [ ] **F3.4:** Confirm F3.2 passes and the full suite stays green. Confirm the reverb tail and
-      delay repeats still ring normally **while the transport is running** — the flush must remain
-      gated on the Stop edge and `AllIdle()`, not become an unconditional reset (that would cut
-      musical tails, which is why the per-unit design exists).
+- [x] **F3.1 — MEASURED 2026-08-07. THE TRACED HYPOTHESIS IS REFUTED: on this patch, Stop stops.**
+
+      Fourteen units (not thirteen — the lead miscounted; it is ten `RecoverUnitIfNeeded` plus four
+      `RecoverIfNonFinite`) instrumented after Stop, comb feedback and reverb Hold at max.
+
+      | | pre-Stop | t+0.1 s | t+1 s | t+5 s | t+30 s | t+60 s |
+      |---|---|---|---|---|---|---|
+      | **OUTPUT peak** | **0.840133** | 1.28e-05 | 1.64e-10 | 2.84e-32 | **0** | **0** |
+      | `filterChain.comb` | — | 0.995679 | 0.003619 | 2.36e-05 | 3.74e-16 | 5.20e-29 |
+      | reverb tank | — | 1.26e-04 | 2.26e-04 | 1.26e-04 | 3.34e-06 | 4.27e-08 |
+      | `delay_` line | — | 0 | 0 | 0 | 0 | 0 |
+      | `outputLimiter_.envelope` | — | 1 | 1 | 1 | 1 | 1 |
+
+      **The instrument was genuinely loud before Stop (0.84) and is silent after it.** The comb
+      decays cleanly, the reverb tank decays, output is at 1e-10 within a second and exactly zero
+      by 30 s. **The traced mechanism — comb and `driveBlendPhase_` re-exciting delay/reverb past
+      the one-shot flush — does not reproduce.**
+
+      **A lead error worth recording:** `driveBlendPhase_` reads a constant **0.98** at every
+      timepoint, which looks like a stuck resonator. It is not. `DriveBlendPhase::StateMagnitude()`
+      returns `max(|allpassX1|, |allpassY1|, |coeffSmoother.output|)`, and `coeffSmoother.output`
+      is seeded to `-0.98f` by `Reset()`. **That is a coefficient, not signal energy.** Reading it
+      as a leak is the same class of error as everything else on this project's record.
+
+      **Consequence: the §1/§8 enumeration defect is REAL but is NOT F3's cause.** It is a
+      code-quality fix (F3.3) and must not be described in any commit as fixing Stop.
+
+- [ ] **F3.2 — Root cause still UNKNOWN. Two candidates, neither yet measured.**
+  - **F3.2a — the patch is not the operator's condition.** F3.1 used 5 static parameters and no
+    modulation. The report came after Randomize All, with dozens of parameters carrying depths
+    across all six banks. **Same gap as F2.0b — measure both in one harness.**
+  - **F3.2b — the harness may not exercise the Stop the operator presses.** The rig drives the
+    transport directly. In the app, the Stop button pushes `MessageIn::Stop` from the UI thread
+    through `desiredTransportRunning_` (`FroggersAppCore.hpp:348,362`). **If the defect is in that
+    path, F3.1 cannot see it by construction — and every existing Stop test shares the blind
+    spot.** Trace that path before writing another DSP-level test.
+
+      Only after one of these reproduces does a failing test get written. **Liveness assertion is
+      mandatory** (§0): assert the instrument was loud pre-Stop, as F3.1 did at 0.840133.
+
+- [ ] **F3.3 — Fix the enumeration defect on its own merits (OMNI §1, §8). Not a Stop fix.**
+
+      The concept "every stateful unit" has two definition sites: `RecoverPoisonedUnitState`
+      (14 units, complete) and the Stop flush (2 units, truncated), the latter justified by a
+      comment at `:623-626` asserting "VCOs/filters/drive do not [self-sustain]" — false by this
+      project's own measurements, and asserted rather than traced.
+
+      **Enumerate hierarchically: each struct lists its own members, directly beneath their
+      declarations.** Not one 14-entry list far from the members.
+
+```cpp
+enum class Recovery { FiniteOnly, Magnitude };   // Tier 1 / Tier 2
+
+// dsp::FilterFxChain, immediately under its member declarations
+template <typename V> void ForEachStatefulUnit(V&& visit) {
+    visit(comb, Recovery::Magnitude);
+    visit(peak, Recovery::Magnitude);
+    visit(scoopNotch, Recovery::Magnitude);
+    visit(peakLimiter, Recovery::FiniteOnly);
+}
+
+// FroggersAppCore composes rather than re-listing
+template <typename V> void ForEachStatefulUnit(V&& visit) {
+    visit(audioVco1_, Recovery::Magnitude); /* …vco2, vco3, driveBlendPhase_… */
+    drive_.ForEachStatefulUnit(visit);
+    filterChain_.ForEachStatefulUnit(visit);
+    visit(delay_, Recovery::FiniteOnly);
+    visit(reverb_, Recovery::FiniteOnly);
+    visit(outputLimiter_, Recovery::FiniteOnly);
+}
+```
+
+      **The tier is DECLARED, never inferred from the interface.** `if constexpr (requires {
+      unit.StateMagnitude(); })` is tempting and wrong: F3.1 added `StateMagnitude()` to
+      `StereoDelay` and `Reverb` purely as a diagnostic, and their own comments require them to
+      stay Tier-1-only (a BIBO-stable loop settles at a large-but-finite level and the Tier-2
+      ceiling would misfire). Inferring tier would mean **adding a read-only diagnostic silently
+      reclassifies a unit's fault recovery.**
+
+      Both consumers then collapse to one line: the Stop flush ignores the tag and calls `Reset()`;
+      recovery switches on it. Delete the false comment in the same edit.
+
+      **Do NOT** relocate the ten parallel `…OverCeilingSeconds_` members in this task. They are a
+      second §8 instance and a genuine follow-up, but a Stop-scope fix and a state refactor must
+      not land in one commit.
+
+- [ ] **F3.4:** Suite stays green (except the two known acceptance-gate reds). Confirm the reverb
+      tail and delay repeats still ring normally **while the transport is running** — the flush
+      must remain gated on the Stop edge and `AllIdle()`, never an unconditional reset. Confirm
+      rapid Stop→Play still cancels the pending clear.
 - [ ] **F3.5: Commit.**
 
 ---
