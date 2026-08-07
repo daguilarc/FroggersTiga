@@ -858,6 +858,15 @@ public:
     // (`TestFilterPeakLimiter()`, mirroring `TestFilterPeak()` above).
     auto& TestOutputLimiter() { return outputLimiter_; }
 
+    // B7.5: test/inspection access to the live synth::ParameterManager, same
+    // convention as TestOutputLimiter() above. `context_` (below) is
+    // private and there is no other public route to it; this is the
+    // narrowest accessor that reaches ComputeAllParameters(), which
+    // FroggersAudioRoutingTests.cpp's ApplyPatchNow() needs to make a
+    // SceneCenter write converge exactly before the first RunBlocks()
+    // (B7.5.0's settling rule).
+    synth::ParameterManager& TestParameterManager() { return *context_->parameterManager; }
+
 private:
     synth::AppContext* context_ = nullptr;
 

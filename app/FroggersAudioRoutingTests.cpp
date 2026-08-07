@@ -90,6 +90,21 @@ synth::RuntimeDataPaths UseScratchRuntimeDataPaths(const char* testName) {
 using Rig = synth_rig::SynthRig<synth_froggers::FroggersApp>;
 namespace dsp = synth_froggers::dsp;
 
+// B7.5.0: SceneCenter writes are applied through a SMOOTHED periodic Compute
+// (Parameter::ProcessSamplePhase1, alpha 0.0994 every 16 samples), so a patch
+// is only ~81% applied one block after it is written. ComputeAllParameters()
+// passes smoothTargetCenter=false and therefore converges exactly, in one
+// call. Call this after the SceneCenter writes and before the first
+// RunBlocks() whenever a test asserts on a patch rather than on a ramp.
+//
+// Route verified against FroggersAppCore.hpp (M1): `context_` is private
+// with no public accessor, so there is no `rig.Application().Context()` to
+// call through. `TestParameterManager()` (FroggersAppCore.hpp, beside
+// TestOutputLimiter()) is the narrow test-only accessor added for this.
+inline void ApplyPatchNow(Rig& rig) {
+    rig.Application().TestParameterManager().ComputeAllParameters();
+}
+
 // Peak absolute magnitude across every captured channel sample -- task
 // 6a.5's "assert some output sample exceeds a small epsilon in magnitude",
 // which plain finiteness (task 2.3) does not require.
@@ -617,6 +632,56 @@ TEST_CASE(overdriven_patch_stays_bounded) {
             REQUIRE_TRUE(std::fabs(sample) <= 1.0f + 1.0e-3f);
         }
     }
+}
+
+// -----------------------------------------------------------------------
+// B7.5 (proposal.md, "the acceptance criterion that governs everything"): the
+// master limiter is the BACKSTOP, not the gain-staging mechanism. With every
+// stage bounded to C, a hostile patch must not engage it at all. This test is
+// the only end-to-end proof of that; every other limiter test in this file
+// measures one stage under synthetic input (M3).
+TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("b7_5_hostile"));
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+
+    // The SAME hostile patch `overdriven_patch_stays_bounded` uses -- measured
+    // to engage the master at block 101, min envelope 0.809, so it is
+    // known-hostile by measurement rather than by assumption.
+    model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95
+    model.PageParameter(synth_froggers::FroggersBankId::Filter, 7).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb
+    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 8).SceneCenter(0) = 1.0f;  // Hold -> ceiling
+    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;  // fully wet
+    model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 1.0f;   // maximum Drive
+    // PLUS the operator's stated repro on top: Filter bank Crispy at max
+    // scrambles all 8 bits of every Filter parameter per read. NOTE the
+    // accessor -- Crispy is NOT in pageParameters_ (9 wide); it lives in its
+    // own `crispy_` array (FroggersParameters.hpp:413-414), and
+    // PageParameter(Filter, 14) throws std::out_of_range.
+    model.Crispy(synth_froggers::FroggersBankId::Filter).SceneCenter(0) = 1.0f;
+    // B7.5.0: a SceneCenter write is only ~81% applied after one block
+    // (Parameter::ProcessSamplePhase1's periodic smoothed Compute, alpha
+    // 0.0994 every 16 samples). This test must measure the patch it declares,
+    // not a ramp into it, so apply it exactly before the first block.
+    ApplyPatchNow(rig);
+
+    rig.StartAt(0);
+    auto& limiter = rig.Application().TestOutputLimiter();
+
+    float minEnvelopeSeen = 1.0f;
+    for (int block = 0; block < 256; ++block) {
+        rig.RunBlocks(1);
+        minEnvelopeSeen = std::min(minEnvelopeSeen, limiter.envelope);
+    }
+
+    REQUIRE_TRUE(!rig.SawNaN());
+    RequireFiniteStereo(rig.Output());
+    // LIVENESS -- without this the assertion below passes on silence, which is
+    // how the first version of this test passed while proving nothing. The
+    // instrument must actually be sounding for "the master never engaged" to
+    // mean anything.
+    REQUIRE_TRUE(PeakAbs(rig.Output()) > 0.1f);
+    // The property. Unity means the master never had to do anything.
+    REQUIRE_TRUE(minEnvelopeSeen > 0.999f);
 }
 
 // -----------------------------------------------------------------------
