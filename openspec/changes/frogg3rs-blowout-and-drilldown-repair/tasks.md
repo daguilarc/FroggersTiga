@@ -315,9 +315,41 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
       static gain staging vs. modulation-driven transients. Same hostile patch, same liveness
       assertion, same unity assertion, plus deep audio-rate modulation on the two parameters the
       evidence names:
-      - **Drive slot 8 (Phase)** — §K.1's 50× path, from an audio-rate source (`kModSlotNoise`).
+      - **Drive slot 8 (Phase)** — §K.1's 50× path.
       - **Filter slot 5 (Comb feedback)** — W2.2a's trim smoother was tuned against `rand()`
         sweeps, never against real modulation.
+
+      > #### ⚠ SOURCE CORRECTED 2026-08-06 — use `kModSlotVco1Audio`, NOT `kModSlotNoise`
+      >
+      > The first version of this step specified `kModSlotNoise` while citing §K.1's **50.5×**
+      > figure. **Those do not go together, and the implementer was right to stop.**
+      >
+      > §K.1 measured three distinct regimes: **1.002** under free random phase, **4.15** under
+      > full-bank per-sample-random modulation, and **50.5** under *"periodic phase/content
+      > coincidence — e.g. an LFO locked near the note's own period."* `kModSlotNoise` is
+      > `random_.UniformOpen01()` per sample — it can only ever reach the first regime. Citing the
+      > periodic number to justify a random source was a lead error, not a routing error.
+      >
+      > **Measured proof it was wrong**, from the noise-modulated attempt:
+      >
+      > | | minEnvelopeSeen | PeakAbs |
+      > |---|---|---|
+      > | static hostile patch | 0.985796 | 0.991599 |
+      > | + noise modulation | 0.985726 | 0.991473 |
+      >
+      > Identical to seven decimal places of relative difference. Random modulation of the allpass
+      > coefficient averages out; that is a real end-to-end confirmation of §K.1's own 1.002
+      > free-random figure, not a failure.
+      >
+      > **The right source is the VCO's own audio output.** `vco1AudioSource_ =
+      > NormalizeBipolarToUnit(vco1Raw)` (`FroggersModulation.hpp:384`) is registered as
+      > `kModSlotVco1Audio` (slot 6, `connected = true` at `:535-536`). It is periodic at the note
+      > frequency and **locked to the note's period by construction — it IS the note**, which is a
+      > stronger form of §K.1's "LFO locked near the note's own period" than an LFO could be. Its
+      > coincidence with the content passing through `DriveBlendPhase` is exact rather than
+      > approximate.
+      >
+      > Use `kModSlotVco1Audio` on Drive slot 8. Keep `kModSlotNoise` nowhere in this test.
 
 ```cpp
 // UNVERIFIED ROUTE (M1) -- read FroggersModulation.hpp and confirm before
