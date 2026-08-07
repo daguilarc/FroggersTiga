@@ -103,6 +103,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <span>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -206,7 +207,22 @@ struct PassResult {
 // audio-rate modulation depth from kModSlotVco1Audio. `scratchLabel` gives
 // each pass its own RuntimeDataPaths so the two Rig instances never share
 // scratch state.
-PassResult RunPass(bool withModulation, const char* scratchLabel, const char* passLabel) {
+// F3.2d (2026-08-07, operator): the modulated LOOP is now a parameter, not a
+// hardcoded one. F3.2c tested ONLY Filter slot 5 (comb feedback), found no
+// sustain, and its result was written up as "parametric oscillation is dead as
+// F3's root cause" -- generalizing from one stage to the whole mechanism, which
+// the measurement never supported. The operator's own diagnosis: the parametric
+// pumping shows up as the FILTER blowout (F2), while the infinite decay (F3) is
+// expressed in the DELAY, whose loop additionally has a modulated SEND feeding
+// it. Same mechanism, different stage, different symptom -- so the target has
+// to be a variable.
+struct ModTarget {
+    synth_froggers::FroggersBankId bank;
+    std::size_t slot;
+    const char* name;
+};
+
+PassResult RunPass(std::span<const ModTarget> targets, const char* scratchLabel, const char* passLabel) {
     PassResult result;
     constexpr double kSampleRateHz = 48000.0;
     Rig rig(/*patchPumpBudgetBlocks=*/64, ScratchPaths(scratchLabel));
@@ -223,21 +239,31 @@ PassResult RunPass(bool withModulation, const char* scratchLabel, const char* pa
     // pinned `fb` regardless of modulation.
     synth::Parameter& combFeedback = model.PageParameter(synth_froggers::FroggersBankId::Filter, 5);
     combFeedback.SceneCenter(0) = 0.5f;
+    // Liveness is asserted on the FIRST modulated target, whichever loop this
+    // pass is exercising -- not on a hardcoded comb reference, which would
+    // report a flat knob (and therefore VOID) for the delay pass while the
+    // delay knob swept perfectly well. Control passes have no target and fall
+    // back to comb, which correctly reads flat.
+    const synth::Parameter& livenessParam =
+        targets.empty() ? combFeedback
+                        : model.PageParameter(targets[0].bank, targets[0].slot);
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 8).SceneCenter(0) = 1.0f;  // Hold -> max, same as F3.1.
 
-    if (withModulation) {
-        // Route/bipolar-depth convention verified against
-        // FroggersAudioRoutingTests.cpp:733-759's
-        // master_limiter_stays_at_unity_under_live_modulation (see header
-        // comment). EnsureModulationDepth returns nullptr at storage
-        // capacity -- checked, not dereferenced blindly.
-        synth::Parameter* combFeedbackDepth = combFeedback.EnsureModulationDepth(synth_froggers::kModSlotVco1Audio);
-        if (combFeedbackDepth == nullptr) {
-            std::printf("%s: EnsureModulationDepth returned nullptr -- aborting this pass.\n", passLabel);
+    // Every modulated target's base sits MID-RANGE so a non-negative
+    // contribution has somewhere to travel (F3.2c correction #1) -- pinning a
+    // base at its ceiling is what silently voided the first run.
+    for (const ModTarget& target : targets) {
+        synth::Parameter& param = model.PageParameter(target.bank, target.slot);
+        param.SceneCenter(0) = 0.5f;
+        synth::Parameter* depth = param.EnsureModulationDepth(synth_froggers::kModSlotVco1Audio);
+        if (depth == nullptr) {
+            std::printf("%s: EnsureModulationDepth returned nullptr for %s -- aborting this pass.\n",
+                        passLabel, target.name);
             result.ok = false;
             return result;
         }
-        combFeedbackDepth->SceneCenter(0) = 1.0f;  // Bipolar: 0.5 == zero depth, 1.0 == full positive.
+        depth->SceneCenter(0) = 1.0f;  // Bipolar: 0.5 == zero depth, 1.0 == full positive.
+        std::printf("%s: modulating %s at audio rate (kModSlotVco1Audio, depth=+1.0)\n", passLabel, target.name);
     }
 
     rig.Application().TestParameterManager().ComputeAllParameters();  // B7.5.0: converge exactly before RunBlocks.
@@ -286,7 +312,7 @@ PassResult RunPass(bool withModulation, const char* scratchLabel, const char* pa
     const auto runBlocksTrackingLiveness = [&](std::size_t count) {
         for (std::size_t i = 0; i < count; ++i) {
             rig.RunBlocks(1);
-            const float knob = combFeedback.CachedKnobValue(0);
+            const float knob = livenessParam.CachedKnobValue(0);
             result.combKnobMin = std::min(result.combKnobMin, knob);
             result.combKnobMax = std::max(result.combKnobMax, knob);
         }
@@ -323,11 +349,11 @@ PassResult RunPass(bool withModulation, const char* scratchLabel, const char* pa
 
     const float combKnobRange = result.combKnobMax - result.combKnobMin;
     std::printf("--- Modulation liveness (entire post-Stop window, t+0 to t+%.0fs): "
-                "Filter slot 5 CachedKnobValue(0) ---\n",
-                checkpoints[4]);
+                "%s CachedKnobValue(0) ---\n",
+                checkpoints[4], targets.empty() ? "(control: Filter slot 5)" : targets[0].name);
     std::printf("  min=%.6g  max=%.6g  max-min=%.6g\n", static_cast<double>(result.combKnobMin),
                 static_cast<double>(result.combKnobMax), static_cast<double>(combKnobRange));
-    if (withModulation) {
+    if (!targets.empty()) {
         if (!(combKnobRange > kVoidLivenessThreshold)) {
             std::printf("  VOID: max-min <= %.3g -- modulation liveness NOT proven. "
                         "No refutation/confirmation may be drawn from this pass.\n",
@@ -345,9 +371,48 @@ PassResult RunPass(bool withModulation, const char* scratchLabel, const char* pa
 }  // namespace
 
 int main() {
-    const PassResult modulated = RunPass(/*withModulation=*/true, "f3_2c_mod", "MODULATED (base=0.5, kModSlotVco1Audio depth=+1.0 on Filter slot 5)");
-    const PassResult control = RunPass(/*withModulation=*/false, "f3_2c_control", "CONTROL (base=0.5, no modulation depth -- otherwise identical)");
+    using synth_froggers::FroggersBankId;
 
+    // F3.2d: three passes, one variable -- WHICH feedback loop is modulated.
+    // Delay slot 1 is Send and slot 2 is Feedback (FroggersParameters.hpp:175,
+    // "Delay time", "Send", "Feedback"), so the delay pass modulates BOTH the
+    // loop gain and the drive INTO the loop, which is the operator's reported
+    // condition and the one Randomize All guarantees.
+    static constexpr ModTarget kCombTargets[] = {
+        {FroggersBankId::Filter, 5, "Filter slot 5 (comb feedback)"},
+    };
+    static constexpr ModTarget kDelayTargets[] = {
+        {FroggersBankId::Delay, 1, "Delay slot 1 (Send)"},
+        {FroggersBankId::Delay, 2, "Delay slot 2 (Feedback)"},
+    };
+
+    const PassResult delayMod = RunPass(kDelayTargets, "f3_2d_delay",
+                                        "DELAY MODULATED (Send + Feedback, base=0.5, kModSlotVco1Audio depth=+1.0)");
+    const PassResult combMod = RunPass(kCombTargets, "f3_2c_mod",
+                                       "COMB MODULATED (Filter slot 5, base=0.5, kModSlotVco1Audio depth=+1.0)");
+    const PassResult control = RunPass({}, "f3_2c_control",
+                                       "CONTROL (base=0.5, no modulation depth -- otherwise identical)");
+
+    std::printf("################ SUMMARY: DELAY vs CONTROL ################\n");
+    std::printf("pre-Stop peak:  delay=%.6g  comb=%.6g  control=%.6g\n",
+                static_cast<double>(delayMod.prestopPeak), static_cast<double>(combMod.prestopPeak),
+                static_cast<double>(control.prestopPeak));
+    std::printf("modulated-knob range (post-Stop): delay=%.6g  comb=%.6g  control=%.6g\n",
+                static_cast<double>(delayMod.combKnobMax - delayMod.combKnobMin),
+                static_cast<double>(combMod.combKnobMax - combMod.combKnobMin),
+                static_cast<double>(control.combKnobMax - control.combKnobMin));
+    {
+        const std::size_t rows = std::min({delayMod.snapshots.size(), combMod.snapshots.size(),
+                                           control.snapshots.size()});
+        for (std::size_t i = 0; i < rows; ++i) {
+            std::printf("t+%.3fs  OUTPUT delay=%.6g comb=%.6g ctrl=%.6g\n", delayMod.snapshots[i].tSeconds,
+                        static_cast<double>(delayMod.snapshots[i].outputWindowPeak),
+                        static_cast<double>(combMod.snapshots[i].outputWindowPeak),
+                        static_cast<double>(control.snapshots[i].outputWindowPeak));
+        }
+    }
+
+    const PassResult& modulated = delayMod;
     std::printf("################ SUMMARY: MODULATED vs CONTROL ################\n");
     std::printf("pre-Stop peak:  modulated=%.6g  control=%.6g\n", static_cast<double>(modulated.prestopPeak),
                 static_cast<double>(control.prestopPeak));
@@ -364,5 +429,5 @@ int main() {
                     static_cast<double>(m.driveBlendPhase), static_cast<double>(c.driveBlendPhase));
     }
 
-    return (modulated.ok && control.ok) ? 0 : 1;
+    return (delayMod.ok && combMod.ok && control.ok) ? 0 : 1;
 }
