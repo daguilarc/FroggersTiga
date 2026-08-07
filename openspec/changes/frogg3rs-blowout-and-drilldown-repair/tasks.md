@@ -510,7 +510,58 @@ Chase the flush, not the gate.
       **Consequence: the §1/§8 enumeration defect is REAL but is NOT F3's cause.** It is a
       code-quality fix (F3.3) and must not be described in any commit as fixing Stop.
 
-- [ ] **F3.2 — Root cause still UNKNOWN. Two candidates, neither yet measured.**
+### F3.2 LEAD HYPOTHESIS — PARAMETRIC OSCILLATION. Traced by the lead 2026-08-07.
+
+**Modulation is not transport-gated.** `modulation_.Step(...)` and `parameters_.ProcessSample(...)`
+are called unconditionally in the per-sample loop (`app/FroggersAppCore.hpp:717,720`) — the
+transport state is passed *into* `Step` as an argument, it does not gate the call. So after Stop:
+
+- the ASR gate closes, the VCOs are silenced, **the scope goes flat** — matching the operator's
+  "the oscilloscope isn't moving";
+- but every modulation source keeps free-running, and keeps sweeping every modulated parameter at
+  audio rate — **including comb feedback, comb LP and peak Q.**
+
+**A feedback loop whose gain is modulated is not the same system as one whose gain is fixed.**
+`Comb::Process` is `out = in + fb·Saturate(lp(delayed))`. With `fb` static, that is a linear
+decaying system — which is exactly what F3.1 measured, decaying cleanly to 5.2e-29. With `fb`
+swept at audio rate it is a **time-varying** system, and time-varying feedback can pump energy in
+and self-sustain even when every instantaneous `|fb| < 1`. That is parametric amplification.
+
+**This project has already MEASURED this phenomenon and not named it.** §K.1 recorded
+`DriveBlendPhase` at **1.002** under free random phase but **50.5×** under *"periodic phase/content
+coincidence"* — a time-varying allpass coefficient pumping a recursive filter. Same mechanism,
+different stage. Nobody connected it to the comb.
+
+**It accounts for every element of the report, which no previous hypothesis did:**
+
+| observation | explained by |
+|---|---|
+| scope still | VCOs gated silent; modulation is not gated |
+| audio continues | comb self-sustaining, driven by modulated feedback, no input needed |
+| "harsh loud noise" | oscillation at the comb's delay frequency through its in-loop saturator |
+| "over a minute" | self-sustaining, not decaying — it has no reason to stop |
+| only after randomizing | randomize is what assigns modulation depths to Filter parameters |
+| F3.1 saw clean decay | F3.1 used STATIC parameters and no modulation — the one ingredient that matters |
+
+**And it may make F2 and F3 the same bug.** During play, the same parametrically-pumped comb would
+hold the level up continuously between gate pulses — the operator's *"pretty darn loud the whole
+time"* floor — with the quarter-note gate riding on top as the *"rhythmic"* part. Filter-specific,
+exactly as reported.
+
+- [ ] **F3.2c — THE DECISIVE MEASUREMENT. Run this before anything else in F3.**
+      Re-run F3.1's harness with ONE delta: a modulation depth on **Filter slot 5 (Comb feedback)**
+      from an audio-rate source, so `fb` is swept while the transport is stopped. Everything else
+      identical. Report output magnitude and `filterChain.comb` at t+1 s, t+5 s, t+30 s, t+60 s
+      against F3.1's baseline.
+      - **Output sustains instead of decaying → hypothesis confirmed**, F3's root cause is
+        parametric oscillation in a modulated feedback path, and the fix is about bounding a
+        time-varying loop, not about the flush enumeration.
+      - **Output still decays → hypothesis refuted.** Say so plainly and report the numbers; do
+        not adjust depth or source to chase it.
+      Also report whether `driveBlendPhase_` behaves differently under the same condition, since
+      §K.1's 50.5× is the same mechanism.
+
+- [ ] **F3.2 — Earlier candidates, now secondary to F3.2c.**
   - **F3.2a — the patch is not the operator's condition.** F3.1 used 5 static parameters and no
     modulation. The report came after Randomize All, with dozens of parameters carrying depths
     across all six banks. **Same gap as F2.0b — measure both in one harness.**
