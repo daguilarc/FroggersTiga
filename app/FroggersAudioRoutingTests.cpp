@@ -685,6 +685,101 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
 }
 
 // -----------------------------------------------------------------------
+// B7.5 Step 6 (2026-08-06): the test above proves the master stays at unity
+// under STATIC knobs only. This change's own acceptance criterion is "all
+// maxima, modulation live" -- section K.1 measured DriveBlendPhase's allpass
+// coefficient (read fresh every sample from the Drive/Phase knob) at 50.5x
+// under periodic phase/content coincidence, the largest known blowout path
+// in the instrument, and no static-knob test exercises it. This is the SAME
+// hostile patch as master_limiter_stays_at_unity_across_hostile_patch, PLUS
+// deep audio-rate modulation on Drive slot 8 (Phase, K.1's 50x path) and
+// Filter slot 5 (Comb feedback, W2.2a's trim smoother was tuned against
+// rand() sweeps, never real modulation). Deliberately kept as a SEPARATE
+// test rather than folded into the one above: the two discriminate
+// different failures (static gain staging vs. modulation-driven
+// transients).
+//
+// SOURCE: kModSlotVco1Audio, not kModSlotNoise. First attempt used
+// kModSlotNoise and measured minEnvelopeSeen=0.985726 -- statistically
+// indistinguishable from the static test's 0.985796 -- which is a genuine
+// end-to-end confirmation of K.1's *free random phase* figure (1.002x, not
+// the 50.5x figure), not a null result: K.1's 50.5x is specifically
+// "periodic phase/content coincidence", and a per-sample-random noise
+// source (NoiseModulatorProcessor::Process() -> random_.UniformOpen01(),
+// DspNoise.hpp:69-71) structurally cannot produce periodic coincidence.
+// kModSlotVco1Audio (vco1AudioSource_ = NormalizeBipolarToUnit(vco1Raw),
+// FroggersModulation.hpp:384, registered at :535-536) IS periodic at the
+// note frequency and locked to the note's period by construction -- it IS
+// the note passing through DriveBlendPhase, so the coincidence K.1 measured
+// is exact rather than approximate. This is the corrected source for both
+// modulated parameters below; kModSlotNoise is not used anywhere in this
+// test.
+//
+// Route verified against synth::Parameter (ParameterModulation.hpp:499):
+// `Parameter* EnsureModulationDepth(std::size_t modIx)` is public, returns
+// nullptr at storage capacity (checked below, not dereferenced blindly), and
+// PageParameter() returns synth::Parameter& (confirmed at
+// FroggersModulation.hpp:1192,1207-1208's existing call sites), so it is
+// reachable as PageParameter(...).EnsureModulationDepth(...) directly, no
+// intermediate pointer needed. kModSlotVco1Audio (FroggersModulation.hpp:163,
+// synth_froggers namespace) is registered `connected = true` unconditionally
+// in ModulatorGroup's constructor (FroggersModulation.hpp:535-536), so it
+// needs no extra wiring here. Depth centers are confirmed BIPOLAR by
+// ModulationDepthTargetFromKnob (ParameterModulation.hpp:115-122): knob 0.5
+// maps to bipolar 0 (zero depth), knob 1.0 maps to bipolar +1 (full
+// positive) -- matching kNeutralModulationDepthCenter = 0.5f
+// (FroggersModulation.hpp:832). SceneCenter(0) = 1.0f below is therefore
+// full-positive depth, not a mid-scale value.
+TEST_CASE(master_limiter_stays_at_unity_under_live_modulation) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("b7_5_live_mod"));
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+
+    // Identical hostile patch to master_limiter_stays_at_unity_across_hostile_patch.
+    model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95
+    model.PageParameter(synth_froggers::FroggersBankId::Filter, 7).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb
+    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 8).SceneCenter(0) = 1.0f;  // Hold -> ceiling
+    model.PageParameter(synth_froggers::FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;  // fully wet
+    model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 1.0f;   // maximum Drive
+    model.Crispy(synth_froggers::FroggersBankId::Filter).SceneCenter(0) = 1.0f;
+
+    // PLUS deep audio-rate modulation on the two parameters the evidence
+    // names -- both from kModSlotVco1Audio (periodic, note-locked -- see the
+    // route note above for why this replaces kModSlotNoise), depth at full
+    // positive (1.0f, bipolar-neutral is 0.5f per the route note above).
+    synth::Parameter* phaseDepth =
+        model.PageParameter(synth_froggers::FroggersBankId::Drive, 8)
+             .EnsureModulationDepth(synth_froggers::kModSlotVco1Audio);
+    REQUIRE_TRUE(phaseDepth != nullptr);
+    phaseDepth->SceneCenter(0) = 1.0f;
+
+    synth::Parameter* combFeedbackDepth =
+        model.PageParameter(synth_froggers::FroggersBankId::Filter, 5)
+             .EnsureModulationDepth(synth_froggers::kModSlotVco1Audio);
+    REQUIRE_TRUE(combFeedbackDepth != nullptr);
+    combFeedbackDepth->SceneCenter(0) = 1.0f;
+
+    // B7.5.0: apply the patch (including the modulation-depth SceneCenter
+    // writes above) before the first block, exactly as the static test does.
+    ApplyPatchNow(rig);
+
+    rig.StartAt(0);
+    auto& limiter = rig.Application().TestOutputLimiter();
+
+    float minEnvelopeSeen = 1.0f;
+    for (int block = 0; block < 256; ++block) {
+        rig.RunBlocks(1);
+        minEnvelopeSeen = std::min(minEnvelopeSeen, limiter.envelope);
+    }
+
+    REQUIRE_TRUE(!rig.SawNaN());
+    RequireFiniteStereo(rig.Output());
+    // LIVENESS -- same rationale as the static test above.
+    REQUIRE_TRUE(PeakAbs(rig.Output()) > 0.1f);
+    // The property. Unity means the master never had to do anything.
+    REQUIRE_TRUE(minEnvelopeSeen > 0.999f);
+}
+
+// -----------------------------------------------------------------------
 // ITEM 5 -- the randomize storm test (design.md/tasks.md §A.5): the
 // predecessor's failure rate was roughly 1 in 7 Randomize All draws
 // (permanent silence or a full-scale-exceeding blowout); this must show
