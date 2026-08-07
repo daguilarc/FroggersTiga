@@ -47,12 +47,14 @@ ten test binaries.
 | — | ~~**B7.5.0** patch-application anomaly~~ | **CLOSED 2026-08-06, no defect.** Establishes the settling rule every test below depends on: a `SceneCenter` write is ~81 % applied after one block, converged after ~30 |
 | 1 | **B7.5** end-to-end failing test | M3. Must be RED before any fix. The only acceptance criterion that matters |
 | 2 | **F0** preflight remediation | Mechanical; F0.3 is a hard prerequisite for F1 |
-| 3 | **F3** Stop does not stop | Highest severity, fully traced |
-| 4 | **F4 + F5** drilldown | One shared edit; highest value per line |
-| 5 | **F1** randomize distribution | Needs F0.3 |
-| 6 | **F2** B7.1 ceiling retarget | Turns B7.5 green. Last, because it is the one B7.5 exists to judge |
-| 7 | **F7** drilldown level headers | After F4+F5 so level 3 exists to display |
-| 8 | **F6** operator verification | Single pass on the complete build |
+| 3 | **F3.3** enumeration fix | ✅ DONE (`1c37657`). **Not a Stop fix** — F3.1 refuted that |
+| 4 | **F4 + F5** drilldown | One shared edit; highest value per line. **Citations re-verified — see F8.2** |
+| 5 | **F1** randomize distribution | Needs F0.3 (done) |
+| 6 | **F3.2c** parametric-oscillation measurement | After F3.3, which can MASK it — see the trap box |
+| 7 | **F2.0** then **F2.1+** ceiling retarget | F2.0 measures duty cycle + the real post-randomize condition first |
+| 8 | **C1–C3** omni sweep fixes | From F8.1. Mechanical; C1 needs a §12 origin trace before deleting anything |
+| 9 | **F7** drilldown level headers | After F4+F5 so level 3 exists to display |
+| 10 | **F6** operator verification | Single pass on the complete build |
 
 **SESSION CLOSEOUT (operator directive, 2026-08-07):** once F3.3 lands, run **F8** (omni-rule
 structural sweep of `app/` + this change's living artifacts), fix the artifacts from its findings,
@@ -66,13 +68,13 @@ never reads or writes `desktop-v2/ desktop/ src/ sim/ wasm/ vcv/ web/` or `Exter
 an opus subagent."* Explicit operator override of §0's Sonnet/Haiku rule, scoped to F8 only; every
 other dispatch in this change stays under the standing rule.
 
-- [ ] **F8.1 — Code sweep** (read-only, parallelizable per §0): all of `app/` (17 files) against
+- [x] **F8.1 — Code sweep** (read-only, parallelizable per §0): all of `app/` (17 files) against
       §5 structure depth (2-of-4), §6 helper rules, §8 repetition (2+ occurrences → loop or
       abstract; duplication is symmetric, find the sibling), §10 condition-check efficiency,
       §12 defensive code (trace origin before guarding), and §1 definition-site enumeration.
       Findings ranked, each with file:line and WHICH rule, severity by blast radius. Excludes:
       frozen trees, `External/Sheaf`, the two `*Repro.cpp` diagnostics (report-only there).
-- [ ] **F8.2 — Spec-drift sweep** (read-only): every `file:line` citation and code snippet in this
+- [x] **F8.2 — Spec-drift sweep** (read-only): every `file:line` citation and code snippet in this
       change's living artifacts (`proposal.md`, `tasks.md`, `SUPERSESSION-RECORD.md`,
       `BANK-EXPANSION-DESIGN.md`) re-verified against the code as it stands after F3.3. Today's
       edits have moved lines under many of them. Also: every claim a task makes about what exists
@@ -137,10 +139,10 @@ untouched.
       genuinely useful, pin it to a commit ("as of `1c37657`") so a reader knows what it was true
       of. This is the artifact-side form of the omni rule's refined trace clause.
 
-- [ ] **F8.3 — Lead fixes the artifacts** from F8.1/F8.2 findings. Code findings that are real
+- [x] **F8.3 — Lead fixes the artifacts** from F8.1/F8.2 findings. Code findings that are real
       defects become tasks (or fold into existing F-items); artifact drift is corrected in place.
       Nothing in F8 lands code changes beyond what F3.3 already did.
-- [ ] **F8.4 — Handoff document** in this directory, leading with the behavioural lessons (the
+- [x] **F8.4 — Handoff document** (`HANDOFF.md`, written 2026-08-07) in this directory, leading with the behavioural lessons (the
       predecessor's failure-report format, which the operator kept): what is DONE and verified,
       what is RED by design, what is OPEN with root cause unknown vs traced, the sequencing traps
       already discovered (F3.3-masks-F3, measurement-during-refactor), and the exact next dispatch
