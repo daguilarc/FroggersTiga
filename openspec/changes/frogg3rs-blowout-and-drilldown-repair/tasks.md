@@ -639,9 +639,57 @@ template <typename V> void ForEachStatefulUnit(V&& visit) {
       Both consumers then collapse to one line: the Stop flush ignores the tag and calls `Reset()`;
       recovery switches on it. Delete the false comment in the same edit.
 
-      **Do NOT** relocate the ten parallel `…OverCeilingSeconds_` members in this task. They are a
-      second §8 instance and a genuine follow-up, but a Stop-scope fix and a state refactor must
-      not land in one commit.
+> #### ⚠ F3.3 SPEC CORRECTED 2026-08-07 — the first attempt did not compile, and the lead caused it
+>
+> The original spec said: *"Do NOT relocate the ten parallel `…OverCeilingSeconds_` members — a
+> Stop-scope fix and a state refactor must not land in one commit."* **That instruction was
+> wrong.** With the enumeration hierarchical and the timers owned by the parent, there is no clean
+> way to pair a nested unit with its timer, and the implementer was forced into:
+>
+> ```cpp
+> const std::array<MagnitudeCounter, 10> magnitudeCounters{{ {&audioVco1_, &vco1OverCeilingSeconds_}, … }};
+> for (const auto& counter : magnitudeCounters) if (counter.unit == &unit) { … }
+> ```
+>
+> — **a second ten-entry list keyed by `const void*`, linear-scanned per unit per block**, which
+> reintroduces precisely the §8 duplication this task exists to delete, adds type-unsafety, and
+> has a silent fallthrough when a unit is absent. Worse than what it replaced.
+>
+> It also does not compile: a **runtime** `if (tier == Recovery::FiniteOnly)` does not prevent
+> instantiation, so `RecoverUnitIfNeeded` is type-checked for `dsp::OutputLimiter`, which has no
+> `StateMagnitude()` by design. Six of ten binaries fail identically.
+>
+> **Both defects have one cause and one fix. Do all three of the following:**
+>
+> 1. **Move each Tier-2 unit's `overCeilingSeconds` INTO the unit.** It is per-unit state and
+>    always was; ten parallel members in the parent existed only because the enumeration lived
+>    there too. This deletes the second §8 instance rather than deferring it. **No lookup is then
+>    needed at all** — the visitor reads `unit.overCeilingSeconds`.
+> 2. **Make the tier a COMPILE-TIME tag, not a runtime enum**, so `if constexpr` can guard the
+>    branch and only the correct call is instantiated:
+>
+> ```cpp
+> struct FiniteOnly {};   // Tier 1
+> struct Magnitude {};    // Tier 2
+>
+> visit(comb, Magnitude{});
+> visit(delay_, FiniteOnly{});
+>
+> ForEachStatefulUnit([&](auto& unit, auto tier) {
+>     if constexpr (std::is_same_v<decltype(tier), Magnitude>)
+>         RecoverUnitIfNeeded(unit, unit.overCeilingSeconds, blockFrames);
+>     else
+>         RecoverIfNonFinite(unit);
+> });
+> ```
+>
+> 3. **Put the two tag types in a small dedicated header, not in `dsp/FilterFx.hpp`.** That file's
+>    own header declares it *"a **copy** (design D3) of the cited Froggers formulas"* — a port of
+>    frozen firmware — and `dsp/Limiter.hpp` exists **because of exactly this question**, its
+>    comment stating a general-purpose unit was extracted to keep it *"out of a file whose own
+>    header comment scopes it to comb/peak/scoop routing."* Same argument. Follow that precedent.
+>
+> The Stop flush is unaffected by all of this — it ignores the tag entirely and calls `Reset()`.
 
 - [ ] **F3.4:** Suite stays green (except the two known acceptance-gate reds). Confirm the reverb
       tail and delay repeats still ring normally **while the transport is running** — the flush
