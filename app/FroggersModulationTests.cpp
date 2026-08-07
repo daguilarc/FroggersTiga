@@ -509,8 +509,6 @@ TEST_CASE(randomize_all_on_level_one_grid_never_ejects_and_still_reaches_level_t
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);
     synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
-    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;  // F3: single named constant
-    constexpr float kTolerance = 1e-4f;
 
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
     drillIn.PressEncoder(0);  // -> level 1 on `focused`
@@ -544,7 +542,7 @@ TEST_CASE(randomize_all_on_level_one_grid_never_ejects_and_still_reaches_level_t
         }
         for (std::size_t innerIx = 0; innerIx < FroggersParameterModel::kNumModulators; ++innerIx) {
             synth::Parameter* subDepth = depth->ModulationDepthParameter(innerIx);
-            if (subDepth != nullptr && std::fabs(subDepth->SceneCenter(0) - kNeutral) > kTolerance) {
+            if (subDepth != nullptr && detail::DepthIsModulating(*subDepth)) {
                 anyLevelTwoNonNeutral = true;
             }
         }
@@ -816,8 +814,6 @@ TEST_CASE(randomize_depth_helper_level_zero_count_distribution_has_mode_two_acro
     fx.StepOnce(/*externalConnected=*/true);  // 15 connected sources -- N for the tail
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));  // default: Level()==0
     synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
-    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;  // F3: single named constant
-    constexpr float kTolerance = 1e-4f;
 
     constexpr int kTrials = 1000;
     std::array<int, FroggersParameterModel::kNumModulators + 1> histogram{};
@@ -826,7 +822,7 @@ TEST_CASE(randomize_depth_helper_level_zero_count_distribution_has_mode_two_acro
         int nonNeutral = 0;
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
             synth::Parameter* depth = focused.ModulationDepthParameter(modIx);
-            if (depth != nullptr && std::fabs(depth->SceneCenter(0) - kNeutral) > kTolerance) {
+            if (depth != nullptr && detail::DepthIsModulating(*depth)) {
                 ++nonNeutral;
             }
         }
@@ -852,14 +848,12 @@ TEST_CASE(randomize_all_level_one_press_gives_its_own_depths_and_each_depths_sub
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
     drillIn.PressEncoder(0);  // -> level 1
     synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
-    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;  // F3: single named constant
-    constexpr float kTolerance = 1e-4f;
 
     auto countNonNeutral = [&](synth::Parameter& parameter) {
         int count = 0;
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
             synth::Parameter* depth = parameter.ModulationDepthParameter(modIx);
-            if (depth != nullptr && std::fabs(depth->SceneCenter(0) - kNeutral) > kTolerance) {
+            if (depth != nullptr && detail::DepthIsModulating(*depth)) {
                 ++count;
             }
         }
@@ -873,16 +867,34 @@ TEST_CASE(randomize_all_level_one_press_gives_its_own_depths_and_each_depths_sub
     for (int trial = 0; trial < kTrials; ++trial) {
         RandomizeAll(fx.manager, drillIn, fx.model);  // Level()==1: own depths + each depth's own sub-depths.
         ++level1Histogram[static_cast<std::size_t>(countNonNeutral(focused))];
-        // Every ALREADY-materialized depth parameter gets a fresh level-2
-        // draw this press regardless of whether it was picked at level 1
-        // this time (the inner loop is unconditional over materialized
-        // depth parameters) -- so samples accumulate well past kTrials as
-        // more of the 15 sources get covered over successive presses.
+        // RETARGETED 2026-08-07: the descent now visits only depths that are
+        // ACTUALLY MODULATING, not every materialized one. This loop used to
+        // sample all materialized depths and assert the mode-2 shape over that
+        // whole population, which is why it went red -- a neutral depth now
+        // correctly carries ZERO sub-depths, so it contributed to
+        // `histogram[0]`, which the shared "count is never 0" assertion
+        // rejects. That is the fix working, not a regression: sampling a
+        // population the code deliberately no longer touches is measuring the
+        // wrong thing.
+        //
+        // So: modulating depths feed the distribution histogram, and neutral
+        // ones get the STRONGER assertion -- they must carry no sub-depths at
+        // all. That second branch is the badge fix pinned directly. Sheaf's
+        // ModulatorsAffectingMask counts a depth that merely HAS sub-modulation
+        // (ParameterModulation.cpp:2356-2365 via HasNonZeroState), so a neutral
+        // depth with sub-depths would light up as a badge for a source that is
+        // modulating nothing -- measured at 13 badges against 1 live source
+        // before this landed.
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
             synth::Parameter* depthParam = focused.ModulationDepthParameter(modIx);
-            if (depthParam != nullptr) {
+            if (depthParam == nullptr) {
+                continue;
+            }
+            if (detail::DepthIsModulating(*depthParam)) {
                 ++level2Histogram[static_cast<std::size_t>(countNonNeutral(*depthParam))];
                 ++level2Samples;
+            } else {
+                REQUIRE_TRUE(countNonNeutral(*depthParam) == 0);
             }
         }
     }

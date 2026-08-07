@@ -674,6 +674,12 @@ private:
 // ============================================================================
 class FroggersModulationDrillIn {
 public:
+    // F5.1: the ONE definition site of the drill-in maximum. PUBLIC because
+    // `RandomizeAll` below reads it to decide whether a deeper level exists to
+    // descend into -- it must not re-declare the number (OMNI §8), and it is
+    // the same fact this class already enforces in `PressEncoder`.
+    static constexpr std::size_t kMaxDrillLevel = 3;   // F5.3: raised from 2, keeping the base-3 theme
+
     explicit FroggersModulationDrillIn(synth::Bank& bank) : bank_(&bank) {}
 
     std::size_t Level() const { return level_; }
@@ -742,7 +748,6 @@ public:
 private:
     synth::Bank* bank_;
     std::size_t level_ = 0;
-    static constexpr std::size_t kMaxDrillLevel = 3;   // F5.3: raised from 2, keeping the base-3 theme
     // E.2 (design A7a), generalised by F5.1: one remembered encoder id per
     // level of the current drill-in path -- `levelEncoders_[i]` is the
     // encoder id that opens level i+1. See PressEncoder's own comment for
@@ -850,6 +855,15 @@ static_assert(kScenePoles.size() == FroggersParameterModel::kNumScenes,
 // RangeKind::Bipolar, 0.5 IS zero"). Referenced by
 // ZeroExistingModulationDepths below and by FroggersModulationTests.cpp.
 inline constexpr float kNeutralModulationDepthCenter = 0.5f;
+// Matches Sheaf's own `kModulationNeutralTolerance`
+// (External/Sheaf/projects/synth/src/ParameterModulation.cpp:256), which is
+// the tolerance `Parameter::HasNonZeroState()` -- and therefore the badge
+// criterion `ModulatorsAffectingMask()` -- uses to decide neutrality. Pinned
+// to the same value deliberately: `DepthIsModulating` below has to agree with
+// what the UI will actually draw, and that constant is file-local to Sheaf's
+// .cpp so it cannot be referenced directly. If Sheaf's value ever moves, this
+// one moves with it.
+inline constexpr float kModulationNeutralEpsilon = 0.000001f;
 
 // A1 (non-additive randomize) + A3 (scene-pair semantics): zeroes
 // `parameter`'s EXISTING (already-materialized) modulation depths at BOTH
@@ -869,6 +883,43 @@ inline constexpr float kNeutralModulationDepthCenter = 0.5f;
 // `currentCenter_`/`targetCenter_`/the UI display for every parameter this
 // touches -- including these zeroed ones -- in one pass, so nothing here
 // needs to re-converge anything itself.
+// Is this depth parameter ACTUALLY modulating anything -- i.e. does it carry a
+// non-neutral commanded value in either scene pole?
+//
+// Needed because "a depth parameter EXISTS" and "a source is modulating this
+// parameter" are different facts, and drilling in conflates them: opening a
+// modulation view eagerly materializes one depth per CONNECTED source (13 of
+// 15 on the measured patch), regardless of whether randomize selected any of
+// them. RandomizeAll below must descend only into the ones that are really
+// modulating, for two reasons:
+//
+//  1. Semantics: a neutral depth modulates nothing, so sub-modulating IT is
+//     meaningless work on a value that has no audible effect.
+//  2. It is directly visible. Sheaf's badge criterion is
+//     `Parameter::ModulatorsAffectingMask()` (External/Sheaf/projects/synth/
+//     src/ParameterModulation.cpp:2356-2365), which sets a bit when the depth
+//     is non-null AND `HasNonZeroState()`. `HasNonZeroState()` (:2367) returns
+//     true if the depth's OWN `currentDepths_`/`targetDepths_` are non-zero --
+//     so a depth counts as "affecting" merely because it has SUB-modulation,
+//     even when its own value is dead neutral. Writing sub-depths to every
+//     materialized depth therefore lit up all 13 as badges when only ~3
+//     sources were modulating (measured 2026-08-07: badge 13, non-neutral 1).
+//     The badge was reporting CONNECTEDNESS, not modulation.
+//
+// `HasNonZeroState()` itself is private in Sheaf and unreachable from here, so
+// this reads the commanded values the app itself writes -- the same
+// `kNeutralModulationDepthCenter` / `kScenePoles` idiom
+// ZeroExistingModulationDepths below uses, so the two agree by construction.
+inline bool DepthIsModulating(const synth::Parameter& depth) {
+    for (const synth::SceneState& pole : kScenePoles) {
+        if (std::fabs(depth.SceneCenter(pole.leftScene) - kNeutralModulationDepthCenter) >
+            kModulationNeutralEpsilon) {
+            return true;
+        }
+    }
+    return false;
+}
+
 inline void ZeroExistingModulationDepths(synth::Parameter& parameter) {
     for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
         synth::Parameter* depth = parameter.ModulationDepthParameter(modIx);
@@ -1128,23 +1179,24 @@ inline FroggersRandomizeResult RandomizePage(synth::ParameterManager& manager, F
 //     `Bank&` (PressBankWithRandomValue), independent of which bank the
 //     BankSlot currently displays, so the active/displayed bank is left
 //     completely undisturbed by this global operation.
-//   - level-1 grid (Level()==1): that ONE parameter's 15 depths (as
-//     RandomizePage would do) PLUS one more RandomizeParameterModulationDepths
-//     call directly on each of those (now-existing) depth parameters' OWN
-//     depths (level 2). F4 (operator: "randomize all in level 1 shouldn't
-//     navigate me out"): called directly on the Parameter&, never through a
-//     view (no PressEncoder/Back), so the level counter never moves. F4.3
-//     measured this against the pre-fix PressEncoder/Back shape: the
-//     STEADY-STATE level-2 count this leaves behind is UNCHANGED either way
-//     (~48 of the theoretical 15+15*15=240 ceiling, both before and after --
-//     Bank::Deselect(), which Back() calls, already pruned the old shape's
-//     transient 15-per-depth-parameter eager materialization back down to
-//     whatever RandomizeParameterModulationDepths actually wrote, every
-//     single time, even before this fix). What this fix actually removes is
-//     that wasted transient allocate-then-prune churn (up to 225
-//     EnsureModulationDepth calls per press that used to happen and then get
-//     discarded on the way out) and, the point of F4, the level movement.
-//   - level-2 grid (Level()==2): coincides with RandomizePage.
+//   - ANY drilled-in grid (Level() >= 1): the ONE selected parameter's own
+//     depths, PLUS one more RandomizeParameterModulationDepths call on each of
+//     those depths that is ACTUALLY MODULATING (detail::DepthIsModulating) --
+//     i.e. randomizing at level N also randomizes level N+1, at every N, gated
+//     only by kMaxDrillLevel. Operator 2026-08-07: "level 1 randomize all
+//     should affect level 2 randomization. level 2 randomize all should affect
+//     level 3." There is no per-level branch: the old shape descended at
+//     level 1 only and let levels 2/3 fall through to RandomizePage, which was
+//     a hardcoded special case of exactly the kind F5.1 deleted from Back().
+//
+//     Two things this deliberately does NOT do. It never opens a view --
+//     RandomizeParameterModulationDepths takes `Parameter&` and reads no view
+//     state -- so the level counter never moves (F4, the ejection fix). And it
+//     skips neutral depths rather than descending into every materialized one:
+//     a neutral depth modulates nothing, and sub-modulating it made the
+//     drilled parameter report 13 badges against 1 live source, because
+//     Sheaf's badge criterion counts a depth that merely HAS sub-modulation.
+//     See detail::DepthIsModulating's own comment.
 inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, FroggersModulationDrillIn& drillIn,
                                             FroggersParameterModel& model) {
     if (drillIn.Level() == 0) {
@@ -1164,33 +1216,65 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
         return {partial};
     }
 
-    if (drillIn.Level() == 1) {
-        // F4 (frogg3rs-blowout-and-drilldown-repair; operator: "randomize
-        // all in level 1 shouldn't navigate me out wtf"): this branch used
-        // to Back() out to level 0 to look up originalParam's encoder id,
-        // PressEncoder back in, then PressEncoder/Back once per depth
-        // parameter to reach level 2 -- round trips whose ONLY permanent
-        // effect was driving the level counter down to 0, which was the
-        // ejection (F4.3: Bank::Deselect(), which Back() calls, already
-        // pruned each PressEncoder's transient 15-sub-depth eager
-        // materialization back down to whatever RandomizeParameterModulationDepths
-        // actually wrote, every time, even before this fix -- so removing
-        // the round trips leaves the steady-state materialized count
-        // unchanged; it only drops the wasted allocate-then-prune churn).
-        // None of it was needed: RandomizeParameterModulationDepths takes
-        // `Parameter&` directly, reads eligibility from
-        // `group.GetModulators().Metadata()`, and calls EnsureModulationDepth
-        // itself -- nothing in it reads view state. So this branch now only
-        // ever calls that helper, first on originalParam (its own depths,
-        // level 1), then once more per materialized depth parameter (that
-        // depth parameter's own depths, level 2) -- no PressEncoder, no
-        // Back, no level movement.
-        synth::Parameter& originalParam = *drillIn.BankRef().SelectedParameter();
-        bool partial = detail::RandomizeParameterModulationDepths(manager, originalParam);
+    // ONE rule for every drilled-in level (operator, 2026-08-07: "level 1
+    // randomize all should affect level 2 randomization. level 2 randomize all
+    // should affect level 3"). This used to be a `Level() == 1` branch with
+    // levels 2 and 3 falling through to RandomizePage, i.e. the descent was a
+    // hardcoded level-1 special case -- the same §5/§8 shape F5.1 deleted from
+    // Back()'s `wasLevelTwo`. There is no per-level branching now: at ANY
+    // drilled-in level, randomize the selected parameter's own depths, then
+    // descend exactly one level, guarded by kMaxDrillLevel. Raising the cap
+    // again needs no edit here.
+    //
+    // Level 0 already returned above, so this is every drilled-in level. No
+    // guard condition and no enclosing block: a redundant `Level() >= 1` test
+    // would only add an unreachable tail the compiler still demands a return
+    // for.
+    //
+    // F4 (operator: "randomize all in level 1 shouldn't navigate me out wtf"):
+    // this used to Back() out to level 0 to look up the selected parameter's
+    // encoder id, PressEncoder back in, then PressEncoder/Back once per depth
+    // parameter to reach the next level -- round trips whose only permanent
+    // effect was driving the level counter to 0, which was the ejection. None
+    // of it was needed: RandomizeParameterModulationDepths takes `Parameter&`
+    // directly, reads eligibility from `group.GetModulators().Metadata()`, and
+    // calls EnsureModulationDepth itself -- nothing in it reads view state. So
+    // this only ever calls that helper, never the view, and the level never
+    // moves. (F4.3: Bank::Deselect(), which Back() called, had always pruned
+    // the transient eager materialization back to whatever was actually
+    // written, so removing the round trips left the steady-state count
+    // unchanged; what it dropped was the wasted allocate-then-prune churn.)
+    synth::Parameter& selectedParam = *drillIn.BankRef().SelectedParameter();
+    bool partial = detail::RandomizeParameterModulationDepths(manager, selectedParam);
+    // Descend one level -- but ONLY if a deeper level exists to descend into.
+    // Read from the drill-in's own single definition site rather than
+    // re-testing a literal (OMNI §8).
+    if (drillIn.Level() < FroggersModulationDrillIn::kMaxDrillLevel) {
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
-            synth::Parameter* depthParam = originalParam.ModulationDepthParameter(modIx);
+            synth::Parameter* depthParam = selectedParam.ModulationDepthParameter(modIx);
             if (depthParam == nullptr) {
-                continue;  // not connected, or step 1 already hit CanAllocate()==false
+                continue;  // not connected, or the draw above hit CanAllocate()==false
+            }
+            // Descend only into depths that are ACTUALLY modulating. A
+            // materialized-but-neutral depth modulates nothing, so
+            // sub-modulating it is meaningless -- and it is what made the
+            // drilled parameter show 13 badges when 1 source was live. See
+            // DepthIsModulating's own comment for the badge mechanism.
+            if (!detail::DepthIsModulating(*depthParam)) {
+                // CLEAR it rather than merely skipping. Randomize is
+                // non-additive (A1): each press zeroes the selected
+                // parameter's own depths before drawing, so a source picked
+                // last press is neutral this press. But
+                // ZeroExistingModulationDepths DOES NOT RECURSE -- it clears
+                // this parameter's depths, not those depths' own sub-depths.
+                // Skipping alone would therefore leave the sub-depths a
+                // PREVIOUS press wrote sitting on a now-neutral depth, and
+                // Sheaf's badge criterion counts a depth that merely HAS
+                // sub-modulation -- so the badge would stay lit for a source
+                // that is modulating nothing, which is the very defect this
+                // rule exists to remove. Found by this task's own test.
+                detail::ZeroExistingModulationDepths(*depthParam);
+                continue;
             }
             // F0.1: hoisted for the same reason (mirrors FroggersAppCore.hpp:482-488)
             // -- this loop is the depth-parameter sweep, so a short-circuited
@@ -1198,29 +1282,9 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
             const bool depthPartial = detail::RandomizeParameterModulationDepths(manager, *depthParam);
             partial = partial || depthPartial;
         }
-        return {partial};
     }
+    return {partial};
 
-    // Levels 2 and 3: coincides with Randomize Page -- randomize exactly the
-    // depths currently visible, one level, no descent.
-    //
-    // F5.3 (2026-08-07) raised kMaxDrillLevel from 2 to 3, so the old
-    // justification here ("no deeper level exists, cap is 2, design D5") is
-    // no longer why this branch is a fallthrough. The reason is now the
-    // OPERATOR'S SCOPE RULING, which F5 does not touch: "this is desired
-    // functionality for randomize all" -- Randomize All inside a drilldown
-    // acts on the drilled parameter, and only the level-1 branch above was
-    // ever specified to descend a further level. Levels 2 and 3 behave
-    // identically to each other and to Randomize Page, which is what raising
-    // the cap should leave unchanged.
-    //
-    // NOTE for F6, operator decision, deliberately NOT taken here: the
-    // level-1 branch descends one extra level (its own depths PLUS each of
-    // those depths' depths) while levels 2 and 3 do not. That asymmetry
-    // predates this change and is operator-approved at cap 2; whether level 2
-    // should now descend into the newly-reachable level 3 is a scope question
-    // for the operator, not an implementation detail. No behaviour changed.
-    return RandomizePage(manager, drillIn);
 }
 
 // ============================================================================
