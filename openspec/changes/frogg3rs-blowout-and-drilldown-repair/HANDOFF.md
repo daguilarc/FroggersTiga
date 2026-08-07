@@ -3,6 +3,59 @@
 **Written 2026-08-07 at session end. Nothing has gone to the operator yet** (M4: one build, one
 listening pass, after the whole list lands).
 
+---
+
+## ⚠ VALIDATION PASS — 2026-08-07, next session. Read this before §0.
+
+Every load-bearing claim in this handoff and its artifacts was re-verified **by reading the code**,
+per OMNI §1's refined trace clause. **The structural claims held; nine artifact defects were
+found, one of them able to cause a silent catastrophic blowout.**
+
+### Held up (verified by reading, not by report)
+- **F3.3 is genuinely done and genuinely correct** — `dsp/RecoveryTier.hpp`, hierarchical
+  enumeration, compile-time tags, every Tier-2 timer relocated into its unit, no `const void*`
+  lookup, Stop flush resets all 14 at both edges, false comment deleted.
+- **The F4/F5 citations are all accurate** (`:1134`, `:1142`, `:1154`, `:1176`, `:1178`, `:676`,
+  `:723`, `:736`, `:669`) — F8.2's correction pass worked.
+- **B7.5 fully landed** (`6195a41`), both acceptance tests present with `PeakAbs` liveness and
+  `kModSlotVco1Audio`; `kModSlotNoise` appears nowhere.
+- **F0.1–F0.5 landed.** C1 and C3's citations are accurate.
+- **The parametric hypothesis is physically admissible** — the one thing that could have killed it
+  outright does not: `knob()` is `CachedKnobValue(0)` read *after* `parameters_.ProcessSample()`
+  (`FroggersAppCore.hpp:948-950`), and Sheaf recomputes `currentKnobValues_` **every sample**
+  (`ParameterModulation.cpp:1459-1460`, via `ProcessLitePhase1`). Comb feedback really is swept at
+  audio rate, not every 16 samples. F3.2c is worth running.
+
+### Found and fixed in the artifacts
+1. **F2.1's stated trap was WRONG, and the true failure mode is worse and silent.** `headroom == 0`
+   does not produce NaN — it returns `threshold`. The real hazard is `headroom < 0` (a threshold
+   left above the new ceiling, which is delay's and reverb's default state at `C = 0.80`): the
+   limiter becomes an **exponential amplifier**, 27× at |x| = 1.5, and stays *finite* — so
+   `SawNaN` and `RequireFiniteStereo` both pass. **New task F2.1a adds a compile-time
+   `static_assert` on every threshold/ceiling pair, landing before any constant changes.**
+2. **F1's "counts of 7 need a separate explanation" was FALSE.** Computed from the draw:
+   P(7) = 1.47 %, P(≥7) = 4.9 %, ≈ 0.78 params at 7+ per press across 16. The spec explains the
+   7s completely. **F1 is a pure spec change — do not hunt a second bug.**
+3. **"Same distribution at every level" needs no structural work** — all four entry points already
+   share one helper (`:893`; call sites `:1053`, `:1085`, `:1126`, `:1164`). Retuning the table
+   once changes every level.
+4. **F2.4 cited a test that no longer exists** (`limiter_engages_on_overdriven_patch_and_stays_bounded`,
+   split by B7.5 Step 1). Corrected to the two live names.
+5. **Checkbox drift:** B7.5 Steps 1–6 and F3.3 were all `- [ ]` while landed. Ticked, with commits.
+6. **A stale `kModSlotNoise` snippet** sat directly beneath the correction box forbidding it.
+   Deleted rather than fixed — hand-copied landed code is a second definition site (OMNI §8).
+7. **`proposal.md` said "thirteen" and listed fourteen.** It is 14 (10 Tier-2 + 4 Tier-1).
+8. **Stale line cites corrected:** `proposal.md`'s `:910`/`:952` → `:914`/`:961`; Drive limiter
+   `:416`/`:464` → `:449`/`:503`; FilterFx `:187-188` → `:188-189`.
+9. **The "flush is one-shot ⇒ upstream refills delay/reverb" passage is now history** — after F3.3
+   nothing upstream is left ringing. Marked as such; the one-shot property is now F3.2c's
+   load-bearing assumption rather than a defect.
+
+**Lesson, for the ledger:** eight of the nine are the *same* defect as §0.1 — the artifacts'
+own text drifting away from the code while the code stayed honest. §0.1 diagnosed it and the
+remedy (cite by symbol) landed, but the already-written text was never re-swept against it. **The
+rule was added; the backlog it implied was not paid down.**
+
 **Read `proposal.md`'s Method constraints M1–M7 before your first dispatch.** They are not style
 guidance; each is a specific way the predecessor failed while measuring everything green.
 

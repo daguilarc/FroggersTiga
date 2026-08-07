@@ -220,7 +220,10 @@ different targets converge differently once enough blocks elapse.
 **A `SceneCenter` write reaches ~81 % of its target after one block and is effectively converged
 after roughly 30.** So:
 
-1. **The `SceneCenter(0) =` sites (76 when counted 2026-08-06; 85 today and still growing as tests are added) are NOT invalid.** Do not "fix" them. A test that runs
+1. **The `SceneCenter(0) =` sites (76 on 2026-08-06; 85 later that day; **92** counted
+   2026-08-07 by `grep -rn "SceneCenter(0) =" app/ | wc -l`, and still growing as tests are
+   added — treat any figure written here as a timestamp, not a fact) are NOT invalid.** Do not
+   "fix" them. A test that runs
    hundreds of blocks (B7.5 runs 256, the existing limiter test runs 256) is fully converged long
    before it asserts.
 2. **Any test that asserts within roughly the first 30 blocks is reading a partially-applied
@@ -243,7 +246,11 @@ proof that the per-stage headroom architecture works in the binary rather than o
 `rig.Application().TestOutputLimiter()` returns a live reference and `envelope` is a public field,
 already read per-block at `:567,587`.
 
-- [ ] **Step 1: Split the existing test. RULING TAKEN 2026-08-06 — implement it, do not re-decide.**
+- [x] **Step 1: Split the existing test. RULING TAKEN 2026-08-06 — implement it, do not re-decide.**
+      **DONE, verified in the tree 2026-08-07** (`6195a41`): the split landed as
+      `limiter_engages_and_envelope_drops_below_unity` (`:572`) and `overdriven_patch_stays_bounded`
+      (`:610`), with the `minEnvelopeSeen < 0.999f` assertion stripped and its removal recorded in
+      a comment at `:597`/`:623`.
 
       `limiter_engages_on_overdriven_patch_and_stays_bounded`
       (`app/FroggersAudioRoutingTests.cpp:555-599`) bundles **two different properties**:
@@ -280,8 +287,8 @@ already read per-block at `:567,587`.
       **After this step the suite must still be fully green.** The split changes which layer each
       property is asserted at; it does not change any behaviour.
 
-- [ ] **Step 2: Write the failing test — and the `ApplyPatchNow` helper it is the first consumer
-      of.** Use the operator's real repro, not a synthetic sweep (M3): Filter bank Crispy at max,
+- [x] **Step 2: Write the failing test — and the `ApplyPatchNow` helper it is the first consumer
+      of.** **DONE (`6195a41`).** `ApplyPatchNow` at `:104-105`, `PeakAbs` at `:111`. Use the operator's real repro, not a synthetic sweep (M3): Filter bank Crispy at max,
       modulation live, transport running.
 
       Add the helper once, beside the `Rig` type in `app/FroggersAudioRoutingTests.cpp`, so the
@@ -381,7 +388,11 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
 }
 ```
 
-- [ ] **Step 6 — B7.5 IS NOT COMPLETE WITHOUT LIVE MODULATION. Added 2026-08-06.**
+- [x] **Step 6 — B7.5 IS NOT COMPLETE WITHOUT LIVE MODULATION. Added 2026-08-06. DONE.**
+      **Landed and verified in the tree 2026-08-07:**
+      `master_limiter_stays_at_unity_under_live_modulation` at `:733`, depths on Drive slot 8 and
+      Filter slot 5, both from `kModSlotVco1Audio` (`:751`, `:757`). `kModSlotNoise` appears
+      nowhere in either acceptance test — confirmed by grep, as the correction below requires.
 
       **Status: Steps 1-5 landed (`6195a41`). The test is red at `minEnvelopeSeen = 0.985796`,
       `PeakAbs = 0.991599`. But it exercises STATIC knobs only.**
@@ -452,24 +463,21 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
       >
       > Use `kModSlotVco1Audio` on Drive slot 8. Keep `kModSlotNoise` nowhere in this test.
 
-```cpp
-// UNVERIFIED ROUTE (M1) -- read FroggersModulation.hpp and confirm before
-// writing. `EnsureModulationDepth` returns nullptr at storage capacity, so
-// check it. Depth centers are BIPOLAR: 0.5 is zero, 1.0 is full positive.
-synth::Parameter* phaseDepth =
-    model.PageParameter(synth_froggers::FroggersBankId::Drive, 8)
-         .EnsureModulationDepth(synth_froggers::kModSlotNoise);
-REQUIRE_TRUE(phaseDepth != nullptr);
-phaseDepth->SceneCenter(0) = 1.0f;
-```
+**The snippet that stood here contradicted the correction directly above it** — it still passed
+`kModSlotNoise`, the source that box exists to forbid. Removed 2026-08-07 rather than corrected:
+the code has landed, so **read the tree, not a snippet** (`grep -n "EnsureModulationDepth"
+app/FroggersAudioRoutingTests.cpp` → `:751`, `:757` as of `4cde39c`). Retaining a hand-copied
+version of landed code is a second definition site of the same fact (OMNI §8) and is how this
+snippet went stale in the first place.
 
       **Report both numbers for the new test too.** Expected: red, with a LARGER gain reduction
       than the static test's 0.0142. **If the modulated test is no worse than the static one,
       stop and report** — that would contradict §K.1's measurement and means the modulation is
       not reaching `DriveBlendPhase`, which is its own defect.
 
-- [ ] **Step 3: Run it and confirm it FAILS**, and record the actual `minEnvelopeSeen` in this
-      file. A number, not a paragraph (M7).
+- [x] **Step 3: Run it and confirm it FAILS**, and record the actual `minEnvelopeSeen` in this
+      file. A number, not a paragraph (M7). **DONE — red at `minEnvelopeSeen = 0.985796`,
+      `PeakAbs = 0.991599` (static); `0.985954` / `0.991505` (live modulation).**
 
 ```bash
 cd app && nice make -j2 test 2>&1 | tail -30
@@ -478,10 +486,11 @@ cd app && nice make -j2 test 2>&1 | tail -30
 Expected: FAIL on `master_limiter_stays_at_unity_across_hostile_patch`, with `minEnvelopeSeen`
 well below 0.999 — the proposal's trace predicts continuous engagement.
 
-- [ ] **Step 4:** If it PASSES, **stop and report.** A passing B7.5 before B7.1 means the trace in
+- [x] **Step 4:** If it PASSES, **stop and report.** A passing B7.5 before B7.1 means the trace in
       `proposal.md` is wrong and the whole plan needs re-deriving. Do not "fix" it by hardening the
-      patch until it fails — that is M3 in reverse.
-- [ ] **Step 5: Commit** the red test, marked expected-red in the commit message.
+      patch until it fails — that is M3 in reverse. **N/A — it failed, as required.**
+- [x] **Step 5: Commit** the red test, marked expected-red in the commit message. **DONE
+      (`6195a41`, "B7.5 Step 2-3: EXPECTED-RED end-to-end acceptance test").**
 
 ---
 
@@ -577,6 +586,17 @@ not."*
 - Both are **upstream** of the two stages that do get cleared.
 - **The flush is one-shot** — `delayReverbClearPending_ = false` once it fires. Anything still
   ringing upstream refills delay and reverb permanently after the single clear.
+
+> **⚠ THIS WHOLE SUBSECTION IS HISTORY AS OF `1c37657`. Do not act on it.** It describes the
+> pre-F3.3 flush, which cleared 2 of 14 units. **The flush now resets all 14**
+> (`FroggersAppCore.hpp:670`, `:696`), so "anything still ringing upstream refills delay and
+> reverb" no longer has anything ringing upstream to do it — every upstream unit is zeroed in the
+> same pass. The flush is *still* structurally one-shot, and that remains correct: after the clear
+> the gate is closed and every voice is Idle, so nothing can re-inject.
+> **The one-shot property is therefore no longer a defect — it is the load-bearing assumption
+> F3.2c tests.** If output re-grows after a clear that zeroed all 14 units with no input, the only
+> remaining energy source is the modulation that keeps running, which is precisely the parametric
+> hypothesis below. Kept here because F3.2c's refutation condition is stated against it.
 
 **Hypothesis 1 (`AllIdle()` never latching) was checked and is unlikely:** `setGate(false)` forces
 every voice to `Stage::Release` (`dsp/VoiceEnvelope.hpp:93`), and `releaseStep` is floored above
@@ -697,7 +717,20 @@ exactly as reported.
       Only after one of these reproduces does a failing test get written. **Liveness assertion is
       mandatory** (§0): assert the instrument was loud pre-Stop, as F3.1 did at 0.840133.
 
-- [ ] **F3.3 — Fix the enumeration defect on its own merits (OMNI §1, §8). Not a Stop fix.**
+- [x] **F3.3 — Fix the enumeration defect on its own merits (OMNI §1, §8). Not a Stop fix.**
+      **DONE (`1c37657`), independently re-verified in the tree 2026-08-07.** All four required
+      properties confirmed by reading, not by report: `dsp/RecoveryTier.hpp` exists and holds the
+      tags (`struct FiniteOnly {}` / `struct Magnitude {}`); the enumeration is hierarchical
+      (`FroggersAppCore.hpp:1480` composes `drive_.ForEachStatefulUnit` at `dsp/Drive.hpp:309` and
+      `filterChain_.ForEachStatefulUnit` at `dsp/FilterFx.hpp:611`); the tags are compile-time
+      types guarded by `if constexpr`, not a runtime enum; every Tier-2 timer now lives **in its
+      unit** (`unit.overCeilingSeconds` — `dsp/Vco.hpp:125`, `dsp/FilterFx.hpp:234`/`:391`,
+      `dsp/Drive.hpp:131`/`:191`/`:459`), with **no** parallel array or `const void*` lookup left in
+      the parent. The Stop flush calls `ForEachStatefulUnit([](auto& unit, auto) { unit.Reset(); })`
+      at both edges (`FroggersAppCore.hpp:670`, `:696`) and the false
+      "VCOs/filters/drive do not self-sustain" comment is gone.
+      **Unit count is 14** (10 `Magnitude` + 4 `FiniteOnly`), confirming F3.1's count and refuting
+      the "thirteen" that `proposal.md` carried.
 
       The concept "every stateful unit" has two definition sites: `RecoverPoisonedUnitState`
       (14 units, complete) and the Stop flush (2 units, truncated), the latter justified by a
@@ -884,13 +917,42 @@ geometric r=0.7 tail. **P(count ≥ 4) = 30%.** Across 16 visible parameters tha
 4+ per press. *"Many parameters with 4+ badges" is what this distribution produces by design* —
 "median 3" means half of all draws are 3 or below, not that most are.
 
-**The part that does not fit the spec is 7.** The geometric tail should put P(7) well under 1%.
+> **⚠ "7 needs a separate explanation" was FALSE — computed from the code 2026-08-07.** The
+> previous text read *"The part that does not fit the spec is 7. The geometric tail should put
+> P(7) well under 1%."* **It does not.** Read the draw
+> (`grep -n "NextRandomCoin" app/FroggersModulation.hpp`, `:936-948` as of `4cde39c`): counts 5+
+> enter with probability 0.10, then `while (count < eligible.size() && NextRandomCoin() < 0.7f)`
+> — so each further increment succeeds with p = 0.7, and a count STOPS at exactly n with the
+> complementary 0.3.
+>
+> | | probability |
+> |---|---|
+> | P(count = 7) | 0.10 × 0.7² × 0.3 = **1.47 %** |
+> | P(count ≥ 7) | 0.10 × 0.7² = **4.9 %** |
+> | expected params at 7+ across 16 visible | 16 × 0.049 = **0.78 per press** |
+>
+> **Roughly one parameter shows 7+ badges on any given press.** That is not an anomaly needing a
+> separate cause — it is what this table produces, and it is the same finding as the 30 % at 4+,
+> one rung further out. **F1 is a pure spec change; there is no second bug hiding behind the 7s.**
+> Do not spend a dispatch hunting one.
+
+**Also settled 2026-08-07 — "the same distribution at EVERY level" needs NO structural work.**
+All four randomize entry points already call the one shared
+`detail::RandomizeParameterModulationDepths` (single definition site,
+`grep -n "inline bool RandomizeParameterModulationDepths" app/FroggersModulation.hpp` → `:893`;
+call sites `:1053`, `:1085`, `:1126`, `:1164` as of `4cde39c`). The level-1 and level-2 draws are
+the same code as level 0. **Retuning the table in one place changes every level by construction**
+— this is OMNI §1's "reuse is only REAL when the runtime call graph is single-sourced," and here
+it already is. F1.3 still tests all three levels, but as a regression pin, not as a fix.
 
 - [ ] **F1.1: The decisive measurement, before touching the draw** (M1 — the cause was asserted
       wrongly twice and the operator caught it both times). From a genuinely fresh patch, press
       Randomize All once and histogram the per-parameter count three ways: **(a)** the count the
       helper CHOSE, **(b)** the number of depths with non-neutral `SceneCenter`, **(c)** the number
       where `HasNonZeroState()` is true. Compare (a) against 10/30/30/20 + tail.
+      **Scope reduced 2026-08-07:** (a)-vs-spec is now computed above and matches, so this step's
+      remaining job is the (b)/(c) badge-criterion comparison — i.e. whether what the operator SEES
+      equals what the helper CHOSE. If (c) == (b) == (a), skip straight to F1.2.
       - (a) matches spec and (c) == (a) → the implementation is correct and the **spec** is what
         the operator dislikes. Proceed to F1.2 as a spec change.
       - (a) does not match spec → a real bug in the draw. Fix that first, then F1.2.
@@ -1022,10 +1084,67 @@ more limiters.
       `kSharedCeiling`; introduce `kStageCeiling = 0.80f` beside it and leave `kSharedCeiling = 1.0f`
       as the **master's** ceiling. Update `dsp/Limiter.hpp:66-70`'s B7.1 note to describe what
       landed.
-      **TRAP:** `headroom = ceiling − threshold`. A stage whose threshold equals `C` gives
-      `headroom == 0` and `DesiredMagnitude` evaluates `0/0` → NaN for every sample above
-      threshold. Each stage's threshold must stay **strictly below** 0.80; the delay and reverb
-      thresholds are currently 0.9 and must come down.
+      > **⚠ TRAP RESTATED 2026-08-07 — the previous statement of it was WRONG, and the real
+      > failure mode is worse and silent.** Previous text: *"a stage whose threshold equals `C`
+      > gives `headroom == 0` and `DesiredMagnitude` evaluates `0/0` → NaN for every sample above
+      > threshold."* **Both halves are false.** Read
+      > `dsp::OutputLimiter::DesiredMagnitude` (`grep -n "float DesiredMagnitude" app/dsp/Limiter.hpp`
+      > — `:143-149` as of `4cde39c`):
+      >
+      > ```cpp
+      > if (absX <= threshold) { return absX; }
+      > return threshold + headroom * (1.0f - std::exp(-(absX - threshold) / headroom));
+      > ```
+      >
+      > **`headroom == 0` does NOT produce NaN.** `absX == threshold` is caught by the early
+      > return, so the division only ever runs with a strictly positive numerator: `+x/0.0f` is
+      > `+inf`, `exp(-inf)` is `0.0f`, and `0.0f * (1.0f - 0.0f)` is `0.0f`. It returns exactly
+      > `threshold` — a hard brickwall. Undesirable, but finite, quiet, and harmless.
+      >
+      > **The real trap is `headroom < 0`, i.e. leaving a threshold ABOVE the new ceiling.** That is
+      > the default outcome of this task if the delay and reverb thresholds (both `0.9f`) are not
+      > lowered when the ceiling drops to `0.80`: `headroom = 0.80 − 0.9 = −0.1`. The exponent's
+      > sign flips and `DesiredMagnitude` stops being a limiter and becomes an **exponential
+      > amplifier**:
+      >
+      > | `absX` | returns | effective gain |
+      > |---|---|---|
+      > | 1.0 | 1.072 | 1.07× |
+      > | 1.5 | 41.1 | **27.4×** |
+      > | 2.0 | 2203 | **1101×** |
+      >
+      > **Nothing in the suite catches this.** The values stay finite until `absX ≈ 9.8`, so
+      > `REQUIRE_TRUE(!rig.SawNaN())` and `RequireFiniteStereo` both pass. It is a silent
+      > catastrophic blowout — *the exact symptom F2 exists to remove*, introduced by F2's own fix,
+      > and invisible to every guard this change has built. An implementer who tests for the NaN
+      > the old text described would find none and conclude the retarget was safe.
+      >
+      > **`Configure()` does not validate the invariant** (`grep -n "void Configure" app/dsp/Limiter.hpp`,
+      > `:113-124` as of `4cde39c`): it assigns `headroom = ceiling - threshold` with the sign
+      > unchecked. This is a real edge case the moment F2.1 changes these constants, so OMNI §12
+      > requires the guard rather than forbidding it. **F2.1a below adds it.**
+
+- [ ] **F2.1a — Pin the `threshold < ceiling` invariant at COMPILE time, before F2.1's edit.**
+      Every per-stage threshold/ceiling pair is a `constexpr` constant beside its limiter, so the
+      invariant is checkable with zero runtime cost and cannot be forgotten by a later stage.
+      Add one `static_assert` per pair, at the definition site of each pair:
+      `dsp/FilterFx.hpp` (`kPeakLimiterThreshold`/`kPeakLimiterCeiling`), `dsp/Delay.hpp`
+      (`kDelayWetLimiterThreshold`/`kDelayWetLimiterCeiling`), `dsp/Reverb.hpp`
+      (`kReverbWetLimiterThreshold`/`kReverbWetLimiterCeiling`), `dsp/Drive.hpp`
+      (`kOutputLimiterThreshold` against `kSharedCeiling`), and `dsp/Limiter.hpp`
+      (`kDefaultThreshold`/`kDefaultCeiling`). Message names the failure mode, not the rule —
+      e.g. *"threshold must stay strictly below ceiling; a negative headroom turns
+      DesiredMagnitude into an exponential amplifier."*
+      **Land F2.1a and confirm the suite is still green BEFORE F2.1 changes any constant**, so the
+      guard is proven to compile against the current (valid) values first and any later red is
+      attributable to the retarget alone.
+
+- [ ] **F2.1b — Then retarget.** Each stage's threshold must stay **strictly below** `C = 0.80`.
+      The delay and reverb thresholds are currently `0.9f` and **must come down in the same edit
+      that lowers the ceiling** — F2.1a's `static_assert` now makes forgetting a build error
+      rather than a silent 27× amplifier. Choose the new delay/reverb thresholds by preserving
+      their current *relative* headroom fraction rather than by picking a round number, and record
+      the two values chosen with their derivation.
 - [ ] **F2.2: Make-up gain `1/C` = 1.25× (+1.9 dB)**, applied **AFTER** `outputLimiter_.Process(x)`
       and **BEFORE** the trailing clamp (`FroggersAppCore.hpp:1228` area). Not before the limiter —
       its threshold/headroom math is calibrated in absolute terms, so pre-scaling would silently
@@ -1033,9 +1152,18 @@ more limiters.
 - [ ] **F2.3: Run B7.5. It must now be GREEN.** If it is not, **stop and report the number** — do
       not start adding per-stage bound tests (M3). Report which stage still exceeds `C` using
       F3.1's instrumentation.
-- [ ] **F2.4: Confirm the retargeted `limiter_engages_on_overdriven_patch_and_stays_bounded`**
-      (B7.5 Step 1) still passes — the master must remain a working backstop for reverb Hold, which
-      is deliberately parked just under self-oscillation.
+- [ ] **F2.4: Confirm both halves of B7.5 Step 1's split still pass.**
+      **NAME CORRECTED 2026-08-07:** `limiter_engages_on_overdriven_patch_and_stays_bounded` **no
+      longer exists** — Step 1 split it and renamed both halves, so this task cited a dead symbol.
+      The two live tests (verified by `grep -n "TEST_CASE(" app/FroggersAudioRoutingTests.cpp`,
+      `:572` and `:610` as of `4cde39c`) are:
+      - `limiter_engages_and_envelope_drops_below_unity` — property 1, the master does real work,
+        re-homed to drive `dsp::OutputLimiter` directly. **This one is the backstop proof** and
+        must stay green: the master must remain functional for reverb Hold, which is deliberately
+        parked just under self-oscillation. Because it drives the limiter directly it is immune to
+        the gain-staging change, which is exactly why Step 1 moved it there.
+      - `overdriven_patch_stays_bounded` — the chain-level boundedness/finiteness assertions, with
+        the `minEnvelopeSeen < 0.999f` engagement assertion deliberately stripped.
 - [ ] **F2.5: Commit.**
 
 ---

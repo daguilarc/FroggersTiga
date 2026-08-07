@@ -121,15 +121,24 @@ entire chain** are `DriveBlendPhase` when its coefficient is unsmoothed, and the
 
 ### Stateful units — the authoritative enumeration
 
-`FroggersAppCore.hpp:1368` `RecoverPoisonedUnitState` lists all thirteen: `audioVco1_`,
-`audioVco2_`, `audioVco3_`, `driveBlendPhase_`, `drive_.oversampler`,
-`drive_.sampleRateReducer1`, `drive_.sampleRateReducer2`, `filterChain_.peak`,
-`filterChain_.scoopNotch`, `filterChain_.comb`, `delay_`, `reverb_`, `outputLimiter_`,
-`filterChain_.peakLimiter`. Every one has `Reset()` and `StateFinite()`; each stage's nested
-limiter participates in its owner's `Reset()`.
+**CORRECTED 2026-08-07 (count) and SUPERSEDED BY `1c37657` (structure).** This paragraph
+previously said *"`FroggersAppCore.hpp:1368` `RecoverPoisonedUnitState` lists all thirteen"* and
+then enumerated **fourteen** names. Fourteen is right; "thirteen" was a miscount that also
+propagated into `SUPERSESSION-RECORD.md`. The units are `audioVco1_`, `audioVco2_`, `audioVco3_`,
+`driveBlendPhase_`, `drive_.oversampler`, `drive_.sampleRateReducer1`,
+`drive_.sampleRateReducer2`, `filterChain_.peak`, `filterChain_.scoopNotch`, `filterChain_.comb`,
+`filterChain_.peakLimiter`, `delay_`, `reverb_`, `outputLimiter_` — **10 Tier-2 (`Magnitude`) +
+4 Tier-1 (`FiniteOnly`) = 14**, matching F3.1's measured count exactly.
 
-**This list is the single definition site for "every stateful stage."** F3 exists because a second,
-truncated copy of that concept lives in the Stop flush.
+**The single definition site is now `FroggersAppCore::ForEachStatefulUnit`**
+(`grep -n "void ForEachStatefulUnit" app/FroggersAppCore.hpp` → `:1480` as of `4cde39c`), which
+composes `dsp::Drive`'s and `dsp::FilterFxChain`'s own enumerations rather than re-listing their
+members. `RecoverPoisonedUnitState` still exists (`:1425`) but is now a **consumer** of that
+enumeration, not the definition of it.
+
+**F3.3 has closed the duplication this paragraph described.** The Stop flush no longer carries a
+truncated second copy: it calls the same enumeration and resets all 14. F3 remains open, but **not
+for this reason** — F3.1 refuted the enumeration as its cause.
 
 ### Modulation write path
 
@@ -143,9 +152,14 @@ partial Fisher-Yates.
 
 **Verified 2026-08-06, and it is what makes F4/F5 cheap:**
 `RandomizeParameterModulationDepths` **does not need the modulation view open.** It takes
-`Parameter&` directly, reads eligibility from `group.GetModulators().Metadata()`
-(`:910`), and calls `parameter.EnsureModulationDepth(eligible[i])` itself (`:952`) —
-materializing on demand, exactly the sources it selects. Nothing in it reads view state.
+`Parameter&` directly, reads eligibility from `group.GetModulators().Metadata()`, and calls
+`parameter.EnsureModulationDepth(eligible[i])` itself — materializing on demand, exactly the
+sources it selects. Nothing in it reads view state.
+**Line cites corrected 2026-08-07:** this paragraph said `:910` and `:952`; the true lines are
+**`:914`** and **`:961`** (`grep -n "GetModulators().Metadata()\|EnsureModulationDepth(eligible"
+app/FroggersModulation.hpp`, as of `4cde39c`). `tasks.md`'s F4 block already carried the correct
+pair — the two documents disagreed and this one was wrong. Locate by symbol, never by these
+numbers.
 
 ### What is traced, and what is NOT
 
@@ -165,10 +179,13 @@ materializing on demand, exactly the sources it selects. Nothing in it reads vie
 what it can actually deliver.** Every per-stage limiter currently ships `ceiling = kSharedCeiling
 = 1.0` (`dsp/Limiter.hpp:59`):
 
+**Line cites re-verified 2026-08-07 against `4cde39c`** — the Drive and Filter rows had drifted;
+the corrected numbers are below. Locate by symbol (`grep -n "kOutputLimiterThreshold\|kPeakLimiterThreshold\|kDelayWetLimiterThreshold\|kReverbWetLimiterThreshold" app/dsp/*.hpp`).
+
 | Stage | threshold | ceiling | max deliverable |
 |---|---|---|---|
-| Drive output limiter (`dsp/Drive.hpp:416`, `:464`) | 0.7 | **1.0** | → 1.0 |
-| Filter peak limiter (`dsp/FilterFx.hpp:187-188`) | 0.7 | **1.0** | → 1.0 |
+| Drive output limiter (`dsp/Drive.hpp:449`, configured `:503`) | 0.7 | **1.0** | → 1.0 |
+| Filter peak limiter (`dsp/FilterFx.hpp:188-189`) | 0.7 | **1.0** | → 1.0 |
 | Filter comb branch — trim `1/(1+\|fb\|)`, saturator in loop | — | — | `(A+fb)/(1+fb)` = **1.0** at A = 1 |
 | Delay wet limiter (`dsp/Delay.hpp:105-106`) | 0.9 | **1.0** | → 1.0 |
 | Reverb wet limiter (`dsp/Reverb.hpp:115-116`) | 0.9 | **1.0** | → 1.0 |
@@ -185,10 +202,23 @@ master at 0.9 so it becomes a rarely-firing backstop.** `dsp/Limiter.hpp:66-70` 
 outstanding. Measured cost on the default patch is **−0.115 dB** — effectively free — with make-up
 gain `1/C` = 1.25× applied AFTER `outputLimiter_.Process()` and BEFORE the trailing clamp.
 
-**Trap for the implementer, found while tracing:** `headroom = ceiling − threshold`. Setting a
-stage's threshold EQUAL to `C` makes `headroom == 0` and `DesiredMagnitude` evaluates `0/0` → NaN
-for every sample above threshold. `C = 0.80` is the **ceiling**; each stage's threshold must stay
-strictly below it.
+**Trap for the implementer — RESTATED 2026-08-07, the original statement was wrong.** This
+paragraph previously claimed that `headroom == 0` makes `DesiredMagnitude` evaluate `0/0` → NaN.
+**It does not.** `absX == threshold` is caught by the function's own early return, so with
+`headroom == 0` the division always has a strictly positive numerator: `+x/0.0f → +inf`,
+`exp(-inf) → 0`, and the term vanishes, returning exactly `threshold` — a silent brickwall, not a
+NaN.
+
+**The real hazard is the opposite sign: `headroom < 0`, i.e. a threshold left ABOVE the new
+ceiling** — which is the default outcome for delay and reverb, whose thresholds are both `0.9`
+against the proposed `C = 0.80`. Negative headroom flips the exponent and turns the limiter into
+an **exponential amplifier** (|x| = 1.5 → 41.1, a 27× gain), staying finite — and therefore
+invisible to `SawNaN` and `RequireFiniteStereo` — up to |x| ≈ 9.8. That is F2's own symptom,
+reintroduced by F2's own fix, past every guard this change has built.
+
+`C = 0.80` is the **ceiling**; each stage's threshold must stay strictly below it, and
+`OutputLimiter::Configure` does not check that. **`tasks.md` F2.1a adds a compile-time
+`static_assert` on every threshold/ceiling pair before F2.1b touches any constant.**
 
 **Preflight ruling: all of F1–F5 are traced and may execute.** B7.5 is not the trace — it is the
 falsification gate. It still comes first, because M3 requires a failing end-to-end test before any
