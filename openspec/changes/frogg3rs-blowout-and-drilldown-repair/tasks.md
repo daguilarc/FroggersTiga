@@ -605,6 +605,45 @@ geometric r=0.7 tail. **P(count ≥ 4) = 30%.** Across 16 visible parameters tha
 per-stage limiter currently ships `ceiling = kSharedCeiling = 1.0`, so every stage may legitimately
 deliver more than the master's 0.9 threshold, and the master rides continuously by construction.
 
+- [ ] **F2.0 — BLOCKING: B7.1 is not yet justified by measurement. Added 2026-08-06.**
+
+      B7.5 is red and will discriminate B7.1 — that part works. **But the numbers say B7.1 alone
+      probably will not fix what the operator hears, and F2 must not be built on the assumption
+      that it will** (§0: no fix before the recorded root cause).
+
+      | patch | minEnvelopeSeen | PeakAbs |
+      |---|---|---|
+      | static hostile | 0.985796 | 0.991599 |
+      | + noise modulation | 0.985726 | 0.991473 |
+      | + VCO1-audio modulation (periodic, note-locked, full depth, on Drive Phase) | 0.985954 | 0.991505 |
+
+      **Three regimes within 0.03 % of each other.** The master's gain reduction on the most
+      hostile patch available is about **0.12 dB** — inaudible. W2.0 diagnosed the symptom as the
+      master ducking the whole mix; 0.12 dB cannot be that. Removing it cannot produce an audible
+      improvement.
+
+      **Two gaps to close before F2.1, both measurements, neither a fix:**
+
+  - **F2.0a — measure the WRONG QUANTITY problem.** `minEnvelopeSeen` is a minimum. It cannot
+    distinguish "dipped once for one block" from "rode at 0.9858 for all 256." **Pumping is
+    audible *variation* in gain, not a low minimum** — a constant 0.12 dB reduction is inaudible,
+    while a gain swinging 1.0 ↔ 0.85 at a few Hz is very audible. Report the envelope's **duty
+    cycle** (fraction of blocks below 0.999) and its **min-to-max range**, not just its minimum.
+    If the envelope is essentially constant, the master is not pumping and F2's root cause is
+    elsewhere entirely.
+  - **F2.0b — measure the operator's ACTUAL condition, which is post-Randomize-All.** Every test
+    above hand-sets 5 parameters and modulates 2. After Randomize All the operator has **dozens**
+    of parameters carrying modulation depths across all six banks — a categorically different
+    state, and the one they were in when they reported the symptom. Drive the rig with
+    `RequestRandomizeAll()`, let `ProcessFrame` drain it, then Crispy at max, then measure duty
+    cycle and range as in F2.0a. **This is the closest thing to the real repro that exists in the
+    harness.**
+
+      **Report numbers, change nothing.** Then the lead decides whether B7.1 is still F2's fix, or
+      whether §K.1's 50.5× — which does not surface end-to-end — means the archived per-stage
+      evidence describes isolated harnesses rather than the instrument, exactly the systemic error
+      §1 of the failure report identifies.
+
 - [ ] **F2.1: Retarget every per-stage ceiling to `C = 0.80`.** Measured cost on the default patch
       is **−0.115 dB**. The per-stage `ceiling` constants at `dsp/FilterFx.hpp:188`,
       `dsp/Delay.hpp:106`, `dsp/Reverb.hpp:116` and `dsp/Drive.hpp:464` all currently read
