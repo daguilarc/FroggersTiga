@@ -124,7 +124,62 @@ green when F2.1's ceiling retarget lands, and that is the only proof the archite
 binary rather than on paper. Report them separately from any real regression.
 
 ### Open
-F4+F5 · F1 · F3.2c · F2.0 → F2.1+ · C1–C3 · F7 · F6.
+~~F4+F5 · F1 · F3.2c · F2.0 → F2.1+ · C1–C3 · F7~~ — **all landed 2026-08-07.** See the status
+block below. **Open: F6 (operator verification) and C2 (deferred until after F6).**
+
+---
+
+## ⚠ STATUS AFTER THE 2026-08-07 IMPLEMENTATION PASS — READ THIS FIRST
+
+**The suite is FULLY GREEN: all ten binaries, 183 tests, zero failures.** Independently
+re-verified by the lead, not taken from a report. **There are no longer any expected-red tests** —
+any red is now a real regression. `External/Sheaf` clean at `77a3019e`; frozen trees byte-identical.
+
+**Both acceptance gates are GREEN**, having first been red for the right reason.
+`minEnvelopeSeen` is now exactly **1.0** on both — the master limiter never engages at all, which
+is what "the master is a backstop, not the gain-staging mechanism" was supposed to mean.
+
+| task | state |
+|---|---|
+| **F4** ejection | **FIXED** (`06e2964`) — the level-1 branch no longer moves the level counter at all |
+| **F5** level 3 | **DONE** (`49ce9af`, `9d0802c`) — `kMaxDrillLevel`, one mechanism at any depth, `wasLevelTwo` gone |
+| **F1** distribution | **DONE** (`a824a6c`) — mode 2; measured P(≥4) 8.8 %, P(≥7) 0.2 %, mean 2.28 |
+| **F2** blowout | **DONE** (`bbb7800`, `14ffe98`) — `kStageCeiling = 0.80`, make-up gain 1.25× post-limiter |
+| **F3.2c** | **REFUTED, validly this time** — see below |
+| **C1 / C3** | **DONE** (`905f7e7`, `61ad66f`) |
+| **F7** headers | **DONE** (`3a9e8c5`) — 6×6 grid NOT disturbed |
+| **C2** | **DEFERRED past F6 on purpose** — the only real refactor left; not landing it into the build the operator is about to judge |
+
+### The two things that changed the plan's conclusions
+
+**1. F3.2c's first run was invalid and its "refutation" was retracted.** It set comb feedback's base
+to max and added a *non-negative* depth on top, so `ClampToRange` pinned `fb` every sample — the
+"modulated" run was the same physical system as the control, which is why it read bit-identical.
+The harness asserted AUDIO liveness and never MODULATION liveness. Re-run with the base at 0.5 and
+a mandatory liveness print: knob swept **range 1.0**, and output is still exactly **0.0** at every
+post-Stop checkpoint. **So the refutation now stands on real evidence.**
+**Consequences: parametric oscillation is dead as F3's root cause, and F2/F3 are NOT the same bug**
+— that unification rested entirely on this mechanism.
+
+**2. F3's root cause is still not identified in the harness.** F3.2b is narrowed but not closed: the
+UI Stop path (`FroggersUiSurface.hpp:998` → `uiBus->Push(MessageIn::Stop)`) converges on the *same*
+`transportQuarterNotes.has_value()` edge the rig drives, so it is not a separate code path —
+`desiredTransportRunning_` is only a re-assert record for device renegotiation.
+**F3.3 resets all 14 units at that edge, so the symptom is expected to be gone. Per the standing
+trap, that is NOT a claim that F3 is fixed.** F6.1 decides by ear. If Stop still misbehaves, the
+next suspect is whether `AllIdle()` ever fails to latch — the flush is gated on it, and F3.3
+changed *what* is reset, never *whether* the clear fires.
+
+### New defect found, NOT fixed — needs an upstream decision
+**The badge criterion over-counts, and it is a separate bug from F1's distribution.** Measured:
+after a level-1 Randomize All, the drilled parameter's own badge shows **13** while only **1** of
+its depths is non-neutral. `ModulatorsAffectingMask()` counts a depth as affecting if the depth
+parameter *exists*, and `Bank::OpenModulationView` eagerly materialises one per connected source on
+drill-in. So the badge reports **connectedness, not modulation**. At level 0 it is correct (20 vs 20).
+Both `ModulatorsAffectingMask` and `OpenModulationView` live in `External/Sheaf`, which is pinned
+and unpatchable, **so this is an upstream ask, not an app fix** — file it against
+`/UPSTREAM-SHEAF-ASK.md`. It may well be a large part of the operator's original "far more badges
+per parameter than intended."
 
 ---
 

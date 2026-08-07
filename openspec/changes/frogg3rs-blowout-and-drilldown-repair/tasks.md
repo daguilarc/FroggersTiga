@@ -111,7 +111,7 @@ repeated 3-line sequences anywhere, and every helper passes §6's 2-of-4 (`ZeroE
 Depths` and `CapacityExhausted` are single-use but each names a domain concept without obscuring
 data flow, which is the stated exception). Four findings, none blocking.
 
-- [ ] **C1 (§8 + §12, highest blast radius) — the sample-rate fallback is duplicated six times,
+- [x] **C1 — DONE (`905f7e7`).** Traced per §12: a non-positive rate IS reachable (`Runtime.hpp::audioDeviceAboutToStart` forwards `getCurrentSampleRate()` unvalidated). Validated ONCE in `PrepareToPlay` against `kFallbackSampleRateHz = 44100.0`; the six downstream guards deleted, plus a SEVENTH site the finding missed (`FroggersModulationSlate::Prepare`, a third fallback of 48000.0). The 1.0-vs-44100.0 disagreement resolved: Limiter's `std::max(1.0f, sampleRate)` was WRONG, not merely different -- at sr=1.0 it collapses attack/release to near-instant. Original finding text: — the sample-rate fallback is duplicated six times,
       with TWO different values, and the source never validates.**
       `sampleRate > 0.0f ? sampleRate : 44100.0f` appears identically at `dsp/Delay.hpp:250`,
       `dsp/EnvelopeFollowers.hpp:35`, `:74`, `dsp/VoiceEnvelope.hpp:81`, plus bare `44100.0f`
@@ -124,7 +124,8 @@ data flow, which is the stated exception). Four findings, none blocking.
       rate, validate ONCE in `PrepareToPlay` and delete the five downstream guards; if it does not,
       delete all six. Either way one named constant, one site.
 
-- [ ] **C2 (§8) — three-VCO sequential duplication.** `FroggersAppCore.hpp:956-968` processes
+- [ ] **C2 (§8) — three-VCO sequential duplication. NOT DONE — deliberately deferred.** It is the one sweep finding that is a real refactor (`std::array<dsp::Vco,3>`) rather than a mechanical fix, it touches the audio path, and it carries zero operator-visible benefit. Landing it immediately before an operator listening pass would put a structural change into the build being judged. Do it AFTER F6.
+- [ ] **C2 original finding text:** `FroggersAppCore.hpp:956-968` processes
       `audioVco1_/2_/3_` in three structurally identical statements differing only by index
       (`0,3,6` / `1,4,7` / `2,5,8`). The `(i, +3, +6)` grouping is a real concept expressed three
       times as literals, and it appears a fourth time in `ProcessBlock`'s `vcoDrive` lambda
@@ -134,7 +135,7 @@ data flow, which is the stated exception). Four findings, none blocking.
       lines too. Check first whether `dsp::Vco` is copy/movable; the modulation slate's
       visualizers are individually named precisely because `synth::ui::Visualizer` is not.
 
-- [ ] **C3 (§10/§11/§12) — a loop-invariant null check evaluated once per sample.**
+- [x] **C3 — DONE (`61ad66f`).** `block.outputs` hoisted to `hasOutputs` before the frame loop. The inner `channel != nullptr` SURVIVED the §12 trace and was deliberately kept: Sheaf's own reference apps (`braid-4/Braid4Core.hpp:678-689`, `miniapp/MiniAppCore.hpp:358-363`) both independently guard channel pointers, which is affirmative evidence the engine contract does not guarantee non-null. Original finding text: — a loop-invariant null check evaluated once per sample.**
       `if (block.outputs != nullptr)` sits inside the per-frame loop (`FroggersAppCore.hpp:594`
       opens it; the check is at `:739`), so a block-scoped pointer is re-tested 48,000×/second.
       Hoist it out of the loop. The inner `if (channel != nullptr)` needs a §12 trace: if the
@@ -1293,7 +1294,7 @@ more limiters.
       > unchecked. This is a real edge case the moment F2.1 changes these constants, so OMNI §12
       > requires the guard rather than forbidding it. **F2.1a below adds it.**
 
-- [ ] **F2.1a — Pin the `threshold < ceiling` invariant at COMPILE time, before F2.1's edit.**
+- [x] **F2.1a — DONE (`bbb7800`). Pin the `threshold < ceiling` invariant at COMPILE time, before F2.1's edit.**
       Every per-stage threshold/ceiling pair is a `constexpr` constant beside its limiter, so the
       invariant is checkable with zero runtime cost and cannot be forgotten by a later stage.
       Add one `static_assert` per pair, at the definition site of each pair:
@@ -1308,20 +1309,20 @@ more limiters.
       guard is proven to compile against the current (valid) values first and any later red is
       attributable to the retarget alone.
 
-- [ ] **F2.1b — Then retarget.** Each stage's threshold must stay **strictly below** `C = 0.80`.
+- [x] **F2.1b — DONE (`14ffe98`).** `kStageCeiling = 0.80f`; peak/delay/reverb/Drive ceilings retargeted; delay+reverb thresholds 0.9 -> 0.72 (preserving 0.9/1.0 == 0.72/0.80). Then retarget. Each stage's threshold must stay **strictly below** `C = 0.80`.
       The delay and reverb thresholds are currently `0.9f` and **must come down in the same edit
       that lowers the ceiling** — F2.1a's `static_assert` now makes forgetting a build error
       rather than a silent 27× amplifier. Choose the new delay/reverb thresholds by preserving
       their current *relative* headroom fraction rather than by picking a round number, and record
       the two values chosen with their derivation.
-- [ ] **F2.2: Make-up gain `1/C` = 1.25× (+1.9 dB)**, applied **AFTER** `outputLimiter_.Process(x)`
+- [x] **F2.2: DONE (`14ffe98`).** `1.0f / dsp::kStageCeiling` in `SanitizeOutputSample`, after `outputLimiter_.Process()`, before the trailing clamp. Make-up gain `1/C` = 1.25× (+1.9 dB)**, applied **AFTER** `outputLimiter_.Process(x)`
       and **BEFORE** the trailing clamp (`FroggersAppCore.hpp:1228` area). Not before the limiter —
       its threshold/headroom math is calibrated in absolute terms, so pre-scaling would silently
       retune every stage's budget. The trailing hard clamp stays; it is the residual-overshoot net.
-- [ ] **F2.3: Run B7.5. It must now be GREEN.** If it is not, **stop and report the number** — do
+- [x] **F2.3: DONE — B7.5 IS GREEN.** Both gates pass; `minEnvelopeSeen` is exactly 1.0. Independently re-verified by the lead: all ten binaries in one `make test`, 0 failures. If it is not, **stop and report the number** — do
       not start adding per-stage bound tests (M3). Report which stage still exceeds `C` using
       F3.1's instrumentation.
-- [ ] **F2.4: Confirm both halves of B7.5 Step 1's split still pass.**
+- [x] **F2.4: DONE.** Both green. Confirm both halves of B7.5 Step 1's split still pass.**
       **NAME CORRECTED 2026-08-07:** `limiter_engages_on_overdriven_patch_and_stays_bounded` **no
       longer exists** — Step 1 split it and renamed both halves, so this task cited a dead symbol.
       The two live tests (verified by `grep -n "TEST_CASE(" app/FroggersAudioRoutingTests.cpp`,
@@ -1333,7 +1334,7 @@ more limiters.
         the gain-staging change, which is exactly why Step 1 moved it there.
       - `overdriven_patch_stays_bounded` — the chain-level boundedness/finiteness assertions, with
         the `minEnvelopeSeen < 0.999f` engagement assertion deliberately stripped.
-- [ ] **F2.5: Commit.**
+- [x] **F2.5: Commit.** DONE (`14ffe98`).
 
 ---
 
@@ -1342,7 +1343,7 @@ more limiters.
 Operator: *"when we are in modulation drilldown levels … it should be trivial to have headers when
 we are in the drilldown levels, 'Modulation Level 1' then 2 then 3."*
 
-- [ ] **F7.1 — Show the current drill level as a header while drilled in.**
+- [x] **F7.1 — DONE (`3a9e8c5`).** Header emitted as an extra `DrawCommand::Text` on `kVcoScope` -- the surface's only non-interactive Draw-only cell -- so the 6x6 grid is NOT disturbed. Label derived from `Level()` via a new `DrillLevel()` atomic accessor, never from hardcoded names. Produces no header at level 0 and `Modulation Level 1/2/3` at depth. Test-covered by `drill_level_header_shown_only_while_drilled_in_and_matches_the_level`. **Operator still confirms visually at F6.**
       Level 0 (the parameter grid) shows no such header; levels 1+ show `Modulation Level N`.
 
       **This does NOT depend on F5's `levelEncoders_` array.** The operator's note assumed the
