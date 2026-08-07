@@ -518,6 +518,24 @@ implementer-closable.
 
 ---
 
+## Deferred design — bank expansion to full 16-slot occupancy
+
+`BANK-EXPANSION-DESIGN.md` in this directory. **Deferred: nothing in it is built by this change.**
+All six banks carry 9 named parameters + 5 empty + Crispy + Crunchy today; the document proposes
+the 5 missing slots per bank (30 total), each with a continuous reading, a cost tier, and
+`file:line` evidence for every Tier-1 claim. It supersedes the archived §J research, which it
+corrects in five places.
+
+**Three findings from it that are relevant to code, not just to future design:**
+- **Delay's `Color` and `Halo` are not independent DSP.** `app/dsp/Delay.hpp:433-434` averages
+  them into Detune and Mod depth (`ddet = 0.5*(ddet + Color)`, `dmod = 0.5*(dmod + Halo)`), a
+  ported-firmware fold. Two shipped parameter names promise something the code does not do, and
+  the Delay bank has 7 distinct controls rather than 9.
+- **The ASR envelopes are not modulation sources.** No envelope output appears in
+  `FroggersModulatorSlot` (`app/FroggersModulation.hpp:156-171`); the "VCO EF" entries are
+  amplitude followers, a different signal. Open question 8 in the design document.
+- Five §K items the archive lists as "in flight" have already landed.
+
 ## Deferred, carried untouched
 
 §H mobile-web UI layer · §I VST layer · §J bank parameter expansion · D.4 publish pipeline ·
