@@ -1,3 +1,19 @@
+> # ⚠ SUPERSEDED 2026-08-07 — PARTIALLY DELIVERED
+>
+> **Successor: `../frogg3rs-parametric-slew-and-stop-root-cause/`. Work from that, not this.**
+>
+> Four of five operator-reported symptoms have landed, measured fixes, and this change's own
+> acceptance gate (B7.5) is green having first been red for the right reason. **F3 — "Stop does
+> not stop" — is the exception, and its root cause has since been MEASURED**: the Stop flush
+> fires correctly and resets all 14 units, then the output regenerates from the zeroed chain and
+> pins at full scale. It is a stability bug in a feedback loop whose gain is modulated at audio
+> rate, not a Stop bug, and no amount of resetting fixes it. See the successor's
+> `SUPERSESSION-RECORD.md` §2 and the raw `F3DIAG` capture beside it.
+>
+> **Everything below this line is the state as of the handoff and is retained for derivation
+> only. Several of its conclusions were later retracted** — notably the F3.2c refutation and the
+> claim that the badge over-count was an upstream Sheaf ask. The successor's §0 lists them.
+
 # Handoff — `frogg3rs-blowout-and-drilldown-repair`
 
 **Written 2026-08-07 at session end. Nothing has gone to the operator yet** (M4: one build, one
