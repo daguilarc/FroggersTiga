@@ -1045,16 +1045,34 @@ it already is. F1.3 still tests all three levels, but as a regression pin, not a
       - (a) does not match spec → a real bug in the draw. Fix that first, then F1.2.
       - (c) > (b) → the badge criterion over-counts. `Parameter::HasNonZeroState()` is true if a
         depth's OWN sub-depths are non-neutral, and `ZeroExistingModulationDepths` does not recurse.
-        Note this only applies if the loaded patch already carried level-2 state; a level-0
-        Randomize All creates none.
-- [ ] **F1.2: Re-derive the table for mode 2** — 4+ genuinely rare (single digits of percent, not
+
+      > **⚠ (c)'s NAMED ACCESSOR IS UNREACHABLE — measurement retargeted 2026-08-07.**
+      > `Parameter::HasNonZeroState()` is **private** (declared
+      > `External/Sheaf/.../ParameterModulation.hpp:566`, inside the `private:` block opening at
+      > `:535`), confirmed by a compiler error from app-side test code. `External/Sheaf` is pinned
+      > and unpatchable, so this task as originally written could not be executed at all.
+      >
+      > **Measure the REAL badge criterion instead — it is public, and it is strictly better than
+      > the proxy.** What the operator actually sees is
+      > `Parameter::PopulateUIState`'s `modulatorsAffectingMask` (`:442`), stored from
+      > `ModulatorsAffectingMask()` (`ParameterModulation.cpp:1264`) and drawn by
+      > `drawBadges(state.modulatorsAffectingMask, …)` (`EncoderDraw.hpp:723`).
+      > **(c) := `std::popcount(modulatorsAffectingMask)`.** `HasNonZeroState()` was only ever a
+      > stand-in for this; measuring the drawn mask answers the operator's actual complaint
+      > directly rather than by proxy. This is not a workaround — it is the correct target.
+      >
+      > **Scope note, unchanged:** a level-0 Randomize All creates no level-2 state, so an
+      > over-count can only show up on a loaded patch that already carried some, **or** after a
+      > level-1 Randomize All — which, since F4, now writes level-2 sub-depths without opening any
+      > view. Measure both.
+- [x] **F1.2: Re-derive the table for mode 2** DONE (`a824a6c`): 20/46/26/6 then geometric r=0.30 from 5. Measured over 1000 trials: P(1)=19.4 P(2)=45.6 P(3)=26.2 P(4)=6.3, P(>=4)=8.8%, P(>=7)=0.2%, mode 2, mean 2.28 -- matches the derivation within sampling noise. — 4+ genuinely rare (single digits of percent, not
       30%), 7 essentially never, never zero, still distinct sources. Record the derivation as
       numbers.
-- [ ] **F1.3: Pin it with tests at EVERY level.** A histogram test on the level-0 draw, plus a test
+- [x] **F1.3: Pin it with tests at EVERY level.** DONE (`a824a6c`). Level-1 and level-2 confirmed independently; same distribution at every level holds by construction (one shared helper). A histogram test on the level-0 draw, plus a test
       that the **same** distribution governs the level-1 and level-2 draws. Assert on the resulting
       count distribution, not on call counts — the predecessor's E.1 tests pinned the wrong layer
       and that is on record as the sixth green-while-wrong guard.
-- [ ] **F1.4: Commit.**
+- [x] **F1.4: Commit.** DONE (`a824a6c`).
 
 ---
 
