@@ -51,7 +51,8 @@ ten test binaries.
 | 4 | **F4 + F5** drilldown | One shared edit; highest value per line |
 | 5 | **F1** randomize distribution | Needs F0.3 |
 | 6 | **F2** B7.1 ceiling retarget | Turns B7.5 green. Last, because it is the one B7.5 exists to judge |
-| 7 | **F6** operator verification | Single pass on the complete build |
+| 7 | **F7** drilldown level headers | After F4+F5 so level 3 exists to display |
+| 8 | **F6** operator verification | Single pass on the complete build |
 
 ---
 
@@ -742,6 +743,30 @@ deliver more than the master's 0.9 threshold, and the master rides continuously 
 - [ ] **F2.5: Commit.**
 
 ---
+
+## F7 — Drilldown level headers (operator request, 2026-08-07)
+
+Operator: *"when we are in modulation drilldown levels … it should be trivial to have headers when
+we are in the drilldown levels, 'Modulation Level 1' then 2 then 3."*
+
+- [ ] **F7.1 — Show the current drill level as a header while drilled in.**
+      Level 0 (the parameter grid) shows no such header; levels 1+ show `Modulation Level N`.
+
+      **This does NOT depend on F5's `levelEncoders_` array.** The operator's note assumed the
+      array is what makes this cheap; in fact `FroggersModulationDrillIn::Level()` is already
+      public and already returns the current level (`app/FroggersModulation.hpp:669`). The header
+      needs the counter, not the array. F5 matters only in that it raises the maximum to 3, which
+      the header should then display without a code change — **derive the label from `Level()`,
+      never from a hardcoded set of level names**, or F5 will need a second edit (OMNI §8).
+
+      **Sequence it AFTER F4+F5** so level 3 exists to display and the header is verified against
+      all three levels in one pass, not two.
+
+  - **Read the surface layer first** (`app/FroggersUiSurface.hpp`) and report where a header can
+    be emitted without disturbing the single declared 6×6 grid — that grid is settled and
+    operator-approved, and this must not perturb it. **If a header cannot be added without
+    changing the grid, stop and report rather than reflowing the layout.**
+  - Operator confirms visually at F6. Not implementer-closable.
 
 ## F6 — Operator verification (closes the change)
 
