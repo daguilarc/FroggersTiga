@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "publisher": {
+    "id": "daguilarc",
+    "name": "daguilarc"
+  },
+  "apps": [
+    {
+      "appId": "frogg3rs",
+      "displayName": "Frogg3rs Synth",
+      "author": "daguilarc",
+      "category": "synth",
+      "header": "Froggers.hpp",
+      "cppType": "synth_froggers::FroggersApp",
+      "includeDirs": [
+        "../../../../../app"
+      ]
+    }
+  ]
+}

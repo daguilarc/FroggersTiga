@@ -14,7 +14,7 @@ records as fixed with green tests attached. 176 tests pass; four reported sympto
 understood, because the failure was not primarily technical.
 
 The original document is preserved as history at
-`../archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/FAILURE-REPORT-AND-HANDOFF.md`,
+`../2026-08-06-frogg3rs-modulation-truth-and-voicing/FAILURE-REPORT-AND-HANDOFF.md`,
 alongside an `ARCHIVE-RECORD.md` that states what shipped, what did not, and what the 2026-08-06
 omni audit found afterward. **This change is self-contained; you do not need either file to
 execute it.**

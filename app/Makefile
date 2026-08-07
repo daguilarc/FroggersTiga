@@ -125,7 +125,7 @@ DSP_TEST_SOURCES := $(APP_DIR)/FroggersDspParityTests.cpp
 DSP_TEST_BIN := $(BUILD_DIR)/froggers_dsp_parity_tests
 
 # --- F3.2c: Stop-flush parametric-oscillation measurement harness --------
-# openspec/changes/frogg3rs-blowout-and-drilldown-repair/tasks.md. A
+# openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md. A
 # one-off *Repro.cpp measurement binary (F0.2 convention) -- deliberately
 # NOT added to the `test` target below; see FroggersStopFlushRepro.cpp's
 # own header comment. Needs the same Sheaf tests/ include (SynthRig.hpp)

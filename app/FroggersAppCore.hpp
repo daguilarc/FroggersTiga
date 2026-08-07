@@ -252,7 +252,7 @@ public:
     // hook (AppConcepts.hpp:26-28) once the host negotiates a real sample
     // rate. Everything else in this class is sample-rate-independent at
     // Init() time.
-    // C1 (openspec/changes/frogg3rs-blowout-and-drilldown-repair/tasks.md
+    // C1 (openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md
     // F8.1): the fallback used when the host hands this hook a non-positive
     // sample rate. See PrepareToPlay()'s own comment for why that is a real
     // possibility, not a hypothetical -- this is now the ONE place that
@@ -442,7 +442,7 @@ public:
     // change, this is a read-only discoverability aid.
     bool TransportRunning() const { return transportRunningDisplay_.load(std::memory_order_acquire); }
 
-    // F7 (openspec/changes/frogg3rs-blowout-and-drilldown-repair/tasks.md,
+    // F7 (openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md,
     // operator request): published once per block alongside
     // transportRunningDisplay_ above, same cross-thread contract -- lets the
     // surface (message thread) read the current modulation drill-in level
@@ -637,7 +637,7 @@ public:
         }
         modulation_.PrepareBlockClock(quarterNotesPerSample);
 
-        // C3 (openspec/changes/frogg3rs-blowout-and-drilldown-repair/
+        // C3 (openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/
         // tasks.md F8.1): `block.outputs` is `AudioBlock`'s own field
         // (External/Sheaf/projects/synth/include/synth/AppContext.hpp:70-85)
         // -- set once for the whole callback, never reassigned inside this
@@ -1582,7 +1582,7 @@ private:
     // definition (`dsp/Limiter.hpp`, moved out by B5) for the struct itself.
     dsp::OutputLimiter outputLimiter_;
 
-    // F3.3 (openspec/changes/frogg3rs-blowout-and-drilldown-repair/tasks.md,
+    // F3.3 (openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md,
     // OMNI Sec1/Sec8): this class's own contribution to the "every stateful
     // unit in the audio path" enumeration, COMPOSED from the members
     // declared above rather than re-listing dsp::FrogBlock's/

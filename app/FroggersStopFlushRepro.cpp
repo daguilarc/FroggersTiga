@@ -37,7 +37,7 @@
 // guard) -- itself a useful confirming data point, not an oversight.
 //
 // ---------------------------------------------------------------------
-// F3.2c EXTENSION (openspec/changes/frogg3rs-blowout-and-drilldown-repair/
+// F3.2c EXTENSION (openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/
 // tasks.md): re-run of the above, after F3.3 (1c37657) landed the
 // all-14-unit Stop flush, with ONE deliberate delta -- an audio-rate
 // modulation depth from kModSlotVco1Audio on Filter slot 5 (comb

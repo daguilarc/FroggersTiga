@@ -279,7 +279,7 @@ public:
     // Sample-rate-dependent setup (VCO pitch mapping needs the real rate at
     // Process()-call time, not here; EF coefficients and the GangedRandomLfo
     // lookup table are the two pieces that must be prepared once up front).
-    // C1 (openspec/changes/frogg3rs-blowout-and-drilldown-repair/tasks.md
+    // C1 (openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md
     // F8.1 -- found during that task's required §12 trace, not in its
     // original six-site enumeration): this method's only production caller
     // is FroggersAppCore::PrepareToPlay() (`modulation_.Prepare(sampleRate)`,

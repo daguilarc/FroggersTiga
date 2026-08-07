@@ -30,7 +30,7 @@ struct VcoEnvelopeFollowers
     float releaseCoeff = 0.01f;
 
     // sim/V2EnvelopeFollowerBank.hpp:19-26 (setSampleRate). C1
-    // (openspec/changes/frogg3rs-blowout-and-drilldown-repair/tasks.md
+    // (openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md
     // F8.1): this struct's only production caller is
     // FroggersModulationSlate::Prepare(), itself only ever called from
     // FroggersAppCore::PrepareToPlay(), which now validates the host's

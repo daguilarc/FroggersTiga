@@ -1406,6 +1406,6 @@ W4 second Sheaf pin bump `77a3019e` → `508d9d68` · W4.2 `kExternalAudioOptedI
 G.2 blank-window-on-startup-failure decision · B7.3 filter composite · B7.4 per-stage guards.
 
 Full derivations for all of these are in
-`../archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/tasks.md`. They are deliberately **not**
+`../2026-08-06-frogg3rs-modulation-truth-and-voicing/tasks.md`. They are deliberately **not**
 copied forward — carrying ~250 lines of deferred research would cost every future agent context for
 no scoped benefit (OMNI §16).

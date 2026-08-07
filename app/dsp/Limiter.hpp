@@ -152,7 +152,7 @@ struct OutputLimiter
     // independently-tuned instance (the peak-branch limiter, FilterFx.hpp)
     // calls this overload; the master keeps calling the single-argument
     // overload below, unchanged.
-    // C1 (openspec/changes/frogg3rs-blowout-and-drilldown-repair/tasks.md
+    // C1 (openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md
     // F8.1): every production caller of this overload passes an
     // already-known-positive value. Five are rooted at
     // FroggersAppCore::PrepareToPlay() (the master via the single-argument

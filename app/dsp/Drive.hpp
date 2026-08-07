@@ -298,7 +298,7 @@ struct FrogBlock
     Oversampler2x oversampler;
     float fuzz = 0.0f;
 
-    // F3.3 (openspec/changes/frogg3rs-blowout-and-drilldown-repair/tasks.md):
+    // F3.3 (openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md):
     // this struct's own contribution to the "every stateful unit in the
     // audio path" enumeration -- lists ONLY the members declared above that
     // RecoverPoisonedUnitState ever watched (not polynomialDrive/

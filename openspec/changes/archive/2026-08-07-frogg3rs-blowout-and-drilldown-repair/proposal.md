@@ -1,7 +1,7 @@
 # Proposal — `frogg3rs-blowout-and-drilldown-repair`
 
 **Created 2026-08-06. Supersedes `frogg3rs-modulation-truth-and-voicing`**, archived
-*superseded, FAILED* at `../archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/`.
+*superseded, FAILED* at `../2026-08-06-frogg3rs-modulation-truth-and-voicing/`.
 See `SUPERSESSION-RECORD.md` for what carried and why.
 
 **This document is self-contained.** Everything binding from the predecessor's failure report has

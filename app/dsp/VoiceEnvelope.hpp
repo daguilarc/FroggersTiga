@@ -100,7 +100,7 @@ struct VcoAdsrState
         }
     }
 
-    // C1 (openspec/changes/frogg3rs-blowout-and-drilldown-repair/tasks.md
+    // C1 (openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md
     // F8.1): this struct's only production caller is
     // FroggersAppCore::PrepareToPlay() (audioAdsr_.init(sampleRate_), which
     // calls this), and that method now validates the host's sample rate
