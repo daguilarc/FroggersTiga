@@ -54,6 +54,36 @@ ten test binaries.
 | 7 | **F7** drilldown level headers | After F4+F5 so level 3 exists to display |
 | 8 | **F6** operator verification | Single pass on the complete build |
 
+**SESSION CLOSEOUT (operator directive, 2026-08-07):** once F3.3 lands, run **F8** (omni-rule
+structural sweep of `app/` + this change's living artifacts), fix the artifacts from its findings,
+and write the handoff. F4+F5, F1, F2.0/F2.1+, F3.2c, F7 and F6 then execute in a NEXT session
+against a swept, honest plan. **Frozen trees and the Daisy field app stay segregated — the sweep
+never reads or writes `desktop-v2/ desktop/ src/ sim/ wasm/ vcv/ web/` or `External/Sheaf`.**
+
+## F8 — Omni-rule structural sweep + handoff (closes this session, not the change)
+
+- [ ] **F8.1 — Code sweep** (read-only, parallelizable per §0): all of `app/` (17 files) against
+      §5 structure depth (2-of-4), §6 helper rules, §8 repetition (2+ occurrences → loop or
+      abstract; duplication is symmetric, find the sibling), §10 condition-check efficiency,
+      §12 defensive code (trace origin before guarding), and §1 definition-site enumeration.
+      Findings ranked, each with file:line and WHICH rule, severity by blast radius. Excludes:
+      frozen trees, `External/Sheaf`, the two `*Repro.cpp` diagnostics (report-only there).
+- [ ] **F8.2 — Spec-drift sweep** (read-only): every `file:line` citation and code snippet in this
+      change's living artifacts (`proposal.md`, `tasks.md`, `SUPERSESSION-RECORD.md`,
+      `BANK-EXPANSION-DESIGN.md`) re-verified against the code as it stands after F3.3. Today's
+      edits have moved lines under many of them. Also: every claim a task makes about what exists
+      ("X is public", "Y is called from Z") re-read, M1 applied to the artifacts themselves —
+      today's five lead errors were all spec text written from memory instead of from a read.
+      Archive dirs are history: report drift there, never edit (F0.2's footnote precedent).
+- [ ] **F8.3 — Lead fixes the artifacts** from F8.1/F8.2 findings. Code findings that are real
+      defects become tasks (or fold into existing F-items); artifact drift is corrected in place.
+      Nothing in F8 lands code changes beyond what F3.3 already did.
+- [ ] **F8.4 — Handoff document** in this directory, leading with the behavioural lessons (the
+      predecessor's failure-report format, which the operator kept): what is DONE and verified,
+      what is RED by design, what is OPEN with root cause unknown vs traced, the sequencing traps
+      already discovered (F3.3-masks-F3, measurement-during-refactor), and the exact next dispatch
+      for each remaining F-item.
+
 ---
 
 ## B7.5.0 — Patch-application anomaly. ✅ CLOSED 2026-08-06, no defect.
