@@ -669,15 +669,16 @@ public:
     std::size_t Level() const { return level_; }
     synth::Bank& BankRef() { return *bank_; }
 
-    // task 6.4: the app-side level counter. Levels 1-2 are Sheaf's native
-    // behavior (no app code); the ONLY thing added is refusing to dispatch a
-    // press that would open a third level.
+    // task 6.4: the app-side level counter. Levels below the cap are Sheaf's
+    // native behavior (no app code); the ONLY thing added is refusing to
+    // dispatch a press that would open one level deeper than the cap.
     void PressEncoder(synth::PhysicalEncoderId encoderId) {
-        if (level_ >= 2) {
+        if (level_ >= kMaxDrillLevel) {
             // Level cap: only forward a press on the Target/Back cell
             // (the current selection's own cell) -- anything else would
-            // call OpenModulationView for THIS level-2 depth cell's own
-            // depths, i.e. level 3, so it is refused: no dispatch at all.
+            // call OpenModulationView for THIS level's depth cell's own
+            // depths, i.e. one level past the cap, so it is refused: no
+            // dispatch at all.
             if (bank_->SelectedParameter() == nullptr ||
                 bank_->VisibleParameter(encoderId) != bank_->SelectedParameter()) {
                 return;
@@ -689,18 +690,16 @@ public:
         if (selectedAfter == nullptr) {
             level_ = 0;
         } else if (selectedAfter != selectedBefore) {
-            // E.2 (design A7a, operator override 2026-07-29): remember the
-            // PARAMETER-GRID encoder id that opens the level-1 view, so
-            // Back() from level 2 can re-open the SAME level-1 parameter
-            // (Sheaf's Bank has no one-level pop of its own -- Deselect() is
-            // always a full exit -- so the app synthesizes one by
-            // Deselect()-then-re-press). `level_` is read here BEFORE the
-            // increment below, so this only fires on the 0->1 transition and
-            // is left untouched on the 1->2 transition, meaning it survives
-            // the level-2 round trip.
-            if (level_ == 0) {
-                level1Encoder_ = encoderId;
-            }
+            // E.2 (design A7a, operator override 2026-07-29), generalised by
+            // F5.1 from a single remembered level-1 encoder to one per level:
+            // remember the encoder id that opened THIS descent, so Back() can
+            // re-open the same path one level at a time (Sheaf's Bank has no
+            // one-level pop of its own -- Deselect() is always a full exit --
+            // so the app synthesizes one by Deselect()-then-replaying the
+            // remembered presses; see Back() below). `levelEncoders_[i]` is
+            // therefore the encoder id that opens level i+1, which is why
+            // this is recorded at index `level_` BEFORE the increment below.
+            levelEncoders_[level_] = encoderId;
             level_ += 1;
         }
         // else: selection identity unchanged -- either a held modifier was
@@ -710,30 +709,35 @@ public:
     }
 
     // task 6.4, REVISED by E.2 (design A7a, operator override 2026-07-29):
-    // "Back exits to the parameter grid from any level" is no longer true.
-    // From level 2, Back now pops exactly ONE level, landing back on the
-    // level-1 parameter that was open before the level-2 press: Sheaf's
-    // Bank::Deselect() is still a full, unconditional exit (no Sheaf change,
-    // no one-level pop added there), so the one-level pop is synthesized
-    // app-side by Deselect()-ing fully and then re-pressing the remembered
-    // level-1 encoder id (`level1Encoder_`, set by PressEncoder above).
-    // From level 1 (or level 0, where this is a no-op/unreachable), Back is
-    // unchanged: a full Deselect() straight to level 0.
+    // "Back exits to the parameter grid from any level" is no longer true --
+    // Back pops exactly ONE level, from any depth. Sheaf's Bank::Deselect()
+    // is still a full, unconditional exit (no Sheaf change, no one-level pop
+    // added there), so the one-level pop is synthesized app-side: Deselect()
+    // all the way out, then replay the remembered presses (`levelEncoders_`,
+    // set by PressEncoder above) that walk back down to exactly one level
+    // short of where Back() was called. F5.1 generalised this from a single
+    // remembered level-1 encoder plus a level-2 special case to one
+    // mechanism at any depth. `target` is captured BEFORE `level_` is reset
+    // to 0 below, and uses the `(level_ == 0) ? 0 : level_ - 1` form because
+    // `level_ - 1` on an unsigned zero would wrap instead of staying at 0.
     void Back() {
-        const bool wasLevelTwo = (level_ == 2);
+        const std::size_t target = (level_ == 0) ? 0 : level_ - 1;
         bank_->Deselect();
         level_ = 0;
-        if (wasLevelTwo) {
-            PressEncoder(level1Encoder_);  // re-open the level-1 view
+        for (std::size_t i = 0; i < target; ++i) {
+            PressEncoder(levelEncoders_[i]);
         }
     }
 
 private:
     synth::Bank* bank_;
     std::size_t level_ = 0;
-    // E.2 (design A7a): parameter-grid encoder id of the current/most-recent
-    // level-1 view; see PressEncoder's own comment for when it is set.
-    synth::PhysicalEncoderId level1Encoder_ = 0;
+    static constexpr std::size_t kMaxDrillLevel = 2;   // F5.3 raises this to 3
+    // E.2 (design A7a), generalised by F5.1: one remembered encoder id per
+    // level of the current drill-in path -- `levelEncoders_[i]` is the
+    // encoder id that opens level i+1. See PressEncoder's own comment for
+    // when each entry is recorded, and Back() for how they are replayed.
+    std::array<synth::PhysicalEncoderId, kMaxDrillLevel> levelEncoders_{};
 };
 
 // ============================================================================
