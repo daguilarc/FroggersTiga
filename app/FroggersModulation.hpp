@@ -1029,12 +1029,20 @@ inline void RandomizeBankValues(synth::ParameterManager& manager, synth::Bank& b
 // ParameterGroup -- so no separate group parameter is needed here anymore).
 inline bool RandomizeBankLevel1Depths(synth::ParameterManager& manager, synth::Bank& bank) {
     bool partial = false;
+    // F0.1: each call's result is hoisted into its own named local BEFORE
+    // combining (mirrors FroggersAppCore.hpp:482-488's F4 fix), so every
+    // iteration of this loop always runs its randomize call -- `partial =
+    // RandomizeParameterModulationDepths(...) || partial` reads fine but is
+    // only correct because the call sits on the left of `||`; swapping the
+    // combine order (or a future edit that does) would short-circuit once
+    // `partial` went true and skip randomizing every remaining page parameter.
     for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
         synth::Parameter* param = bank.VisibleParameter(static_cast<synth::PhysicalEncoderId>(paramIx));
         if (param == nullptr) {
             continue;  // defensive: every page-parameter slot is always registered in practice.
         }
-        partial = RandomizeParameterModulationDepths(manager, *param) || partial;
+        const bool paramPartial = RandomizeParameterModulationDepths(manager, *param);
+        partial = partial || paramPartial;
     }
     // Crispy's DEPTHS are excluded here for the same reason its value is
     // (operator 2026-07-29): this function runs once per bank from Randomize
@@ -1085,12 +1093,17 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
                                             FroggersParameterModel& model) {
     if (drillIn.Level() == 0) {
         bool partial = false;
+        // F0.1: hoisted for the same reason as RandomizeBankLevel1Depths's own
+        // loop above (mirrors FroggersAppCore.hpp:482-488) -- this loop is
+        // ACROSS ALL SIX BANKS, so a short-circuited `||` here would skip
+        // randomizing every remaining bank once one had already gone partial.
         for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
             const auto bankId = static_cast<FroggersBankId>(bankIx);
             synth::Bank& bank = model.BankAt(bankId);
             // Randomize All: Crispy EXCLUDED on every bank (operator 2026-07-29).
             detail::RandomizeBankValues(manager, bank, /*includeCrispy=*/false);
-            partial = detail::RandomizeBankLevel1Depths(manager, bank) || partial;
+            const bool bankPartial = detail::RandomizeBankLevel1Depths(manager, bank);
+            partial = partial || bankPartial;
         }
         return {partial};
     }
@@ -1136,7 +1149,11 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
             // ALL of depthParam's own connected sub-depths (Bank::OpenModulationView,
             // unrelated to randomize selection), matching the pre-existing
             // 15+15*15=240 ceiling this comment block already describes.
-            partial = detail::RandomizeParameterModulationDepths(manager, *depthParam) || partial;
+            // F0.1: hoisted for the same reason (mirrors FroggersAppCore.hpp:482-488)
+            // -- this loop is the 15-depth-parameter sweep, so a short-circuited
+            // `||` here would skip randomizing every remaining depth parameter.
+            const bool depthPartial = detail::RandomizeParameterModulationDepths(manager, *depthParam);
+            partial = partial || depthPartial;
             // E.2 (design A7a): Back() from level 2 now pops to level 1 on
             // its own, re-opening originalParam's L1 view via the SAME
             // remembered `level1Encoder_` this loop set at Step 2 above (it
