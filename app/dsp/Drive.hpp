@@ -338,7 +338,7 @@ struct FrogBlock
 // behavior rather than adding dead code.
 // -------------------------------------------------------------------------
 // -------------------------------------------------------------------------
-// B7.2 (openspec/changes/frogg3rs-modulation-truth-and-voicing/tasks.md
+// B7.2 (openspec/changes/archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/tasks.md
 // §K.1/§K.4): the allpass coefficient `a` below was read fresh from the
 // Phase knob every sample with NO smoothing. A FIXED-coefficient allpass is
 // unity-gain; a TIME-VARYING one is not -- measured (§K.1), with a bounded

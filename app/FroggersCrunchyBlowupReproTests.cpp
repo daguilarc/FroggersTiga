@@ -114,7 +114,7 @@ struct ShadowChain {
     void Prepare(float sr) {
         sampleRate = sr;
         delay.SetSampleRate(sr);
-        // B5 (openspec/changes/frogg3rs-modulation-truth-and-voicing/
+        // B5 (openspec/changes/archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/
         // tasks.md): mirrors FroggersAppCore::PrepareToPlay's new
         // `filterChain_.Configure(sampleRate_)` call -- this struct's own
         // header comment promises a byte-for-byte copy of

@@ -1161,7 +1161,7 @@ private:
     // struct's own `Process()` comment), passthrough is bit-identical. That
     // is this stage's own acceptance test (design.md A2a).
     //
-    // B5 (openspec/changes/frogg3rs-modulation-truth-and-voicing/tasks.md):
+    // B5 (openspec/changes/archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/tasks.md):
     // the struct itself now lives in `dsp::OutputLimiter`
     // (`dsp/Limiter.hpp`), not here -- it was a PRIVATE nested type until
     // B5 needed a SECOND, independently-tuned instance on the Filter bank's

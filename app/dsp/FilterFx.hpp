@@ -122,7 +122,7 @@ struct PadeSaturator
 // call for why modulation is the case that governs this number.
 inline constexpr float kMaxResonantBumpHeight = 2.0f;
 
-// B5 (openspec/changes/frogg3rs-modulation-truth-and-voicing/tasks.md,
+// B5 (openspec/changes/archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/tasks.md,
 // CONSOLIDATED PUSH table; "Group B outcomes" B1 finding): tuning for
 // `FilterFxChain::peakLimiter` below, a SECOND, independently-configured
 // `dsp::OutputLimiter` instance (dsp/Limiter.hpp) inserted after B1's own
@@ -536,7 +536,7 @@ struct FilterFxChain
     Comb comb;
     PureDelay pureDelay;
 
-    // W2.2a (openspec/changes/frogg3rs-modulation-truth-and-voicing/
+    // W2.2a (openspec/changes/archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/
     // tasks.md): smooths the comb branch's exact output trim computed in
     // Process() below. `fb` (Comb::feedback) is set from
     // `Comb::SetFeedback`, called from `RouteAudioSample()` once per SAMPLE

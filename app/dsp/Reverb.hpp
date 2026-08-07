@@ -63,7 +63,7 @@
 
 namespace synth_froggers::dsp {
 
-// B6b (openspec/changes/frogg3rs-modulation-truth-and-voicing/tasks.md,
+// B6b (openspec/changes/archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/tasks.md,
 // "Group B outcomes" / operator: "why can't we just have limiters for
 // reverb and delay?"): tuning for `Reverb::wetLimiter` below, a single
 // `dsp::OutputLimiter` (dsp/Limiter.hpp) instance inserted on the value

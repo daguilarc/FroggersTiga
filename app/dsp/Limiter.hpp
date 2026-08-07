@@ -1,7 +1,7 @@
 #pragma once
 
 // synth_froggers::dsp::OutputLimiter -- B5 (openspec/changes/
-// frogg3rs-modulation-truth-and-voicing/tasks.md, CONSOLIDATED PUSH table
+// archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/tasks.md, CONSOLIDATED PUSH table
 // and "Group B outcomes"): extracted out of app/FroggersAppCore.hpp (where
 // it was Task 2.8/Item 3, design.md A2/A2a/A4's PRIVATE nested type) so a
 // SECOND, independently-tuned instance can run on the Filter bank's peak

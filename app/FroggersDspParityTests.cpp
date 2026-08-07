@@ -732,7 +732,7 @@ TEST_CASE(filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend) {
     const float combPeakBlend = 0.4f;
     const float scoopMix = 0.6f;
 
-    // W2.2a (openspec/changes/frogg3rs-modulation-truth-and-voicing/
+    // W2.2a (openspec/changes/archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/
     // tasks.md): the comb branch now carries an exact output trim
     // `1/(1+|fb|)`, smoothed by a one-pole (FilterFxChain::combTrimSmoother,
     // FilterFx.hpp) before the blend below. OLD expectation: `combPath =
@@ -820,7 +820,7 @@ TEST_CASE(filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend) {
 }
 
 // -----------------------------------------------------------------------
-// W2.2a (openspec/changes/frogg3rs-modulation-truth-and-voicing/tasks.md):
+// W2.2a (openspec/changes/archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/tasks.md):
 // pins the fix itself. With comb feedback pinned at its maximum magnitude
 // (kMaxFeedbackMagnitude, 0.95) and a sustained full-scale input, the comb
 // branch must never exceed the computed bound `(A + fb) / (1 + fb)` -- the
@@ -1381,7 +1381,7 @@ TEST_CASE(reverb_authored_mod_depth_alters_output_and_stays_finite) {
 }
 
 // -----------------------------------------------------------------------
-// B6b (openspec/changes/frogg3rs-modulation-truth-and-voicing/tasks.md,
+// B6b (openspec/changes/archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/tasks.md,
 // "Group B outcomes" / operator: "why can't we just have limiters for
 // reverb and delay?"): FAILING-FIRST for the property nothing upstream of
 // the master output limiter used to bound -- W2.1-MATH-2's own finding:
@@ -1741,7 +1741,7 @@ TEST_CASE(drive_blend_phase_default_phase_impulse_response_decays_not_rings_fore
 }
 
 // -----------------------------------------------------------------------
-// B7.2 (openspec/changes/frogg3rs-modulation-truth-and-voicing/tasks.md
+// B7.2 (openspec/changes/archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/tasks.md
 // §K.1/§K.4): FAILING-FIRST for the property this task fixes. §K.1 measured
 // DriveBlendPhase's allpass coefficient `a` -- read fresh from the Phase
 // knob every sample, unsmoothed -- produces gain up to 4.15x under
@@ -2118,7 +2118,7 @@ TEST_CASE(delay_feedback_loop_stays_bounded_at_max_feedback) {
 }
 
 // -----------------------------------------------------------------------
-// B6a (openspec/changes/frogg3rs-modulation-truth-and-voicing/tasks.md,
+// B6a (openspec/changes/archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/tasks.md,
 // "Group B outcomes" / operator: "why can't we just have limiters for
 // reverb and delay?"): FAILING-FIRST for the property B2's in-loop
 // saturator alone cannot close -- B2 bounds the LOOP's own write to

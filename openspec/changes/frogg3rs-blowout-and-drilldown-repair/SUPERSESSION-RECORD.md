@@ -1,6 +1,6 @@
 # Supersession record — `frogg3rs-blowout-and-drilldown-repair`
 
-**Created 2026-08-05. Supersedes `frogg3rs-modulation-truth-and-voicing`**, archived *superseded,
+**Created 2026-08-06. Supersedes `frogg3rs-modulation-truth-and-voicing`**, archived *superseded,
 FAILED* — a stronger verdict than its own predecessor earned, and the distinction matters.
 
 ## Why superseded, and why "failed" rather than "not done"
@@ -9,24 +9,40 @@ The predecessor did not run out of time. **It shipped, claimed success, and did 
 operator ran its final consolidated build and reported four failures, every one of which that plan
 records as fixed with green tests attached. 176 tests pass; four reported symptoms remain.
 
-**Its complete failure analysis is `../frogg3rs-modulation-truth-and-voicing/FAILURE-REPORT-AND-HANDOFF.md`.
-Read that before this file's task list — especially §0 (behavioural lessons) and §1 (the systemic
-error).** Nothing in this change should begin until §0.1 is understood, because the failure was
-not primarily technical.
+**The binding content of that failure analysis now lives in this change's own `proposal.md`, under
+"Method constraints (M1–M7)". Read that, not the archive.** Nothing here should begin until M1 is
+understood, because the failure was not primarily technical.
+
+The original document is preserved as history at
+`../archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/FAILURE-REPORT-AND-HANDOFF.md`,
+alongside an `ARCHIVE-RECORD.md` that states what shipped, what did not, and what the 2026-08-06
+omni audit found afterward. **This change is self-contained; you do not need either file to
+execute it.**
 
 ## Carried forward as this change's scope
 
 | ID | Item | First move |
 |---|---|---|
 | **F1** | Randomize count distribution → **mode 2, 4+ rare, 7 essentially never; same distribution at EVERY level** | Histogram chosen count vs non-neutral `SceneCenter` vs `HasNonZeroState()` from a fresh patch. Cause asserted wrongly twice — measure, do not reason |
-| **F2** | Filter Crispy at max still blows out | Write the end-to-end failing test FIRST (see below). Then B7.1's `C = 0.80` ceiling retarget, which was specified and never built |
-| **F3** | **Stop does not stop** — audio > 1 minute after Stop, scope still | Instrument per-stage output magnitude after Stop; print which stage is non-zero. Scope still + audio present ⇒ a downstream stage self-oscillating with no input |
+| **F2** | Filter Crispy at max still blows out | **Traced 2026-08-06** — every per-stage limiter ships `ceiling = 1.0` against a master threshold of 0.9, so the master engages by construction. B7.1's `C = 0.80` retarget is the fix; it was specified and never built. Write the end-to-end failing test first anyway (see below) |
+| **F3** | **Stop does not stop** — audio > 1 minute after Stop, scope still | **Traced 2026-08-06** — the Stop flush clears 2 of the 13 stateful stages and is one-shot, while `filterChain_.comb` (6.7 s T60) and `driveBlendPhase_` (50.5×) sit upstream of it and are never cleared. Still print per-stage magnitude after Stop to confirm which one it is |
 | **F4** | Randomize All at level 1 ejects the operator to the main page | Delete the `PressEncoder`/`Back()` round trips in the level-1 branch — verified unnecessary; the randomize helper does not need the view open |
 | **F5** | Raise drill-in maximum to level 3 (base-3 theme) | Same deletion as F4 makes it cheap (fan-out 3615 → ~105). Then `kMaxDrillLevel` + `levelEncoders_[]` array, replacing two hardcoded `2`s and the `wasLevelTwo` special case |
 
+**Two items were added by the 2026-08-06 omni audit and come before F1–F5** (both in `tasks.md`):
+
+- **B7.5.0 — the patch-application anomaly.** The predecessor recorded that two structurally
+  different test patches produced *bit-identical* limiter trajectories, and never investigated it.
+  If the `SceneCenter(0) = value` test idiom does not reach the DSP, every test that sets up a
+  patch is asserting against a patch it never applied — including B7.5. **Blocking.**
+- **F0 — preflight remediation.** Five defects in shipped work: three surviving short-circuit
+  sites, two `*Tests.cpp` files that run zero tests and are excluded from `make test`, a stale
+  `ExpMapCompute(1.0f, 10.0f, …)` peak-height ceiling, and an in-code directive that forbids
+  exactly what F1's mode-2 ruling requires. That last one is a hard prerequisite for F1.
+
 **F4 and F5 share one edit.** Removing the level-1 round trips fixes the ejection, cuts level-2
-materialization from 240 to ~45, and makes level 3 feasible. Do it first — it is the highest
-value-per-line change on the list.
+materialization from 240 to ~45, and makes level 3 feasible. Do it first of the F-items — it is the
+highest value-per-line change on the list.
 
 ## The acceptance criterion that governs everything
 
