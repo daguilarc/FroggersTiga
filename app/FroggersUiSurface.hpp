@@ -578,7 +578,42 @@ private:
                          }
                          synth::ui::Visualizer& vcoScope = app->VcoScopeVisualizer();
                          vcoScope.SetBounds(extent);
-                         return vcoScope.Draw();
+                         std::vector<synth::ui::DrawCommand> commands = vcoScope.Draw();
+                         // F7 (operator request, openspec/changes/
+                         // frogg3rs-blowout-and-drilldown-repair/tasks.md):
+                         // "when we are in modulation drilldown levels ...
+                         // headers ... 'Modulation Level 1' then 2 then 3."
+                         // Level 0 (the parameter grid) shows nothing; levels
+                         // 1+ show the label, DERIVED from
+                         // FroggersModulationDrillIn::Level() (DrillLevel()'s
+                         // own comment) -- never a hardcoded level-name set,
+                         // since the cap has already moved once (F5.3, 2->3)
+                         // and a hardcoded set would need a second edit next
+                         // time it does (OMNI §8).
+                         //
+                         // Emitted as one more DrawCommand on this EXISTING
+                         // node rather than a new grid node or row: the CELL
+                         // MAP (tasks.md F.3) is a settled, operator-approved
+                         // 6x6 topology with no spare row/column weight to
+                         // give a header its own cell, and every other row
+                         // stays live during drill-in (bank tabs still
+                         // switch banks; Randomize All/Page still work per
+                         // F6.2; transport/scene/BPM stay meaningful while
+                         // inspecting modulation) -- overlaying any of them
+                         // would either shadow a working control or silently
+                         // change what drill-in does to it, neither of which
+                         // this task asked for. kVcoScope is the one
+                         // non-interactive, Draw-only cell in the whole grid
+                         // (no action, nothing to shadow), so appending to
+                         // its own draw output is the only place a header
+                         // can appear without perturbing the grid.
+                         const std::size_t drillLevel = app->DrillLevel();
+                         if (drillLevel > 0) {
+                             commands.push_back(synth::ui::DrawCommand::Text(
+                                 synth::ui::Bounds{4.0f, 4.0f, std::max(0.0f, extent.width - 8.0f), 18.0f},
+                                 "Modulation Level " + std::to_string(drillLevel), synth::ui::TextStyle{}));
+                         }
+                         return commands;
                      });
     }
 

@@ -405,6 +405,15 @@ public:
     // change, this is a read-only discoverability aid.
     bool TransportRunning() const { return transportRunningDisplay_.load(std::memory_order_acquire); }
 
+    // F7 (openspec/changes/frogg3rs-blowout-and-drilldown-repair/tasks.md,
+    // operator request): published once per block alongside
+    // transportRunningDisplay_ above, same cross-thread contract -- lets the
+    // surface (message thread) read the current modulation drill-in level
+    // (FroggersModulationDrillIn::Level(), audio-thread-owned via drillIn_)
+    // for its "Modulation Level N" header without touching drillIn_ directly
+    // from the wrong thread.
+    std::size_t DrillLevel() const { return drillLevelDisplay_.load(std::memory_order_acquire); }
+
     // A4 (tasks.md CONSOLIDATED PUSH, "surface partial randomize"): true when
     // the MOST RECENT Randomize All/Page operation left
     // `FroggersRandomizeResult.partial` true -- i.e. `EnsureModulationDepth`
@@ -789,6 +798,14 @@ public:
         filterChain_.peak.PopulateUIState(peakUiState_);
         filterChain_.comb.PopulateUIState(combUiState_);
         modulation_.PublishUiState();
+
+        // F7: publish the current drill-in level for the surface's header --
+        // same once-per-block cross-thread publish shape as every other
+        // display atomic in this section (see DrillLevel()'s own comment).
+        // drillIn_ always holds a value once Init() has run (constructed
+        // there, and only ever re-emplaced, never reset to nullopt); the
+        // has_value() check is defensive rather than a reachable fallback.
+        drillLevelDisplay_.store(drillIn_.has_value() ? drillIn_->Level() : 0, std::memory_order_release);
 
         // Packet 10: publish the master clock's active tempo/external-slave
         // state for the surface to read cross-thread (see this file's
@@ -1570,6 +1587,9 @@ private:
     // Task 3.6 (design E3e): published once per block, same contract as the
     // two atomics above -- see TransportRunning()'s own comment.
     std::atomic<bool> transportRunningDisplay_{false};
+    // F7: published once per block from ProcessBlock() -- see DrillLevel()'s
+    // own comment.
+    std::atomic<std::size_t> drillLevelDisplay_{0};
     // A4: published once per Randomize All/Page press from ProcessFrame() --
     // see LastRandomizePartial()'s own comment.
     std::atomic<bool> lastRandomizePartial_{false};

@@ -125,6 +125,27 @@ const synth::ui::Node* FindNodeById(const synth::ui::NodeTree& tree, const std::
     return nullptr;
 }
 
+// F7: the drill-level header is one more DrawCommand appended to
+// kVcoScope's own output (FroggersUiSurface.hpp's AppendScopeCell), not a
+// separate node -- so reading it back means scanning that node's
+// drawCommands for the one Kind::Text entry, rather than a FindNodeById
+// lookup by a header-specific id. Reused across every level checked by
+// drill_level_header_shown_only_while_drilled_in_and_matches_the_level
+// below (OMNI §6: 2+ uses, isolates a distinct read from the raw
+// draw-command list).
+std::optional<std::string> ScopeHeaderText(const synth::ui::NodeTree& tree) {
+    const synth::ui::Node* scope = FindNodeById(tree, synth_froggers::FroggersNodeIds::kVcoScope);
+    if (scope == nullptr) {
+        return std::nullopt;
+    }
+    for (const synth::ui::DrawCommand& command : scope->drawCommands) {
+        if (command.kind == synth::ui::DrawCommand::Kind::Text) {
+            return command.text;
+        }
+    }
+    return std::nullopt;
+}
+
 // A resolved node's `bounds` are PARENT-relative, not accumulated screen
 // coordinates (PortableUI.hpp's coordinate contract, `sru-46`): "every node's
 // bounds are relative to its parent's origin," and a backend's rendered
@@ -603,6 +624,48 @@ TEST_CASE(clicking_the_active_bank_while_drilled_in_exits_to_the_top_level_grid)
     REQUIRE_TRUE(rig.Application().ActiveBankIndex() == activeBank);
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 0);
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().BankRef().SelectedParameter() == nullptr);
+}
+
+// F7 (operator request, openspec/changes/frogg3rs-blowout-and-drilldown-
+// repair/tasks.md): "when we are in modulation drilldown levels ... headers
+// ... 'Modulation Level 1' then 2 then 3." Level 0 shows no header; each
+// deeper level shows the matching label, sourced from
+// FroggersModulationDrillIn::Level() (never a hardcoded per-level string).
+// Drills to level 3 with the SAME encoder-id sequence
+// clicking_the_active_bank_while_drilled_in_exits_to_the_top_level_grid uses
+// for level 1->2 (kEncoderPress "0" then kModSlotVco1Audio), extended one
+// more press (kModSlotVco2Audio) to reach level 3 -- the identical sequence
+// fourth_level_drill_in_is_refused (FroggersModulationTests.cpp) uses to
+// reach the same depth, so this is a proven-valid path, not a guess.
+TEST_CASE(drill_level_header_shown_only_while_drilled_in_and_matches_the_level) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("drill_level_header"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+
+    REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 0);
+    REQUIRE_TRUE(!ScopeHeaderText(surface.BuildTree()).has_value());
+
+    surface.DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kEncoderPress, "0"));
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 1);
+    REQUIRE_TRUE(ScopeHeaderText(surface.BuildTree()).value_or("") == "Modulation Level 1");
+
+    surface.DispatchAction(synth::ui::Action::WithValue(
+        synth_froggers::FroggersActions::kEncoderPress,
+        std::to_string(static_cast<std::size_t>(synth_froggers::kModSlotVco1Audio))));
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 2);
+    REQUIRE_TRUE(ScopeHeaderText(surface.BuildTree()).value_or("") == "Modulation Level 2");
+
+    surface.DispatchAction(synth::ui::Action::WithValue(
+        synth_froggers::FroggersActions::kEncoderPress,
+        std::to_string(static_cast<std::size_t>(synth_froggers::kModSlotVco2Audio))));
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 3);
+    REQUIRE_TRUE(ScopeHeaderText(surface.BuildTree()).value_or("") == "Modulation Level 3");
 }
 
 // --- 10.5: the encoder ring renders the fuegoized value, never rawKnobValue --
