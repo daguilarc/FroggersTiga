@@ -230,7 +230,8 @@ struct ResonantBump
     float width = 1.0f;
 
     // F3.3 SPEC CORRECTED 2026-08-07 (openspec/changes/
-    // frogg3rs-blowout-and-drilldown-repair/tasks.md): Tier 2's per-unit
+    // archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md): Tier 2's
+    // per-unit
     // sustained-over-ceiling counter, owned here rather than in
     // FroggersAppCore -- see dsp::Vco::overCeilingSeconds's own comment
     // (app/dsp/Vco.hpp) for the full rationale. This struct has two

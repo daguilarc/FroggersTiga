@@ -257,7 +257,8 @@ struct StereoDelay
     }
 
     // :42-56 (setSampleRate). C1 (openspec/changes/
-    // frogg3rs-blowout-and-drilldown-repair/tasks.md F8.1): this struct's
+    // archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md F8.1): this
+    // struct's
     // only production caller is FroggersAppCore::PrepareToPlay()
     // (delay_.SetSampleRate(sampleRate_)), which now validates the host's
     // sample rate ONCE before any downstream use (see its own §12 trace) --

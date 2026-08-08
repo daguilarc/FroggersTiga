@@ -1,5 +1,6 @@
 // FroggersBadgeCriterionRepro.cpp -- F1.1 residual (openspec/changes/
-// frogg3rs-blowout-and-drilldown-repair/tasks.md): "the operator's complaint
+// archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md): "the operator's
+// complaint
 // is about what they SEE." Compares, per visible parameter, (b) the number
 // of modulation depths with non-neutral SceneCenter (the commanded value
 // Randomize All writes) against (c) std::popcount(modulatorsAffectingMask),

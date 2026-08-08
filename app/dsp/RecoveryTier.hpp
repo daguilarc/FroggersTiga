@@ -2,7 +2,8 @@
 
 // synth_froggers::dsp::FiniteOnly / synth_froggers::dsp::Magnitude -- F3.3
 // SPEC CORRECTED 2026-08-07 (openspec/changes/
-// frogg3rs-blowout-and-drilldown-repair/tasks.md): the two per-unit fault-
+// archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md): the two
+// per-unit fault-
 // recovery tiers app/FroggersAppCore.hpp's RecoverUnitIfNeeded()/
 // RecoverIfNonFinite() implement -- Tier 1 (finiteness only) and Tier 2
 // (finiteness, then a sustained-over-ceiling magnitude watch). Every

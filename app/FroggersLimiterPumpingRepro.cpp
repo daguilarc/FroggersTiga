@@ -1,5 +1,5 @@
 // FroggersLimiterPumpingRepro.cpp -- F2.0a/F2.0b (openspec/changes/
-// frogg3rs-blowout-and-drilldown-repair/tasks.md): headless measurement
+// archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md): headless measurement
 // harness for "measure the RIGHT quantity" (F2.0a) and "measure the
 // OPERATOR'S ACTUAL condition" (F2.0b). NOT part of the regular suite (not
 // wired into app/Makefile's `test` target, per F0.2's *Repro.cpp

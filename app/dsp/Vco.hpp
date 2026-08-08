@@ -112,7 +112,8 @@ struct Vco
     float pmLfoPhase = 0.0f;
 
     // F3.3 SPEC CORRECTED 2026-08-07 (openspec/changes/
-    // frogg3rs-blowout-and-drilldown-repair/tasks.md): Tier 2's "how many
+    // archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md): Tier
+    // 2's "how many
     // consecutive seconds has this unit's state stayed over
     // kMaxUnitStateMagnitude" counter (app/FroggersAppCore.hpp's
     // RecoverUnitIfNeeded), owned HERE rather than in FroggersAppCore --
