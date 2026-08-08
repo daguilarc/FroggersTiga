@@ -22,10 +22,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -1435,65 +1437,431 @@ TEST_CASE(reverb_wet_output_stays_at_or_below_limiter_ceiling_with_hold_at_max) 
     REQUIRE_TRUE(maxAbs <= ceiling + 1.0e-4f);
 }
 
-// -----------------------------------------------------------------------
-// B6b's own guard, required by this task's brief: proves the limiter added
-// above caps LEVEL without touching Hold's PERSISTENCE -- the failure mode
-// the brief names directly, "fixed the level by breaking the feature."
-// `fb`/Hold's own computation (Reverb.hpp:341-342) is untouched by B6b, so
-// Hold's near-unity feedback should decay imperceptibly slowly regardless
-// of the new limiter; a genuine break (e.g. the limiter's envelope
-// permanently riding the tail down toward zero instead of merely capping
-// its peaks moment to moment) would show up here as an artificially fast
-// collapse toward silence, which this test would catch.
+// =========================================================================
+// S2a.1 (openspec/changes/frogg3rs-parametric-slew-and-stop-root-cause/
+// tasks.md) -- reverb tank in-loop saturator. `dsp::Reverb::Process` now
+// writes `preOut + fb * PadeSaturator::Saturate(aFb)` (dsp/Reverb.hpp:
+// 410-411), the SAME saturator in the SAME in-loop position the delay's own
+// B2 fix uses (dsp/Delay.hpp), because an unsaturated recursive loop
+// settles at `in/(1-fb)` and Hold pushes `fb` to ~0.99998.
 //
-// Excites the tank with a burst of sustained input (building real energy
-// into the tank, not a single impulse), then cuts input to silence and
-// measures the peak twice: immediately after the burst, and again after a
-// further stretch of continued silence. Hold's own decay time constant is
-// on the order of `1/(1-fb)` round trips (W2.1-MATH-2, ~50,000 round trips
-// at this Hold setting) -- the further silence window below is a tiny
-// fraction of even a single round trip's worth of that decay, so the tail
-// must still be comparable to its post-burst peak, not collapsed.
+// These three TEST_CASEs and their two fixtures lived in a dedicated
+// app/FroggersReverbSaturatorTests.cpp with its own binary, for one stated
+// reason: at the time this file was other in-flight work and the S2a.1
+// brief forbade touching it. That reason has lapsed, so they are folded in
+// here -- same convention (pure app/dsp/*.hpp, no Sheaf/JUCE), same
+// harness, and the duplicated harness/build recipe goes away with the
+// separate file (OMNI §8).
+// =========================================================================
+
 // -----------------------------------------------------------------------
-TEST_CASE(reverb_hold_at_max_tail_still_sustains_after_wet_limiter_is_added) {
+// OMNI §9.1 positive-control fixture: a minimal, LOCAL manual replica of
+// ONLY the recursive relationship that determines dsp::Reverb's own
+// lineA/lineB growth (pre-delay tap, room-size-derived per-line delay
+// length, diffusion cross-feed, `fb`) -- every formula copied verbatim from
+// dsp::Reverb::Process (dsp/Reverb.hpp) EXCEPT the one line S2a.1 changed:
+// no PadeSaturator::Saturate here, deliberately -- this is the pre-fix
+// shape.
+//
+// Deliberately omits dampFilter/width/mix/wetLimiter: dsp::Reverb::Process
+// never feeds any of those back into lineA/lineB -- `dampFilter.Process`
+// reads valA/valB for the OUTPUT path only, computed from the SAME valA the
+// tank write above it also reads, never from aIn/aOut -- so omitting them
+// changes nothing about the question this replica exists to answer (the
+// tank's OWN growth). PreFixReverbReplica below adds exactly those omitted
+// output-path stages on top of this one, rather than restating the tank.
+//
+// Distinct from this file's own
+// reverb_process_matches_manual_tank_replica_at_neutral_mod_and_hold, which
+// is NOT duplication of these two (OMNI §8: classify before merging): that
+// test re-derives the tank from FroggersEngine.hpp's raw ExpMapCompute
+// calls precisely so it does NOT go through dsp::Reverb's own static
+// helpers -- its independence from them IS its assertion, and routing it
+// through a shared fixture would gut it.
+// -----------------------------------------------------------------------
+struct UnsaturatedTankReplica {
+    static constexpr size_t kSize = dsp::Reverb::kSize;
+    float lineA[kSize]{};
+    float lineB[kSize]{};
+    float preLine[kSize]{};
+    size_t indexA = 0, indexB = 0, preIndex = 0;
+
+    // Same formulas, same argument order as dsp::Reverb::Process's own
+    // pre-delay/room-size/diffusion/fb math -- minus S2a.1's
+    // PadeSaturator::Saturate wrap (the one line this struct exists to
+    // omit, marked below).
+    //
+    // Returns the two tap values (valA, valB) read this sample: the only
+    // quantities dsp::Reverb::Process's OUTPUT path ever reads out of the
+    // tank, so PreFixReverbReplica below builds the rest of the pre-fix
+    // chain on top of this without restating any tank math (OMNI §8: one
+    // definition site). Sound by construction: dA/dB are clamped to >= 1,
+    // so readA/readB can never equal indexA/indexB and this sample's writes
+    // cannot disturb this sample's reads.
+    std::pair<float, float> Step(float input, float sizeKnob01, float decayKnob01, float preKnob01,
+                                 float diffusionKnob01, float sampleRate, float holdKnob01) {
+        const float preNorm = dsp::Reverb::PreDelayNormFromKnob(preKnob01, sampleRate);
+        size_t preDelay = static_cast<size_t>(std::round(preNorm * sampleRate));
+        if (preDelay >= kSize) {
+            preDelay = kSize - 1;
+        }
+        preLine[preIndex] = input;
+        const size_t preRead = (preIndex + kSize - preDelay) % kSize;
+        const float preOut = preLine[preRead];
+        preIndex = (preIndex + 1) % kSize;
+
+        const float sizeNorm = dsp::Reverb::RoomSizeFromKnob(sizeKnob01);
+        const size_t baseA = static_cast<size_t>(180.0f + sizeNorm * 1300.0f);
+        const size_t baseB = static_cast<size_t>(260.0f + sizeNorm * 1800.0f);
+        const size_t dA = std::min(kSize - 1, std::max(static_cast<size_t>(1), baseA));
+        const size_t dB = std::min(kSize - 1, std::max(static_cast<size_t>(1), baseB));
+        const size_t readA = (indexA + kSize - dA) % kSize;
+        const size_t readB = (indexB + kSize - dB) % kSize;
+        const float valA = lineA[readA];
+        const float valB = lineB[readB];
+
+        const float decayFb = dsp::Reverb::DecayFeedbackFromKnob(decayKnob01);
+        const float fb = decayFb + (1.0f - decayFb) * std::min(holdKnob01, 0.999f);
+        const float cross = diffusionKnob01 * 0.5f;
+        const float aFb = valB * (1.0f - cross) + valA * cross;
+        const float bFb = valA * (1.0f - cross) + valB * cross;
+
+        // Pre-S2a.1 shape, deliberately: no PadeSaturator::Saturate here --
+        // this is the whole reason this struct exists.
+        const float aIn = preOut + aFb * fb;
+        const float bIn = preOut + bFb * fb;
+
+        lineA[indexA] = aIn;
+        lineB[indexB] = bIn;
+        indexA = (indexA + 1) % kSize;
+        indexB = (indexB + 1) % kSize;
+
+        return {valA, valB};
+    }
+
+    // Mirrors dsp::Reverb::StateMagnitude()'s own scan exactly (lineA,
+    // lineB, preLine -- this replica has no dampFilter/wetL/wetR to fold
+    // in), so the two numbers these tests compare are computed the
+    // identical way: an apples-to-apples comparison, not two different
+    // metrics that happen to share a name.
+    float StateMagnitude() const {
+        float magnitude = 0.0f;
+        for (size_t i = 0; i < kSize; ++i) {
+            magnitude = std::max({magnitude, std::fabs(lineA[i]), std::fabs(lineB[i]), std::fabs(preLine[i])});
+        }
+        return magnitude;
+    }
+};
+
+// -----------------------------------------------------------------------
+// Second fixture: a FULL pre-S2a.1 reconstruction of dsp::Reverb::Process
+// -- the tank above, plus the damping filter, width blend, mix, AND a
+// `dsp::OutputLimiter` configured identically to dsp::Reverb's own
+// `wetLimiter` (B6b, which predates S2a.1 and belongs in both the "before"
+// and "after" pictures unchanged) -- minus ONLY the S2a.1 saturator wrap.
+//
+// This reconstructs the actual AUDIBLE OUTPUT (Process()'s own return
+// value) the pre-S2a.1 code produced, which is what "Hold sustains a long
+// tail" is a claim about -- not the internal tank register
+// UnsaturatedTankReplica measures. Both fixtures are warranted because they
+// answer different questions; neither restates the other's math.
+// -----------------------------------------------------------------------
+struct PreFixReverbReplica {
+    UnsaturatedTankReplica tank;
+    dsp::OnePoleLowPass dampFilter;
+    dsp::OutputLimiter wetLimiter;
+
+    explicit PreFixReverbReplica(float sampleRate) {
+        wetLimiter.Configure(sampleRate, dsp::kReverbWetLimiterThreshold, dsp::kReverbWetLimiterCeiling,
+                              dsp::kReverbWetLimiterAttackSeconds, dsp::kReverbWetLimiterReleaseSeconds);
+    }
+
+    float Step(float input, float mixKnob01, float sizeKnob01, float decayKnob01, float preKnob01,
+               float dampKnob01, float widthKnob01, float diffusionKnob01, float sampleRate, float holdKnob01) {
+        const auto [valA, valB] =
+            tank.Step(input, sizeKnob01, decayKnob01, preKnob01, diffusionKnob01, sampleRate, holdKnob01);
+
+        dampFilter.alpha = dsp::Reverb::DampAlphaFromKnob(dampKnob01);
+        const float aOut = dampFilter.Process(valA);
+        const float bOut = dampFilter.Process(valB);
+
+        const float mid = 0.5f * (aOut + bOut);
+        const float wetL = mid + widthKnob01 * (aOut - mid);
+        const float wetR = mid + widthKnob01 * (bOut - mid);
+        const float wet = 0.5f * (wetL + wetR);
+        const float mixedOut = (1.0f - mixKnob01) * input + mixKnob01 * wet;
+        return wetLimiter.Process(mixedOut);
+    }
+};
+
+// -----------------------------------------------------------------------
+// S2a.1 -- bounded under sustained overdrive, decay and Hold both at their
+// ceiling (`fb` -> ~0.99998; 1/(1-fb) ~= 50,000x steady state, unreachable
+// in a bounded test but the mechanism this whole task is about).
+// -----------------------------------------------------------------------
+TEST_CASE(reverb_tank_stays_bounded_under_sustained_overdrive_at_max_decay_and_hold) {
     dsp::Reverb rv;
+    const float sr = 48000.0f;
+
+    // Smallest room size -> fastest round trip (baseA=180 samples,
+    // RoomSizeFromKnob(0)==0.05 floor), the same "shortest round trip is
+    // the worst case" choice B6b's own reverb-wetLimiter test above makes
+    // -- most round trips per sample, so any real divergence (or its
+    // absence) shows up fastest.
+    constexpr float sizeKnob = 0.0f;
+    constexpr float decayKnob = 1.0f;      // -> decayFb = 0.98 (ceiling).
+    constexpr float preKnob = 0.1f;
+    constexpr float diffusionKnob = 0.4f;  // nonzero cross-feed -- exercises both taps, "both lines" per B2.
+    constexpr float widthKnob = 0.5f;      // in [0,1]: this test's bound derivation below needs that range.
+    constexpr float dampKnob = 0.5f;
+    constexpr float holdKnob = 1.0f;       // -> fb = 0.98 + 0.02*0.999 = 0.99998.
+    constexpr float mixKnob = 1.0f;        // fully wet -- isolates the tank, matches existing Reverb precedent.
+
+    const float decayFb = dsp::Reverb::DecayFeedbackFromKnob(decayKnob);
+    const float fb = decayFb + (1.0f - decayFb) * std::min(holdKnob, 0.999f);
+
+    // Overdrive, not an ordinary level (the next TEST_CASE covers those).
+    constexpr float kOverdriveInput = 5.0f;
+
+    // Per-sample bound: aIn = preOut + fb*Saturate(aFb), |preOut| <=
+    // |input| (a pure delay of `input`, no gain) and |Saturate(.)| <= 1
+    // unconditionally (dsp::PadeSaturator::Saturate's own hard clamp), so
+    // |aIn| <= |input| + fb regardless of round-trip count -- exactly B2's
+    // own bound shape (dsp/Delay.hpp's test: bound = inputAmplitude*p.dsnd
+    // + fbk). dampFilter.output/wetL/wetR are each a convex combination
+    // (coefficients in [0,1]) of quantities already <= this same bound
+    // (dampFilter.alpha in (0.001,0.2); widthKnob fixed at 0.5 above, in
+    // [0,1]), so the SAME bound covers dsp::Reverb::StateMagnitude()'s
+    // full scan (lineA, lineB, preLine, dampFilter.output, wetL, wetR),
+    // not just the raw taps.
+    const float bound = std::fabs(kOverdriveInput) + fb;
+
+    UnsaturatedTankReplica control;
+
+    constexpr int kSamples = 5000;  // ~27 round trips at 180 samples/trip -- plenty for the control to diverge.
+    float maxRawMagnitude = 0.0f;
+    float maxControlMagnitude = 0.0f;
+    for (int i = 0; i < kSamples; ++i) {
+        const float out = rv.Process(kOverdriveInput, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob,
+                                      diffusionKnob, sr, /*modDepthKnob01=*/0.0f, holdKnob);
+        REQUIRE_TRUE(std::isfinite(out));
+        const float rawMagnitude = rv.StateMagnitude();
+        REQUIRE_TRUE(std::isfinite(rawMagnitude));
+        // Per-sample bound (B2's own style: asserted every sample, not
+        // merely checked once at the end of the run).
+        REQUIRE_TRUE(rawMagnitude <= bound + 1.0e-4f);
+        maxRawMagnitude = std::max(maxRawMagnitude, rawMagnitude);
+
+        control.Step(kOverdriveInput, sizeKnob, decayKnob, preKnob, diffusionKnob, sr, holdKnob);
+        maxControlMagnitude = std::max(maxControlMagnitude, control.StateMagnitude());
+    }
+
+    std::cout << "  [S2a.1 bounded-vs-unbounded] input=" << kOverdriveInput << " fb=" << fb
+              << " bound=|input|+fb=" << bound << "\n"
+              << "  [S2a.1 bounded-vs-unbounded]   WITH saturator (post-fix, StateMagnitude() max over "
+              << kSamples << " samples):    " << maxRawMagnitude << "\n"
+              << "  [S2a.1 bounded-vs-unbounded]   WITHOUT saturator (positive control, identical run): "
+              << maxControlMagnitude << "\n";
+
+    // OMNI §9.1: the positive control must actually have exceeded the
+    // bound the real (fixed) unit respects, or this run never tested
+    // anything the fix could fail.
+    REQUIRE_TRUE(maxControlMagnitude > bound);
+    REQUIRE_TRUE(maxControlMagnitude > kOverdriveInput * 2.0f);  // comfortably past "just barely over the bound".
+    REQUIRE_TRUE(maxRawMagnitude <= bound + 1.0e-4f);
+}
+
+// -----------------------------------------------------------------------
+// S2a.1 -- ordinary (quiet) level not degraded, Hold still at its ceiling.
+//
+// MEASURED FIRST, then written to match (OMNI: measured, not assumed): a
+// draft of this test tried "ordinary" == the loud, full-scale,
+// 4000-sample-sustained scenario the loud-tail TEST_CASE below uses, and
+// asserted the saturated tank's raw retention should match the unsaturated
+// control's there. MEASURED result: it does not (control retention 0.937,
+// real 0.207-0.42 depending on amplitude) -- because at that scenario the
+// UNSATURATED control itself is not "a long tail", it is the bug (see the
+// loud-tail TEST_CASE below, which measures and prints exactly that).
+// "Ordinary levels" has to mean a level where the tap magnitude the
+// saturator sees stays inside its near-linear region -- amplitude 0.02
+// (~-34dBFS) was swept and found small enough that a genuine,
+// apples-to-apples comparison holds; see the printed numbers for the
+// measured gap.
+// -----------------------------------------------------------------------
+TEST_CASE(reverb_quiet_ordinary_level_tail_matches_unsaturated_control_at_max_hold) {
+    dsp::Reverb rv;
+    UnsaturatedTankReplica control;
+    const float sr = 48000.0f;
+    constexpr float mixKnob = 1.0f, sizeKnob = 0.6f, decayKnob = 1.0f, preKnob = 0.1f, dampKnob = 0.5f,
+                    widthKnob = 0.5f, diffusionKnob = 0.4f, holdKnob = 1.0f;
+    // "Ordinary" excitation: quiet relative to full scale (~-34dBFS), NOT
+    // the sustained-overdrive scenario the TEST_CASE above already covers.
+    constexpr float kOrdinaryInput = 0.02f;
+
+    constexpr int kExciteSamples = 4000;
+    for (int i = 0; i < kExciteSamples; ++i) {
+        rv.Process(kOrdinaryInput, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr,
+                   0.0f, holdKnob);
+        control.Step(kOrdinaryInput, sizeKnob, decayKnob, preKnob, diffusionKnob, sr, holdKnob);
+    }
+
+    // Measurement windows use SILENCE (0.0f input): "peakAfterExcite" means
+    // "peak in the window right after the burst ends", not "peak while
+    // still exciting".
+    constexpr int kMeasureWindow = 200;
+    float rawPeakAfterExcite = 0.0f, controlPeakAfterExcite = 0.0f;
+    for (int i = 0; i < kMeasureWindow; ++i) {
+        const float out = rv.Process(0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob,
+                                      diffusionKnob, sr, 0.0f, holdKnob);
+        REQUIRE_TRUE(std::isfinite(out));
+        rawPeakAfterExcite = std::max(rawPeakAfterExcite, rv.StateMagnitude());
+        control.Step(0.0f, sizeKnob, decayKnob, preKnob, diffusionKnob, sr, holdKnob);
+        controlPeakAfterExcite = std::max(controlPeakAfterExcite, control.StateMagnitude());
+    }
+    REQUIRE_TRUE(rawPeakAfterExcite > 0.01f);      // meaningfully non-silent right after the burst.
+    REQUIRE_TRUE(controlPeakAfterExcite > 0.01f);  // same premise held for the control, or the comparison is void.
+
+    constexpr int kSilenceRunSamples = 10000;  // ~0.21s.
+    for (int i = 0; i < kSilenceRunSamples; ++i) {
+        rv.Process(0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr, 0.0f,
+                   holdKnob);
+        control.Step(0.0f, sizeKnob, decayKnob, preKnob, diffusionKnob, sr, holdKnob);
+    }
+
+    float rawPeakAfterSilence = 0.0f, controlPeakAfterSilence = 0.0f;
+    for (int i = 0; i < kMeasureWindow; ++i) {
+        const float out = rv.Process(0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob,
+                                      diffusionKnob, sr, 0.0f, holdKnob);
+        REQUIRE_TRUE(std::isfinite(out));
+        rawPeakAfterSilence = std::max(rawPeakAfterSilence, rv.StateMagnitude());
+        control.Step(0.0f, sizeKnob, decayKnob, preKnob, diffusionKnob, sr, holdKnob);
+        controlPeakAfterSilence = std::max(controlPeakAfterSilence, control.StateMagnitude());
+    }
+
+    const float rawRetention = rawPeakAfterSilence / rawPeakAfterExcite;
+    const float controlRetention = controlPeakAfterSilence / controlPeakAfterExcite;
+
+    std::cout << "  [S2a.1 quiet-ordinary-tail] input=" << kOrdinaryInput << " Hold=max, Decay=max:\n"
+              << "  [S2a.1 quiet-ordinary-tail]   WITH saturator:    peakAfterExcite=" << rawPeakAfterExcite
+              << " peakAfterSilence=" << rawPeakAfterSilence << " retention=" << rawRetention << "\n"
+              << "  [S2a.1 quiet-ordinary-tail]   WITHOUT saturator: peakAfterExcite=" << controlPeakAfterExcite
+              << " peakAfterSilence=" << controlPeakAfterSilence << " retention=" << controlRetention << "\n";
+
+    // At this quiet level the fix must not have made tail retention
+    // meaningfully worse than the unsaturated control's own retention over
+    // the identical window -- tolerance set with margin above the measured
+    // gap (~0.04 absolute at this amplitude), not tuned to just barely pass.
+    REQUIRE_NEAR(rawRetention, controlRetention, 0.08);
+}
+
+// -----------------------------------------------------------------------
+// B6b's guard AND S2a.1's, merged: one scenario, one instrument, one
+// TEST_CASE (OMNI §8 -- keeping two would be sequential duplication).
+//
+// B6b (`wetLimiter`, added above) had to prove it capped the tail's LEVEL
+// without touching Hold's PERSISTENCE -- "fixed the level by breaking the
+// feature." S2a.1 (in-loop `PadeSaturator`, dsp/Reverb.hpp:410-411) has to
+// prove exactly the same thing about exactly the same tail. Same knobs,
+// same burst, same measurement: one test.
+//
+// SUPERSEDES an earlier `reverb_hold_at_max_tail_still_sustains_after_
+// wet_limiter_is_added` whose whole bar was
+// `peakAfterSilenceRun > peakAfterExcite * 0.5f`. That bar was not merely
+// tight, it was STALE -- calibrated against the pre-S2a.1 regime, in which
+// (MEASURED, and reproduced by `PreFixReverbReplica` on every run of this
+// test rather than taken on faith) the OUTPUT at this exact scenario sat
+// PINNED at the wetLimiter's 0.8 ceiling for the entire 10000-sample
+// silence window, retention 1.000. That is not Hold sustaining a tail; it
+// is the unbounded-tank defect S2a.1 removes, seen from the output side.
+// A bar that only passes in that regime asserts the bug.
+//
+// What this asserts instead is what a real reverb tail actually is:
+//   (1) still clearly audible long after the burst -- not collapsed to
+//       silence, and not merely "technically nonzero";
+//   (2) declining GRADUALLY across two checkpoints, not falling off a
+//       cliff (an on/off gate would pass a start/end check alone);
+//   (3) genuinely DECAYING rather than pinned at the ceiling -- the
+//       direction the old bar had backwards, and the one that stops (1)
+//       and (2) from silently going vacuous if the tank ever regressed to
+//       riding the limiter again.
+// (3) is kept honest by OMNI §9.1: the pre-fix control is asserted to BE
+// pinned, so this run demonstrably could have caught the pinned regime.
+//
+// MEASURED post-fix at this scenario (printed below on every run): 0.800
+// right after the burst -> 0.374 at +2000 samples -> 0.302 at +10000
+// samples. Every threshold below carries real margin off those numbers
+// rather than being tuned to just barely pass.
+// -----------------------------------------------------------------------
+TEST_CASE(reverb_hold_at_max_tail_stays_audible_and_decays_gradually_not_pinned) {
+    dsp::Reverb rv;
+    PreFixReverbReplica before(48000.0f);
     const float sr = 48000.0f;
     constexpr float mixKnob = 1.0f, sizeKnob = 0.6f, decayKnob = 1.0f, preKnob = 0.1f, dampKnob = 0.5f,
                     widthKnob = 0.5f, diffusionKnob = 0.4f, holdKnob = 1.0f;
 
+    // A burst of sustained input (building real energy into the tank, not a
+    // single impulse), then silence.
     constexpr int kExciteSamples = 4000;
     for (int i = 0; i < kExciteSamples; ++i) {
         rv.Process(1.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr, 0.0f,
                    holdKnob);
+        before.Step(1.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr, holdKnob);
     }
 
     constexpr int kMeasureWindow = 200;
-    float peakAfterExcite = 0.0f;
-    for (int i = 0; i < kMeasureWindow; ++i) {
-        const float out = rv.Process(0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob,
-                                      diffusionKnob, sr, 0.0f, holdKnob);
-        REQUIRE_TRUE(std::isfinite(out));
-        peakAfterExcite = std::max(peakAfterExcite, std::fabs(out));
-    }
-    REQUIRE_TRUE(peakAfterExcite > 0.05f);  // meaningfully non-silent right after the burst.
+    auto measurePeak = [&](int silenceSamplesFirst) {
+        for (int i = 0; i < silenceSamplesFirst; ++i) {
+            rv.Process(0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr, 0.0f,
+                       holdKnob);
+            before.Step(0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr,
+                        holdKnob);
+        }
+        float afterPeak = 0.0f, beforePeak = 0.0f;
+        for (int i = 0; i < kMeasureWindow; ++i) {
+            const float afterOut = rv.Process(0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob,
+                                               diffusionKnob, sr, 0.0f, holdKnob);
+            const float beforeOut = before.Step(0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob,
+                                                 diffusionKnob, sr, holdKnob);
+            REQUIRE_TRUE(std::isfinite(afterOut));
+            REQUIRE_TRUE(std::isfinite(beforeOut));
+            afterPeak = std::max(afterPeak, std::fabs(afterOut));
+            beforePeak = std::max(beforePeak, std::fabs(beforeOut));
+        }
+        return std::make_pair(afterPeak, beforePeak);
+    };
 
-    // A further stretch of continued silence -- if Hold's persistence had
-    // been broken (rather than just its peak capped), a decay-to-near-zero
-    // would show up here.
-    constexpr int kSilenceRunSamples = 10000;  // ~0.21s -- negligible against Hold's own decay time constant.
-    for (int i = 0; i < kSilenceRunSamples; ++i) {
-        rv.Process(0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr, 0.0f,
-                   holdKnob);
-    }
+    const auto [afterRightAfterBurst, beforeRightAfterBurst] = measurePeak(0);
+    const auto [afterMidSilence, beforeMidSilence] = measurePeak(2000);    // ~0.042s further silence.
+    const auto [afterLongSilence, beforeLongSilence] = measurePeak(8000);  // total ~0.21s.
 
-    float peakAfterSilenceRun = 0.0f;
-    for (int i = 0; i < kMeasureWindow; ++i) {
-        const float out = rv.Process(0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob,
-                                      diffusionKnob, sr, 0.0f, holdKnob);
-        REQUIRE_TRUE(std::isfinite(out));
-        peakAfterSilenceRun = std::max(peakAfterSilenceRun, std::fabs(out));
-    }
-    REQUIRE_TRUE(peakAfterSilenceRun > peakAfterExcite * 0.5f);
+    std::cout << "  [S2a.1 loud-tail] Hold=max, Decay=max, full-scale 4000-sample burst:\n"
+              << "  [S2a.1 loud-tail]   BEFORE (pre-fix, reconstructed): rightAfterBurst=" << beforeRightAfterBurst
+              << " +2000samples=" << beforeMidSilence << " +10000samples=" << beforeLongSilence
+              << "  (retention=" << (beforeLongSilence / beforeRightAfterBurst)
+              << " -- pinned at the limiter ceiling, the defect itself)\n"
+              << "  [S2a.1 loud-tail]   AFTER  (post-fix, real):         rightAfterBurst=" << afterRightAfterBurst
+              << " +2000samples=" << afterMidSilence << " +10000samples=" << afterLongSilence
+              << "  (retention=" << (afterLongSilence / afterRightAfterBurst) << " -- a genuine decay)\n";
+
+    // Premise: the burst actually excited the tank, for both the real unit
+    // and the control -- otherwise every ratio below is 0/0 and this run
+    // asserted nothing.
+    REQUIRE_TRUE(afterRightAfterBurst > 0.05f);
+    REQUIRE_TRUE(beforeRightAfterBurst > 0.05f);
+
+    // (1) Still clearly audible a long time after the burst.
+    REQUIRE_TRUE(afterLongSilence > 0.1f);
+    // (2) Decays GRADUALLY (each checkpoint no more than moderately below
+    //     the last), not a cliff -- a real tail, not an on/off gate.
+    REQUIRE_TRUE(afterMidSilence > afterRightAfterBurst * 0.3f);
+    REQUIRE_TRUE(afterLongSilence > afterMidSilence * 0.3f);
+    // (3) ...and it is a DECAY, not the pre-fix pinned-at-the-ceiling
+    //     artifact. Measured 0.377; the pre-fix regime this rejects
+    //     measures 1.000.
+    REQUIRE_TRUE(afterLongSilence < afterRightAfterBurst * 0.8f);
+    // OMNI §9.1 positive control for (3): the pre-fix reconstruction must
+    // actually exhibit the pinned regime, or (3) never tested anything.
+    REQUIRE_TRUE(beforeLongSilence > beforeRightAfterBurst * 0.9f);
 }
 
 // =========================================================================
@@ -1562,6 +1930,14 @@ TEST_CASE(digital_reorganizer_set_flip_truncates_set_hash_rounds) {
     REQUIRE_TRUE(reorg.hashBits == static_cast<uint8_t>(std::round(0.5f * 8.0f)));  // rounds, :161
 }
 
+// S1.3 (openspec/changes/frogg3rs-parametric-slew-and-stop-root-cause/
+// tasks.md; proposal.md §2-4; DIVERGENCE #2 note above dsp::DigitalReorganizer
+// in Drive.hpp): Process() now returns Mangle(x) - Mangle(0), not Mangle(x)
+// alone, at any nonzero flip/hash -- THE sanctioned exception to "any red is
+// a regression" (tasks.md §0). This was RED after S1.3 landed (measured:
+// reorg.Process(-0.6f) moved from -0.998438 to -1.48281, a delta of exactly
+// -0.484375 == -Mangle(0.0f, flip=51, hashBits=6)) and is re-asserted here,
+// never deleted, against the corrected behaviour.
 TEST_CASE(digital_reorganizer_process_matches_bit_scramble_formula) {
     dsp::DigitalReorganizer reorg;
     reorg.SetFlip(0.2f);
@@ -1575,7 +1951,21 @@ TEST_CASE(digital_reorganizer_process_matches_bit_scramble_formula) {
     // out-of-range cases, where the clamp actually changes what would
     // otherwise be UB, are covered separately below by
     // digital_reorganizer_process_at_and_beyond_input_1_0_is_defined_and_saturates.
-    for (float x : {-0.6f, -0.2f, 0.1f, 0.5f}) {
+    //
+    // The bit-scramble MATH transcribed below is UNCHANGED by S1.3 -- this
+    // test's whole point is an INDEPENDENT check that Process() matches a
+    // hand-transcribed formula, so it deliberately does not call Drive.hpp's
+    // own Mangle() (that would only prove Process() calls Mangle() as
+    // written, not that Mangle() computes the right thing; the "does
+    // Process() literally equal Mangle(x)-Mangle(0)" question is instead
+    // covered by construction, since Process()'s only body IS that
+    // subtraction -- see Drive.hpp). What changed is what this test does
+    // with two evaluations of that independent formula: `rawScramble` is
+    // called once at `x` and once at silence, mirroring Process()'s own
+    // Mangle(input,...) - Mangle(0.0f,...) shape one level up, without
+    // duplicating the transcribed expression a second time in this file
+    // (OMNI §8: one local definition, two call sites).
+    const auto rawScramble = [&](float x) {
         const float inputUp = (x + 1.0f) * 128.0f;
         uint8_t inputInt = static_cast<uint8_t>(std::round(inputUp));
         const float inputRemainder = inputUp - static_cast<float>(inputInt);
@@ -1586,8 +1976,11 @@ TEST_CASE(digital_reorganizer_process_matches_bit_scramble_formula) {
         lowerBits = static_cast<uint8_t>(lowerBits ^ ((lowerBits >> 5) & mask));
         lowerBits = static_cast<uint8_t>(lowerBits ^ ((lowerBits << 1) & mask));
         inputInt = static_cast<uint8_t>((inputInt & ~mask) | lowerBits);
-        const float expected = (static_cast<float>(inputInt) + inputRemainder) / 128.0f - 1.0f;
+        return (static_cast<float>(inputInt) + inputRemainder) / 128.0f - 1.0f;
+    };
 
+    for (float x : {-0.6f, -0.2f, 0.1f, 0.5f}) {
+        const float expected = rawScramble(x) - rawScramble(0.0f);
         REQUIRE_NEAR(reorg.Process(x), expected, 1e-6);
     }
 }

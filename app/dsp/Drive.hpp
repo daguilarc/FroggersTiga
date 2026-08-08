@@ -255,12 +255,60 @@ struct SampleRateReducer
 // configuration) `Process(1.0f)` still reconstructs to exactly `1.0f`
 // rather than invoking UB -- see the regression test at input==1.0 in
 // FroggersDspParityTests.cpp.
+//
+// DELIBERATE PARITY DIVERGENCE #2 (openspec/changes/
+// frogg3rs-parametric-slew-and-stop-root-cause/tasks.md S1.3, proposal.md
+// §2-4 -- same class of operator-approved divergence as
+// dsp::Comb::GetFeedback's +-1.1 -> +-0.95 above (FilterFx.hpp) and the
+// resonant-peak ceiling's 10x -> 4x -> 2x (FilterFx.hpp's
+// kMaxResonantBumpHeight), each carrying its own in-code note):
+//
+// `Process(0.0f)` -- digital silence -- is NOT silent. At input==0,
+// `inputUp` is exactly 128 and `inputRemainder` is exactly 0, but the XOR by
+// `flip` and the mask-gated bit scramble below still run, so the result is
+// nonzero for any `flip != 0` (exactly -1.0 at flip==128) and also nonzero
+// at flip==0 when hashBits==8. This stage sits upstream of three recursive
+// loops (dsp::Comb, dsp::StereoDelay, dsp::Reverb -- the last with no
+// in-loop saturator), which amplify that seed without bound: this is F3,
+// "Stop doesn't stop" (measured and traced end-to-end, proposal.md §2).
+//
+// PLAINLY: the frozen firmware (src/core/PolynomialDrive.hpp:125-163) has
+// this exact same f(0) != 0 behaviour -- it is a property of the original
+// bit-scramble math, not a porting error -- and no DC blocker or highpass
+// exists anywhere in this signal chain (src/core/, sim/, and app/ all
+// checked). On real hardware, an analog output stage AC-couples a DC offset
+// away for free, so this was inaudible on the original instrument; this
+// port has no such output stage, so without a fix nothing downstream ever
+// removes it.
+//
+// FIX: the scramble is factored into `Mangle()` below (identical math, no
+// behaviour change by itself), and `Process` returns
+// `Mangle(input, flip, hashBits) - Mangle(0.0f, flip, hashBits)` -- a DC
+// block anchored to this stage's own silent-input response, computed fresh
+// on every call rather than cached (`flip`/`hashBits` are public fields
+// that can be assigned directly, bypassing SetFlip()/SetHash(), so a
+// correction cached only inside those setters would go stale the moment
+// they were bypassed). At the pass-through configuration (flip==0,
+// hashBits==0), `Mangle(0.0f, 0, 0) == 0.0f` exactly, so the correction
+// term is exactly zero there and this fix is a no-op: `Process(1.0f) ==
+// 1.0f` (Fix 1a's own regression test, above) and every parity case at
+// default flip/hash are unaffected. `FroggersDspParityTests.cpp`'s
+// digital_reorganizer_process_matches_bit_scramble_formula pins `Process()`
+// against a hand-transcribed replica of this formula at nonzero flip/hash;
+// it is re-asserted against this corrected behaviour in the same change
+// (see that test's own comment), never deleted.
 struct DigitalReorganizer
 {
     uint8_t flip = 0;
     uint8_t hashBits = 0;
 
-    float Process(float input) const
+    // The bit-mangle itself -- unchanged from the original formula (Fix 1a's
+    // clamp above still applies); factored out of Process() purely so the
+    // divergence note above can call it twice: once at the real input, once
+    // at silence. OMNI §6: reused (2 call sites) and isolates a distinct
+    // transformation stage. OMNI §8: one definition, so neither call site in
+    // Process() below copies this expression.
+    static float Mangle(float input, uint8_t flip, uint8_t hashBits)
     {
         const float inputUp = (input + 1.0f) * 128.0f;
         const float roundedUp = std::round(inputUp);
@@ -279,6 +327,15 @@ struct DigitalReorganizer
         inputInt = static_cast<uint8_t>((inputInt & ~mask) | lowerBits);
 
         return (static_cast<float>(inputInt) + inputRemainder) / 128.0f - 1.0f;
+    }
+
+    // DC-blocked at this stage's own silent-input response -- see the
+    // divergence note above this struct. Computed fresh every sample, never
+    // cached (flip/hashBits are public and may be reassigned directly,
+    // bypassing SetFlip()/SetHash()).
+    float Process(float input) const
+    {
+        return Mangle(input, flip, hashBits) - Mangle(0.0f, flip, hashBits);
     }
 
     void SetFlip(float flipKnob01) { flip = static_cast<uint8_t>(flipKnob01 * 255.0f); }  // :154-157, truncates

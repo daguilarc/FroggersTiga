@@ -1,5 +1,5 @@
 // FroggersStopFlushRepro.cpp -- F3.1 (openspec/changes/
-// frogg3rs-blowout-and-drilldown-repair/tasks.md): headless measurement
+// archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md): headless measurement
 // harness for the operator's "Stop doesn't stop" report ("it has now been
 // over a minute since i stopped audio, and it's still coming out ... the
 // oscilloscope isn't moving. something is stuck in an infinite loop").
@@ -91,6 +91,38 @@
 // existing master_limiter_stays_at_unity_under_live_modulation test,
 // FroggersAudioRoutingTests.cpp:733-759.
 // ---------------------------------------------------------------------
+//
+// F3.2c/F3.2d STATUS UPDATE (2026-08-07): VOID -- PREMISE ELIMINATED.
+// Two things landed in this tree since the extension above was written
+// (openspec/changes/frogg3rs-parametric-slew-and-stop-root-cause/proposal.md
+// §2, SUPERSESSION-RECORD.md §2):
+//   1. F3's real cause was found and fixed, and it is NOT audio-rate
+//      modulation: DigitalReorganizer::Process(0.0f) was nonzero for any
+//      flip != 0 (exactly -1.0 at flip==128), a static DC seed re-emitted
+//      identically every sample regardless of modulation. app/dsp/Drive.hpp
+//      now returns `Mangle(input) - Mangle(0.0f)`, removing it at the
+//      source (S1.3). See the S1.2 case below for the gate that proves it.
+//   2. S1a.2 landed (FroggersAppCore.hpp's per-sample loop):
+//      `modulation_.Step()` is now called only `if (transportRunningNow)`.
+//      Modulation sources HOLD their last value rather than reset when
+//      stopped, so a downstream parameter's knob value can no longer SWEEP
+//      post-Stop -- it can only sit at whatever constant it was already at.
+// Together these mean the condition delayMod/combMod exist to test -- a
+// coefficient sweeping at audio rate AFTER Stop, pumping a zeroed loop back
+// up -- cannot occur under current code, by construction. Every RunPass()
+// call below with a non-empty target will therefore read a flat post-Stop
+// knob (max-min at or near 0.0f, under kVoidLivenessThreshold) and print
+// "VOID -- premise eliminated" for exactly that reason: it is not an
+// inconclusive sample that might read differently on a re-run, it is the
+// transport gate working as designed. Per OMNI §9.1 a run whose controlling
+// quantity did not move is VOID, not a refutation, so this is NOT written up
+// as "parametric modulation confirmed harmless" -- and PassResult::ok no
+// longer clears on this branch (see its own comment), so it cannot fail
+// this binary's exit code either. RunPass() and both passes are KEPT
+// running (not deleted) so the historical measurement -- the actual
+// knob-range and snapshot numbers -- stays in the record and reproducible
+// on demand, per this task's instruction not to destroy it.
+// ---------------------------------------------------------------------
 
 #include "Froggers.hpp"
 #include "FroggersModulation.hpp"
@@ -108,6 +140,8 @@
 #include <cstdio>
 #include <filesystem>
 #include <limits>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -194,7 +228,12 @@ void PrintSnapshot(const Snapshot& s) {
 constexpr float kVoidLivenessThreshold = 1e-3f;
 
 struct PassResult {
-    bool ok = true;  // false on a hard setup failure (EnsureModulationDepth == nullptr) or void liveness.
+    // False only on a hard setup failure (EnsureModulationDepth == nullptr). VOID liveness --
+    // expected for any non-empty target now that modulation is transport-gated, see this file's
+    // 2026-08-07 "F3.2c/F3.2d STATUS UPDATE" header comment -- is reported via stdout only, in
+    // RunPass() below, and deliberately does NOT clear this flag: OMNI §9.1 treats a VOID run as
+    // neither pass nor fail, so it must not be able to fail this binary's exit code either.
+    bool ok = true;
     float prestopPeak = 0.0f;
     float combKnobMin = std::numeric_limits<float>::infinity();
     float combKnobMax = -std::numeric_limits<float>::infinity();
@@ -355,10 +394,19 @@ PassResult RunPass(std::span<const ModTarget> targets, const char* scratchLabel,
                 static_cast<double>(result.combKnobMax), static_cast<double>(combKnobRange));
     if (!targets.empty()) {
         if (!(combKnobRange > kVoidLivenessThreshold)) {
-            std::printf("  VOID: max-min <= %.3g -- modulation liveness NOT proven. "
-                        "No refutation/confirmation may be drawn from this pass.\n",
-                        static_cast<double>(kVoidLivenessThreshold));
-            result.ok = false;
+            // VOID, not a refutation (OMNI §9.1) -- and, as of 2026-08-07, an EXPECTED void (see
+            // this file's "F3.2c/F3.2d STATUS UPDATE" header comment): modulation is
+            // transport-gated now, so this branch is the gate working, not an inconclusive
+            // sample. Left as a live measurement rather than hand-waved to a constant, so a
+            // future change to the transport gate would show up here as a real reading again.
+            std::printf(
+                "  VOID -- premise eliminated: max-min <= %.3g -- modulation liveness NOT proven.\n"
+                "  Expected: modulation_.Step() is transport-gated as of S1a.2, so no coefficient\n"
+                "  can sweep post-Stop any more. F3's real cause was the drive-stage DC seed, fixed\n"
+                "  in S1.3 (app/dsp/Drive.hpp: Process now returns Mangle(input) - Mangle(0.0f)).\n"
+                "  Per OMNI §9.1 this is VOID, not a refutation -- it does NOT fail this binary\n"
+                "  (PassResult::ok is untouched by this branch; see its own comment).\n",
+                static_cast<double>(kVoidLivenessThreshold));
         } else {
             std::printf("  Liveness CONFIRMED: the comb-feedback knob genuinely swept "
                         "while the transport was stopped.\n");
@@ -368,10 +416,197 @@ PassResult RunPass(std::span<const ModTarget> targets, const char* scratchLabel,
     return result;
 }
 
+// =========================================================================
+// S1.2 (openspec/changes/frogg3rs-parametric-slew-and-stop-root-cause/
+// tasks.md, proposal.md §2): F3 reproduced from a FULLY SILENT chain -- no
+// modulation anywhere, every coefficient static. Unlike RunPass() above
+// (measure only, no verdict -- this file's own header comment, "Purpose:
+// measure, not fix"), this case is a GATE: S1.2's own brief requires an
+// assertion that FAILS today and PASSES only after S1.3 lands the fix
+// ("WRITE THIS BEFORE THE FIX ... this one must be red first"). Mirrors the
+// REQUIRE_TRUE convention every *Tests.cpp binary in this directory already
+// defines for itself (FroggersAudioRoutingTests.cpp, FroggersDspParityTests.
+// cpp, et al. -- each its own translation unit; there is no shared test
+// header in this codebase to pull it from instead).
+#define REQUIRE_TRUE(expr)                                                 \
+    do {                                                                   \
+        if (!(expr)) {                                                    \
+            std::ostringstream oss;                                       \
+            oss << __FILE__ << ":" << __LINE__ << " requirement failed: " #expr; \
+            throw std::runtime_error(oss.str());                          \
+        }                                                                  \
+    } while (false)
+
+// Same -60 dBFS "silence" convention FroggersAudioRoutingTests.cpp's
+// stopping_transport_silences_self_sustaining_delay_and_reverb[_with_long_
+// release] tests already use for "settled, and stays settled" -- reused
+// here rather than re-derived (OMNI §8).
+constexpr float kSilenceFloorLinear = 1.0e-3f;
+
+// S1.2's own "first exceeded" marker.
+constexpr float kS12AudibleMarker = 0.1f;
+
+struct F3ScanResult {
+    float peak = 0.0f;
+    long firstExceedsBlockIx = -1;  // -1 == kS12AudibleMarker never crossed within the scanned window.
+    bool sawNaN = false;
+};
+
+// One block-by-block scan of a measurement window, recording the overall
+// peak magnitude and the first block at which it crosses kS12AudibleMarker
+// -- shared by all three RunF3SilentChainCase() runs below (the seeded case
+// and its two mandatory controls), one definition, three call sites (OMNI
+// §8). Chunking RunBlocks() down to n=1 is bit-exact with an un-chunked
+// call (SynthRig::RunBlocks is just a loop of RunOneBlockAt(NextTimestamp()),
+// support/SynthRig.hpp -- the same fact this file's own
+// runBlocksTrackingLiveness lambda above already relies on), so this changes
+// nothing about the audio itself, only how often the harness looks.
+F3ScanResult ScanPeakAndFirstCrossing(Rig& rig, std::size_t blocks) {
+    F3ScanResult result;
+    for (std::size_t i = 0; i < blocks; ++i) {
+        rig.ClearOutput();
+        rig.RunBlocks(1);
+        float blockPeak = 0.0f;
+        for (const auto& frame : rig.Output()) {
+            for (float sample : frame.channels) blockPeak = std::max(blockPeak, std::fabs(sample));
+        }
+        result.peak = std::max(result.peak, blockPeak);
+        if (result.firstExceedsBlockIx < 0 && blockPeak > kS12AudibleMarker) {
+            result.firstExceedsBlockIx = static_cast<long>(i);
+        }
+        result.sawNaN = result.sawNaN || rig.SawNaN();
+    }
+    return result;
+}
+
+struct F3CaseResult {
+    F3ScanResult scan;
+    uint8_t observedFlip = 0;
+    uint8_t observedHashBits = 0;
+};
+
+// Drives the REAL flush path -- Start, brief excitation so every voice
+// genuinely leaves Idle (all three VCOs: the Audio bank's VCO1/2/3 pitch
+// default to 110/220/330 Hz even unpatched, FroggersParameters.hpp's Audio
+// bank layout, so the ASR gate excites all of kNumVoices==3, not just one),
+// Stop, then run past RouteAudioSample's transport-stopped fast-release
+// substitute (kStopFadeReleaseKnob, ~50ms, FroggersAppCore.hpp -- overrides
+// the operator's own Release knob while stopped, so every voice reaches
+// Stage::Idle quickly regardless of the Envelope-bank settings this case
+// never touches) with ample margin, so the running->stopped edge's real
+// ForEachStatefulUnit(Reset) flush (FroggersAppCore.hpp's Stop-transport-
+// reset block) has already fired once the scan below starts. Never
+// hand-resets anything -- S1.2's own setup bullet ("the repro should drive
+// the real code path, not hand-reset").
+//
+// `driveFlipKnob01`/`driveBlendKnob01` are the two knobs S1.2 asks this case
+// to vary (Drive slots 4/7). Every other Drive-bank slot (2/3/5/6/8 -- SRR
+// 1/2, Bit depth, Fuzz, Phase) is left at its ordinary 0.0f default
+// (FroggersParameters.hpp's Drive bank layout carries no `defaultValue`
+// override for any of them, unlike Audio's VCO pitches or Envelope's
+// Sustain), and no ModulationDepth is ever registered on anything, on
+// purpose: "ALL coefficients static. NO modulation depths anywhere. This is
+// the whole point: the symptom must reproduce with nothing sweeping" (S1.2's
+// own words).
+F3CaseResult RunF3SilentChainCase(float driveFlipKnob01, float driveBlendKnob01, const char* scratchLabel,
+                                   const char* label) {
+    constexpr double kSampleRateHz = 48000.0;
+    constexpr std::size_t kBlockSize = 256;  // FroggersApp::Config().
+    Rig rig(/*patchPumpBudgetBlocks=*/64, ScratchPaths(scratchLabel));
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+
+    std::printf("################ S1.2: %s ################\n", label);
+
+    // Minimum excitation, same idiom RunPass() above uses -- just enough
+    // that the ASR gate genuinely opens and every voice leaves Idle at
+    // least once, so "every voice reaching Idle" (S1.2's setup bullet) is a
+    // real transition, not a no-op on voices that were trivially Idle the
+    // whole time.
+    model.PageParameter(synth_froggers::FroggersBankId::Audio, 0).SceneCenter(0) = 0.5f;  // VCO1 pitch.
+    model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;  // Drive gain.
+
+    // The two knobs this case varies.
+    model.PageParameter(synth_froggers::FroggersBankId::Drive, 4).SceneCenter(0) = driveFlipKnob01;  // XOR/Flip.
+    model.PageParameter(synth_froggers::FroggersBankId::Drive, 7).SceneCenter(0) = driveBlendKnob01;  // Blend.
+
+    rig.Application().TestParameterManager().ComputeAllParameters();  // B7.5.0: converge exactly before RunBlocks.
+
+    rig.StartAt(0);
+    std::uint64_t timestamp = 0;
+    const auto secondsToBlocks = [&](double seconds) -> std::size_t {
+        return static_cast<std::size_t>(std::ceil((seconds * kSampleRateHz) / static_cast<double>(kBlockSize)));
+    };
+
+    const std::size_t exciteBlocks = secondsToBlocks(2.0);
+    rig.RunBlocks(exciteBlocks);
+    timestamp += exciteBlocks;
+
+    // S1.2: "Verify you actually got flip == 128, do not assume the knob
+    // maps as you expect." Reads the LIVE runtime value RouteAudioSample()
+    // actually fed SetFlip() via CachedKnobValue() -- not the SceneCenter
+    // argument this function was called with -- via the new
+    // TestDriveDigitalReorganizer() accessor (FroggersAppCore.hpp, added for
+    // this task, same read-only "Test/inspection access" convention as
+    // TestDelay()/TestReverb() on that same accessor list).
+    F3CaseResult result;
+    result.observedFlip = rig.Application().TestDriveDigitalReorganizer().flip;
+    result.observedHashBits = rig.Application().TestDriveDigitalReorganizer().hashBits;
+
+    rig.StopAt(timestamp);
+
+    // Past the ~50ms transport-stopped fast-release substitute with 2x
+    // margin -- long enough that every voice has reached Idle and the real
+    // ForEachStatefulUnit(Reset) flush has already fired before the scan
+    // below starts, but deliberately NOT so long that the scan's own start
+    // is past the climb it exists to observe (an earlier revision used 0.3s
+    // here and the climb -- being much faster in this minimal patch than
+    // the original capture's comb/reverb-at-extremes one, see this
+    // function's own call sites: no Filter/Delay/Reverb slot is ever
+    // touched, all default to 0.0f -- had already fully happened inside
+    // that lead, so every scan started at post-flush-block 0 already
+    // pinned; this shorter lead keeps the rise itself inside the scanned
+    // window instead of behind it).
+    constexpr double kLeadSeconds = 0.1;
+    const std::size_t leadBlocks = secondsToBlocks(kLeadSeconds);
+    rig.RunBlocks(leadBlocks);
+    timestamp += leadBlocks;
+
+    // S1.2: "Run long enough to cover the climb: the real capture pinned by
+    // ~block 40 at 256 frames/48 kHz, so a few seconds of samples is ample."
+    // 3s of scanned blocks is ~7x that margin.
+    constexpr double kMeasureSeconds = 3.0;
+    const std::size_t measureBlocks = secondsToBlocks(kMeasureSeconds);
+    result.scan = ScanPeakAndFirstCrossing(rig, measureBlocks);
+
+    if (result.scan.firstExceedsBlockIx < 0) {
+        std::printf("%s: flip=%u hashBits=%u peak=%.6g -- never exceeded %.1g in %zu post-flush blocks, sawNaN=%d\n",
+                    label, static_cast<unsigned>(result.observedFlip), static_cast<unsigned>(result.observedHashBits),
+                    static_cast<double>(result.scan.peak), static_cast<double>(kS12AudibleMarker), measureBlocks,
+                    result.scan.sawNaN ? 1 : 0);
+    } else {
+        std::printf(
+            "%s: flip=%u hashBits=%u peak=%.6g -- first exceeded %.1g at post-flush block %ld (~sample %ld), "
+            "sawNaN=%d\n",
+            label, static_cast<unsigned>(result.observedFlip), static_cast<unsigned>(result.observedHashBits),
+            static_cast<double>(result.scan.peak), static_cast<double>(kS12AudibleMarker),
+            result.scan.firstExceedsBlockIx, result.scan.firstExceedsBlockIx * static_cast<long>(kBlockSize),
+            result.scan.sawNaN ? 1 : 0);
+    }
+    return result;
+}
+
 }  // namespace
 
 int main() {
     using synth_froggers::FroggersBankId;
+
+    // STATUS (2026-08-07): delayMod/combMod below are VOID -- premise eliminated. See the file
+    // header's "F3.2c/F3.2d STATUS UPDATE" comment for the full why; short version: modulation is
+    // transport-gated (S1a.2) so their target knobs cannot move post-Stop any more, and F3 itself
+    // was fixed at its real cause -- a static DC seed in the drive stage (S1.3) -- not audio-rate
+    // modulation. Both passes are KEPT RUNNING (not deleted) so the historical knob-range/snapshot
+    // measurements stay reproducible; each prints its own "VOID -- premise eliminated" below, and
+    // neither can fail this binary's exit code (PassResult::ok's comment; the final `return`).
 
     // F3.2d: three passes, one variable -- WHICH feedback loop is modulated.
     // Delay slot 1 is Send and slot 2 is Feedback (FroggersParameters.hpp:175,
@@ -429,5 +664,79 @@ int main() {
                     static_cast<double>(m.driveBlendPhase), static_cast<double>(c.driveBlendPhase));
     }
 
-    return (delayMod.ok && combMod.ok && control.ok) ? 0 : 1;
+    // =====================================================================
+    // S1.2: F3 reproduced from a fully silent chain, all coefficients
+    // static, no modulation anywhere -- the gate S1.3 must turn green.
+    // =====================================================================
+    std::printf("\n################ S1.2: F3 FROM A FULLY SILENT CHAIN ################\n");
+    // [128/255, 129/255) == [0.501960..., 0.505882...); SetFlip() truncates
+    // (flip = uint8_t(flipKnob01*255.0f), dsp/Drive.hpp), so 0.503f sits
+    // safely inside with margin on both sides -- landing on either edge
+    // would risk flip==127 or flip==129 on any rounding noise.
+    constexpr float kDriveFlipKnobFor128 = 0.503f;
+    // ">0" per S1.2; fully wet (1.0) removes the dry(==chainIn==0) term from
+    // DriveBlendPhase::Process's crossfade entirely, leaving the cleanest
+    // possible read on the wet path alone.
+    constexpr float kDriveBlendKnobWet = 1.0f;
+
+    const F3CaseResult seeded = RunF3SilentChainCase(kDriveFlipKnobFor128, kDriveBlendKnobWet, "s1_2_seeded",
+                                                       "SEEDED (Flip->128, Blend=1.0)");
+    const F3CaseResult flipZeroControl =
+        RunF3SilentChainCase(0.0f, kDriveBlendKnobWet, "s1_2_flip0", "CONTROL: Flip=0 (Blend=1.0)");
+    const F3CaseResult blendZeroControl =
+        RunF3SilentChainCase(kDriveFlipKnobFor128, 0.0f, "s1_2_blend0", "CONTROL: Blend=0 (Flip->128)");
+
+    std::printf("\n--- S1.2 summary (peak magnitude, first post-flush block index > %.1g) ---\n",
+                static_cast<double>(kS12AudibleMarker));
+    std::printf("  seeded (Flip->128,Blend=1.0):  flip=%u peak=%.6g first-exceeds-block=%ld\n",
+                static_cast<unsigned>(seeded.observedFlip), static_cast<double>(seeded.scan.peak),
+                seeded.scan.firstExceedsBlockIx);
+    std::printf("  control Flip=0 (Blend=1.0):    flip=%u peak=%.6g first-exceeds-block=%ld\n",
+                static_cast<unsigned>(flipZeroControl.observedFlip), static_cast<double>(flipZeroControl.scan.peak),
+                flipZeroControl.scan.firstExceedsBlockIx);
+    std::printf("  control Blend=0 (Flip->128):   flip=%u peak=%.6g first-exceeds-block=%ld\n",
+                static_cast<unsigned>(blendZeroControl.observedFlip), static_cast<double>(blendZeroControl.scan.peak),
+                blendZeroControl.scan.firstExceedsBlockIx);
+
+    int s1_2FailCount = 0;
+    const auto s1_2Check = [&](const char* name, auto&& fn) {
+        try {
+            fn();
+            std::printf("[PASS] S1.2 %s\n", name);
+        } catch (const std::exception& ex) {
+            ++s1_2FailCount;
+            std::printf("[FAIL] S1.2 %s: %s\n", name, ex.what());
+        }
+    };
+
+    // Preconditions: prove the rig actually did what S1.2 asked before
+    // trusting anything measured from it ("do not assume the knob maps as
+    // you expect").
+    s1_2Check("flip_knob_maps_to_128_on_seeded_run", [&] { REQUIRE_TRUE(seeded.observedFlip == 128); });
+    s1_2Check("flip_control_knob_maps_to_0", [&] { REQUIRE_TRUE(flipZeroControl.observedFlip == 0); });
+    s1_2Check("blend_control_leaves_flip_at_128", [&] { REQUIRE_TRUE(blendZeroControl.observedFlip == 128); });
+
+    // OMNI §9.1 mandatory positive control: the rig must be proven ABLE to
+    // measure non-silence, or a clean read on the seeded run below proves
+    // nothing. Both controls gate the seed (Flip's XOR, DriveBlendPhase's
+    // crossfade) at a DIFFERENT point in the same signal path, so both must
+    // read bit-exact zero -- not merely "quiet".
+    s1_2Check("flip_zero_control_measures_exact_silence", [&] { REQUIRE_TRUE(flipZeroControl.scan.peak == 0.0f); });
+    s1_2Check("blend_zero_control_measures_exact_silence", [&] { REQUIRE_TRUE(blendZeroControl.scan.peak == 0.0f); });
+
+    // THE gate. Desired behaviour: the post-flush peak decays to and stays
+    // at ~0 -- same -60 dBFS floor the sibling Stop-silences-the-instrument
+    // tests use. MUST be red until S1.3 lands (S1.2's own brief: do not
+    // weaken this to "peak pins near 1.0", which would pass today and fail
+    // after the fix -- a characterization test, not a gate).
+    s1_2Check("f3_post_flush_peak_decays_to_and_stays_near_zero",
+              [&] { REQUIRE_TRUE(seeded.scan.peak < kSilenceFloorLinear); });
+
+    std::printf("\nS1.2: %d check(s) failed (see [FAIL] lines above)\n", s1_2FailCount);
+
+    // delayMod.ok/combMod.ok/control.ok now reflect ONLY a hard setup failure
+    // (EnsureModulationDepth == nullptr), never VOID liveness -- see PassResult::ok's comment --
+    // so F3.2c/F3.2d's now-permanent-and-expected VOID reads no longer fail this binary. S1.2
+    // (s1_2FailCount) remains the sole gate on F3 itself.
+    return (delayMod.ok && combMod.ok && control.ok && s1_2FailCount == 0) ? 0 : 1;
 }

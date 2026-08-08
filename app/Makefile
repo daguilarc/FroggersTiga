@@ -121,6 +121,13 @@ NO_JUCE_CHECK := $(BUILD_DIR)/check_no_juce
 # all (the port is pure DSP, task 3's "hard constraints"). DSP_HEADERS is
 # listed as a prerequisite so editing any ported unit rebuilds the suite.
 DSP_HEADERS := $(wildcard $(APP_DIR)/dsp/*.hpp)
+#
+# S2a.1's reverb-tank-saturator tests briefly lived in a separate
+# FroggersReverbSaturatorTests.cpp/REVERB_SATURATOR_TEST_BIN pair, for one
+# stated reason: FroggersDspParityTests.cpp was other in-flight work at the
+# time and that task's brief forbade touching it. That reason lapsed, so
+# they were folded back into DSP_TEST_SOURCES (same convention, and it
+# retires a duplicated harness and build recipe -- OMNI §8).
 DSP_TEST_SOURCES := $(APP_DIR)/FroggersDspParityTests.cpp
 DSP_TEST_BIN := $(BUILD_DIR)/froggers_dsp_parity_tests
 

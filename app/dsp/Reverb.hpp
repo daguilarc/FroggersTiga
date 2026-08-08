@@ -55,6 +55,7 @@
 // ported params reproduce ProcessReverb + the Wet/dry blend exactly.
 
 #include "DspMath.hpp"
+#include "FilterFx.hpp"  // reuse dsp::PadeSaturator (S2a.1 below; same reuse Delay.hpp's B2 makes).
 #include "Limiter.hpp"
 
 #include <algorithm>
@@ -374,8 +375,40 @@ struct Reverb
         const float cross = diffusion * 0.5f;
         const float aFb = valB * (1.0f - cross) + valA * cross;
         const float bFb = valA * (1.0f - cross) + valB * cross;
-        const float aIn = preOut + aFb * fb;
-        const float bIn = preOut + bFb * fb;
+
+        // S2a.1 (openspec/changes/frogg3rs-parametric-slew-and-stop-root-cause/
+        // tasks.md; OPERATOR DECISION 2026-08-07: "reverb tank should have
+        // in-loop saturator anyway, the same one, for omni rule purposes").
+        // Mirrors B2 (dsp/Delay.hpp, StereoDelay::Process's own comment)
+        // exactly, same reasoning, same fix shape: `aFb`/`bFb` above are
+        // unbounded reads straight off lineA/lineB (this tank's own cross-fed
+        // taps), so the pre-fix `preOut + aFb * fb` fed a linear, unsaturated
+        // loop -- steady state `preOut / (1 - fb)`, and with Hold maxed `fb`
+        // (computed just above) -> ~0.99998, i.e. ~50,000x. Wraps each fed-back tap in
+        // the SAME `PadeSaturator::Saturate` the comb's own loop
+        // (FilterFx.hpp's Comb::Process) and the delay's B2 fix already use
+        // -- reused, not reimplemented (OMNI §8) -- applied BEFORE the `fb`
+        // multiply, exactly mirroring B2's `fbk * PadeSaturator::Saturate(fbL)`.
+        // `Saturate` clamps to +-1 unconditionally, so every write to
+        // lineA/lineB is now bounded by `|preOut| + fb` regardless of how
+        // many round trips have already run -- a per-sample bound, not
+        // merely a steady-state one.
+        //
+        // Hold's PERSISTENCE is untouched: PadeSaturator's small-signal gain
+        // at x=0 is exactly 1.0 (FilterFx.hpp's own comment on the comb's
+        // saturator, "the derivative at x=0 ... = 27/27 = 1"), so once a
+        // tap's magnitude decays under the saturator's linear region the
+        // fed-back term is again Saturate(x) ~= x and the tail keeps decaying
+        // at the same fb-per-round-trip rate as before this fix -- this adds
+        // a MAGNITUDE ceiling on a hot tank, not a change to the decay time
+        // constant at ordinary levels. Same "bound what can blow up, don't
+        // touch what legitimately persists" split B6b's wetLimiter already
+        // keeps relative to `fb`'s own computation just above (also
+        // untouched by that fix) -- this is that same split, one loop
+        // further in, per the operator's own framing: "a structural guard,
+        // not a tone change."
+        const float aIn = preOut + fb * PadeSaturator::Saturate(aFb);
+        const float bIn = preOut + fb * PadeSaturator::Saturate(bFb);
 
         dampFilter.alpha = DampAlphaFromKnob(dampKnob01);  // :459, :574
         const float aOut = dampFilter.Process(valA);
@@ -399,8 +432,11 @@ struct Reverb
         // operator: "why can't we just have limiters for reverb and
         // delay?"): applied to the fully mixed dry/wet output, AFTER both
         // tanks (`lineA`/`lineB` already written above) and AFTER the mix
-        // -- `fb`/Hold's own computation above (:341-342) is untouched, so
-        // Hold keeps sustaining exactly as before; this only bounds the
+        // -- `fb`/Hold's own computation (`const float fb = ...` above) is
+        // untouched [drive-by fix, S2a.1: this line previously cited a
+        // stale ":341-342", already wrong before this edit -- symbol-
+        // anchored per tasks.md's own "cite by SYMBOL, not by line" rule
+        // now], so Hold keeps sustaining exactly as before; this only bounds the
         // LEVEL that escapes this stage toward the master limiter. See this
         // file's header comment (above the struct) for the tuning and its
         // measurement.

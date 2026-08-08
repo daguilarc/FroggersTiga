@@ -51,11 +51,11 @@ struct VcoAdsrState
     // falling sustain, so audio-rate modulation does not ride the envelope --
     // it hard-gates it to zero on every trough.
     //
-    // 0.05 is about -26 dB: audible, unmistakably quiet, and far enough above
+    // 0.10 is about -20 dB: audible, unmistakably quiet, and far enough above
     // zero that a full-depth modulation trough still passes signal.
     // TRADE-OFF, operator-accepted: sustain 0 is no longer a hard mute for a
     // voice, it is this floor.
-    static constexpr float kMinSustainLevel = 0.05f;
+    static constexpr float kMinSustainLevel = 0.10f;
     // ITEM 4 (design.md A2, 2026-07-29, operator judgement -- deliberate
     // parity divergence, same treatment as Fuegoize.hpp's own D6 note):
     // lowered from 2.5s to 1.0s. 1.0s still comfortably covers a slow pad
