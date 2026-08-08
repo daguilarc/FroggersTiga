@@ -1453,6 +1453,129 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
     REQUIRE_TRUE(staysSilentLongReleasePeak < kSilenceFloorLinear);
 }
 
+// =========================================================================
+// S1a.2 (openspec/changes/frogg3rs-parametric-slew-and-stop-root-cause/
+// tasks.md, section S1a): operator-ordered gate on modulation_.Step() --
+// NOT the F3 fix (see FroggersAppCore.hpp's own comment at the call site for
+// why a static DC seed could never have been removed by freezing
+// modulation; that is S1.3). This proves the actual behaviour change: with
+// the transport stopped, a genuinely free-running modulation source holds
+// its last value instead of continuing to update. Uses kModSlotNoise, one
+// of the 8 slots the gate actually stops (kModSlotRandomSh6, kModSlotVco1/
+// 2/3Audio, kModSlotVco1/2/3Ef, kModSlotNoise) -- the simplest of the 8, a
+// fresh synth::NoiseModulatorProcessor::Process() draw (random_.
+// UniformOpen01(), FroggersModulation.hpp) every Step() call, needing no
+// patch/knob setup to prove liveness.
+//
+// Deliberately lives here, not in FroggersModulationTests.cpp: that file's
+// own Fixture calls FroggersModulationSlate::Step() directly (its own
+// header comment: "no Engine/SynthRig needed"), bypassing
+// FroggersAppCore::ProcessBlock entirely -- exactly where this gate lives --
+// so it structurally cannot observe this change. This file already drives
+// ProcessBlock through the real synth_rig::SynthRig<FroggersApp> path (see
+// e.g. the stopping_transport_silences_self_sustaining_delay_and_reverb
+// tests above), so it is the correct home, following the same TEST_CASE/
+// REQUIRE_TRUE convention FroggersModulationTests.cpp also uses (each test
+// file in this directory defines its own copy; there is no shared header).
+//
+// OMNI §9.1: a negative result (holds while stopped) requires a positive
+// control (the SAME rig, SAME source, proven to move while running) in the
+// SAME test, or the held-value read is meaningless. Both numbers are
+// printed, not just asserted.
+TEST_CASE(free_running_modulation_source_holds_while_stopped_with_positive_control) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("s1a2_source_holds_while_stopped"));
+    const auto noiseValue = [&] {
+        return rig.Application().Modulation().SourceValue(synth_froggers::kModSlotNoise);
+    };
+
+    // --- Positive control: transport RUNNING, sampled at every block
+    // boundary (RunBlocks(1) chunking is bit-exact with an un-chunked call --
+    // the same fact FroggersStopFlushRepro.cpp's runBlocksTrackingLiveness
+    // and this file's own master_limiter_stays_at_unity_under_live_modulation
+    // test above both already rely on). kModSlotNoise is a fresh open-(0,1)
+    // draw every Step() call, so any nonzero spread over 40 independent
+    // draws (short of an astronomically unlikely all-equal run) proves
+    // liveness.
+    rig.StartAt(0);
+    std::uint64_t timestamp = 0;
+    constexpr std::size_t kLiveBlocks = 40;
+    float liveMin = std::numeric_limits<float>::infinity();
+    float liveMax = -std::numeric_limits<float>::infinity();
+    for (std::size_t i = 0; i < kLiveBlocks; ++i) {
+        rig.RunBlocks(1);
+        ++timestamp;
+        const float v = noiseValue();
+        liveMin = std::min(liveMin, v);
+        liveMax = std::max(liveMax, v);
+    }
+    std::cout << "S1a.2 positive control -- transport RUNNING, kModSlotNoise, " << kLiveBlocks
+              << " block-boundary samples: min=" << liveMin << " max=" << liveMax
+              << " range=" << (liveMax - liveMin) << "\n";
+    // Same void-liveness role as FroggersStopFlushRepro.cpp's own
+    // kVoidLivenessThreshold (1e-3f): comfortably above float noise, and a
+    // uniform-(0,1) draw over 40 samples spans on the order of the full
+    // [0,1) range in practice, so this margin is not close.
+    constexpr float kLivenessThreshold = 1.0e-3f;
+    REQUIRE_TRUE((liveMax - liveMin) > kLivenessThreshold);
+
+    // --- Stop the transport; the source must now hold. ---
+    rig.StopAt(timestamp);
+    rig.RunBlocks(1);  // One block past the Stop message's own drain boundary.
+    ++timestamp;
+
+    const float heldValue = noiseValue();
+    constexpr std::size_t kHeldBlocks = 40;
+    for (std::size_t i = 0; i < kHeldBlocks; ++i) {
+        rig.RunBlocks(1);
+        REQUIRE_TRUE(noiseValue() == heldValue);
+    }
+    std::cout << "S1a.2 held value -- transport STOPPED, kModSlotNoise, constant at " << heldValue
+              << " across " << kHeldBlocks << " further block-boundary samples\n";
+}
+
+// S1a.2 regression check: `parameters_.ProcessSample()` stays UNGATED by
+// design (FroggersAppCore.hpp's own comment on the Step() call site) --
+// gating it would freeze knob edits and Randomize All until Play, a worse
+// bug than the one S1a.2 fixes. This proves that stays true: a raw
+// SceneCenter write (the "commanded value" convention FroggersModulation
+// Tests.cpp/FroggersParameterModelTests.cpp also use) still reaches
+// CachedKnobValue() -- the value RouteAudioSample's knob()/vcoDrive actually
+// read -- through the ordinary ProcessBlock path, with the transport never
+// started at all (this rig's default state, per this file's own header
+// comment: "The rig's transport starts Stopped by default").
+TEST_CASE(patch_change_still_reaches_dsp_while_transport_stopped) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("s1a2_patch_reaches_dsp_while_stopped"));
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+    synth::Parameter& driveGain = model.PageParameter(synth_froggers::FroggersBankId::Drive, 0);
+
+    const float before = driveGain.CachedKnobValue(0);
+    constexpr float kTarget = 0.8f;
+    driveGain.SceneCenter(0) = kTarget;
+
+    // B7.5.0's periodic smoothed Compute (Parameter::ProcessSamplePhase1,
+    // alpha 0.0994 every 16 samples -- this file's own ApplyPatchNow comment
+    // above) converges geometrically: residual after k updates is
+    // (1-0.0994)^k. 50 blocks x 256 samples / 16 samples-per-update = 800
+    // updates; (0.9006)^800 underflows float precision many times over.
+    // Deliberately NOT using ApplyPatchNow/ComputeAllParameters() here --
+    // the point of this test is to exercise the real per-sample path
+    // (parameters_.ProcessSample(), called every sample regardless of
+    // transport state) rather than the direct one-shot convergence helper.
+    constexpr std::size_t kBlocks = 50;
+    rig.RunBlocks(kBlocks);
+
+    const float after = driveGain.CachedKnobValue(0);
+    std::cout << "S1a.2 patch-while-stopped -- Drive gain CachedKnobValue(0): before=" << before
+              << " target=" << kTarget << " after=" << after << " (transport never started)\n";
+    REQUIRE_TRUE(!rig.SawNaN());
+    // The write started meaningfully far from target (catches a vacuous
+    // "already there" pass) and converged onto it (catches the regression
+    // this test exists to rule out: parameters_.ProcessSample() silently
+    // gated alongside modulation_.Step()).
+    REQUIRE_TRUE(std::fabs(before - kTarget) > 0.1f);
+    REQUIRE_TRUE(std::fabs(after - kTarget) < 1.0e-4f);
+}
+
 }  // namespace
 
 int main() {

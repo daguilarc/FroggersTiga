@@ -145,9 +145,9 @@ public:
               /*minY=*/-1.0f, /*maxY=*/1.0f, /*numSamples=*/512, /*drawMarkers=*/true),
           peakVisualizer_(peakUiState_, synth::Color::Blue),
           combVisualizer_(combUiState_, synth::Color::Blue.AdjustBrightness(0.7f)) {
-        audioVco1_.SetScopeWriterHolder(&vco1ScopeHolder_);
-        audioVco2_.SetScopeWriterHolder(&vco2ScopeHolder_);
-        audioVco3_.SetScopeWriterHolder(&vco3ScopeHolder_);
+        audioVcos_[0].SetScopeWriterHolder(&vco1ScopeHolder_);
+        audioVcos_[1].SetScopeWriterHolder(&vco2ScopeHolder_);
+        audioVcos_[2].SetScopeWriterHolder(&vco3ScopeHolder_);
         // UI-rework ITEM 2 (design.md A3b, tasks.md B.2, 2026-07-29): was
         // Red/Orange/Yellow -- three hues that collapse together under
         // red-green colour blindness (protanopia/deuteranopia), an operator
@@ -157,9 +157,9 @@ public:
         // is `Color::Rgb(255, 105, 180)` -- bright against the panel's dark
         // background and separated from cyan/yellow in both blue channel
         // and luminance. Do NOT restore Red/Orange/Yellow.
-        audioVco1_.SetScopeColor(synth::Color::Cyan);
-        audioVco2_.SetScopeColor(synth::Color::Rgb(255, 105, 180));  // pink -- no synth::Color::Pink/Magenta exists.
-        audioVco3_.SetScopeColor(synth::Color::Yellow);
+        audioVcos_[0].SetScopeColor(synth::Color::Cyan);
+        audioVcos_[1].SetScopeColor(synth::Color::Rgb(255, 105, 180));  // pink -- no synth::Color::Pink/Magenta exists.
+        audioVcos_[2].SetScopeColor(synth::Color::Yellow);
     }
 
     static synth::RuntimeConfig Config() {
@@ -679,7 +679,7 @@ public:
             // kStop handler (FroggersUiSurface.hpp's HandleAction), which
             // only pushes a MessageIn::Stop and never touches DSP state
             // directly. F3.3 (openspec/changes/
-            // frogg3rs-blowout-and-drilldown-repair/tasks.md): resets every
+            // archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md): resets every
             // unit ForEachStatefulUnit() enumerates (all 14 -- see that
             // method's own comment), not just delay_/reverb_. The comment
             // this replaces claimed "VCOs/filters/drive do not [self-
@@ -781,11 +781,54 @@ public:
                     parameters_.PageParameter(FroggersBankId::Audio, paramIx + 6).CachedKnobValue(0),
                 };
             };
-            // Task 8.1/6b.3: the SAME already-computed transportQuarterNotes
-            // (above, for the ASR gate) is reused here rather than a second
-            // null-check/guard/Try-call sequence -- see Step()'s own comment.
-            modulation_.Step(vcoDrive(0), vcoDrive(1), vcoDrive(2), externalAudioSample, externalInputConnected,
-                              transportQuarterNotes);
+            // S1a.2 (openspec/changes/frogg3rs-parametric-slew-and-stop-root-
+            // cause/tasks.md, section S1a): operator-ordered, and NOT the F3
+            // fix -- kept labelled accurately on purpose. F3 was a static DC
+            // seed inside DigitalReorganizer, a pure function of frozen knob
+            // state (fixed at its source by S1.3); freezing modulation could
+            // never have removed it. This gate is the operator's own ruling
+            // instead (S1a.1, verbatim): "no, modulation should not free-run
+            // while stopped lol. come on."
+            //
+            // Gated on `transportRunningNow`, already computed above (this
+            // same `transportQuarterNotes.has_value()`) for the ASR gate and
+            // the stop-edge reset logic -- reused here, not a second clock
+            // query or null-check sequence. `parameters_.ProcessSample()`
+            // below stays UNGATED on purpose: a SceneCenter write only
+            // reaches the DSP through its own periodic smoothed Compute
+            // (Parameter::ProcessSamplePhase1), so gating that call too would
+            // freeze knob edits and Randomize All until Play. Only the
+            // modulation SOURCES stop here.
+            //
+            // The genuinely free-running set this stops is 8 slots --
+            // kModSlotRandomSh6, kModSlotVco1/2/3Audio, kModSlotVco1/2/3Ef,
+            // kModSlotNoise -- every one written unconditionally inside
+            // Step()'s own body. Random S&H lanes 1-5 are deliberately NOT
+            // named here: StepClockDrivenLanes's own has_value() guard
+            // already stops their Increment() regardless of this outer gate
+            // (RandomShLane::Process() itself still glides a further few
+            // samples toward an already-fixed target, then holds bit-exact --
+            // a transient, not free-running; an earlier draft of this task
+            // named the lanes here instead, which was wrong). Sources HOLD
+            // rather than reset: RegisterSources() hands Sheaf raw pointers
+            // to the member variables Step() writes, and
+            // Modulators::UpdateModValues() (inside parameters_.
+            // ProcessSample(), still called every sample below) dereferences
+            // those same pointers regardless of this gate -- there is no
+            // neutral-reset path, so skipping Step() simply leaves them at
+            // whatever they last held. modulation_.PublishUiState(), once
+            // per block after this loop, republishes that same held state,
+            // so a visualizer shows a held value, not darkness.
+            //
+            // `transportQuarterNotes` is still passed into Step() below
+            // (Task 8.1/6b.3, unchanged): reused from the ASR gate's own
+            // already-computed value rather than re-derived a second time,
+            // for StepClockDrivenLanes's own tick-phase arithmetic -- see
+            // Step()'s own comment.
+            if (transportRunningNow) {
+                modulation_.Step(vcoDrive(0), vcoDrive(1), vcoDrive(2), externalAudioSample,
+                                  externalInputConnected, transportQuarterNotes);
+            }
 
             parameters_.ProcessSample(absoluteOutputSample);
 
@@ -859,7 +902,7 @@ public:
         // design/trace. Runs once per block, after the per-sample loop, over
         // every unit Item 2 gave a Reset() to -- this IS the mechanism that
         // fixes "audio never comes back": before this call existed, nothing
-        // anywhere in this file ever reset audioVco1_/audioVco2_/audioVco3_/
+        // anywhere in this file ever reset audioVcos_[0]/[1]/[2]/
         // driveBlendPhase_/drive_'s sub-units/filterChain_'s sub-units, so a
         // poisoned recursive state in any of them (e.g. a biquad whose y1/y2
         // went non-finite, or diverged to an extreme finite magnitude) would
@@ -889,9 +932,9 @@ public:
         // scopeWriter_.Publish()/PopulateUIState()/PublishUiState() sequence
         // (Braid4Core.hpp:252-262).
         vcoScopeWriter_.Publish();
-        audioVco1_.PopulateUIState(vco1ScopeUiState_);
-        audioVco2_.PopulateUIState(vco2ScopeUiState_);
-        audioVco3_.PopulateUIState(vco3ScopeUiState_);
+        audioVcos_[0].PopulateUIState(vco1ScopeUiState_);
+        audioVcos_[1].PopulateUIState(vco2ScopeUiState_);
+        audioVcos_[2].PopulateUIState(vco3ScopeUiState_);
         filterChain_.peak.PopulateUIState(peakUiState_);
         filterChain_.comb.PopulateUIState(combUiState_);
         modulation_.PublishUiState();
@@ -953,13 +996,20 @@ public:
     // convention as VcoScopeUiState()/PeakVisualizer() above.
     dsp::Vco& TestAudioVco(std::size_t ix) {
         switch (ix) {
-            case 0: return audioVco1_;
-            case 1: return audioVco2_;
-            default: return audioVco3_;
+            case 0: return audioVcos_[0];
+            case 1: return audioVcos_[1];
+            default: return audioVcos_[2];
         }
     }
     dsp::DriveBlendPhase& TestDriveBlendPhase() { return driveBlendPhase_; }
     dsp::Oversampler2x& TestDriveOversampler() { return drive_.oversampler; }
+    // S1.2 (openspec/changes/frogg3rs-parametric-slew-and-stop-root-cause/
+    // tasks.md): same convention as the accessors above -- added because the
+    // F3-from-silent-chain measurement case needs to read the live `flip`/
+    // `hashBits` SetFlip()/SetHash() actually resolved to (Drive.hpp's
+    // truncating/rounding casts), not assume the SceneCenter knob argument
+    // maps the way the caller expects. Read-only; does not change behaviour.
+    dsp::DigitalReorganizer& TestDriveDigitalReorganizer() { return drive_.digitalReorganizer; }
     dsp::SampleRateReducer& TestSampleRateReducer(std::size_t ix) {
         return ix == 0 ? drive_.sampleRateReducer1 : drive_.sampleRateReducer2;
     }
@@ -1067,18 +1117,23 @@ private:
         // Slots: VCO pitch 0-2, Shape (morph) 3-5, Phase mod 6-8 -- same
         // (paramIx, +3, +6) grouping ProcessBlock's own vcoDrive lambda uses
         // above for the modulation slate's separate VCO instances.
-        const float v1 = audioVco1_.Process(knob(FroggersBankId::Audio, 0),
-                                             knob(FroggersBankId::Audio, 3),
-                                             knob(FroggersBankId::Audio, 6),
-                                             sampleRate_);
-        const float v2 = audioVco2_.Process(knob(FroggersBankId::Audio, 1),
-                                             knob(FroggersBankId::Audio, 4),
-                                             knob(FroggersBankId::Audio, 7),
-                                             sampleRate_);
-        const float v3 = audioVco3_.Process(knob(FroggersBankId::Audio, 2),
-                                             knob(FroggersBankId::Audio, 5),
-                                             knob(FroggersBankId::Audio, 8),
-                                             sampleRate_);
+        //
+        // S3.1: collapsed from three structurally identical statements
+        // (audioVco1_/2_/3_, differing only by index 0,3,6 / 1,4,7 / 2,5,8)
+        // into a loop over audioVcos_. Per-index order is preserved exactly
+        // (i=0 is the old audioVco1_/slots 0,3,6; i=1 is audioVco2_/slots
+        // 1,4,7; i=2 is audioVco3_/slots 2,5,8), and each dsp::Vco instance's
+        // Process() call only ever reads its OWN persistent state
+        // (carrierPhase/pmLfoPhase) plus this call's own arguments -- no
+        // cross-VCO term exists (Vco.hpp's own header comment) -- so the
+        // iteration order across i cannot change any instance's output.
+        std::array<float, 3> vcoOut{};
+        for (std::size_t i = 0; i < audioVcos_.size(); ++i) {
+            vcoOut[i] = audioVcos_[i].Process(knob(FroggersBankId::Audio, i),
+                                               knob(FroggersBankId::Audio, i + 3),
+                                               knob(FroggersBankId::Audio, i + 6),
+                                               sampleRate_);
+        }
 
         // -- Envelope bank -> ASR + voice mix (task 3.2) --------------------
         // Slots: Attack/Sustain/Release x VCO1-3, 0-8 in that order --
@@ -1123,7 +1178,7 @@ private:
 
         dsp::GatedVoices gatedVoices;
         const float chainIn = dsp::MixOscVoices(
-            audioAdsr_, v1, v2, v3,
+            audioAdsr_, vcoOut[0], vcoOut[1], vcoOut[2],
             knob(FroggersBankId::Envelope, 0), knob(FroggersBankId::Envelope, 1), releaseKnob(2),
             knob(FroggersBankId::Envelope, 3), knob(FroggersBankId::Envelope, 4), releaseKnob(5),
             knob(FroggersBankId::Envelope, 6), knob(FroggersBankId::Envelope, 7), releaseKnob(8),
@@ -1222,7 +1277,7 @@ private:
         // an unnormalized value in a cycles/sample convention, i.e.
         // thousands of times past Nyquist, giving a marginally stable
         // biquad. Under a self-oscillating comb (Randomize All pins the
-        // feedback near its -1.1 extreme) its state diverged to non-finite,
+        // feedback near its -0.95 extreme) its state diverged to non-finite,
         // and `SanitizeOutputSample` then masked every later sample to
         // 0.0f: permanent silence with no recovery. Note `scoopNotch`
         // processes unconditionally, so a poisoned state reaches the output
@@ -1505,7 +1560,7 @@ private:
     // folded into the per-sample loop itself).
     //
     // F3.3 SPEC CORRECTED 2026-08-07 (openspec/changes/
-    // frogg3rs-blowout-and-drilldown-repair/tasks.md): the unit set this
+    // archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md): the unit set this
     // watches is no longer listed here directly -- it walks
     // ForEachStatefulUnit() below, the single definition site (see that
     // method's own comment). Tier 2's per-unit sustained-over-ceiling
@@ -1567,9 +1622,18 @@ private:
     // instances from modulation_'s private VCOs -- see this class's
     // PrepareToPlay() comment.
     float sampleRate_ = 48000.0f;
-    dsp::Vco audioVco1_;
-    dsp::Vco audioVco2_;
-    dsp::Vco audioVco3_;
+    // S3.1 (openspec/changes/frogg3rs-parametric-slew-and-stop-root-cause/
+    // tasks.md): collapsed from three separately-named dsp::Vco audioVco1_/
+    // audioVco2_/audioVco3_ members into one std::array -- dsp::Vco is
+    // trivially copy/move constructible/assignable (all members are float,
+    // a trivially-copyable synth::Color, and a raw pointer; verified by a
+    // standalone compile+run before this refactor), which is what makes
+    // std::array<dsp::Vco, 3> construction/element-access valid here.
+    // Index 0/1/2 map to the old audioVco1_/audioVco2_/audioVco3_ identities
+    // respectively, everywhere this class uses them (constructor scope
+    // wiring, PopulateUIState, TestAudioVco, RouteAudioSample,
+    // ForEachStatefulUnit).
+    std::array<dsp::Vco, 3> audioVcos_;
     dsp::VcoAdsrState audioAdsr_;
     dsp::FrogBlock drive_;
     dsp::DriveBlendPhase driveBlendPhase_;
@@ -1606,9 +1670,15 @@ private:
     template <typename Visitor>
     void ForEachStatefulUnit(Visitor&& visit)
     {
-        visit(audioVco1_, dsp::Magnitude{});
-        visit(audioVco2_, dsp::Magnitude{});
-        visit(audioVco3_, dsp::Magnitude{});
+        // S3.1: collapsed from three visit(audioVcoN_, ...) lines into a
+        // loop over audioVcos_ -- same 3 dsp::Vco instances, same order
+        // (index 0/1/2 == old audioVco1_/2_/3_), same dsp::Magnitude tag,
+        // same visitor. Count/order/tag of every OTHER unit this method
+        // enumerates is unchanged (nothing below this loop was touched), so
+        // the total enumeration is still all 14 units in the same order.
+        for (auto& vco : audioVcos_) {
+            visit(vco, dsp::Magnitude{});
+        }
         visit(driveBlendPhase_, dsp::Magnitude{});
         drive_.ForEachStatefulUnit(visit);
         filterChain_.ForEachStatefulUnit(visit);

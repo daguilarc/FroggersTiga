@@ -701,10 +701,63 @@ public:
             }
         }
         synth::Parameter* const selectedBefore = bank_->SelectedParameter();
+        // S5.1 (operator regression, 2026-08-07 -- "the drilldown back
+        // button still doesn't go one back, it goes all the way back"):
+        // capture, BEFORE dispatching the press, whether `encoderId` is the
+        // Target/Back cell -- i.e. whether the pressed cell's own visible
+        // parameter is the parameter already selected. This MUST be read
+        // now, not after HandlePress() returns: a Target/Back press calls
+        // Deselect() (below), which resets `visible_` to `topLevel_`, so
+        // VisibleParameter(encoderId) would no longer reflect the
+        // pre-press view afterward.
+        //
+        // This is the exact, and ONLY, distinguishing signal, verified by
+        // reading Sheaf's complete Bank::HandlePress body (External/Sheaf/
+        // projects/synth/src/ParameterModulation.cpp:2628-2650, pinned):
+        // its one and only branch that sets `selected_` to nullptr is
+        // `if (ShowingModulation() && cell->parameter == selected_) {
+        // Deselect(); return; }` (:2643-2646) -- OpenModulationView
+        // (:2813-2859) never nulls it, it either assigns a real parameter
+        // or returns early on a storage shortfall leaving `selected_`
+        // unchanged. `ShowingModulation()` is `selected_ != nullptr`
+        // (:2710-2712), i.e. `selectedBefore != nullptr` here, and
+        // `cell->parameter` for the pressed encoderId is exactly what
+        // `bank_->VisibleParameter(encoderId)` reads (:2718-2721, same
+        // FindVisibleCell lookup). So, given `selectedBefore != nullptr`,
+        // HandlePress leaves `selectedAfter == nullptr` if and only if
+        // `wasTargetBackPress` below is true -- an exact predicate, not a
+        // heuristic. This also matches OpenModulationView's own
+        // construction of the Target/Back cell (:2854-2857, the selected
+        // parameter's own cell is always physicalLayout.back()) at every
+        // drill level alike, since FullPhysicalLayout(*bank_) is the same
+        // fixed 16-wide span on every call (this file's own comment above).
+        const bool wasTargetBackPress =
+            selectedBefore != nullptr && bank_->VisibleParameter(encoderId) == selectedBefore;
         bank_->HandlePress(encoderId, FullPhysicalLayout(*bank_));
         synth::Parameter* const selectedAfter = bank_->SelectedParameter();
         if (selectedAfter == nullptr) {
-            level_ = 0;
+            if (wasTargetBackPress) {
+                // The operator's actual Back gesture (every on-screen press,
+                // Target/Back cell included, dispatches through here, never
+                // through Back() directly -- see this class's own header
+                // comment). Pop exactly ONE level by calling the existing
+                // Back() mechanism -- reused as-is, not duplicated (OMNI
+                // §8) -- rather than the full `level_ = 0` reset below.
+                // Back() reads the CURRENT `level_` to compute its target
+                // depth, so this must run before `level_` is touched here;
+                // it leaves `level_` at that one-shallower depth itself.
+                Back();
+            } else {
+                // Genuine full clear: `selectedBefore` was already nullptr
+                // (level 0, e.g. an empty-cell press), so `wasTargetBackPress`
+                // is false and this is a same-value no-op -- unchanged from
+                // before this fix. No path reaches this branch with
+                // `wasTargetBackPress` false and `selectedBefore` non-null:
+                // that would require HandlePress to null out `selected_`
+                // some OTHER way, and the trace above establishes there is
+                // no other way.
+                level_ = 0;
+            }
         } else if (selectedAfter != selectedBefore) {
             // E.2 (design A7a, operator override 2026-07-29), generalised by
             // F5.1 from a single remembered level-1 encoder to one per level:

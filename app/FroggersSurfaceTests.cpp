@@ -129,21 +129,35 @@ const synth::ui::Node* FindNodeById(const synth::ui::NodeTree& tree, const std::
 // kVcoScope's own output (FroggersUiSurface.hpp's AppendScopeCell), not a
 // separate node -- so reading it back means scanning that node's
 // drawCommands for the one Kind::Text entry, rather than a FindNodeById
-// lookup by a header-specific id. Reused across every level checked by
-// drill_level_header_shown_only_while_drilled_in_and_matches_the_level
-// below (OMNI §6: 2+ uses, isolates a distinct read from the raw
-// draw-command list).
-std::optional<std::string> ScopeHeaderText(const synth::ui::NodeTree& tree) {
+// lookup by a header-specific id.
+//
+// S5.2: returns the WHOLE command, not just `.text`, so a caller can also
+// assert on the resolved TextStyle (size/colour) -- the operator's actual
+// complaint was that the label rendered but did not READ as a header, so a
+// content-only check can't cover the fix. `ScopeHeaderText` below is the
+// pre-existing `.text`-only accessor, rewritten in terms of this one (OMNI
+// §8/§14: a second use of "find kVcoScope's Kind::Text command" must not
+// become a second scan of the same list).
+std::optional<synth::ui::DrawCommand> ScopeHeaderTextCommand(const synth::ui::NodeTree& tree) {
     const synth::ui::Node* scope = FindNodeById(tree, synth_froggers::FroggersNodeIds::kVcoScope);
     if (scope == nullptr) {
         return std::nullopt;
     }
     for (const synth::ui::DrawCommand& command : scope->drawCommands) {
         if (command.kind == synth::ui::DrawCommand::Kind::Text) {
-            return command.text;
+            return command;
         }
     }
     return std::nullopt;
+}
+
+// Reused across every level checked by
+// drill_level_header_shown_only_while_drilled_in_and_matches_the_level below
+// (OMNI §6: 2+ uses, isolates a distinct read from the raw draw-command
+// list).
+std::optional<std::string> ScopeHeaderText(const synth::ui::NodeTree& tree) {
+    const std::optional<synth::ui::DrawCommand> command = ScopeHeaderTextCommand(tree);
+    return command.has_value() ? std::optional<std::string>(command->text) : std::nullopt;
 }
 
 // A resolved node's `bounds` are PARENT-relative, not accumulated screen
@@ -637,6 +651,14 @@ TEST_CASE(clicking_the_active_bank_while_drilled_in_exits_to_the_top_level_grid)
 // more press (kModSlotVco2Audio) to reach level 3 -- the identical sequence
 // fourth_level_drill_in_is_refused (FroggersModulationTests.cpp) uses to
 // reach the same depth, so this is a proven-valid path, not a guess.
+//
+// S5.2 (operator regression report, 2026-08-07: "i still don't see a header
+// label counting the drilldown levels") extends this same test rather than
+// adding a parallel one (the header-presence/content coverage above is
+// exactly what the styling fix must not break): once drilled to level 1,
+// also asserts the resolved TextStyle is explicitly larger than
+// TextStyle{}'s own default, and that an opaque Fill (the backing band)
+// immediately precedes the Text command in kVcoScope's own draw list.
 TEST_CASE(drill_level_header_shown_only_while_drilled_in_and_matches_the_level) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
         /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("drill_level_header"));
@@ -644,14 +666,49 @@ TEST_CASE(drill_level_header_shown_only_while_drilled_in_and_matches_the_level) 
 
     synth::ui::Surface& surface = rig.Application().PortableSurface();
 
-    REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 0);
+    // OMNI §9.1 positive control: print the level actually observed so an
+    // "absent at level 0" pass can never be mistaken for a rig that simply
+    // never drilled -- the level itself comes from the same real getter
+    // (ActiveDrillIn().Level()) the levels-1/2/3 checks below rely on.
+    const std::size_t levelBeforeDrilling = rig.Application().ActiveDrillIn().Level();
+    std::cout << "[OBSERVED] drill level before any encoder press: " << levelBeforeDrilling << "\n";
+    REQUIRE_TRUE(levelBeforeDrilling == 0);
     REQUIRE_TRUE(!ScopeHeaderText(surface.BuildTree()).has_value());
 
     surface.DispatchAction(
         synth::ui::Action::WithValue(synth_froggers::FroggersActions::kEncoderPress, "0"));
     rig.RunBlocks(4);
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 1);
-    REQUIRE_TRUE(ScopeHeaderText(surface.BuildTree()).value_or("") == "Modulation Level 1");
+    const synth::ui::NodeTree drilledTree = surface.BuildTree();
+    REQUIRE_TRUE(ScopeHeaderText(drilledTree).value_or("") == "Modulation Level 1");
+
+    // S5.2 styling assertions -- the label must no longer be a bare,
+    // default-styled DrawCommand::Text. The drawing branch (AppendScopeCell,
+    // FroggersUiSurface.hpp) is identical at every level > 0 (only the
+    // interpolated number changes, already covered by the three
+    // "== Modulation Level N" checks in this test), so checking the style
+    // and band once here is not a guess about levels 2/3 -- it is the same
+    // code path they also execute.
+    const std::optional<synth::ui::DrawCommand> headerCommand = ScopeHeaderTextCommand(drilledTree);
+    REQUIRE_TRUE(headerCommand.has_value());
+    // Bigger than TextStyle{}'s own 14px default (PortableUI.hpp) -- the
+    // concrete, testable form of "larger text size."
+    REQUIRE_TRUE(headerCommand->textStyle.size > synth::ui::TextStyle{}.size);
+
+    const synth::ui::Node* scopeNode =
+        FindNodeById(drilledTree, synth_froggers::FroggersNodeIds::kVcoScope);
+    REQUIRE_TRUE(scopeNode != nullptr);
+    bool bandImmediatelyPrecedesText = false;
+    for (std::size_t ix = 0; ix < scopeNode->drawCommands.size(); ++ix) {
+        if (scopeNode->drawCommands[ix].kind == synth::ui::DrawCommand::Kind::Text) {
+            REQUIRE_TRUE(ix > 0);  // a Text command with nothing before it can't have a backing band
+            const synth::ui::DrawCommand& previous = scopeNode->drawCommands[ix - 1];
+            bandImmediatelyPrecedesText = previous.kind == synth::ui::DrawCommand::Kind::Fill &&
+                                           previous.bounds.height == headerCommand->bounds.height;
+            break;
+        }
+    }
+    REQUIRE_TRUE(bandImmediatelyPrecedesText);
 
     surface.DispatchAction(synth::ui::Action::WithValue(
         synth_froggers::FroggersActions::kEncoderPress,
@@ -666,6 +723,80 @@ TEST_CASE(drill_level_header_shown_only_while_drilled_in_and_matches_the_level) 
     rig.RunBlocks(4);
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 3);
     REQUIRE_TRUE(ScopeHeaderText(surface.BuildTree()).value_or("") == "Modulation Level 3");
+}
+
+// S5.1 (operator regression report, 2026-08-07: "the drilldown back button
+// still doesn't go one back, it goes all the way back") -- traced to
+// FroggersModulationDrillIn::PressEncoder (FroggersModulation.hpp): every
+// on-screen press, including the Target/Back cell, dispatches through
+// kEncoderPress -> PressEncoder, never through .Back() directly (see that
+// class's own header comment), so a test calling .Back() directly (as
+// FroggersModulationTests.cpp's back_* tests do) cannot catch a regression
+// in the operator's actual gesture -- that gap is why the bug shipped as
+// "landed" in 49ce9af/9d0802c despite Back() itself being correct and
+// already tested. This test drives the REAL gesture: dispatches
+// kEncoderPress on physical encoder 15 (the Target/Back cell --
+// Bank::OpenModulationView always places the selected parameter's own cell
+// at physicalLayout.back(), and FullPhysicalLayout is the same fixed
+// 16-wide 0-15 span at every level, so 15 is the Target/Back cell at every
+// depth -- see drill_in_swaps_grid_in_place_scope_and_chrome_stay_put
+// above's identical level-1 case) through the surface's own action routing,
+// exactly as a real click would, and checks it pops exactly ONE level per
+// press, from level 3 down to 0.
+TEST_CASE(pressing_target_back_cell_through_the_surface_pops_exactly_one_drill_level_at_a_time) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("target_back_pops_one_level"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+    REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 0);
+
+    // Drill to level 3 -- the identical proven-valid encoder-id sequence
+    // drill_level_header_shown_only_while_drilled_in_and_matches_the_level
+    // and fourth_level_drill_in_is_refused (FroggersModulationTests.cpp) use.
+    surface.DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kEncoderPress, "0"));
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 1);
+
+    surface.DispatchAction(synth::ui::Action::WithValue(
+        synth_froggers::FroggersActions::kEncoderPress,
+        std::to_string(static_cast<std::size_t>(synth_froggers::kModSlotVco1Audio))));
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 2);
+
+    surface.DispatchAction(synth::ui::Action::WithValue(
+        synth_froggers::FroggersActions::kEncoderPress,
+        std::to_string(static_cast<std::size_t>(synth_froggers::kModSlotVco2Audio))));
+    rig.RunBlocks(4);
+
+    // OMNI §9.1 positive control: prove the descent actually REACHED level 3
+    // before testing that a Target/Back press pops from it -- a pop that
+    // starts from a level the rig never reached would prove nothing.
+    const std::size_t reachedLevel = rig.Application().ActiveDrillIn().Level();
+    std::cout << "[OBSERVED] drill level reached before Target/Back presses: " << reachedLevel << "\n";
+    REQUIRE_TRUE(reachedLevel == 3);
+
+    // The operator's ACTUAL gesture, level 3 -> 2: kEncoderPress on the
+    // Target/Back cell, not a direct .Back() call. Before this fix,
+    // PressEncoder collapsed straight to level 0 here (the reported bug).
+    surface.DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kEncoderPress, "15"));
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 2);  // ONE level back, not zero
+
+    // Level 2 -> 1.
+    surface.DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kEncoderPress, "15"));
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 1);
+
+    // Level 1 -> 0, exiting the modulation view entirely.
+    surface.DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kEncoderPress, "15"));
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 0);
+    REQUIRE_TRUE(!rig.Application().ActiveDrillIn().BankRef().ShowingModulation());
 }
 
 // --- 10.5: the encoder ring renders the fuegoized value, never rawKnobValue --
@@ -731,6 +862,143 @@ TEST_CASE(encoder_ring_renders_fuegoized_value_not_raw_scene_center) {
     // visible on the ring exactly the way D9a's traced chain says it must
     // be, with no separate "raw ghost tick" anywhere.
     REQUIRE_TRUE(std::fabs(renderedRingValue - rawSceneCenter) > 0.02f);
+}
+
+// --- S6.1: dropped frame around the encoder (operator screenshot, ring/frame
+// collision) ------------------------------------------------------------
+
+// Operator screenshot: the parameter card's rounded-rect frame outline
+// visibly crossed the encoder's own modulation ring. Diagnosed as a geometry
+// collision entirely inside Sheaf's BuildEncoderDrawCommands (EncoderDraw.hpp)
+// between the frame (gated by EncoderDrawState::wantsFrame, EncoderDraw.hpp:
+// 293, default true) and the ring/arc layers -- see AppendEncoderCell's own
+// comment (FroggersUiSurface.hpp) for the full citation. This test pins the
+// RENDERED consequence -- no CELL-SPANNING StrokeRoundedRect command reaches
+// the encoder node -- rather than the intermediate EncoderDrawState field,
+// because that field is consumed inside the Draw callback's closure and
+// never surfaces on synth::ui::Node: the draw-command list is what is
+// actually observable through this test surface (NodeTree/FindNodeById),
+// same convention ScopeHeaderTextCommand above uses to read kVcoScope's own
+// draw list.
+//
+// NOT "any StrokeRoundedRect": a later pass (2026-08-08), after wiring
+// wantsFrame=false actually made this test inspect a populated cell (see
+// the "pre-existing gap" comment below), found it still red. Root cause was
+// this test, not the fix: AppendBadge (EncoderDraw.hpp:586-608, the
+// modulator/gesture badge chips, e.g. "M1"/"M2") emits its own
+// unconditional StrokeRoundedRect outline, entirely unrelated to
+// wantsFrame, and legitimate chrome the operator never asked to remove --
+// grep confirms AppendEncoderCell (FroggersUiSurface.hpp:1049) is the
+// ONLY call site into BuildEncoderDrawCommands this app's build reaches
+// (desktop-v2/braid-4/miniapp call sites are frozen/unrelated apps), and it
+// sets `state.wantsFrame = false` unconditionally for every cell
+// (FroggersUiSurface.hpp:1006) before that one call, so the
+// wantsFrame-gated rect (EncoderDraw.hpp:690-694) is provably dead code on
+// this path -- what was still firing was the badge outline.
+//
+// Geometry tells the two apart cleanly. Traced against a live encoder(0)
+// cell built by this exact test (136.333x88.333, reproducible bit-for-bit
+// across repeated runs -- the default patch's modulator routing is fixed,
+// not randomized): the card frame would be `{bounds.x+1, bounds.y+1,
+// bounds.width-2, bounds.height-2}` off a `bounds` inset from the node
+// extent by a flat 4px on each side (EncoderDraw.hpp:658-664, 690-694) --
+// 126.33x78.33, i.e. 92.7%/88.7% of the cell's own extent. A badge side
+// length is `radius * badgeLengthFraction`, `radius = min(bounds.width,
+// bounds.height) * 0.43 * 0.72`, `badgeLengthFraction =
+// 1/sqrt(1 + total*total/4)` (EncoderGeometry::GetBadgePosition,
+// EncoderDraw.hpp:249-275), which is LARGEST at total==1
+// (badgeLengthFraction ~= 0.894) -- an upper bound of ~27.7% of the cell's
+// SMALLER dimension at any cell size, since every factor is a fixed
+// fraction of a cell dimension, never a flat pixel inset. The two
+// StrokeRoundedRect commands this exact cell emits (two modulator badges,
+// total==2) land at 17.5866x17.5866 -- 12.9% width / 19.9% height of the
+// cell -- recomputing bit-for-bit from that formula (centerX=68.1667,
+// radius=24.8712, badgeLengthFraction=1/sqrt(2), badge 0 at x=50.5801,
+// badge 1 at x=68.1667, both y=24.1701). A "> half the cell in both
+// dimensions" threshold sits with wide margin on both sides of that gap
+// (badges top out near 28%, the frame sits at 75%+ even on a
+// pathologically small cell) and is what `spansCell` below checks -- so a
+// badge chip can never trip `sawFrame`, while the real frame always would.
+TEST_CASE(encoder_cell_never_emits_a_frame_draw_command) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("encoder_no_frame"));
+    rig.RunBlocks(4);
+    // Pre-existing gap found while verifying this test (it was never
+    // confirmed against a real build -- see this task's own history):
+    // without this call, slots[0].cellCapacity stays 0 and
+    // AppendEncoderCell's `state` stays default-constructed (disconnected,
+    // zero voices), so BuildEncoderDrawCommands legitimately emits NOTHING
+    // and the assertions below pass/fail vacuously rather than against real
+    // rendered state. Same "forces a synchronous publish" call
+    // encoder_ring_renders_fuegoized_value_not_raw_scene_center already uses
+    // (SynthRig::UIState(), tests/support/SynthRig.hpp) -- VERIFIED this
+    // makes sawBody/sawRing observe real commands (drawCommands 0 -> 77).
+    // Confirmed by rebuilding+running this one binary in isolation.
+    rig.UIState();
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+    const synth::ui::NodeTree tree = surface.BuildTree();
+
+    const synth::ui::Node* encoder = FindNodeById(tree, synth_froggers::FroggersNodeIds::Encoder(0));
+    REQUIRE_TRUE(encoder != nullptr);
+
+    // A card frame spans (near) the whole cell; a badge chip is small and
+    // offset -- see this test's own header comment for the traced geometry
+    // and the numbers that put wide margin on both sides of this threshold.
+    constexpr float kFrameSpanFraction = 0.5f;
+
+    bool sawFrame = false;
+    bool sawBadgeOutline = false;
+    bool sawBody = false;
+    bool sawRing = false;
+    for (const synth::ui::DrawCommand& command : encoder->drawCommands) {
+        if (command.kind == synth::ui::DrawCommand::Kind::StrokeRoundedRect) {
+            const bool spansCell = command.bounds.width > encoder->bounds.width * kFrameSpanFraction &&
+                                    command.bounds.height > encoder->bounds.height * kFrameSpanFraction;
+            // A badge chip's own outline (AppendBadge, EncoderDraw.hpp:602)
+            // is legitimate chrome, not the operator's complaint, and must
+            // NOT be caught here -- only a cell-spanning stroke counts as
+            // the card frame.
+            if (spansCell) {
+                sawFrame = true;
+            } else {
+                sawBadgeOutline = true;
+            }
+        }
+        if (command.kind == synth::ui::DrawCommand::Kind::FillEllipse) {
+            sawBody = true;
+        }
+        if (command.kind == synth::ui::DrawCommand::Kind::Arc) {
+            sawRing = true;
+        }
+    }
+
+    // OMNI §9.1 positive control: prove this cell is genuinely connected and
+    // populated (body + ring commands actually present) so the "no frame"
+    // assertion below cannot pass by accident against an empty/disconnected
+    // command list -- AppendEncoderCell's own `hidden` branch DOES
+    // legitimately emit an empty command vector for a disconnected cell in
+    // the modulation view, and this test must not be confused with that case.
+    std::cout << "[OBSERVED] encoder(0) drawCommands: " << encoder->drawCommands.size()
+              << ", body(FillEllipse) seen=" << sawBody << ", ring(Arc) seen=" << sawRing
+              << ", badge outline(s) seen=" << sawBadgeOutline << "\n";
+    REQUIRE_TRUE(sawBody);
+    REQUIRE_TRUE(sawRing);
+
+    // Second OMNI §9.1 positive control, specific to the size-based split
+    // above: the default patch wires modulators onto this cell (Audio
+    // bank's VCO1 pitch), so this cell DOES emit badge-chip
+    // StrokeRoundedRect commands every run. Without this, "no frame" below
+    // could pass vacuously against a cell that never emits a
+    // StrokeRoundedRect of ANY kind -- which would prove nothing about
+    // whether `spansCell` actually keeps badges out of `sawFrame`, exactly
+    // the vacuous-pass failure mode this test's own history already
+    // produced once (see the "pre-existing gap" comment above).
+    REQUIRE_TRUE(sawBadgeOutline);
+
+    // The actual fix: no CELL-SPANNING stroke-rounded-rect (the card frame)
+    // reaches the rendered encoder cell.
+    REQUIRE_TRUE(!sawFrame);
 }
 
 // --- 3.5: scene buttons toggle the blend to its extremes --------------------
