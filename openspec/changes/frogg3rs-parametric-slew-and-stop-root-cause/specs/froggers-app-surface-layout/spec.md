@@ -6,38 +6,48 @@ margins, or gaps.
 
 ## ADDED Requirements
 
-### Requirement: The drill-level header is legible against the scope's live traces
-Whenever the active modulation drill level is greater than 0, the VCO scope cell SHALL draw a
-`"Modulation Level N"` header (`N` the current level) that reads as its own heads-up label rather
-than competing with the three live oscillator traces beneath it. The header SHALL be drawn on an
-opaque backing band sized to the header's own text bounds, in a text size larger than the surface's
-unstyled default, and SHALL be drawn after — so, on top of — the scope's waveform commands for that
-cell. At drill level 0, no header SHALL be drawn.
+### Requirement: The drill-level indicator renders inside the region the operator is looking at
+Whenever the active modulation drill level is greater than 0, the drill-level indicator SHALL resolve
+to bounds fully contained within the encoder-grid block — the region that displays the modulation
+sources during drill-in — and SHALL be drawn on the Target/Back cell, which Sheaf's
+`OpenModulationView` places at `physicalLayout.back()` at every drill depth. It SHALL be drawn on an
+opaque backing band, appended last so it paints on top of that cell's own chrome. At drill level 0,
+no indicator SHALL be drawn.
 
-Operator, 2026-08-07: *"i still don't see a header label counting the drilldown levels."* The header
-text and its draw order were already correct before this fix — a default-styled, backdrop-less label
-over the scope's near-black background is close to maximum contrast in isolation — but a small,
-unstyled corner label sitting directly over three colour-shifting traces, inside a cell that resolves
-to roughly 130–284px tall across the sizes this surface is tested at, read as scribble on the graph,
-not as a header. The defect was prominence, not colour or draw order, so the fix is an explicit style
-plus a backing band, not a re-ordering.
+**This requirement is written against a defect that took three attempts to fix, and the wording is
+deliberate: containment in the visible region is the property, not existence in the draw tree.**
+The indicator originally lived on the VCO scope cell, justified by that being the only
+non-interactive cell in the grid. Two successive fixes proved it existed, then proved it was appended
+last and not overdrawn within its node — and the operator still could not see it. The reason,
+measured at the real window size: `kVcoScope` resolves to `{16, 16, 284.67, 181.33}`, in the LEFT
+block, while the modulation-source grid resolves to `{314.67, 16, 569.33, 600}` in `kRightBlock`.
+Two physically disjoint columns separated by a 14px gap. The header rendered correctly the whole
+time, in a column the operator's attention never crosses while reading the grid.
 
-#### Scenario: No header at the top level
+**Do not move this back to the scope cell.** Existence and non-overdraw are both insufficient
+assertions; the test that encodes this requirement asserts geometric containment in the grid region.
+
+Note the cell's built-in `shortLabel` is NOT a viable carrier: it renders through a 14-segment
+display capped at 4 characters (`EncoderDraw.hpp`'s `UpperShortLabel(..., maxChars=4)`), so longer
+text truncates silently — the same present-but-not-legible failure this requirement exists to stop.
+
+#### Scenario: No indicator at the top level
 - **WHEN** the operator has not drilled into any parameter's modulation view
-- **THEN** the scope cell shows no drill-level header
+- **THEN** no drill-level indicator is drawn
 
-#### Scenario: The header names the current level and stays legible
-- **WHEN** the operator drills to level 1, then 2, then 3
-- **THEN** the header at each level reads `"Modulation Level 1"`, `"Modulation Level 2"`, and
-  `"Modulation Level 3"` respectively
-- **THEN** at every level the header's text style is explicitly larger than the surface's own
-  default, and an opaque backing band immediately precedes the header text in the cell's draw order
+#### Scenario: The indicator names the current level and is inside the visible grid region
+- **WHEN** the operator drills in and the modulation-source grid is displayed
+- **THEN** the indicator names the current drill level
+- **THEN** its resolved absolute bounds are fully contained within the encoder-grid block's own
+  resolved bounds, asserted by computed containment rather than by the command's existence
   (`FroggersSurfaceTests.cpp`'s
-  `drill_level_header_shown_only_while_drilled_in_and_matches_the_level`)
+  `drill_back_badge_resolves_inside_the_grid_region_the_operator_actually_sees`)
+- **THEN** a populated modulation-source cell also resolves inside that same region, proving the
+  region under test is the real one and the assertion cannot pass vacuously (OMNI §9.1)
 
-#### Scenario: The header does not disturb the grid
-- **WHEN** the header and its backing band are drawn
-- **THEN** they are confined to the scope cell's own already-resolved bounds
+#### Scenario: The indicator does not disturb the grid
+- **WHEN** the indicator and its backing band are drawn
+- **THEN** they are confined to the Target/Back cell's own already-resolved bounds
 - **THEN** no row, column weight, margin, or gap of the encoder grid changes
 
 ### Requirement: Encoder cells render without a card frame that collides with the modulation ring

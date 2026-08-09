@@ -554,27 +554,49 @@ private:
         }
     }
 
-    // S5.2 (operator regression report, 2026-08-07: "i still don't see a
-    // header label counting the drilldown levels"). Design tokens for the
-    // drill-level header AppendScopeCell draws on top of its own waveform
-    // trace below: bumped off `TextStyle{}`'s 14px/default-white so the
-    // style is a declared decision, not an incidental default, plus an
-    // opaque backing band so the label never has to fight the live VCO
-    // traces (Cyan/Pink/Yellow, FroggersAppCore.hpp:160-162) for contrast.
-    // `kDrillHeaderHeight` backs both the Fill and the Text bounds below
-    // (one number, so the band can never drift out of sync with the text
-    // box it exists to back).
-    static constexpr float kDrillHeaderHeight = 26.0f;
-    static constexpr synth::Color kDrillHeaderBandColor = synth::Color::Rgb(32, 38, 44);
-    static constexpr synth::ui::TextStyle kDrillHeaderTextStyle{
-        20.0f, synth::Color::Rgb(255, 255, 255), synth::ui::TextAlign::Left};
-
     // Task 10.2: the packet 7-9 VCO scope panel. Its bounds are not known
     // until the layout resolves (it is now an in-flow, weight-sized cell,
     // not a hand-computed pixel rectangle), so the DrawFactory form is used
     // exactly like Braid4UI.hpp's own encoder-visualizer-underlay pattern:
     // the factory receives the RESOLVED extent and sets it on the
     // visualizer at that point.
+    //
+    // RELOCATED, 2026-08-08 (three sessions on the same operator report:
+    // "i still don't see a header label counting the drilldown levels").
+    // F7 originally appended a "Modulation Level N" header to THIS node's
+    // own draw commands; S5.2 restyled it (larger text, opaque band); the
+    // very next re-report proved it was still invisible, and the packet
+    // after THAT proved the header is never overdrawn WITHIN this node.
+    // Both fixes were correct about the property they checked and
+    // irrelevant to the actual complaint, because neither asked where this
+    // node's cell IS relative to what the operator is looking at while
+    // drilled in.
+    //
+    // Computed (FroggersSurfaceTests.cpp's
+    // drill_back_badge_resolves_inside_the_grid_region_the_operator_actually_sees,
+    // and the pre-existing scope_and_grid_regions_do_not_overlap_at_target_
+    // window_size / scope_sits_in_a_left_column_with_the_grid_to_its_right),
+    // not eyeballed: at the real 900x632 config this cell resolves to
+    // roughly {16, 16, 284.7, 181.3} -- inside the CELL MAP's LEFT block
+    // (columns L1-L2). The 16-slot grid the operator watches while drilled
+    // in -- the only thing that changes content when drill-in changes --
+    // lives in the RIGHT block (columns E1-E4), which resolves to roughly
+    // {314.7, 16, 569.3, 600}. A 14px gap (FroggersPageLayout::kGap)
+    // separates x-range [16, 300.7] from x-range [314.7, 884]; they never
+    // meet. A header painted correctly, on top, and never overdrawn INSIDE
+    // this node was never going to be seen by an operator looking at that
+    // one -- existence and non-overdraw are not visibility.
+    //
+    // The indicator now lives on the Target/Back cell instead
+    // (AppendEncoderCell below): physically inside the region above,
+    // present at every drill depth by construction (Sheaf's
+    // `Bank::OpenModulationView` always places the selected parameter's own
+    // cell at `physicalLayout.back()`), and exactly where the operator's
+    // attention already is when they think about going back a level. This
+    // node keeps NO second copy of that text: two renderings of the same
+    // one fact (the current drill level) would be OMNI §8 duplication of
+    // that concept, and the copy that would remain here is the one already
+    // proven unreachable.
     void AppendScopeCell(synth::ui::Builder& builder, float rowWeight) const {
         synth::ui::LayoutOptions layout;
         layout.main = synth::ui::Extent::Weight(rowWeight);
@@ -593,79 +615,7 @@ private:
                          }
                          synth::ui::Visualizer& vcoScope = app->VcoScopeVisualizer();
                          vcoScope.SetBounds(extent);
-                         std::vector<synth::ui::DrawCommand> commands = vcoScope.Draw();
-                         // F7 (operator request, openspec/changes/
-                         // archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md):
-                         // "when we are in modulation drilldown levels ...
-                         // headers ... 'Modulation Level 1' then 2 then 3."
-                         // Level 0 (the parameter grid) shows nothing; levels
-                         // 1+ show the label, DERIVED from
-                         // FroggersModulationDrillIn::Level() (DrillLevel()'s
-                         // own comment) -- never a hardcoded level-name set,
-                         // since the cap has already moved once (F5.3, 2->3)
-                         // and a hardcoded set would need a second edit next
-                         // time it does (OMNI §8).
-                         //
-                         // Emitted as one more DrawCommand on this EXISTING
-                         // node rather than a new grid node or row: the CELL
-                         // MAP (tasks.md F.3) is a settled, operator-approved
-                         // 6x6 topology with no spare row/column weight to
-                         // give a header its own cell, and every other row
-                         // stays live during drill-in (bank tabs still
-                         // switch banks; Randomize All/Page still work per
-                         // F6.2; transport/scene/BPM stay meaningful while
-                         // inspecting modulation) -- overlaying any of them
-                         // would either shadow a working control or silently
-                         // change what drill-in does to it, neither of which
-                         // this task asked for. kVcoScope is the one
-                         // non-interactive, Draw-only cell in the whole grid
-                         // (no action, nothing to shadow), so appending to
-                         // its own draw output is the only place a header
-                         // can appear without perturbing the grid.
-                         const std::size_t drillLevel = app->DrillLevel();
-                         if (drillLevel > 0) {
-                             // S5.2: the label was already emitted every time --
-                             // confirmed by reading, and this file's own
-                             // drill_level_header_shown_only_while_drilled_in_and_matches_the_level
-                             // (FroggersSurfaceTests.cpp) already passed at levels
-                             // 1/2/3 before this change. Draw order was already
-                             // correct too: `commands` starts as vcoScope.Draw()'s
-                             // output and this header is pushed AFTER, so it was
-                             // already the LAST element -- and PortableJuceBackend.hpp's
-                             // paint() walks a node's `commands_` with one plain
-                             // sequential `for` calling straight into `juce::Graphics`
-                             // (PortableJuceBackend.hpp:552-558), which has no
-                             // z-ordering pass: each `case` in PaintDrawCommand
-                             // (:79-202) issues its `graphics.*` call immediately, so
-                             // paint order is vector order and last-pushed already
-                             // meant drawn last, i.e. on TOP of the waveform.
-                             // `TextStyle{}`'s own defaults (14px, opaque white,
-                             // left-aligned; PortableUI.hpp:60-64) were not a
-                             // colour-blend bug either: white against this scope's
-                             // near-black background (Color::Rgb(12,14,16),
-                             // PortableScopeVisualizer.hpp:167-168) is already close
-                             // to the maximum contrast available. What actually made
-                             // the label unmissable-in-theory but missed-in-practice
-                             // was PROMINENCE: a 14px unstyled corner label, with no
-                             // backdrop of its own, sitting directly over three live,
-                             // colour-shifting VCO traces inside a cell that resolves
-                             // to roughly 130-284px tall across every window size this
-                             // suite tests -- it read as scribble on the graph, not as
-                             // a header. Fix: an explicit (not default-constructed),
-                             // larger text style plus an opaque backing band, so the
-                             // label reads as its own HUD chip. Both stay inside this
-                             // cell's own already-resolved `extent` -- nothing here
-                             // touches the 6x6 grid's row/column weights, margins, or
-                             // gaps (FroggersCellMap/FroggersPageLayout, untouched).
-                             const float headerHeight = std::min(kDrillHeaderHeight, extent.height);
-                             commands.push_back(synth::ui::DrawCommand::Fill(
-                                 synth::ui::Bounds{0.0f, 0.0f, extent.width, headerHeight},
-                                 kDrillHeaderBandColor));
-                             commands.push_back(synth::ui::DrawCommand::Text(
-                                 synth::ui::Bounds{4.0f, 0.0f, std::max(0.0f, extent.width - 8.0f), headerHeight},
-                                 "Modulation Level " + std::to_string(drillLevel), kDrillHeaderTextStyle));
-                         }
-                         return commands;
+                         return vcoScope.Draw();
                      });
     }
 
@@ -959,6 +909,21 @@ private:
     // action/drag) when hidden keeps the grid geometry stable and is the
     // established Sheaf idiom this surface's own header comment points at
     // (Braid4UI.hpp:154-160).
+    // Target/Back drill-level badge tokens (relocated here 2026-08-08 from
+    // AppendScopeCell -- see that method's own comment for the full
+    // investigation of why the "Modulation Level N" indicator has to live
+    // on a grid cell, not the scope, to ever be seen). Deliberately NOT the
+    // same numbers the old scope header used: this cell resolves to roughly
+    // 136x88px at the real window size (`encoder_cell_never_emits_a_frame_
+    // draw_command`'s own traced geometry, FroggersSurfaceTests.cpp),
+    // nowhere near the scope cell's ~285x181px, and a header sized for the
+    // wider panel would not fit the narrower one -- the same
+    // present-but-not-legible failure this task exists to stop repeating.
+    static constexpr float kDrillBackBadgeHeight = 18.0f;
+    static constexpr synth::Color kDrillBackBadgeBandColor = synth::Color::Rgb(32, 38, 44);
+    static constexpr synth::ui::TextStyle kDrillBackBadgeTextStyle{
+        12.0f, synth::Color::Rgb(255, 255, 255), synth::ui::TextAlign::Center};
+
     void AppendEncoderCell(synth::ui::Builder& builder, std::size_t ix) const {
         const bool showingModulationView =
             context_ != nullptr && context_->uiState != nullptr && context_->uiState->slotCapacity > 0 &&
@@ -1005,6 +970,27 @@ private:
         // not per-bank or per-cell (OMNI §8).
         state.wantsFrame = false;
 
+        // F7/S5.2, relocated 2026-08-08 (AppendScopeCell's own comment has
+        // the full investigation): the drill-level indicator now lives on
+        // the Target/Back cell -- the one cell `Bank::OpenModulationView`
+        // always places the selected parameter's own cell at
+        // (`physicalLayout.back()`, ParameterModulation.cpp:2854-2857), and
+        // `FullPhysicalLayout` is the same fixed 0-15 span at every drill
+        // depth (this file's own FullPhysicalLayout comment,
+        // FroggersModulation.hpp:187-204), so `kEncoderCount - 1` is that
+        // cell at every level, not just level 1. Gated on
+        // `showingModulationView` (already computed above for `hidden`,
+        // not re-derived) and `!hidden` (defensive: `isTargetBackCell`
+        // implies `state.connected`, since `hidden` is
+        // `showingModulationView && !state.connected` -- but the guard
+        // costs nothing and keeps this branch inert if that ever stops
+        // being true). `drillLevel` is only fetched -- one atomic load via
+        // `app_->DrillLevel()` -- when it will actually be used, not once
+        // per cell (OMNI §10).
+        const bool isTargetBackCell =
+            showingModulationView && !hidden && ix == FroggersEncoderGridLayout::kEncoderCount - 1;
+        const std::size_t drillLevel = isTargetBackCell && app_ != nullptr ? app_->DrillLevel() : 0;
+
         const std::string encoderId = FroggersNodeIds::Encoder(ix);
         if (!hidden && visualizer != nullptr && visualizer->Visible()) {
             // Design D9b/D10: bump/comb transfer-function underlays and
@@ -1045,8 +1031,31 @@ private:
         }
         builder.Draw(
             encoderId,
-            [state, hidden](synth::ui::Bounds extent) {
-                return hidden ? std::vector<synth::ui::DrawCommand>{} : synth::ui::BuildEncoderDrawCommands(state, extent);
+            [state, hidden, isTargetBackCell, drillLevel](synth::ui::Bounds extent) {
+                if (hidden) {
+                    return std::vector<synth::ui::DrawCommand>{};
+                }
+                std::vector<synth::ui::DrawCommand> commands = synth::ui::BuildEncoderDrawCommands(state, extent);
+                if (isTargetBackCell) {
+                    // Same "opaque band behind explicitly-styled text,
+                    // appended LAST so it paints on top" technique
+                    // AppendScopeCell used to use (PortableJuceBackend.hpp's
+                    // paint() walks a node's commands_ with one plain
+                    // sequential for loop and no z-ordering pass, so vector
+                    // order is paint order -- see that method's own comment
+                    // history) -- just sized for THIS cell and, unlike the
+                    // old placement, actually inside the region
+                    // drill_back_badge_resolves_inside_the_grid_region_the_operator_actually_sees
+                    // (FroggersSurfaceTests.cpp) proves the operator is
+                    // looking at.
+                    const float bandHeight = std::min(kDrillBackBadgeHeight, extent.height);
+                    commands.push_back(synth::ui::DrawCommand::Fill(
+                        synth::ui::Bounds{0.0f, 0.0f, extent.width, bandHeight}, kDrillBackBadgeBandColor));
+                    commands.push_back(synth::ui::DrawCommand::Text(
+                        synth::ui::Bounds{0.0f, 0.0f, extent.width, bandHeight},
+                        "BACK L" + std::to_string(drillLevel), kDrillBackBadgeTextStyle));
+                }
+                return commands;
             },
             cellStyle);
     }

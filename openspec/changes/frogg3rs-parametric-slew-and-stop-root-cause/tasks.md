@@ -458,7 +458,13 @@ inherited claims either. It should have.
       badges changing on that page. **Visually.**
 - [ ] **S4.4** Badge density reads as mode 2 at every level, and a drilled parameter shows only
       sources that are actually modulating. **Visually.**
-- [ ] **S4.5** Drilldown reaches level 3, `Back()` pops one level at a time, and each level shows
+- [ ] **S4.5 — NOTE THE PLACEMENT CHANGED 2026-08-08.** The level indicator is on the **Target/Back
+      cell**, reading `BACK L<N>`, NOT on the VCO scope cell. It lived on the scope cell through two
+      failed fixes: `kVcoScope` resolves to `{16, 16, 284.67, 181.33}` in the LEFT block while the
+      modulation grid resolves to `{314.67, 16, 569.33, 600}` in `kRightBlock` — disjoint columns,
+      14px apart. It rendered correctly the entire time, in a column the operator never looks at
+      while reading the grid. **Do not move it back.** Original wording follows:
+      Drilldown reaches level 3, `Back()` pops one level at a time, and each level shows
       its `Modulation Level N` header. **Visually.**
 - [ ] **S4.6** Sustain at minimum is quiet but audible, and audio-rate modulation of an envelope
       parameter no longer gates a voice to silence. **By ear** — `kMinSustainLevel = 0.05` was
