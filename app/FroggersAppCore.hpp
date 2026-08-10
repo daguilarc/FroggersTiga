@@ -165,25 +165,39 @@ public:
     static synth::RuntimeConfig Config() {
         synth::RuntimeConfig config;
         config.appName = "Frogg3rs Synth";
-        // Task 2.6 (tasks.md section 2; design D5 slate slots 13-14). This
-        // was 0, which made the modulation slate's two external-audio
-        // sources (audio rate + its envelope follower) permanently
-        // `.connected = false` by *construction* -- the app never asked the
-        // host for an input channel at all, so no cable could ever change
-        // that. Both slate slots are derived from the same external signal
-        // (design D5's slate table has one external-audio source, tapped
-        // twice), so exactly one input channel covers both -- confirmed
-        // against the host's actual contract, not assumed: `numAudioInputs`
-        // is a request forwarded verbatim to
-        // `juce::AudioDeviceManager::initialiseWithDefaultDevices(config.numAudioInputs, ...)`
-        // (External/Sheaf/projects/synth/runtime/Runtime.hpp:237, gated at
-        // `:260-261`), and the headless test rig honors it 1:1, allocating
-        // exactly `numAudioInputs` input buffers/pointers
-        // (tests/support/SynthRig.hpp:62,72,76,454,456). Raising this to 1
-        // makes the flag track actual cabling (host-reported
-        // `AudioBlock::numInputChannels`/`inputs`, packet 6 task 6.5) rather
-        // than a permanently-zero request.
-        config.numAudioInputs = 1;
+        // frogg3rs-external-audio-phantom-input (tasks.md T1) corrects Task
+        // 2.6's own reasoning that used to sit here: that comment traced
+        // `numAudioInputs` correctly as far as "forwarded verbatim to
+        // `juce::AudioDeviceManager::initialiseWithDefaultDevices(
+        // config.numAudioInputs, config.numAudioOutputs)`"
+        // (External/Sheaf/projects/synth/runtime/Runtime.hpp:237), but never
+        // followed that call through to what it DOES with a nonzero count:
+        // it opens the platform's DEFAULT input device -- chosen by nobody,
+        // not by the operator. `config.numAudioInputs > 0` is also what
+        // gates whether a *persisted* input-device selection is even applied
+        // (Runtime.hpp:260-261) -- moot at 0, since there is no channel to
+        // apply one to. On this machine that default device is the built-in
+        // mic, present and open whether or not anything is plugged in, so
+        // raising this to 1 does not deliver "a real input channel"; it
+        // silently opens the operator's microphone on every launch, unasked.
+        // ProcessBlock's `externalInputConnected` (this class, below) is a
+        // hardcoded `false` for exactly this reason: one requested channel
+        // that is always the wrong one is not a signal worth deriving a
+        // connected state from. Back to 0: no device, default or otherwise,
+        // opens at all, and the two external-audio slate slots (13/14,
+        // design D5) are disconnected by construction, not by a separate
+        // flag layered on top.
+        //
+        // What would justify raising this again: a REAL routed-input signal
+        // surfaced by the host (UPSTREAM-SHEAF-ASK.md item 8, asks 1/2 --
+        // still open), not a Sheaf pin bump -- the defect and this fix both
+        // stand entirely on this call's contract, unrelated to which Sheaf
+        // commit is pinned (proposal.md §0/§3). Re-enabling is then TWO
+        // coupled edits together -- this value AND `externalInputConnected`'s
+        // derivation in ProcessBlock -- never one integer alone; see that
+        // function's own comment for why a single-edit re-enable is exactly
+        // what this change exists to prevent.
+        config.numAudioInputs = 0;
         config.numAudioOutputs = 2;
         config.preferredSampleRate = 48000.0;
         config.preferredBlockSize = 256;
@@ -596,35 +610,58 @@ public:
     // parameter values into the real DSP chain and sums it to the stereo
     // output bus, replacing task 2.1's silent placeholder.
     void ProcessBlock(synth::AudioBlock& block) {
-        // Operator decision 2026-07-29: external audio defaults to NOT
-        // connected.
+        // frogg3rs-external-audio-phantom-input (tasks.md T2, T2.2
+        // PREFLIGHT-AMENDED 2026-08-09): external audio is disconnected BY
+        // CONSTRUCTION now, not by a flag layered on top of a channel-exists
+        // check.
         //
-        // This used to ask only "did the device hand us an input channel?",
-        // which on a laptop is ALWAYS true -- the built-in mic presents an
-        // input channel whether or not anything is plugged in (this machine's
-        // own startup log reads "1 in / 2 out" with nothing attached). That
+        // History (operator decision 2026-07-29): the original mechanism
+        // here asked only "did the device hand us an input channel?", which
+        // on a laptop is ALWAYS true -- the built-in mic presents an input
+        // channel whether or not anything is plugged in (this machine's own
+        // startup log reads "1 in / 2 out" with nothing attached). That
         // marked BOTH external modulation sources -- slots 13/14, external
         // audio and its envelope follower -- permanently connected, so
-        // Randomize kept assigning depths to sources carrying nothing but mic
-        // noise. Sheaf's randomizer is not at fault: it correctly picks only
-        // among sources whose metadata says `connected`
-        // (src/ParameterModulation.cpp:2886-2895) -- the app was lying to it.
+        // Randomize kept assigning depths to sources carrying nothing but
+        // mic noise. Sheaf's randomizer is not at fault: it correctly picks
+        // only among sources whose metadata says `connected`
+        // (src/ParameterModulation.cpp:2886-2895) -- the app was lying to
+        // it. A hand-set `kExternalAudioOptedIn = false` flag compensated by
+        // vetoing that permanently-true check -- correct in effect, but only
+        // because nobody had yet made the one-line edit its own comment
+        // invited, and a since-corrected upstream doc (UPSTREAM-SHEAF-ASK.md
+        // item 8) briefly told a future reader that edit had become safe. It
+        // had not: see this class's `Config()` for why raising the input
+        // count alone still does not mean "the operator routed something
+        // in."
         //
         // "A channel exists" and "the operator routed something in" are
-        // different questions, and the app cannot currently tell them apart:
-        // the selected input device name lives runtime-side
-        // (Runtime.hpp's AudioDeviceSnapshot) and `AppContext` exposes no
-        // audio-device state at all. Until Sheaf surfaces that (see
-        // UPSTREAM-SHEAF-ASK.md), the honest default is OFF -- an unusable
-        // external source beats a phantom one that steals randomization.
+        // still different questions the app cannot tell apart -- the
+        // selected input device name lives runtime-side (Runtime.hpp's
+        // AudioDeviceSnapshot) and `AppContext` exposes no audio-device
+        // state at all (UPSTREAM-SHEAF-ASK.md item 8, asks 1/2, still open).
+        // Rather than veto a permanently-true check with a flag, this change
+        // removes the check: `Config()` now requests zero audio input
+        // channels, so `block.inputs`/`block.numInputChannels` never carry a
+        // channel to test in the first place. The old `externalInputHasChannel`
+        // (and its `block.inputs[0]` null-check read) is deleted as a
+        // provably-dead branch (OMNI §12: trace the origin, remove
+        // impossible branches) rather than kept behind a flag that a future
+        // edit could silently re-arm by raising one integer.
         //
-        // Flip `kExternalAudioOptedIn` when there is a real opt-in signal to
-        // gate on; the channel plumbing below is left intact so that is a
-        // one-line change rather than a rewrite.
-        constexpr bool kExternalAudioOptedIn = false;
-        const bool externalInputHasChannel =
-            block.inputs != nullptr && block.numInputChannels > 0 && block.inputs[0] != nullptr;
-        const bool externalInputConnected = kExternalAudioOptedIn && externalInputHasChannel;
+        // `externalInputConnected` stays a named value -- not inlined as a
+        // bare `false` where it is passed into `modulation_.Step(...)` below
+        // -- so this reasoning can sit at its one declaration rather than at
+        // a call site burying it among five other arguments. Step() forwards
+        // it into FroggersModulation.hpp's `SetExternalAudioConnected`,
+        // which is what keeps slots 13/14 REGISTERED and present in the
+        // slate (inert, not absent -- see froggers-modulation-slate
+        // spec.md's "present but inert" requirement). Re-enabling requires
+        // writing a real derivation against a routed signal once upstream
+        // exposes one, together with raising `Config().numAudioInputs` back
+        // up -- two coupled edits, deliberately, never a single flip that
+        // could silently re-arm this bug.
+        const bool externalInputConnected = false;
 
         // Task 8.1 (design D8/D8a): source #6's tempo-following recompute
         // happens ONCE PER BLOCK, not per sample (design D8's own wording),
@@ -647,8 +684,16 @@ public:
 
         for (std::size_t frame = 0; frame < block.numFrames; ++frame) {
             const std::uint64_t absoluteOutputSample = block.startSample + frame;
-            const float externalAudioSample =
-                externalInputConnected ? block.inputs[0][frame] : 0.0f;
+            // Was `externalInputConnected ? block.inputs[0][frame] : 0.0f`.
+            // T2.2's amendment names this `block.inputs[0]` read (distinct
+            // from the one inside the now-deleted `externalInputHasChannel`)
+            // as the second provably-dead branch: `externalInputConnected`
+            // is unconditionally `false` (this function's opening comment),
+            // so the true branch could never run, and `Config()` requests
+            // zero input channels, so `block.inputs[0]` was never a channel
+            // this app opened in the first place. Deleted rather than left
+            // guarded by a condition that can never be true.
+            const float externalAudioSample = 0.0f;
 
             // Task 6b (design D17, revised 2026-07-27): the ASR gate follows
             // the master clock's transport quarter-note pulse -- see

@@ -76,14 +76,25 @@ TEST_CASE(froggers_init_process_block_produces_finite_stereo_output) {
 
     // SynthRig's constructor already runs App::Config()/Init(&context_) via
     // Engine::Initialize()+Prepare(); pump several blocks of ProcessBlock and
-    // inspect every captured sample. Since task 2.6 raised
-    // Config().numAudioInputs to 1, SynthRig now allocates one real input
-    // buffer/pointer and passes a non-null `block.inputs`/
-    // `numInputChannels==1` into every ProcessBlock call below
-    // (tests/support/SynthRig.hpp:62,72,76,454,456) -- this test doubling as
-    // proof that FroggersApp tolerates an actually-present input channel
-    // (previously impossible at numAudioInputs==0) without producing
-    // non-finite output.
+    // inspect every captured sample. frogg3rs-external-audio-phantom-input
+    // (tasks.md T3.2) corrects this comment: it used to claim this test
+    // "doubles as proof that FroggersApp tolerates an actually-present input
+    // channel," true only while task 2.6 had Config().numAudioInputs at 1.
+    // Now that Config() requests zero input channels (FroggersAppCore.hpp's
+    // Config() comment), SynthRig allocates zero input buffers
+    // (tests/support/SynthRig.hpp:62,72,76: `numInputChannels_` is
+    // `config.numAudioInputs`; `RunOneBlockAt`, :454,456, sets `block.inputs
+    // = nullptr` and `block.numInputChannels = 0` whenever that count is 0)
+    // and passes a null `block.inputs` into every ProcessBlock call below.
+    // This test's NaN/finite/stereo assertions still pass, but they no
+    // longer exercise an actually-present input channel -- read, not
+    // assumed: `Config()` is a static method of the App type SynthRig is
+    // templated on, so there is no rig-level override that could request a
+    // different channel count for just this one test without a second App
+    // type, which is out of this test's scope. What this test still proves:
+    // ProcessBlock produces finite stereo output end-to-end through
+    // Init()/PrepareToPlay(), including with zero input channels -- exactly
+    // the shape the app now always runs in.
     rig.RunBlocks(4);
 
     REQUIRE_TRUE(!rig.SawNaN());
@@ -98,19 +109,104 @@ TEST_CASE(froggers_init_process_block_produces_finite_stereo_output) {
     }
 }
 
-// Task 2.6 (tasks.md section 2; design D5 slots 13-14): Config() must
-// request at least one input channel, or the modulation slate's two
-// external-audio sources are permanently `.connected = false` by
-// construction, no matter what is cabled -- see Froggers.hpp's Config()
-// comment for the traced host contract (Runtime.hpp:237,260-261;
-// SynthRig.hpp:62,72,76,454,456) that confirms 1 channel is what both
-// external-audio slate slots need (they are derived from the same signal,
-// design D5). The full "connected tracks actual cabling" behavior is
-// exercised once the slate exists (packet 6, tasks 6.5/6.6); this test pins
-// the input-channel request itself, which is task 2.6's own scope.
-TEST_CASE(froggers_config_requests_exactly_one_audio_input_channel) {
+// frogg3rs-external-audio-phantom-input (tasks.md T3.1) rewrites this test,
+// not just its assertion: the old name and body argued FOR requesting one
+// input channel (task 2.6's own reasoning, since corrected -- see
+// FroggersAppCore.hpp's Config() comment). That argument traced
+// `numAudioInputs` only as far as "the request reaches JUCE" and never
+// followed it through to what JUCE does with a nonzero count: opens the
+// platform's DEFAULT input device -- chosen by nobody -- which on this
+// machine is always the built-in mic, present whether or not anything is
+// plugged in (Runtime.hpp:237,260-261). Requesting a channel never
+// delivered "the operator routed something in"; it just opened a phantom
+// source Randomize then assigned depth to. Config() now requests ZERO input
+// channels, so no device -- default or otherwise -- ever opens, and the two
+// external-audio slate slots (13/14, design D5) are disconnected by
+// construction (see FroggersAppCore.hpp's ProcessBlock comment).
+TEST_CASE(froggers_config_requests_zero_audio_input_channels) {
     const synth::RuntimeConfig config = synth_froggers::FroggersApp::Config();
-    REQUIRE_TRUE(config.numAudioInputs == 1);
+    REQUIRE_TRUE(config.numAudioInputs == 0);
+}
+
+// frogg3rs-external-audio-phantom-input -- proves T1+T2's mechanism
+// end-to-end through the REAL Config()->Init()->ProcessBlock path
+// (SynthRig), which FroggersModulationTests.cpp's own external-audio tests
+// (e.g. external_audio_cells_present_and_inert_with_no_input) do not reach:
+// that file drives FroggersModulationSlate::Step() directly against a bare
+// Fixture, passing `externalConnected` as an explicit test-chosen bool, and
+// never touches FroggersApp::Config() or ProcessBlock at all. This test
+// checks three distinct things a single "not connected" assertion would
+// blur together: (1) the app requests zero audio input channels; (2) both
+// external-audio sources are still REGISTERED and PRESENT in the slate --
+// proven by their registered `name`, not merely a `false` `connected` bit,
+// because a slot silently dropped from RegisterSources() instead of
+// disconnected would ALSO read a default-constructed `connected == false`
+// (synth::ModulatorMetadata's own default, ParameterModulation.hpp) and
+// pass a connected-only check while actually being absent; and (3) both
+// report connected == false.
+//
+// OMNI 9.1 positive control (mandatory before trusting any "not connected"
+// result): a rig that populates nothing would ALSO read every source as
+// disconnected, so "false" alone proves nothing. Prints the total
+// registered source count and reads a DIFFERENT, unconditionally-connected
+// source (Random S&H 1, slot 0 -- registered `connected = true` in
+// RegisterSources(), FroggersModulation.hpp) as `connected == true` in this
+// SAME rig, SAME run, before the disconnected checks below -- demonstrating
+// the metadata-reading mechanism itself is live, not uniformly false.
+TEST_CASE(external_audio_sources_stay_registered_and_disconnected_with_zero_input_channels) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64,
+        UseScratchRuntimeDataPaths("external_audio_registered_disconnected"));
+
+    // (1) The root cause this whole change fixes, re-asserted here alongside
+    // its slate-level consequence rather than trusted from the sibling test
+    // above.
+    const synth::RuntimeConfig config = synth_froggers::FroggersApp::Config();
+    REQUIRE_TRUE(config.numAudioInputs == 0);
+
+    // Transport RUNNING, real blocks pumped: modulation_.Step() only runs
+    // when `transportRunningNow` (FroggersAppCore.hpp's ProcessBlock), so
+    // this exercises T2's new runtime code -- the literal-false
+    // `externalInputConnected` reaching `SetExternalAudioConnected` every
+    // sample -- rather than resting on RegisterSources()'s one-time Init()
+    // default, which alone would not prove the ProcessBlock wiring survived
+    // T1/T2 intact.
+    rig.StartAt(0);
+    rig.RunBlocks(8);
+    REQUIRE_TRUE(!rig.SawNaN());
+
+    synth_froggers::FroggersModulationSlate& modulation = rig.Application().Modulation();
+
+    // Positive control FIRST (OMNI 9.1).
+    std::cout << "external_audio_sources_stay_registered_and_disconnected_with_zero_input_channels: "
+                 "total registered sources = "
+              << synth_froggers::FroggersParameterModel::kNumModulators << "\n";
+    REQUIRE_TRUE(synth_froggers::FroggersParameterModel::kNumModulators == 15);
+    const synth::ModulatorMetadata& controlSource =
+        modulation.Metadata(synth_froggers::kModSlotRandomSh1);
+    std::cout << "  positive control -- slot " << synth_froggers::kModSlotRandomSh1 << " (\""
+              << controlSource.name << "\") connected = " << std::boolalpha
+              << controlSource.connected << "\n";
+    REQUIRE_TRUE(controlSource.connected);  // proves the rig/metadata path can read true.
+
+    // (2) Present: both external-audio slots were actually registered by
+    // RegisterSources() -- their `name` is the exact string only that call
+    // sets -- not silently dropped from the slate.
+    const synth::ModulatorMetadata& externalAudio =
+        modulation.Metadata(synth_froggers::kModSlotExternalAudio);
+    const synth::ModulatorMetadata& externalAudioEf =
+        modulation.Metadata(synth_froggers::kModSlotExternalAudioEf);
+    REQUIRE_TRUE(externalAudio.name == "External Audio");
+    REQUIRE_TRUE(externalAudioEf.name == "External Audio EF");
+
+    // (3) Inert: both report connected == false -- a state the presence
+    // checks above already established is not the same thing as absence.
+    std::cout << "  external audio (slot " << synth_froggers::kModSlotExternalAudio
+              << ") connected = " << std::boolalpha << externalAudio.connected << "\n";
+    std::cout << "  external audio EF (slot " << synth_froggers::kModSlotExternalAudioEf
+              << ") connected = " << std::boolalpha << externalAudioEf.connected << "\n";
+    REQUIRE_TRUE(!externalAudio.connected);
+    REQUIRE_TRUE(!externalAudioEf.connected);
 }
 
 // A2 (tasks.md CONSOLIDATED PUSH) -- end-to-end proof that the

@@ -34,27 +34,38 @@ surprise.
 
 ## T1 — `Config()`: request zero audio inputs
 
-- [ ] **T1.1** `app/FroggersAppCore.hpp`, `FroggersApp::Config()`: `config.numAudioInputs = 1` →
+- [x] **T1.1** `app/FroggersAppCore.hpp`, `FroggersApp::Config()`: `config.numAudioInputs = 1` →
       `config.numAudioInputs = 0`.
-- [ ] **T1.2** Rewrite the "Task 2.6" comment above it. It reasoned correctly that the request is
+- [x] **T1.2** Rewrite the "Task 2.6" comment above it. It reasoned correctly that the request is
       forwarded verbatim to `juce::AudioDeviceManager::initialiseWithDefaultDevices(
       config.numAudioInputs, ...)` (`Runtime.hpp:237`) but never followed that call through to what
       it actually does with a nonzero count — opens the DEFAULT input device, chosen by nobody.
       Record that finding, and what would justify raising the value again (a real routed-input
       signal from upstream — `UPSTREAM-SHEAF-ASK.md` item 8, asks 1/2 — not a pin bump), so the
       next reader does not re-raise it for the same reason this comment originally gave.
-- [ ] **T1.3** Confirm by reading (not by running — this is markdown/comment-adjacent work until an
+- [x] **T1.3 (DONE 2026-08-09)** Confirm by reading (not by running — this is markdown/comment-adjacent work until an
       implementer picks it up under normal engineering rules) that no other call site depends on
       `numAudioInputs == 1` besides the two named in T3. Search the concept — an input channel
       being requested or assumed present — not just the literal token `numAudioInputs` (OMNI §8's
       enumerate-by-operands method, the same method behind this repo's citation sweeps).
+      **Found by this method, not by the literal token:** a SECOND, previously-uncited
+      `block.inputs[0]` read at `FroggersAppCore.hpp`'s `externalAudioSample` ternary (`ProcessBlock`,
+      per-frame loop) — distinct from the one inside `externalInputHasChannel`'s own definition, and
+      not named in `proposal.md` §2's trace. It does not literally "depend on" the value being 1 (the
+      ternary short-circuits safely to `0.0f` regardless), so it does not contradict this task's
+      claim, but it IS a call site that assumes a channel might be present. T2.2's amendment already
+      covers it: "the `block.inputs[0]` read" it names for deletion is THIS one (the one inside
+      `externalInputHasChannel` is already implied by deleting that variable's own definition, so the
+      amendment naming a second, separate read only makes sense as referring to this site) — deleted
+      alongside `externalInputHasChannel`, see T2.2. No other call site found besides the two named in
+      T3 and this one.
 
 ## T2 — Delete the compensating flag, not just flip it
 
-- [ ] **T2.1** `app/FroggersAppCore.hpp`, `ProcessBlock`: delete
+- [x] **T2.1** `app/FroggersAppCore.hpp`, `ProcessBlock`: delete
       `constexpr bool kExternalAudioOptedIn = false;` and its three-line "flip me when there is a
       real opt-in signal" comment.
-- [ ] **T2.2 — AMENDED BY PREFLIGHT 2026-08-09 (OMNI §14). Read this, not the original wording.**
+- [x] **T2.2 — AMENDED BY PREFLIGHT 2026-08-09 (OMNI §14). Read this, not the original wording.**
       The original said to "fold `externalInputHasChannel` / `externalInputConnected` into whichever
       single expression leaves the fewest names." **Do not do that.** Folding them together lands on
       `externalInputConnected = externalInputHasChannel`, which leaves the invariant TWO-part —
@@ -71,14 +82,37 @@ surprise.
       **Positive control (OMNI §9.1), unchanged and still required:** print `block.numInputChannels`
       at startup before T1/T2 (expect `1` — the built-in mic) and again after (expect `0`). A test
       asserting "not connected" proves nothing unless the rig could have read `1`.
-- [ ] **T2.3** Grep the concept, not the old expression's shape (OMNI §8): confirm no other call
+      **DONE 2026-08-09, delivered as a standing test instead of a one-off print** (per the executing
+      session's own explicit instruction): a before/after `block.numInputChannels` print would need
+      two separate builds against two different working-tree states to observe both values, and
+      would prove nothing on any later run. Instead:
+      `external_audio_sources_stay_registered_and_disconnected_with_zero_input_channels`
+      (`app/FroggersHeadlessTests.cpp`) prints the total registered source count (15) and asserts a
+      DIFFERENT, unconditionally-connected source (slot 0, Random S&H 1) reads `connected == true` in
+      the SAME rig/run as the slots-13/14-disconnected assertions — proving the metadata-reading
+      mechanism is live, not uniformly false, every time the suite runs (not just once). See T3.3 for
+      the run's actual numbers.
+- [x] **T2.3** Grep the concept, not the old expression's shape (OMNI §8): confirm no other call
       site reads `kExternalAudioOptedIn`, `externalInputHasChannel`, or `externalInputConnected` by
       name before deleting any of them. The three known call sites are traced in `proposal.md` §2;
       re-derive the set by reading, don't assume that list is exhaustive.
+      **Re-derived by reading, full §8 sweep across `app/` for all six named operands plus two
+      concept-search-only operands (`block.inputs`/`block.numInputChannels`, `externalAudioSample`) —
+      see the executing session's final report for the complete found-vs-changed table. Summary:**
+      `kExternalAudioOptedIn` found 3/changed 3 (all in `FroggersAppCore.hpp`, all deleted).
+      `externalInputHasChannel` found 2/changed 2 (both deleted). `externalInputConnected` found
+      5/changed 2 (the `FroggersAppCore.hpp` declaration and the `externalAudioSample` ternary
+      changed; `FroggersModulation.hpp`'s `Step()` parameter and its two `FroggersAppCore.hpp` call
+      sites — the `modulation_.Step(...)` argument — correctly left unchanged, that is the plumbing
+      T2 requires stay intact). `kModSlotExternalAudio`/`kModSlotExternalAudioEf` found 9+7/changed
+      0+0 (all in `FroggersModulation.hpp` production registration or
+      `FroggersModulationTests.cpp`'s bare-fixture tests, both out of this proposal's scope — verified
+      by reading, not assumed). No call site depends on the deleted names besides the ones this task
+      list already names.
 
 ## T3 — The two test consequences (land WITH T1, same commit)
 
-- [ ] **T3.1 — `froggers_config_requests_exactly_one_audio_input_channel` must be rewritten, not
+- [x] **T3.1 — `froggers_config_requests_exactly_one_audio_input_channel` must be rewritten, not
       patched.** (`app/FroggersHeadlessTests.cpp:101-114`, verified by reading.) Its own name and
       its `REQUIRE_TRUE(config.numAudioInputs == 1)` assert exactly the premise T1 reverses. Its
       comment (`:101-110`) is the historical argument FOR raising it to 1 in the first place, and
@@ -88,7 +122,7 @@ surprise.
       replace the comment with the corrected reasoning. Do not leave the old comment's argument
       standing beside a flipped assertion — that is how the next reader gets confused about which
       one is current.
-- [ ] **T3.2 — `froggers_init_process_block_produces_finite_stereo_output`'s comment goes stale,
+- [x] **T3.2 — `froggers_init_process_block_produces_finite_stereo_output`'s comment goes stale,
       even though its assertions keep passing.** (`app/FroggersHeadlessTests.cpp:72-99`.) Its
       comment (`:77-86`) claims the test "doubles as proof that FroggersApp tolerates an
       actually-present input channel... without producing non-finite output" — true only because
@@ -102,9 +136,36 @@ surprise.
       per-test config override — construct this test's own rig requesting an explicit input
       channel, so the coverage is retained deliberately rather than lost silently. Decide by
       reading, not by assuming either option is available.
-- [ ] **T3.3** Re-run the full suite after T1+T2+T3.1+T3.2 land together. Report the new
+      **DONE 2026-08-09, option (a).** Read `SynthRig.hpp`'s constructor in full: `AudioSettings`
+      (its only per-instance override struct) covers sample rate and block size only —
+      `numInputChannels_` is unconditionally `App::Config().numAudioInputs` (`:61-62`), and
+      `Config()` is a `static` method of the App type `SynthRig<App>` is templated on, not an
+      instance field. Option (b) is therefore not available without a second App type overriding
+      `Config()`, which is out of this task's scope (and this proposal's — no new App type is
+      named anywhere in it). Comment corrected to stop claiming the coverage; states plainly what
+      the test still proves (finite stereo output through the real init/process path, now always
+      with zero input channels, which is the shape the app runs in).
+- [x] **T3.3 (DONE 2026-08-09)** Re-run the full suite after T1+T2+T3.1+T3.2 land together. Report the new
       binary/test counts here, superseding the "inherited" line at the top of this file — do not
       leave stale numbers standing once real ones exist.
+      **Result: `nice make -j2 -C app test` — 10 binaries, 191 tests, 0 failures, 0 warnings, exit 0.**
+      Net +1 test vs. this file's own "inherited 189" line above — but that line was self-admittedly
+      unverified ("nothing has been built or run under it yet"), and turned out to be off by one: a
+      direct `git show HEAD:app/FroggersHeadlessTests.cpp` vs. working-tree `TEST_CASE(` count shows
+      exactly 4 → 5 in that one file (the only test source this change touches), so the TRUE pre-change
+      baseline was 190, not 189, matching the executing session's own dispatch instructions (which
+      independently stated 190). 190 + 1 (the new test added below T2's changes) = 191, confirmed.
+      Also separately built and ran `froggers_stop_flush_repro` (not part of the `test` target,
+      excluded by design): 6/6 PASS, exit 0, post-flush peak exactly `0` in all three S1.2 scenarios
+      (seeded, Flip=0 control, Blend=0 control) — unaffected by this change, confirmed still green.
+      All five explicitly-named regression guards confirmed PASS by grepping the run's own output:
+      `back_exits_to_parameter_grid_from_level_one`,
+      `back_from_level_two_returns_to_the_same_level_one_parameter_then_back_again_exits_to_grid`,
+      `encoder_cell_never_emits_a_frame_draw_command`,
+      `modulation_header_shown_only_while_drilled_in_and_matches_the_level`,
+      `modulation_header_sits_below_bank_row_and_above_parameter_cells`. The three pre-existing
+      external-audio tests in `FroggersModulationTests.cpp` (bare-fixture, orthogonal to
+      `Config()`/`ProcessBlock`) also confirmed PASS, unchanged.
 
 ## T4 — `UPSTREAM-SHEAF-ASK.md` item 8 correction
 
@@ -118,11 +179,20 @@ surprise.
 
 ## T5 — Spec delta
 
-- [ ] **T5.1** `specs/froggers-modulation-slate/spec.md` — tighten "External-audio sources stay
+- [x] **T5.1** `specs/froggers-modulation-slate/spec.md` — tighten "External-audio sources stay
       present but inert when unavailable" so "available" excludes a host-opened default device.
       See that file for the exact wording. Write it to describe the behavior T1/T2 actually
       produce once implemented, not the plan for it — if implementation deviates from
       `proposal.md` §2's trace, the spec follows the code, not this document.
+      **Verified 2026-08-09: this delta file already carried the tightened wording** (written ahead
+      of the rest of this change, alongside T4.1's citation-sweep pass — checkbox was simply not
+      ticked). Re-read against the actual T1/T2 implementation landed in this session: `config.
+      numAudioInputs = 0`, `externalInputConnected` a literal `false`, `externalInputHasChannel`
+      deleted — the delta's wording ("the app SHALL request zero audio input channels," "disconnected
+      by construction rather than by a compensating flag") matches exactly what was built, no
+      deviation, no edit needed. This is the delta under this change's own `specs/` directory, not
+      yet synced to the main `openspec/specs/froggers-modulation-slate/spec.md` — syncing/archiving
+      is a separate step this dispatch was not asked to run.
 
 ---
 
@@ -155,3 +225,29 @@ though they were resolved by omission. Full context:
   be read as reopening that decision.
 - **W4.1 — Sheaf pin bump `77a3019e` → `508d9d68`.** Independently deferred, unrelated to this fix
   (`proposal.md` §3). Not this change's scope.
+
+---
+
+## T6 — POSTFLIGHT FINDING (OMNI §14, §8-against-the-diff). Open, NOT executed.
+
+**Recorded 2026-08-09 by the lead's postflight audit of T1–T3.** Implementation matched the amended
+proposal exactly — no divergence. This is the separate question §14 requires: *what did writing this
+make redundant?*
+
+- [ ] **T6.1 — `SetExternalAudioConnected` is dead per-sample work.** It is called once per sample
+      from `FroggersModulationSlate::Step`, writing `false` into
+      `Metadata(kModSlotExternalAudio).connected` and `Metadata(kModSlotExternalAudioEf).connected`.
+      Both are **already `false` at registration** — `RegisterSources()` passes `false` as the
+      metadata's last field for both slots, and Sheaf's `ModulatorMetadata::connected` defaults to
+      `false` regardless. Its only argument source is now a compile-time `false`. At 48 kHz that is
+      ~96,000 stores/second writing a constant over a constant, plus a parameter threaded through
+      the per-sample hot path to carry it.
+      **Strictly this is not NEWLY redundant** — `kExternalAudioOptedIn` was `constexpr false`, so
+      the old expression already folded to false. What T2 removed was the last runtime-*looking*
+      derivation, which is what made the dead work visible. Recorded under §16.2 ("pre-existing is
+      not a reason to skip investigating a real fix") rather than dropped.
+      **Scope note:** this is beyond T1–T3 and was deliberately NOT executed inside this change —
+      §4 forbids an executor widening scope, and the fix belongs in its own bounded dispatch.
+      **Before removing anything, verify** that nothing else depends on the per-sample write (the
+      re-enable path in `proposal.md` §6 will need SOME writer; the question is whether it must run
+      per sample or once).
