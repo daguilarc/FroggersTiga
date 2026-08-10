@@ -49,7 +49,7 @@ it. "Landed" verdicts cite the re-check sections (evidence at `77a3019e` unless 
 | 5 | Slider numeric text box opt-out | email | no — box still unconditional |
 | 6 | Slider labels never drawn | email | **effectively** — `ControlStyle::caption` does the job (we use hand-rolled labels only for below-placement, see 14) |
 | 7 | Unlabelled CPU/deadline % | email + **issue #2** | no |
-| 8 | Input-exists vs user-routed | email | **YES at `508d9d68`** — W4.2 consumes it after the bump |
+| 8 | Input-exists vs user-routed | email | **CORRECTED 2026-08-09 by audit — NOT landed.** `RequestedChannelCount()` vs `ActiveChannelCount()` answers a different question than ours; `HasActiveChannel()` is structurally the same permanently-true expression we already had, given a default-opened mic. See the 2026-08-03 re-check row below (also corrected) and `frogg3rs-external-audio-phantom-input`'s `proposal.md`. `kExternalAudioOptedIn` stays |
 | 9 | Parameter timing off 48 kHz | email | no |
 | 10 | Same-source-twice randomize draw | email | no — our distinct-draw helper stays |
 | 11 | One-level drill-in pop | email | no — our synthesized pop stays (required behaviour regardless) |
@@ -91,6 +91,16 @@ could never express. In practice it also delivers the user opt-in we wanted, bec
 page's input-device selector governs whether any channel goes active: pick no input device and
 `ActiveChannelCount()` is 0, so source #6 stays dark and cannot steal randomization.
 
+> **CORRECTED 2026-08-09 by audit — the paragraph above is wrong, and so is the table row it
+> supports (fixed above).** `HasActiveChannel()` does not derive from "an input device is selected"
+> the way this paragraph assumes; it derives from `activeChannelCount_ = clamp(numInputChannels, 0,
+> requested)`, and `numInputChannels` reflects whichever device the host actually opened — which for
+> us is the platform default (the built-in mic), opened the moment `numAudioInputs` is nonzero,
+> before the operator ever reaches the Audio page. **"Pick no input device" is not a reachable state
+> at startup — a device is already open.** Traced by reading `FroggersApp::Config()`
+> (`app/FroggersAppCore.hpp`) and `Runtime.hpp`'s `initialiseWithDefaultDevices` call, not reasoned
+> from this API's shape. Full trace in `frogg3rs-external-audio-phantom-input`'s `proposal.md`.
+
 The residual gap is narrower than the original ask's wording: a user who *selects* an input device
 but patches nothing into it still yields an active, silent channel. We judge that acceptable — they
 explicitly chose an input device — but it is recorded rather than glossed, because "active channel"
@@ -105,7 +115,7 @@ means the device is delivering it, not that a human plugged in a cable.
 | 5 | not landed — text box still unconditional | `setTextBoxStyle(TextBoxBelow, ...)`, `PortableJuceBackend.hpp:1162` |
 | 6 | not landed as asked — Slider `label` still reaches only `setName` (`PortableJuceBackend.hpp:1163-1166`) — **but `ControlStyle::caption` now does the workaround's job in the library**: a caption is emitted as a sibling `Label` node with a stable derived id | `PortableUIBuilders.hpp:31`; caption contract, `PortableUI.hpp` appearance comment. Our hand-rolled `kSceneBlendLabel`/`kBpmLabel` nodes become captions on migration |
 | 7 | not landed — still a bare percentage | `FormatDeadlineText` renders `%.1f%%` with no label, `RuntimePages.hpp:285-290`, rendered at `:649-651` |
-| 8 | **LANDED at `508d9d68`** (not at `77a3019e`, where it was still open — see the 2026-08-03 re-check below) | `RuntimeConfig::numAudioInputs` is a *request*; `AudioBlock::numRequestedInputChannels` carries it per block and `AudioBlock::InputView()` returns an `AudioInputView` exposing `RequestedChannelCount()` vs `ActiveChannelCount()`, plus `HasActiveChannel(ch)`, `Empty()`, `SampleOrSilence()` — `AppContext.hpp:84-200`. `kExternalAudioOptedIn` can go |
+| 8 | **CORRECTED 2026-08-09 by audit — NOT landed, at either pin.** This cell used to say LANDED at `508d9d68`; that conflated two different questions. | `RuntimeConfig::numAudioInputs` is a *request*; `AudioBlock::numRequestedInputChannels` carries it per block and `AudioBlock::InputView()` returns an `AudioInputView` exposing `RequestedChannelCount()` vs `ActiveChannelCount()`, plus `HasActiveChannel(ch)`, `Empty()`, `SampleOrSilence()` — `AppContext.hpp:84-200`. **That API answers "did the device give us what we asked for", not "did the operator route something in".** At `508d9d68`, `AudioInputView::HasActiveChannel(ch)` is `channel < activeChannelCount_ && inputs_ != nullptr && inputs_[channel] != nullptr`, with `activeChannelCount_ = clamp(numInputChannels, 0, requested)` — the same three conditions as our own `block.inputs != nullptr && block.numInputChannels > 0 && block.inputs[0] != nullptr`, equally permanently true given a default-opened built-in mic. `AppContext` still carries no audio-device state at `508d9d68`. **`kExternalAudioOptedIn` does NOT go** — see `frogg3rs-external-audio-phantom-input`'s `proposal.md` |
 | 9 | not landed | `ConfigureProcessingTiming` unchanged, `projects/synth/src/ParameterModulation.cpp:859-865`; no default conversion at prepare time, no new callers under `runtime/`/`include/` |
 | 10 | not landed | same independent-draw coin loop, `ParameterModulation.cpp:2894-2899`. Our distinct-draw helper stays |
 | 11 | not landed | `Bank` still exposes only full `Deselect()`, `projects/synth/include/synth/ParameterModulation.hpp:620`. Our synthesized one-level pop stays (and is required behaviour regardless) |

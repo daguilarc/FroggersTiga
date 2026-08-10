@@ -256,7 +256,7 @@ struct SampleRateReducer
 // rather than invoking UB -- see the regression test at input==1.0 in
 // FroggersDspParityTests.cpp.
 //
-// DELIBERATE PARITY DIVERGENCE #2 (openspec/changes/
+// DELIBERATE PARITY DIVERGENCE #2 (openspec/changes/archive/2026-08-09-
 // frogg3rs-parametric-slew-and-stop-root-cause/tasks.md S1.3, proposal.md
 // §2-4 -- same class of operator-approved divergence as
 // dsp::Comb::GetFeedback's +-1.1 -> +-0.95 above (FilterFx.hpp) and the

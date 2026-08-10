@@ -94,7 +94,7 @@
 //
 // F3.2c/F3.2d STATUS UPDATE (2026-08-07): VOID -- PREMISE ELIMINATED.
 // Two things landed in this tree since the extension above was written
-// (openspec/changes/frogg3rs-parametric-slew-and-stop-root-cause/proposal.md
+// (openspec/changes/archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/proposal.md
 // §2, SUPERSESSION-RECORD.md §2):
 //   1. F3's real cause was found and fixed, and it is NOT audio-rate
 //      modulation: DigitalReorganizer::Process(0.0f) was nonzero for any
@@ -417,7 +417,7 @@ PassResult RunPass(std::span<const ModTarget> targets, const char* scratchLabel,
 }
 
 // =========================================================================
-// S1.2 (openspec/changes/frogg3rs-parametric-slew-and-stop-root-cause/
+// S1.2 (openspec/changes/archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/
 // tasks.md, proposal.md §2): F3 reproduced from a FULLY SILENT chain -- no
 // modulation anywhere, every coefficient static. Unlike RunPass() above
 // (measure only, no verdict -- this file's own header comment, "Purpose:

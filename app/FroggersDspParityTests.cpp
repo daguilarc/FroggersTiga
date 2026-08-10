@@ -1438,7 +1438,7 @@ TEST_CASE(reverb_wet_output_stays_at_or_below_limiter_ceiling_with_hold_at_max) 
 }
 
 // =========================================================================
-// S2a.1 (openspec/changes/frogg3rs-parametric-slew-and-stop-root-cause/
+// S2a.1 (openspec/changes/archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/
 // tasks.md) -- reverb tank in-loop saturator. `dsp::Reverb::Process` now
 // writes `preOut + fb * PadeSaturator::Saturate(aFb)` (dsp/Reverb.hpp:
 // 410-411), the SAME saturator in the SAME in-loop position the delay's own
@@ -1930,7 +1930,7 @@ TEST_CASE(digital_reorganizer_set_flip_truncates_set_hash_rounds) {
     REQUIRE_TRUE(reorg.hashBits == static_cast<uint8_t>(std::round(0.5f * 8.0f)));  // rounds, :161
 }
 
-// S1.3 (openspec/changes/frogg3rs-parametric-slew-and-stop-root-cause/
+// S1.3 (openspec/changes/archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/
 // tasks.md; proposal.md §2-4; DIVERGENCE #2 note above dsp::DigitalReorganizer
 // in Drive.hpp): Process() now returns Mangle(x) - Mangle(0), not Mangle(x)
 // alone, at any nonzero flip/hash -- THE sanctioned exception to "any red is

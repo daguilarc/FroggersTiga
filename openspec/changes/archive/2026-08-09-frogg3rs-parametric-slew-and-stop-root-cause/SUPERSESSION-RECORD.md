@@ -3,7 +3,7 @@
 **Created 2026-08-07. Supersedes `frogg3rs-blowout-and-drilldown-repair`**, which is
 **PARTIALLY DELIVERED — not failed.** That distinction is real and is argued below.
 
-The predecessor is archived at `../archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/`.
+The predecessor is archived at `../2026-08-07-frogg3rs-blowout-and-drilldown-repair/`.
 11 path references across `app/` and `openspec/` were rewritten to the archive path, and the
 3 now-one-level-too-deep `../archive/2026-08-06-` relative cites inside the moved directory were
 corrected.

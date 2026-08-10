@@ -376,7 +376,7 @@ struct Reverb
         const float aFb = valB * (1.0f - cross) + valA * cross;
         const float bFb = valA * (1.0f - cross) + valB * cross;
 
-        // S2a.1 (openspec/changes/frogg3rs-parametric-slew-and-stop-root-cause/
+        // S2a.1 (openspec/changes/archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/
         // tasks.md; OPERATOR DECISION 2026-08-07: "reverb tank should have
         // in-loop saturator anyway, the same one, for omni rule purposes").
         // Mirrors B2 (dsp/Delay.hpp, StereoDelay::Process's own comment)

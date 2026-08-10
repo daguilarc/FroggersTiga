@@ -1,6 +1,6 @@
 > # ⚠ SUPERSEDED 2026-08-07 — PARTIALLY DELIVERED
 >
-> **Successor: `../frogg3rs-parametric-slew-and-stop-root-cause/`. Work from that, not this.**
+> **Successor: `../2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/`. Work from that, not this.**
 >
 > Four of five operator-reported symptoms have landed, measured fixes, and this change's own
 > acceptance gate (B7.5) is green having first been red for the right reason. **F3 — "Stop does

@@ -781,7 +781,7 @@ public:
                     parameters_.PageParameter(FroggersBankId::Audio, paramIx + 6).CachedKnobValue(0),
                 };
             };
-            // S1a.2 (openspec/changes/frogg3rs-parametric-slew-and-stop-root-
+            // S1a.2 (openspec/changes/archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-
             // cause/tasks.md, section S1a): operator-ordered, and NOT the F3
             // fix -- kept labelled accurately on purpose. F3 was a static DC
             // seed inside DigitalReorganizer, a pure function of frozen knob
@@ -1003,7 +1003,7 @@ public:
     }
     dsp::DriveBlendPhase& TestDriveBlendPhase() { return driveBlendPhase_; }
     dsp::Oversampler2x& TestDriveOversampler() { return drive_.oversampler; }
-    // S1.2 (openspec/changes/frogg3rs-parametric-slew-and-stop-root-cause/
+    // S1.2 (openspec/changes/archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/
     // tasks.md): same convention as the accessors above -- added because the
     // F3-from-silent-chain measurement case needs to read the live `flip`/
     // `hashBits` SetFlip()/SetHash() actually resolved to (Drive.hpp's
@@ -1622,7 +1622,7 @@ private:
     // instances from modulation_'s private VCOs -- see this class's
     // PrepareToPlay() comment.
     float sampleRate_ = 48000.0f;
-    // S3.1 (openspec/changes/frogg3rs-parametric-slew-and-stop-root-cause/
+    // S3.1 (openspec/changes/archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/
     // tasks.md): collapsed from three separately-named dsp::Vco audioVco1_/
     // audioVco2_/audioVco3_ members into one std::array -- dsp::Vco is
     // trivially copy/move constructible/assignable (all members are float,

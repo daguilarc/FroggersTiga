@@ -1454,7 +1454,7 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
 }
 
 // =========================================================================
-// S1a.2 (openspec/changes/frogg3rs-parametric-slew-and-stop-root-cause/
+// S1a.2 (openspec/changes/archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/
 // tasks.md, section S1a): operator-ordered gate on modulation_.Step() --
 // NOT the F3 fix (see FroggersAppCore.hpp's own comment at the call site for
 // why a static DC seed could never have been removed by freezing
