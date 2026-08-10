@@ -54,13 +54,23 @@ surprise.
 - [ ] **T2.1** `app/FroggersAppCore.hpp`, `ProcessBlock`: delete
       `constexpr bool kExternalAudioOptedIn = false;` and its three-line "flip me when there is a
       real opt-in signal" comment.
-- [ ] **T2.2** Fold `externalInputHasChannel` / `externalInputConnected` into whichever single
-      expression leaves the fewest names for a future reader to reconcile — judge against the
-      actual resulting diff, not in the abstract. Both booleans are provably `false` by construction
-      once T1 lands (`block.numInputChannels` is `0` because no input device is ever opened), so
-      this is a correctness-neutral simplification, not a behavior change. **Prove that with the
-      standing constraint's positive control:** print `block.numInputChannels` at startup before
-      T1/T2 (expect `1` — the built-in mic) and again after (expect `0`).
+- [ ] **T2.2 — AMENDED BY PREFLIGHT 2026-08-09 (OMNI §14). Read this, not the original wording.**
+      The original said to "fold `externalInputHasChannel` / `externalInputConnected` into whichever
+      single expression leaves the fewest names." **Do not do that.** Folding them together lands on
+      `externalInputConnected = externalInputHasChannel`, which leaves the invariant TWO-part —
+      `numAudioInputs = 0` *and* that derivation — so raising `numAudioInputs` back to 1, which
+      `proposal.md` §6 explicitly anticipates a future reader doing, re-creates the phantom sources
+      immediately. That moves the landmine from "delete this flag" to "raise this integer" rather
+      than removing it.
+      **Instead:** `externalInputConnected` becomes a literal `false` carrying the reasoning in a
+      comment, and **`externalInputHasChannel` and the `block.inputs[0]` read are DELETED** as
+      provably-dead branches (OMNI §12: trace the origin, remove impossible branches — they are
+      impossible because this app's own `Config()` never requests the channel). Re-enabling external
+      audio then REQUIRES writing a derivation against a real routed signal, which is what
+      `proposal.md` §6 says re-enablement means anyway.
+      **Positive control (OMNI §9.1), unchanged and still required:** print `block.numInputChannels`
+      at startup before T1/T2 (expect `1` — the built-in mic) and again after (expect `0`). A test
+      asserting "not connected" proves nothing unless the rig could have read `1`.
 - [ ] **T2.3** Grep the concept, not the old expression's shape (OMNI §8): confirm no other call
       site reads `kExternalAudioOptedIn`, `externalInputHasChannel`, or `externalInputConnected` by
       name before deleting any of them. The three known call sites are traced in `proposal.md` §2;

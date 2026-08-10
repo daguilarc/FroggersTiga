@@ -42,6 +42,20 @@ external-audio modulation sources — `kModSlotExternalAudio` (13) and `kModSlot
 state from, not by a separate opt-out flag that a future edit (upstream or app-side) could silently
 invalidate.
 
+**PREFLIGHT AMENDMENT 2026-08-09 (OMNI §14, audit of this proposal before execution).** The
+sentence above originally read that the sources are disconnected "by construction ... not by a
+separate opt-out flag that a future edit could silently invalidate." **That overstated what §4's T2
+actually builds.** If `externalInputConnected` is folded back down to `externalInputHasChannel`, the
+invariant remains TWO-part — `numAudioInputs = 0` *and* that derivation — and §6 below explicitly
+invites a future reader to raise `numAudioInputs` again. The instant they do, `externalInputHasChannel`
+is permanently true once more and the phantom sources return. **The landmine would be moved, not
+removed: from "delete this flag" to "raise this integer."**
+Accordingly, T2 is amended: `externalInputConnected` becomes a literal `false` carrying the
+reasoning, and `externalInputHasChannel` together with the `block.inputs[0]` read are DELETED as
+provably-dead branches (OMNI §12). Re-enabling then REQUIRES consciously writing a derivation against
+a real routed signal — which §6 already says is what re-enablement means — rather than being one
+integer edit away from silently re-arming.
+
 **Explicitly not restoring external audio.** It stays unavailable until upstream exposes a routed-
 input signal (`UPSTREAM-SHEAF-ASK.md` item 8's own ask, still open — asks 1/2 there). That is the
 status quo today; this change does not change it, and does not regress it either.
@@ -181,8 +195,10 @@ class cannot recur silently behind a single untested boolean again.
 - **Does not restore external audio.** The two sources stay unavailable; this change only makes
   their unavailability honest and construction-guaranteed instead of flag-guaranteed. Restoring the
   capability needs upstream to expose a routed-input signal (`UPSTREAM-SHEAF-ASK.md` item 8, asks 1
-  or 2) — the app-side change at that point is one line (raise `numAudioInputs` back to 1 or more,
-  and derive `externalInputConnected` from the real signal instead of a channel-exists check).
+  or 2) — the app-side change at that point is TWO coupled edits, deliberately (raise
+  `numAudioInputs` back to 1 or more, AND write `externalInputConnected` from the real routed
+  signal). It is not one line, and per the preflight amendment in §1 it must not be made into one:
+  a single-edit re-enable is exactly the silent re-arm this change exists to prevent.
 - **Does not bump the Sheaf pin.** `W4.1` (`77a3019e` → `508d9d68`) is unrelated to this fix and
   stays independently deferred.
 - **No change to `External/Sheaf`, and no change to any other frozen tree.**
