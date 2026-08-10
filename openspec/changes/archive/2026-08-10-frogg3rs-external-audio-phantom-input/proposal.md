@@ -1,7 +1,7 @@
 # Proposal — `frogg3rs-external-audio-phantom-input`
 
 **Created 2026-08-09. Supersedes `frogg3rs-parametric-slew-and-stop-root-cause`**, archived at
-`../archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/` — implementation COMPLETE,
+`../2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/` — implementation COMPLETE,
 not a failure and not a partial delivery (see `SUPERSESSION-RECORD.md`). This change picks up the
 one item that directory carried forward, unexecuted, across three change generations — `W4.2` — and
 corrects the plan attached to it, which turns out to have been wrong the entire time.
@@ -203,7 +203,7 @@ class cannot recur silently behind a single untested boolean again.
   stays independently deferred.
 - **No change to `External/Sheaf`, and no change to any other frozen tree.**
 - **Does not revive S2 (the slew).** Dropped by the operator in the predecessor change
-  (`../archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/tasks.md` §S2); out of scope
+  (`../2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/tasks.md` §S2); out of scope
   here and must not be reintroduced as a side effect of touching neighboring code in
   `FroggersAppCore.hpp`.
 - **Does not touch any of the predecessor's other landed work** (drive-stage DC fix, transport-gated

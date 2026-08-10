@@ -94,7 +94,7 @@ struct Fixture {
         slate.Prepare(48000.0);
     }
 
-    // T6 (openspec/changes/frogg3rs-external-audio-phantom-input/tasks.md):
+    // T6 (openspec/changes/archive/2026-08-10-frogg3rs-external-audio-phantom-input/tasks.md):
     // Step() itself no longer takes an external-audio-sample/-connected
     // pair (production's only caller always fed a compile-time `0.0f`/
     // `false`, so that per-sample plumbing was dead weight -- see Step()'s

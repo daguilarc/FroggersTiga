@@ -405,7 +405,7 @@ public:
         noiseProcessor_.Process();
 
         // External audio (slots 13-14) -- deliberately NOT stepped here.
-        // T6 (openspec/changes/frogg3rs-external-audio-phantom-input/
+        // T6 (openspec/changes/archive/2026-08-10-frogg3rs-external-audio-phantom-input/
         // tasks.md): this used to recompute externalAudioSource_ /
         // externalAudioEfSource_ from an `externalAudioSample` parameter and
         // call SetExternalAudioConnected(externalInputConnected) every

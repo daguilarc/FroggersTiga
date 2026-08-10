@@ -167,7 +167,7 @@ TEST_CASE(external_audio_sources_stay_registered_and_disconnected_with_zero_inpu
     // Transport RUNNING, real blocks pumped: this exercises the REAL
     // FroggersAppCore::PrepareToPlay()/ProcessBlock() wiring end-to-end, not
     // just RegisterSources()'s one-time Init() default in isolation. T6
-    // (openspec/changes/frogg3rs-external-audio-phantom-input/tasks.md)
+    // (openspec/changes/archive/2026-08-10-frogg3rs-external-audio-phantom-input/tasks.md)
     // removed the per-sample call that used to re-derive `.connected` from
     // a per-sample `externalInputConnected` value every sample (was: T2's
     // runtime code, exercised here for that reason) -- slots 13/14 now read

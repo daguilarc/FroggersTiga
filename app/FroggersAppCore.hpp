@@ -653,7 +653,7 @@ public:
         // impossible branches) rather than kept behind a flag that a future
         // edit could silently re-arm by raising one integer.
         //
-        // T6 (openspec/changes/frogg3rs-external-audio-phantom-input/
+        // T6 (openspec/changes/archive/2026-08-10-frogg3rs-external-audio-phantom-input/
         // tasks.md, postflight finding): `externalInputConnected` USED to
         // stay a named local here -- not inlined as a bare `false` -- passed
         // into `modulation_.Step(...)` below, which forwarded it into

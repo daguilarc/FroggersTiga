@@ -121,7 +121,11 @@ if ((${#active_changes[@]} == 0)); then
   echo "No active OpenSpec changes"
 fi
 
-for change in "${active_changes[@]}"; do
+# macOS ships bash 3.2, which treats "${arr[@]}" on a ZERO-LENGTH array as an unbound
+# variable under `set -u`. Fired for the first time on 2026-08-10, when this repo first
+# reached zero active changes. The ${arr[@]+"${arr[@]}"} idiom expands to nothing when the
+# array is empty instead of erroring.
+for change in ${active_changes[@]+"${active_changes[@]}"}; do
   echo "== strict validate: $change =="
   if ! openspec validate "$change" --strict; then
     note_fail "openspec validate --strict failed for $change"
@@ -146,7 +150,11 @@ echo "== duplicate capability ownership =="
 ownership_tmp="$(mktemp)"
 trap 'rm -f "$ownership_tmp"' EXIT
 
-for change in "${active_changes[@]}"; do
+# macOS ships bash 3.2, which treats "${arr[@]}" on a ZERO-LENGTH array as an unbound
+# variable under `set -u`. Fired for the first time on 2026-08-10, when this repo first
+# reached zero active changes. The ${arr[@]+"${arr[@]}"} idiom expands to nothing when the
+# array is empty instead of erroring.
+for change in ${active_changes[@]+"${active_changes[@]}"}; do
   specs_dir="openspec/changes/$change/specs"
   [[ -d "$specs_dir" ]] || continue
   for cap_dir in "$specs_dir"/*; do

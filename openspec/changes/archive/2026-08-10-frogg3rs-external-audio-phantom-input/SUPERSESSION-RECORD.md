@@ -1,7 +1,7 @@
 # Supersession record — `frogg3rs-external-audio-phantom-input`
 
 **Created 2026-08-09. Supersedes `frogg3rs-parametric-slew-and-stop-root-cause`**, archived at
-`../archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/` — **implementation COMPLETE**,
+`../2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/` — **implementation COMPLETE**,
 not a failure and not a partial delivery. This is a different relationship than either predecessor
 in this change's lineage had to its own predecessor: nothing here is a correction of unfinished or
 wrong work. It is a **new, narrowly-scoped fix** for the one item that directory carried forward,
@@ -53,7 +53,7 @@ document**. Full list and current wording: `tasks.md`'s "Carried forward as open
 ## Thrown away
 
 Nothing. The predecessor's artifacts remain in place as history, at
-`../archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/`.
+`../2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/`.
 
 ## Why this needed its own change rather than a silent footer edit
 

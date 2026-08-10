@@ -10,7 +10,7 @@ downstream branches are deleted, not flipped.
 
 **Inherited suite state (not re-verified by this document — this change is markdown/comment work;
 nothing has been built or run under it yet): 10 binaries, 189 tests, 0 failures, 0 warnings**, per
-`../archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/tasks.md`'s last recorded
+`../2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/tasks.md`'s last recorded
 status. `External/Sheaf` pinned at `77a3019e`. **Any red is a regression**, with the two named
 exceptions in T3 below — both MUST change in the same commit as T1, not be chased afterward as a
 surprise.
@@ -200,7 +200,7 @@ surprise.
 
 This change does not touch any of the following. Recorded so this directory does not read as
 though they were resolved by omission. Full context:
-`../archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/tasks.md`.
+`../2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/tasks.md`.
 
 - **S4.3–S4.8 — operator eyes/ears only, still open.** S4.1 (Stop works) and S4.2 (blowout fixed)
   are PASSED and stay closed. S4.3 (Randomize-All-at-level-1 visual check), S4.4 (badge density),
