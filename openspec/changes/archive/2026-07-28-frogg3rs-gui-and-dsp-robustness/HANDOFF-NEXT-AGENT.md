@@ -61,7 +61,7 @@ changed so the corrections are not mistaken for the original text.
 
 ## Canonical documents (there is no other handoff — a stale root HANDOFF.md was deleted for cause)
 
-- `openspec/changes/frogg3rs-gui-and-dsp-robustness/` — proposal.md, design.md (E1–E6), tasks.md.
+- `openspec/changes/archive/2026-07-28-frogg3rs-gui-and-dsp-robustness/` — proposal.md, design.md (E1–E6), tasks.md.
   **design.md §E6 and tasks.md §6 are the current work.** §6 takes priority over §2–§5.
 - `openspec/changes/archive/2026-07-28-froggers-sheaf-app/ARCHIVE-RECORD.md` — history, traps,
   what the predecessor change actually shipped vs claimed.

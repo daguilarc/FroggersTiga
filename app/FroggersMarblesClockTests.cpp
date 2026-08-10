@@ -114,7 +114,7 @@ TEST_CASE(per_source_rate_ratios_match_design_d8a_over_eight_quarter_notes) {
     // First call primes every Phasor2Tick (Phasor2Tick::Process's own "first
     // call primes, does not tick" semantics) -- matches how a real transport
     // would first commit a clock plan before any tick can fire.
-    fx.slate.Step(kSilent, kSilent, kSilent, 0.0f, false, 0.0);
+    fx.slate.Step(kSilent, kSilent, kSilent, 0.0);
     fx.slate.PublishUiState();
     std::array<std::size_t, 5> lastIndex{};
     for (std::size_t lane = 0; lane < 5; ++lane) {
@@ -124,7 +124,7 @@ TEST_CASE(per_source_rate_ratios_match_design_d8a_over_eight_quarter_notes) {
     std::array<std::size_t, 5> tickCounts{};
     for (int step = 1; step <= kTotalSteps; ++step) {
         const double qn = kTotalQuarterNotes * static_cast<double>(step) / static_cast<double>(kTotalSteps);
-        fx.slate.Step(kSilent, kSilent, kSilent, 0.0f, false, qn);
+        fx.slate.Step(kSilent, kSilent, kSilent, qn);
         fx.slate.PublishUiState();
         for (std::size_t lane = 0; lane < 5; ++lane) {
             const std::size_t newIndex = fx.slate.RandomShLaneUiState(lane).currentIndex.load();
@@ -149,7 +149,7 @@ TEST_CASE(missing_transport_position_never_advances_the_five_lanes) {
     constexpr FroggersModulationSlate::VcoDrive kSilent{0.5f, 0.5f, 0.0f};
 
     for (int i = 0; i < 200; ++i) {
-        fx.slate.Step(kSilent, kSilent, kSilent, 0.0f, false, std::nullopt);
+        fx.slate.Step(kSilent, kSilent, kSilent, std::nullopt);
     }
     fx.slate.PublishUiState();
     for (std::size_t lane = 0; lane < 5; ++lane) {
@@ -224,7 +224,7 @@ TEST_CASE(visualizer_state_matches_the_bag_after_publishing) {
 
     for (int i = 0; i <= 500; ++i) {
         const double qn = static_cast<double>(i) * 0.01;
-        fx.slate.Step(kSilent, kSilent, kSilent, 0.0f, false, qn);
+        fx.slate.Step(kSilent, kSilent, kSilent, qn);
     }
     fx.slate.PublishUiState();
 
@@ -312,7 +312,7 @@ TEST_CASE(source_six_visualizer_color_matches_its_own_registered_metadata_color)
 
     fx.slate.PrepareBlockClock((120.0 / 60.0) / 48000.0);  // 120 BPM, matches Fixture's 48 kHz Prepare().
     for (int i = 0; i < 8; ++i) {
-        fx.slate.Step(kSilent, kSilent, kSilent, 0.0f, false, static_cast<double>(i) * 0.001);
+        fx.slate.Step(kSilent, kSilent, kSilent, static_cast<double>(i) * 0.001);
     }
     fx.slate.PublishUiState();
 

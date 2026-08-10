@@ -4,7 +4,7 @@
 // change (openspec/changes/froggers-sheaf-app/tasks.md, section "10. Surface
 // layout (ported v2 design)"; design D9/D9a/D9b/D11/D14/D17;
 // spec `specs/froggers-app-surface-layout/spec.md`), re-architected under
-// `openspec/changes/frogg3rs-audio-safety-and-ui-rework/tasks.md` task F.3
+// `openspec/changes/archive/2026-08-05-frogg3rs-audio-safety-and-ui-rework/tasks.md` task F.3
 // (2026-08-04/05) to adopt Sheaf's portable layout engine
 // (`PortableUILayout.hpp`/`PortableUIMetrics.hpp`, pin `77a3019e`) instead of
 // this file's own hand-rolled pixel arithmetic.

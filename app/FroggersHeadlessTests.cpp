@@ -164,13 +164,21 @@ TEST_CASE(external_audio_sources_stay_registered_and_disconnected_with_zero_inpu
     const synth::RuntimeConfig config = synth_froggers::FroggersApp::Config();
     REQUIRE_TRUE(config.numAudioInputs == 0);
 
-    // Transport RUNNING, real blocks pumped: modulation_.Step() only runs
-    // when `transportRunningNow` (FroggersAppCore.hpp's ProcessBlock), so
-    // this exercises T2's new runtime code -- the literal-false
-    // `externalInputConnected` reaching `SetExternalAudioConnected` every
-    // sample -- rather than resting on RegisterSources()'s one-time Init()
-    // default, which alone would not prove the ProcessBlock wiring survived
-    // T1/T2 intact.
+    // Transport RUNNING, real blocks pumped: this exercises the REAL
+    // FroggersAppCore::PrepareToPlay()/ProcessBlock() wiring end-to-end, not
+    // just RegisterSources()'s one-time Init() default in isolation. T6
+    // (openspec/changes/frogg3rs-external-audio-phantom-input/tasks.md)
+    // removed the per-sample call that used to re-derive `.connected` from
+    // a per-sample `externalInputConnected` value every sample (was: T2's
+    // runtime code, exercised here for that reason) -- slots 13/14 now read
+    // `connected == false` purely because RegisterSources() set it once at
+    // construction and nothing in the real init/process path ever touches
+    // it again. Running real blocks here still matters for a DIFFERENT
+    // reason post-T6: it proves externalAudioSource_/externalAudioEfSource_
+    // (frozen at their NSDMI defaults, FroggersModulation.hpp) stay defined
+    // and finite over actual per-sample execution (SawNaN() below), which
+    // is exactly what Modulators::UpdateModValues() needs every sample
+    // regardless of connectedness.
     rig.StartAt(0);
     rig.RunBlocks(8);
     REQUIRE_TRUE(!rig.SawNaN());

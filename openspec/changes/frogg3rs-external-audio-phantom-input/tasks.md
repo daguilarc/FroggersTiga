@@ -234,7 +234,7 @@ though they were resolved by omission. Full context:
 proposal exactly — no divergence. This is the separate question §14 requires: *what did writing this
 make redundant?*
 
-- [ ] **T6.1 — `SetExternalAudioConnected` is dead per-sample work.** It is called once per sample
+- [x] **T6.1 — `SetExternalAudioConnected` is dead per-sample work.** It is called once per sample
       from `FroggersModulationSlate::Step`, writing `false` into
       `Metadata(kModSlotExternalAudio).connected` and `Metadata(kModSlotExternalAudioEf).connected`.
       Both are **already `false` at registration** — `RegisterSources()` passes `false` as the
@@ -251,3 +251,82 @@ make redundant?*
       **Before removing anything, verify** that nothing else depends on the per-sample write (the
       re-enable path in `proposal.md` §6 will need SOME writer; the question is whether it must run
       per sample or once).
+
+      **DONE 2026-08-09.** Verified all of the above by reading before changing anything (OMNI §1):
+      confirmed the per-sample call, both slots' already-`false` registration, and the compile-time
+      `false` local at the sole production call site (`FroggersAppCore.hpp`'s `ProcessBlock`).
+      **One correction to the finding's own text, found by tracing rather than trusting it** (OMNI
+      §1: the plan/finding's own text is a claim, not a fact): "its only argument source is now a
+      compile-time `false`" is true of the one PRODUCTION call site, not of `Step()` project-wide. A
+      full grep-by-operand sweep (not by the shape of any one call) found 8 more direct `Step()` call
+      sites — 2 in `FroggersModulationTests.cpp`, 5 in `FroggersMarblesClockTests.cpp` — plus the
+      ~24-site `Fixture::StepOnce` wrapper in the former, one of which
+      (`external_audio_cells_present_and_inert_with_no_input`) legitimately drives
+      `externalConnected=true` to test the slate's own "flip to connected" mechanism. This changed
+      the fix's shape: instead of deleting `SetExternalAudioConnected`'s call and `Step()`'s two
+      external-audio parameters outright (which would have silently broken that test's ability to
+      express its own scenario), the call was removed from `Step()` and its two parameters removed
+      from the signature, with `Fixture::StepOnce` changed to call the (kept, unchanged)
+      `SetExternalAudioConnected(bool)` setter directly — same observable effect, zero signature
+      changes at any of the ~24+ `StepOnce(...)` call sites (only `StepOnce`'s own body changed).
+
+      **Classification of the three named candidates:**
+      1. **The per-sample `SetExternalAudioConnected(...)` call inside `Step()`.** REMOVED. Its
+         production argument was a compile-time-`false` local; the call wrote `false` over an
+         already-`false` metadata field, ~96,000x/second, for zero effect. The method itself is
+         unchanged and KEPT (hard requirement) — now invoked only where a value can actually vary
+         (`Fixture::StepOnce`, and a future re-enable derivation).
+      2. **`Step()`'s `externalInputConnected` parameter + `ProcessBlock`'s compile-time-`false`
+         local.** BOTH REMOVED, but only after tracing that `Step()` is a reused method (§6: 2+ uses
+         trivially satisfied, ~9 call sites project-wide) whose parameter had a genuinely live,
+         non-constant consumer in the test corpus — removing it required relocating that one live use
+         to a direct `SetExternalAudioConnected(...)` call rather than deleting the capability.
+      3. **`Step()`'s `externalAudioSample` parameter + the two lines it fed
+         (`externalAudioSource_ = NormalizeBipolarToUnit(...)`, `externalAudioEfSource_ =
+         externalAudioEf_.Process(...)`).** BOTH REMOVED. Unlike candidate 2: grepped every
+         `SourceValue(...)` call across `app/` and found none reading either source's VALUE (only
+         `.connected`), so there was no live consumer to preserve. **Proof the two members stay
+         defined and finite every sample (hard requirement):** both carry non-static data member
+         initializers — `externalAudioSource_ = 0.5f`, `externalAudioEfSource_ = 0.0f` — which C++
+         guarantees run at construction, before `RegisterSources()` hands
+         `Modulators::UpdateModValues()` a pointer to either; with the per-sample writes gone, both
+         stay at these values for the object's whole lifetime (verified by grep: only the two removed
+         lines and the two member declarations reference either name in the file). Both are also
+         BIT-IDENTICAL to what the removed computation always produced: `NormalizeBipolarToUnit(0.0f)
+         == 0.5f` exactly by its own formula, and `dsp::SingleEnvelopeFollower::Process(0.0f)` from a
+         zero-initialized `level` holds exactly `0.0f` forever (`target(0.0) > level(0.0)` is false
+         from sample one). Not an observable behavior change, only a dead-computation removal.
+
+      **§8 enumeration of what removing these three made redundant in turn (not stopping at the
+      first site):**
+      - `externalAudioEf_` (the `dsp::SingleEnvelopeFollower` member) and its `SetSampleRate()` call
+        in `Prepare()`: found, classified, KEPT — `.Process()` is gone but `SetSampleRate()` does no
+        per-sample work (once per `Prepare()`, not the ~96,000/sec pattern this task is about), and
+        deleting it would leave a future re-enable to silently rediscover that the struct's own raw
+        coefficients are correct only near ~2 kHz, not 48 kHz — the same "keep the re-enable
+        infrastructure, remove only the per-sample invocation" logic the hard requirement already
+        applies to `SetExternalAudioConnected`.
+      - `NormalizeBipolarToUnit`: found still reused for VCO sources 6-8 in the same `Step()`; KEPT,
+        unaffected — removing the external-audio call site still leaves it satisfying §6.
+      - Comments asserting the removed per-sample mechanism as current fact: found 9 distinct blocks
+        across 4 files (`FroggersModulation.hpp` x5, `FroggersAppCore.hpp` x3,
+        `FroggersHeadlessTests.cpp` x1, `FroggersModulationTests.cpp` x2) — all rewritten, none left
+        stale.
+      - Direct `Step()` call sites needing a signature update: found 9 (1 production +
+        `Fixture::StepOnce` + 2 direct in `FroggersModulationTests.cpp` + 5 direct in
+        `FroggersMarblesClockTests.cpp`) — changed 9/9.
+
+      **Verification.** `nice make -j2 -C app test`: 10 binaries, 191 tests, 0 failures, 0 warnings,
+      exit 0 — unchanged from this file's own T3.3 baseline. Positive control (OMNI §9.1) reconfirmed
+      firing in the same run as the negative result:
+      `external_audio_sources_stay_registered_and_disconnected_with_zero_input_channels` prints slot
+      0 ("Random S&H 1") `connected = true` alongside slot 13/14 `connected = false` — the
+      metadata-reading mechanism is live, not uniformly false. Separately built and ran
+      `froggers_stop_flush_repro` (absolute target path via `-C app`, not part of `make test`): S1.2's
+      three scenarios (seeded, Flip=0 control, Blend=0 control) all report post-flush peak exactly
+      `0`, 6/6 `[PASS]`, exit 0 — unchanged. Named regression guards reconfirmed PASS by grepping the
+      run's own output: `back_exits_to_parameter_grid_from_level_one`,
+      `back_from_level_two_returns_to_the_same_level_one_parameter_then_back_again_exits_to_grid`,
+      `encoder_cell_never_emits_a_frame_draw_command`,
+      `modulation_header_shown_only_while_drilled_in_and_matches_the_level`,
+      `modulation_header_sits_below_bank_row_and_above_parameter_cells`.

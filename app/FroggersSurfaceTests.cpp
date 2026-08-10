@@ -291,7 +291,7 @@ std::optional<std::size_t> FindNodeIndexById(const synth::ui::NodeTree& tree, co
 
 // --- F.3: layout bounds, no overlap, cell containment -----------------------
 //
-// Task F.3 (openspec/changes/frogg3rs-audio-safety-and-ui-rework/tasks.md)
+// Task F.3 (openspec/changes/archive/2026-08-05-frogg3rs-audio-safety-and-ui-rework/tasks.md)
 // replaced `FroggersPageLayout`'s hand-computed pixel `Bounds` (ContentArea/
 // ScopeArea/GridArea, `FroggersEncoderGridLayout::BoundsForIndex`) with a
 // declarative grid resolved by Sheaf's own layout engine. Every test below

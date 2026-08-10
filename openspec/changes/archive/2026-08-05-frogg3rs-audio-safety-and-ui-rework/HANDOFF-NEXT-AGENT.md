@@ -1,6 +1,6 @@
 # Handoff — next agent, 2026-07-31
 
-> **SUPERSEDED 2026-08-05.** The live change is `../frogg3rs-modulation-truth-and-voicing/`
+> **SUPERSEDED 2026-08-05.** The live change is `../2026-08-06-frogg3rs-modulation-truth-and-voicing/`
 > (`SUPERSESSION-RECORD.md` there maps every open item). Nothing in this file is an instruction
 > anymore.
 

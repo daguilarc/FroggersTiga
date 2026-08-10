@@ -94,15 +94,27 @@ struct Fixture {
         slate.Prepare(48000.0);
     }
 
-    void StepOnce(bool externalConnected = false, float externalSample = 0.0f) {
+    // T6 (openspec/changes/frogg3rs-external-audio-phantom-input/tasks.md):
+    // Step() itself no longer takes an external-audio-sample/-connected
+    // pair (production's only caller always fed a compile-time `0.0f`/
+    // `false`, so that per-sample plumbing was dead weight -- see Step()'s
+    // own comment). This fixture still wants per-call control over
+    // connectedness for the tests below that toggle it (e.g. the "flip
+    // connected back to true" scenario), so it now calls the standalone
+    // SetExternalAudioConnected(bool) setter directly instead of routing
+    // the value through Step()'s argument list -- same observable effect
+    // on Metadata(...).connected, same call-site shape for every one of
+    // this file's ~24 StepOnce(...) callers (none of them change).
+    void StepOnce(bool externalConnected = false) {
         FroggersModulationSlate::VcoDrive drive{0.5f, 0.5f, 0.0f};
+        slate.SetExternalAudioConnected(externalConnected);
         // Packet 8 (design D8/D8a) added a trailing transportQuarterNotes
         // parameter to Step(); std::nullopt here reproduces this file's
         // original packet-6 behavior exactly (no clock plan -> no tick -> no
         // RandomShLane::Increment() call -- see StepClockDrivenLanes's own
         // has_value() guard), since this file is not about clock-driven
         // advance at all (that is FroggersMarblesClockTests.cpp, packet 8).
-        slate.Step(drive, drive, drive, externalSample, externalConnected, std::nullopt);
+        slate.Step(drive, drive, drive, std::nullopt);
     }
 };
 
@@ -161,7 +173,7 @@ TEST_CASE(vco_audio_and_ef_sources_are_wired_to_the_correct_identity_not_just_pr
     // this test drives the slate standalone, without the full parameter
     // model's per-sample loop.
     for (int i = 0; i < 8; ++i) {
-        fx.slate.Step(silent, silent, silent, 0.0f, false, std::nullopt);
+        fx.slate.Step(silent, silent, silent, std::nullopt);
         fx.model.Group().UpdateModValues();
     }
     const float base6 = fx.slate.SourceValue(kModSlotVco1Audio);
@@ -172,7 +184,7 @@ TEST_CASE(vco_audio_and_ef_sources_are_wired_to_the_correct_identity_not_just_pr
     // drive as the baseline loop above.
     bool vco1Moved = false;
     for (int i = 0; i < 8; ++i) {
-        fx.slate.Step(driven, silent, silent, 0.0f, false, std::nullopt);
+        fx.slate.Step(driven, silent, silent, std::nullopt);
         fx.model.Group().UpdateModValues();
         if (std::fabs(fx.slate.SourceValue(kModSlotVco1Audio) - base6) > 0.02f) {
             vco1Moved = true;
@@ -391,8 +403,13 @@ TEST_CASE(external_audio_cells_present_and_inert_with_no_input) {
     }
 
     // Now flip an input on and confirm the pair reports connected (task 6.5:
-    // "flip connected back to true when an input appears").
-    fx.StepOnce(/*externalConnected=*/true, 0.4f);
+    // "flip connected back to true when an input appears"). No sample-value
+    // argument anymore (T6 removed Step()'s external-audio-sample parameter
+    // along with the connected one -- see Fixture::StepOnce's own comment);
+    // this scenario is about the connected bit, and no test in this file
+    // ever reads externalAudioSource_/externalAudioEfSource_'s value
+    // (verified by grep for SourceValue(kModSlotExternalAudio*) -- none).
+    fx.StepOnce(/*externalConnected=*/true);
     REQUIRE_TRUE(fx.slate.Metadata(kModSlotExternalAudio).connected);
     REQUIRE_TRUE(fx.slate.Metadata(kModSlotExternalAudioEf).connected);
 }

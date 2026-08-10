@@ -180,30 +180,34 @@ public:
         // mic, present and open whether or not anything is plugged in, so
         // raising this to 1 does not deliver "a real input channel"; it
         // silently opens the operator's microphone on every launch, unasked.
-        // ProcessBlock's `externalInputConnected` (this class, below) is a
-        // hardcoded `false` for exactly this reason: one requested channel
-        // that is always the wrong one is not a signal worth deriving a
-        // connected state from. Back to 0: no device, default or otherwise,
-        // opens at all, and the two external-audio slate slots (13/14,
-        // design D5) are disconnected by construction, not by a separate
-        // flag layered on top.
+        // ProcessBlock no longer threads a named `externalInputConnected`
+        // local at all (T6 deleted it: nothing ever varied it, since this
+        // requests zero channels) -- one requested channel that is always
+        // the wrong one was never a signal worth deriving a connected state
+        // from. Back to 0: no device, default or otherwise, opens at all,
+        // and the two external-audio slate slots (13/14, design D5) are
+        // disconnected by construction, not by a separate flag layered on
+        // top.
         //
         // What would justify raising this again: a REAL routed-input signal
         // surfaced by the host (UPSTREAM-SHEAF-ASK.md item 8, asks 1/2 --
         // still open), not a Sheaf pin bump -- the defect and this fix both
         // stand entirely on this call's contract, unrelated to which Sheaf
-        // commit is pinned (proposal.md §0/§3). Re-enabling is then TWO
-        // coupled edits together -- this value AND `externalInputConnected`'s
-        // derivation in ProcessBlock -- never one integer alone; see that
-        // function's own comment for why a single-edit re-enable is exactly
-        // what this change exists to prevent.
+        // commit is pinned (proposal.md §0/§3). Re-enabling is then several
+        // coupled edits together, deliberately, never one integer alone --
+        // this value, together with a real per-sample connected/sample
+        // derivation fed into FroggersModulation.hpp's `Step()`/
+        // `SetExternalAudioConnected` (see ProcessBlock's own comment for
+        // what T6 removed there) -- so a single-edit re-enable, exactly what
+        // this change exists to prevent, stays impossible.
         config.numAudioInputs = 0;
         config.numAudioOutputs = 2;
         config.preferredSampleRate = 48000.0;
         config.preferredBlockSize = 256;
         config.uiWidth = 900;
-        // DEMOTED by task F.3 (openspec/changes/frogg3rs-audio-safety-and-
-        // ui-rework/tasks.md, 2026-08-04/05): this literal is now just the
+        // DEMOTED by task F.3 (openspec/changes/archive/
+        // 2026-08-05-frogg3rs-audio-safety-and-ui-rework/tasks.md,
+        // 2026-08-04/05): this literal is now just the
         // window's INITIAL size, not a derived cross-check. Before F.3 it
         // was required to equal `FroggersPageLayout::RequiredHeight()`
         // (hand-maintained in sync, verified by a dedicated test) because
@@ -649,19 +653,29 @@ public:
         // impossible branches) rather than kept behind a flag that a future
         // edit could silently re-arm by raising one integer.
         //
-        // `externalInputConnected` stays a named value -- not inlined as a
-        // bare `false` where it is passed into `modulation_.Step(...)` below
-        // -- so this reasoning can sit at its one declaration rather than at
-        // a call site burying it among five other arguments. Step() forwards
-        // it into FroggersModulation.hpp's `SetExternalAudioConnected`,
-        // which is what keeps slots 13/14 REGISTERED and present in the
-        // slate (inert, not absent -- see froggers-modulation-slate
-        // spec.md's "present but inert" requirement). Re-enabling requires
-        // writing a real derivation against a routed signal once upstream
-        // exposes one, together with raising `Config().numAudioInputs` back
-        // up -- two coupled edits, deliberately, never a single flip that
-        // could silently re-arm this bug.
-        const bool externalInputConnected = false;
+        // T6 (openspec/changes/frogg3rs-external-audio-phantom-input/
+        // tasks.md, postflight finding): `externalInputConnected` USED to
+        // stay a named local here -- not inlined as a bare `false` -- passed
+        // into `modulation_.Step(...)` below, which forwarded it into
+        // FroggersModulation.hpp's `SetExternalAudioConnected` every sample:
+        // ~96,000 writes/second of a compile-time-`false` constant over a
+        // metadata field `RegisterSources()` already sets to `false` at
+        // construction. Deleted: Step() no longer takes an external-input-
+        // connected parameter at all (see its own comment), and nothing
+        // here needs to call SetExternalAudioConnected() again in
+        // production -- slots 13/14 stay REGISTERED and present (inert, not
+        // absent -- see froggers-modulation-slate spec.md's "present but
+        // inert" requirement) purely from RegisterSources()'s own
+        // `connected = false` registration, unconditionally, for the
+        // object's whole lifetime. Re-enabling still requires raising
+        // `Config().numAudioInputs` back up together with a real derivation
+        // against a routed signal, same as before T6 -- but that derivation
+        // must now also re-thread a real per-sample sample value and
+        // connected state into Step() (both deleted here as dead alongside
+        // this local, since neither ever varied) and call
+        // SetExternalAudioConnected() with the real value, rather than
+        // relying on a local that no longer exists. Never a single flip
+        // that could silently re-arm this bug.
 
         // Task 8.1 (design D8/D8a): source #6's tempo-following recompute
         // happens ONCE PER BLOCK, not per sample (design D8's own wording),
@@ -684,16 +698,13 @@ public:
 
         for (std::size_t frame = 0; frame < block.numFrames; ++frame) {
             const std::uint64_t absoluteOutputSample = block.startSample + frame;
-            // Was `externalInputConnected ? block.inputs[0][frame] : 0.0f`.
-            // T2.2's amendment names this `block.inputs[0]` read (distinct
-            // from the one inside the now-deleted `externalInputHasChannel`)
-            // as the second provably-dead branch: `externalInputConnected`
-            // is unconditionally `false` (this function's opening comment),
-            // so the true branch could never run, and `Config()` requests
-            // zero input channels, so `block.inputs[0]` was never a channel
-            // this app opened in the first place. Deleted rather than left
-            // guarded by a condition that can never be true.
-            const float externalAudioSample = 0.0f;
+            // Was `externalInputConnected ? block.inputs[0][frame] : 0.0f`,
+            // then (T2.2) `const float externalAudioSample = 0.0f;` passed
+            // into `modulation_.Step(...)` below. T6 deletes this local too:
+            // Step() no longer takes an external-audio-sample parameter at
+            // all (see its own comment) now that its only production value
+            // was provably always `0.0f` -- `Config()` requests zero input
+            // channels, so there was never a channel for this to carry.
 
             // Task 6b (design D17, revised 2026-07-27): the ASR gate follows
             // the master clock's transport quarter-note pulse -- see
@@ -871,8 +882,7 @@ public:
             // for StepClockDrivenLanes's own tick-phase arithmetic -- see
             // Step()'s own comment.
             if (transportRunningNow) {
-                modulation_.Step(vcoDrive(0), vcoDrive(1), vcoDrive(2), externalAudioSample,
-                                  externalInputConnected, transportQuarterNotes);
+                modulation_.Step(vcoDrive(0), vcoDrive(1), vcoDrive(2), transportQuarterNotes);
             }
 
             parameters_.ProcessSample(absoluteOutputSample);

@@ -360,7 +360,6 @@ public:
     // D16's cross-VCO pitch default). Zero cross-VCO terms (design D7): each
     // Vco::Process call only ever reads its OWN three knobs.
     void Step(const VcoDrive& vco1, const VcoDrive& vco2, const VcoDrive& vco3,
-              float externalAudioSample, bool externalInputConnected,
               std::optional<double> transportQuarterNotes) {
         // Task 8.1 (design D8/D8a): tick each of the five X-style lanes at
         // its own rate against the SAME already-computed transport
@@ -405,21 +404,41 @@ public:
         // Noise (slot 12); already [0,1] (DspNoise.hpp).
         noiseProcessor_.Process();
 
-        // External audio (slots 13-14, task 6.5). Always compute a valid
-        // value from whatever sample is given (0.0f when no channel is
-        // present) so the registered pointer is never stale; `connected`
-        // (flipped below), not the pointed-to value, is what marks the pair
-        // inert per design D5's "connected = false" mechanism.
-        externalAudioSource_ = NormalizeBipolarToUnit(externalAudioSample);
-        externalAudioEfSource_ = externalAudioEf_.Process(externalAudioSample);
-        SetExternalAudioConnected(externalInputConnected);
+        // External audio (slots 13-14) -- deliberately NOT stepped here.
+        // T6 (openspec/changes/frogg3rs-external-audio-phantom-input/
+        // tasks.md): this used to recompute externalAudioSource_ /
+        // externalAudioEfSource_ from an `externalAudioSample` parameter and
+        // call SetExternalAudioConnected(externalInputConnected) every
+        // sample, but FroggersAppCore::ProcessBlock's only production caller
+        // fed a compile-time `0.0f`/`false` (Config() now requests zero
+        // audio input channels -- see that class's own comment), so this
+        // was recomputing the same two constants ~96,000x/second.
+        // externalAudioSource_/externalAudioEfSource_ (below) stay at their
+        // NSDMI defaults forever now: 0.5f == NormalizeBipolarToUnit(0.0f)
+        // exactly, and 0.0f == what a zero-initialized SingleEnvelopeFollower
+        // fed a constant 0.0f holds forever (target <= level from sample
+        // one, so `level` never moves off its own 0.0f default --
+        // dsp/EnvelopeFollowers.hpp's Process()) -- bit-identical to what
+        // this used to compute every sample, and still a defined, finite
+        // value for Modulators::UpdateModValues() to dereference regardless
+        // (design D5's "present but inert" contract). `.connected` likewise
+        // stays whatever RegisterSources() set (false, below) -- nothing
+        // here calls SetExternalAudioConnected() anymore. That method is
+        // KEPT, unchanged, as the writer a future re-enable will need (see
+        // FroggersAppCore.hpp's Config()/ProcessBlock comments for what
+        // re-enabling requires); a caller that wants connected=true today
+        // (e.g. a test) calls it directly instead of through Step() --
+        // see FroggersModulationTests.cpp's Fixture::StepOnce.
     }
 
     // task 6.5: "Flip connected back to true when an input appears" -- the
     // cell stays pushed with a null parameter whenever this is false
     // (Sheaf's own OpenModulationView/EnsureModulationDepthParameter
     // behavior, ParameterModulation.cpp:2784-2786,2843-2852), so the slate
-    // never changes size or order regardless of cabling.
+    // never changes size or order regardless of cabling. T6: no longer
+    // called per-sample from Step() (production never had a varying value
+    // to feed it); kept as the standalone writer a real re-enable
+    // derivation, or a test wanting connected=true, calls explicitly.
     void SetExternalAudioConnected(bool connected) {
         group_->GetModulators().Metadata(kModSlotExternalAudio).connected = connected;
         group_->GetModulators().Metadata(kModSlotExternalAudioEf).connected = connected;
@@ -579,10 +598,15 @@ private:
             {"Noise", "Noise", synth::Color::White, &noiseVisualizer_, true});
 
         // task 6.5: external audio pair registered `connected = false`
-        // initially (task 2.6: the app now requests one input channel, but
-        // whether the host actually has one attached is only known per
-        // AudioBlock, i.e. per FroggersApp::ProcessBlock call -- Step()
-        // above flips this every sample from the block's real state).
+        // initially. As of frogg3rs-external-audio-phantom-input's T1/T2/T6,
+        // this is not merely an initial value that Step() later refreshes --
+        // `Config()` requests ZERO audio input channels, and T6 removed the
+        // per-sample call that used to re-derive this every sample (see
+        // Step()'s own comment), so nothing in this class calls
+        // SetExternalAudioConnected() again in production. `false` set here
+        // is permanent for the object's lifetime until a future re-enable
+        // writes a real derivation (FroggersAppCore.hpp's Config()/
+        // ProcessBlock comments say what that requires).
         {
             const std::array<float*, 1> src{&externalAudioSource_};
             group_->SetModulationSource(kModSlotExternalAudio, src,
@@ -614,6 +638,15 @@ private:
     dsp::Vco vco2_;
     dsp::Vco vco3_;
     dsp::VcoEnvelopeFollowers vcoEnvelopeFollowers_;
+    // T6: .Process() is no longer called (Step() no longer steps external
+    // audio -- see that method's own comment); KEPT, along with its
+    // SetSampleRate() call in Prepare() below, as re-enable infrastructure
+    // rather than removed -- neither does per-sample work, so neither was
+    // what the T6 finding was about, and deleting them would leave a future
+    // re-enable to rediscover the correct attack/release coefficients
+    // (SetSampleRate's coefficients are sample-rate-dependent; the struct's
+    // own raw defaults are only valid near ~2kHz, not 48kHz) instead of
+    // finding them already wired.
     dsp::SingleEnvelopeFollower externalAudioEf_;
 
     std::array<dsp::RandomShLane, kFroggersNumRandomShLanes> randomShLanes_;
@@ -665,6 +698,11 @@ private:
     float vco1EfSource_ = 0.0f;
     float vco2EfSource_ = 0.0f;
     float vco3EfSource_ = 0.0f;
+    // T6: these two NSDMI values are now permanent, not merely initial --
+    // Step() no longer writes either (see its own comment). Both values are
+    // exactly what the removed per-sample computation always produced from
+    // its permanently-0.0f input, so this is not an observable behavior
+    // change.
     float externalAudioSource_ = 0.5f;
     float externalAudioEfSource_ = 0.0f;
 };
