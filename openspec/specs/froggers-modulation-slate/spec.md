@@ -69,7 +69,18 @@ The app SHALL permit drilling from a top-level parameter into its modulation dep
 Note: a one-level pop is deliberately **not** provided. The framework's deselect returns to the parameter grid, and the call that would re-open an intermediate level is not part of its public surface, so synthesizing a pop would mean working around a private API. Full exit from any level is the accepted behavior (design D5).
 
 ### Requirement: External-audio sources stay present but inert when unavailable
-When no external audio input is available, the two external-audio modulation sources SHALL be marked **not connected**. They SHALL remain present in the slate, SHALL be inert, SHALL render as disconnected, and SHALL NOT be randomized. They SHALL NOT be hidden, and the slate SHALL NOT change size.
+When no external audio input is available, the two external-audio modulation sources SHALL be
+marked **not connected**. They SHALL remain present in the slate, SHALL be inert, SHALL render as
+disconnected, and SHALL NOT be randomized. They SHALL NOT be hidden, and the slate SHALL NOT change
+size.
+
+**Availability is defined narrowly, and a host-opened device is not enough.** A channel merely
+existing because the host opened some device — including a platform-default device the operator
+never chose — SHALL NOT by itself make a source "available". Availability requires a signal that the
+operator affirmatively routed audio in. Until the host exposes that signal to the app, the app SHALL
+request **zero** audio input channels, so that no device — default or otherwise — is ever opened
+without an explicit operator action, and the two sources are disconnected **by construction** rather
+than by a compensating flag that a future edit could silently invalidate.
 
 #### Scenario: Disconnection is the inert state, not a removal
 - **WHEN** an external-audio source is unavailable
@@ -77,8 +88,15 @@ When no external audio input is available, the two external-audio modulation sou
 - **THEN** its grid cell is still present, carrying no depth parameter
 - **THEN** that cell renders in the framework's standard disconnected appearance
 
+#### Scenario: A host-opened default device does not count as available
+- **WHEN** the app requests zero audio input channels
+- **THEN** no input device, default or otherwise, is opened by the host
+- **THEN** both external-audio sources are disconnected as a direct consequence of zero channels
+  existing, independent of any separate opt-out flag
+
 #### Scenario: Reconnection restores it in place
-- **WHEN** an external audio input becomes available
+- **WHEN** an external audio input becomes available — the host exposes a signal that the operator
+  affirmatively routed audio in, and the app requests at least one channel again
 - **THEN** the source is marked connected again
 - **THEN** its depth parameter materializes on next use, in the same cell position
 
