@@ -427,13 +427,13 @@ inherited claims either. It should have.
       nothing needs to be labeled 'back' there, that implementation sucks."* A badge on the one cell
       whose job is to exit a level conflated two facts (current depth, and "this cell goes back")
       into one label.
-      **Relocation 2 — STEP 1 (2026-08-09, working tree, uncommitted) — is the current
-      implementation** and matches the operator's own geometric description: a dedicated header
+      **Relocation 2 — STEP 1 (2026-08-09, `a70d1ac`) — is the current implementation** and matches
+      the operator's own geometric description: a dedicated header
       **row**, `FroggersNodeIds::kModulationHeader` (`app/FroggersUiSurface.hpp:133`), emitted by
       `AppendModulationHeaderRow()` (`app/FroggersUiSurface.hpp:966-985`) as row 2 of the right
       block's CELL MAP — `FroggersCellMap::RightKind::Header` in `kRightRows`
       (`app/FroggersUiSurface.hpp:336`, `:360-368`), between the bank tabs row and the first row of
-      parameter cells. It is a `Draw` node with no action attached to any button or cell,
+      parameter cells. It is a `Draw` node carrying no action, attached to no button or cell:
       `Extent::Px(26)` on the main axis and `Extent::Weight(1)` across, so it spans the grid block's
       full width at a fixed height; content is `"Modulation Level " + <level>` (level from
       `app_->DrillLevel()`, `app/FroggersAppCore.hpp:452`) centred at 20px on an opaque band, drawn
@@ -444,8 +444,8 @@ inherited claims either. It should have.
       required false tree-wide. Tests:
       `modulation_header_shown_only_while_drilled_in_and_matches_the_level` and
       `modulation_header_sits_below_bank_row_and_above_parameter_cells`
-      (`app/FroggersSurfaceTests.cpp`), and the spec delta's *"The drill-level indicator is a
-      full-width header row above the modulation parameters"*. **Do not restore either earlier
+      (`app/FroggersSurfaceTests.cpp`), and the spec delta's *"The drill level is shown as a header
+      bar above the modulation parameters"*. **Do not restore either earlier
       placement from this entry** — that loop has now cost four sessions.
 - [x] **S5.3 (DONE) — For BOTH: check whether the claimed commit did what its message says**, and whether
       a later commit reverted or overwrote it. Report landed / partial / overwritten per commit.
