@@ -414,6 +414,39 @@ inherited claims either. It should have.
       / `9d0802c` (`kMaxDrillLevel`; `wasLevelTwo`/`level1Encoder_` removed).
 - [x] **S5.2 (DONE) — The `Modulation Level N` header is not visible.** Operator: *"i still don't see a
       header label counting the drilldown levels."* Recorded as landed in `3a9e8c5`.
+      **PLACEMENT SUPERSEDED TWICE — the DONE above is a dated record of what was tried, not a
+      description of the shipped UI.** `3a9e8c5` restyled the header on the **VCO scope cell**, and
+      the packet after it proved that header is appended last and never overdrawn within that node.
+      Each was correct about the property it checked and neither made anything visible: the scope
+      cell is a physically disjoint column from the 16-slot grid the operator reads while drilled in
+      (computed bounds in S4.5 below — not repeated here, OMNI §8).
+      **Relocation 1 (2026-08-08, `e9ef955`) — the Target/Back cell's `BACK L<N>` badge — was
+      visible and was REJECTED ON SUBSTANCE**, which containment-in-the-grid could not have caught:
+      *"i don't know why you thought i wanted the header to be 'Back' and by the back button,
+      instead of a HEADER above all the modulation parameters, below the bank button row?? …
+      nothing needs to be labeled 'back' there, that implementation sucks."* A badge on the one cell
+      whose job is to exit a level conflated two facts (current depth, and "this cell goes back")
+      into one label.
+      **Relocation 2 — STEP 1 (2026-08-09, working tree, uncommitted) — is the current
+      implementation** and matches the operator's own geometric description: a dedicated header
+      **row**, `FroggersNodeIds::kModulationHeader` (`app/FroggersUiSurface.hpp:133`), emitted by
+      `AppendModulationHeaderRow()` (`app/FroggersUiSurface.hpp:966-985`) as row 2 of the right
+      block's CELL MAP — `FroggersCellMap::RightKind::Header` in `kRightRows`
+      (`app/FroggersUiSurface.hpp:336`, `:360-368`), between the bank tabs row and the first row of
+      parameter cells. It is a `Draw` node with no action attached to any button or cell,
+      `Extent::Px(26)` on the main axis and `Extent::Weight(1)` across, so it spans the grid block's
+      full width at a fixed height; content is `"Modulation Level " + <level>` (level from
+      `app_->DrillLevel()`, `app/FroggersAppCore.hpp:452`) centred at 20px on an opaque band, drawn
+      only while level > 0 — at level 0 the node is still emitted, with zero draw commands, so the
+      reserved height keeps sibling geometry from jumping on drill-in/out. Neither `kVcoScope` nor
+      the Target/Back cell carries this text any more (a third rendering of the one fact would be
+      OMNI §8 duplication); both removals are asserted, and `AnyDrawnTextContains(tree, "BACK")` is
+      required false tree-wide. Tests:
+      `modulation_header_shown_only_while_drilled_in_and_matches_the_level` and
+      `modulation_header_sits_below_bank_row_and_above_parameter_cells`
+      (`app/FroggersSurfaceTests.cpp`), and the spec delta's *"The drill-level indicator is a
+      full-width header row above the modulation parameters"*. **Do not restore either earlier
+      placement from this entry** — that loop has now cost four sessions.
 - [x] **S5.3 (DONE) — For BOTH: check whether the claimed commit did what its message says**, and whether
       a later commit reverted or overwrote it. Report landed / partial / overwritten per commit.
       Fix at the real root cause; do not add a second mechanism beside a broken one.
@@ -458,12 +491,21 @@ inherited claims either. It should have.
       badges changing on that page. **Visually.**
 - [ ] **S4.4** Badge density reads as mode 2 at every level, and a drilled parameter shows only
       sources that are actually modulating. **Visually.**
-- [ ] **S4.5 — NOTE THE PLACEMENT CHANGED 2026-08-08.** The level indicator is on the **Target/Back
-      cell**, reading `BACK L<N>`, NOT on the VCO scope cell. It lived on the scope cell through two
-      failed fixes: `kVcoScope` resolves to `{16, 16, 284.67, 181.33}` in the LEFT block while the
-      modulation grid resolves to `{314.67, 16, 569.33, 600}` in `kRightBlock` — disjoint columns,
-      14px apart. It rendered correctly the entire time, in a column the operator never looks at
-      while reading the grid. **Do not move it back.** Original wording follows:
+- [ ] **S4.5 — NOTE THE PLACEMENT CHANGED TWICE; the current one is STEP 1, 2026-08-09.** The level
+      indicator is its own **header row** spanning the grid's width, below the bank tabs row and
+      above the first row of parameter cells, reading `Modulation Level <N>` centred on an opaque
+      band (`FroggersNodeIds::kModulationHeader` / `AppendModulationHeaderRow()`,
+      `app/FroggersUiSurface.hpp:133`, `:966-985`). It is NOT on the VCO scope cell and NOT on the
+      Target/Back cell, and nothing on the surface reads `BACK` any more. It lived on the scope cell
+      through two failed fixes: `kVcoScope` resolves to `{16, 16, 284.67, 181.33}` in the LEFT block
+      while the modulation grid resolves to `{314.67, 16, 569.33, 600}` in `kRightBlock` — disjoint
+      columns, 14px apart. It rendered correctly the entire time, in a column the operator never looks
+      at while reading the grid. It then spent one packet as a `BACK L<N>` badge on the Target/Back
+      cell — visible, and rejected on substance (S5.2 above). **Do not move it back to either.**
+      Note for this visual pass: inserting one fixed-height row cost the six weighted right-block
+      rows some height even though no weight value changed (`AppendModulationHeaderRow()`'s own
+      comment computes 88.33px → 81.67px each at the real 900×632 config, ~7.5%), so confirm the
+      encoder grid still reads correctly at the target window size. Original wording follows:
       Drilldown reaches level 3, `Back()` pops one level at a time, and each level shows
       its `Modulation Level N` header. **Visually.**
 - [ ] **S4.6** Sustain at minimum is quiet but audible, and audio-rate modulation of an envelope

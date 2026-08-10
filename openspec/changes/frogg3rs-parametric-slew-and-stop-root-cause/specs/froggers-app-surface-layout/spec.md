@@ -1,54 +1,65 @@
 # Delta — `froggers-app-surface-layout`
 
-Two independent, operator-reported UI defects (`tasks.md` S5.2, S6), both scoped to per-cell chrome
-inside the already-resolved 6×6 grid layout. Neither disturbs the grid's own row/column weights,
-margins, or gaps.
+Two independent, operator-reported UI defects (`tasks.md` S5.2, S6). S6 is per-cell chrome inside the
+already-resolved grid. S5.2, as of STEP 1 (2026-08-09), is not: on the operator's own instruction the
+drill-level indicator now occupies a **dedicated row** in the right block, which supersedes the
+earlier "must not disturb the 6×6 grid" constraint for this one case. Neither defect's fix changes any
+row or column **weight**, margin, or gap; the added row is the block's only fixed-size row, so the
+pre-existing weighted rows simply divide the space that remains.
 
 ## ADDED Requirements
 
-### Requirement: The drill-level indicator renders inside the region the operator is looking at
-Whenever the active modulation drill level is greater than 0, the drill-level indicator SHALL resolve
-to bounds fully contained within the encoder-grid block — the region that displays the modulation
-sources during drill-in — and SHALL be drawn on the Target/Back cell, which Sheaf's
-`OpenModulationView` places at `physicalLayout.back()` at every drill depth. It SHALL be drawn on an
-opaque backing band, appended last so it paints on top of that cell's own chrome. At drill level 0,
-no indicator SHALL be drawn.
+### Requirement: The drill level is shown as a header bar above the modulation parameters
+Whenever the active modulation drill level is greater than 0, a header bar SHALL render across the
+full width of the encoder-grid block, positioned BELOW the bank-tabs row and ABOVE the first row of
+modulation-parameter cells, reading `"Modulation Level N"`. It SHALL be its own dedicated
+non-interactive row (`FroggersCellMap::RightKind::Header`, node `kModulationHeader`), structurally
+independent of any button or parameter cell. Its reserved space SHALL persist at drill level 0 —
+drawn empty — so entering or leaving a drilldown never reflows the bank tabs or the parameter grid.
+At drill level 0 no text SHALL be drawn.
 
-**This requirement is written against a defect that took three attempts to fix, and the wording is
-deliberate: containment in the visible region is the property, not existence in the draw tree.**
-The indicator originally lived on the VCO scope cell, justified by that being the only
-non-interactive cell in the grid. Two successive fixes proved it existed, then proved it was appended
-last and not overdrawn within its node — and the operator still could not see it. The reason,
-measured at the real window size: `kVcoScope` resolves to `{16, 16, 284.67, 181.33}`, in the LEFT
-block, while the modulation-source grid resolves to `{314.67, 16, 569.33, 600}` in `kRightBlock`.
-Two physically disjoint columns separated by a 14px gap. The header rendered correctly the whole
-time, in a column the operator's attention never crosses while reading the grid.
+**Operator, 2026-08-08, rejecting the third attempt:** *"i don't know why you thought i wanted the
+header to be 'Back' and by the back button, instead of a HEADER above all the modulation parameters,
+below the bank button row?? ... nothing needs to be labeled 'back' there, that implementation
+sucks."* A header is a title bar over the content it titles. Nothing in this region is labelled
+"Back".
 
-**Do not move this back to the scope cell.** Existence and non-overdraw are both insufficient
-assertions; the test that encodes this requirement asserts geometric containment in the grid region.
+**This requirement took four attempts, and each failed assertion is recorded so the sequence is not
+repeated.** (1) The indicator lived on the VCO scope cell; the test asserted the text command
+EXISTS. (2) It was restyled; the test asserted it was appended last and NOT OVERDRAWN within its
+node. (3) It moved to the Target/Back cell; the test asserted CONTAINMENT in the grid block. Each
+assertion was true and each shipped something the operator rejected. The measured reason (1) and (2)
+were invisible at all: `kVcoScope` resolves to `{16, 16, 284.67, 181.33}` in the LEFT block, while
+the modulation grid resolves to `{314.67, 16, 569.33, 600}` in `kRightBlock` — disjoint columns
+14px apart. Attempt (3) was visible and was rejected on SUBSTANCE, which no geometric assertion
+could have caught: a badge on the one cell whose job is to LEAVE a level conflated two different
+facts.
 
-Note the cell's built-in `shortLabel` is NOT a viable carrier: it renders through a 14-segment
+**Do not move this onto a cell.** A header is a bar above the content it titles; that is the
+requirement, and the test asserts its position relative to the bank row and the parameter rows.
+
+Note a cell's built-in `shortLabel` was also rejected as a carrier: it renders through a 14-segment
 display capped at 4 characters (`EncoderDraw.hpp`'s `UpperShortLabel(..., maxChars=4)`), so longer
 text truncates silently — the same present-but-not-legible failure this requirement exists to stop.
 
-#### Scenario: No indicator at the top level
+#### Scenario: No level text at the top level
 - **WHEN** the operator has not drilled into any parameter's modulation view
-- **THEN** no drill-level indicator is drawn
+- **THEN** the header row is present but draws no level text
+- **THEN** the bank-tabs row and the parameter grid occupy the same bounds as when drilled in
 
-#### Scenario: The indicator names the current level and is inside the visible grid region
+#### Scenario: The header sits between the bank tabs and the parameters
 - **WHEN** the operator drills in and the modulation-source grid is displayed
-- **THEN** the indicator names the current drill level
-- **THEN** its resolved absolute bounds are fully contained within the encoder-grid block's own
-  resolved bounds, asserted by computed containment rather than by the command's existence
-  (`FroggersSurfaceTests.cpp`'s
-  `drill_back_badge_resolves_inside_the_grid_region_the_operator_actually_sees`)
-- **THEN** a populated modulation-source cell also resolves inside that same region, proving the
-  region under test is the real one and the assertion cannot pass vacuously (OMNI §9.1)
+- **THEN** the header names the current drill level
+- **THEN** its resolved absolute bounds lie below the bank-tabs row's bottom edge and above the
+  first parameter row's top edge, asserted by computed geometry rather than by the command's
+  existence or by its mere containment in the grid block -- three prior attempts each asserted a
+  weaker property and each shipped an indicator the operator could not see
+- **THEN** the bank-tabs row and at least one populated parameter cell resolve where the test claims
+  they do, so the comparison is against real geometry and cannot pass vacuously (OMNI 9.1)
 
-#### Scenario: The indicator does not disturb the grid
-- **WHEN** the indicator and its backing band are drawn
-- **THEN** they are confined to the Target/Back cell's own already-resolved bounds
-- **THEN** no row, column weight, margin, or gap of the encoder grid changes
+#### Scenario: Nothing in the grid is labelled "Back"
+- **WHEN** the tree is built at any drill level
+- **THEN** no drawn text anywhere in the tree contains "BACK"
 
 ### Requirement: Encoder cells render without a card frame that collides with the modulation ring
 Encoder cells in the sixteen-slot grid SHALL render without the framework's default rounded-rect card

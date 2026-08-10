@@ -125,6 +125,12 @@ inline constexpr const char* kRandomizePage = "froggers.randomize.page";
 inline constexpr const char* kRandomizeRow = "froggers.layout.right.randomize";
 // Row 1 of the right block: the six bank-select tabs.
 inline constexpr const char* kBankTabsRow = "froggers.layout.right.banks";
+// STEP 1 (operator, 2026-08-09, fourth session on the same complaint): a
+// dedicated header ROW, inserted between the bank tabs row and the first
+// encoder row -- see AppendModulationHeaderRow()'s own comment for the full
+// placement investigation and FroggersCellMap::RightKind::Header for its
+// place in the topology table.
+inline constexpr const char* kModulationHeader = "froggers.layout.right.header";
 
 inline constexpr const char* kSceneBlend = "froggers.scene.blend";
 // Row 5 of the left block: the Scene-blend slider with its label BELOW it
@@ -287,27 +293,47 @@ struct FroggersEncoderGridLayout {
 static_assert(FroggersEncoderGridLayout::kEncoderCount == kFroggersSlotsPerBank,
               "the grid must render exactly the 16 physical encoder slots FroggersParameterModel wires up");
 
-// The operator-approved 6-column x 6-row topology (tasks.md F.3 CELL MAP,
-// 2026-08-04/05), kept as PURE DATA -- no builder calls, no layout math --
-// separate from the emission code that interprets it (AppendLeftBlock()/
-// AppendRightBlock() below). This is what a future mobile (tasks.md §H) or
-// VST (§I) topology would replace with a DIFFERENT table consumed by
-// analogous emission code, without forking this surface (§8: one definition
-// site for "what goes where").
+// The operator-approved topology (tasks.md F.3 CELL MAP, 2026-08-04/05; the
+// right column grew a 7th row in STEP 1, 2026-08-09 -- see below), kept as
+// PURE DATA -- no builder calls, no layout math -- separate from the
+// emission code that interprets it (AppendLeftBlock()/AppendRightBlock()
+// below). This is what a future mobile (tasks.md §H) or VST (§I) topology
+// would replace with a DIFFERENT table consumed by analogous emission code,
+// without forking this surface (§8: one definition site for "what goes
+// where").
 //
-//   Row | L1                          | L2  | E1 E2 E3 E4
-//   1   | Scope (spans L1-L2, rows1-2)| <-  | Bank tabs x6 (span E1-E4)
-//   2   | (scope)                     | <-  | slot 0 | slot 1 | slot 2 | slot 3
-//   3   | Play                        | Stop| slot 4 | slot 5 | slot 6 | slot 7
-//   4   | Scene 1                     | Scene 2 | slot 8 | slot 9 | slot 10 | slot 11
-//   5   | Scene blend (label below)   | <-  | slot 12 | slot 13 | slot 14 CRIS | slot 15 CRNC
-//   6   | BPM (label below)           | <-  | Randomize page (span 2) | Randomize all (span 2)
-// Rows 5 and 6 are the same shape on purpose (task F.6): both labels below,
-// both sliders one declared width. The CELL MAP originally had row 6's label
-// trailing, per B12; F.6 superseded that -- see AppendLabelledSlider().
+// The left and right columns are two INDEPENDENT stacked Columns (siblings
+// under the outer split Row, AppendLeftBlock()/AppendRightBlock()), not one
+// shared grid: each has its own row count and its own gap total, so a given
+// row index does not land at the same y-coordinate in both (the left
+// column's 5 rows split 6 weight-units across 4 gaps; the right column's,
+// after STEP 1, splits 6 weight-units plus one fixed-height row across 6
+// gaps). The two tables below are listed side by side for readability, not
+// because their rows align pixel-for-pixel.
+//
+//   LEFT (L1-L2, 5 rows, weights sum to 6):
+//   1 | Scope (weight 2, spans rows 1-2's worth of height)
+//   2 | Play | Stop
+//   3 | Scene 1 | Scene 2
+//   4 | Scene blend (label below)
+//   5 | BPM (label below)
+//   Rows 4 and 5 are the same shape on purpose (task F.6): both labels
+//   below, both sliders one declared width. The CELL MAP originally had row
+//   5's label trailing, per B12; F.6 superseded that -- see
+//   AppendLabelledSlider().
+//
+//   RIGHT (E1-E4, 7 rows -- STEP 1 added row 2, all others renumbered down
+//   by one from the pre-STEP-1 table):
+//   1 | Bank tabs x6 (span E1-E4)
+//   2 | Modulation header (span E1-E4, fixed height, empty at drill level 0)
+//   3 | slot 0 | slot 1 | slot 2 | slot 3
+//   4 | slot 4 | slot 5 | slot 6 | slot 7
+//   5 | slot 8 | slot 9 | slot 10 | slot 11
+//   6 | slot 12 | slot 13 | slot 14 CRIS | slot 15 CRNC
+//   7 | Randomize page (span 2) | Randomize all (span 2)
 struct FroggersCellMap {
     enum class LeftKind { Scope, Transport, Scenes, SceneBlend, Bpm };
-    enum class RightKind { BankTabs, EncoderRow, Randomize };
+    enum class RightKind { BankTabs, Header, EncoderRow, Randomize };
 
     struct LeftRow {
         LeftKind kind;
@@ -331,8 +357,9 @@ struct FroggersCellMap {
         {LeftKind::Bpm, 1.0f},
     }};
 
-    static constexpr std::array<RightRow, 6> kRightRows = {{
+    static constexpr std::array<RightRow, 7> kRightRows = {{
         {RightKind::BankTabs, 0},
+        {RightKind::Header, 0},
         {RightKind::EncoderRow, 0},
         {RightKind::EncoderRow, 4},
         {RightKind::EncoderRow, 8},
@@ -573,7 +600,7 @@ private:
     // drilled in.
     //
     // Computed (FroggersSurfaceTests.cpp's
-    // drill_back_badge_resolves_inside_the_grid_region_the_operator_actually_sees,
+    // modulation_header_sits_below_bank_row_and_above_parameter_cells,
     // and the pre-existing scope_and_grid_regions_do_not_overlap_at_target_
     // window_size / scope_sits_in_a_left_column_with_the_grid_to_its_right),
     // not eyeballed: at the real 900x632 config this cell resolves to
@@ -587,16 +614,29 @@ private:
     // this node was never going to be seen by an operator looking at that
     // one -- existence and non-overdraw are not visibility.
     //
-    // The indicator now lives on the Target/Back cell instead
-    // (AppendEncoderCell below): physically inside the region above,
-    // present at every drill depth by construction (Sheaf's
-    // `Bank::OpenModulationView` always places the selected parameter's own
-    // cell at `physicalLayout.back()`), and exactly where the operator's
-    // attention already is when they think about going back a level. This
-    // node keeps NO second copy of that text: two renderings of the same
-    // one fact (the current drill level) would be OMNI §8 duplication of
-    // that concept, and the copy that would remain here is the one already
-    // proven unreachable.
+    // The indicator lived on the Target/Back cell next (AppendEncoderCell),
+    // physically inside the region above and present at every drill depth
+    // by construction -- but the operator rejected THAT placement too
+    // (2026-08-09, fourth session): "i don't know why you thought i wanted
+    // the header to be 'Back' and by the back button, instead of a HEADER
+    // above all the modulation parameters, below the bank button row??
+    // ... nothing needs to be labeled 'back' there." A badge reading "BACK
+    // L<N>" on the one cell whose JOB is to go back a level conflated two
+    // separate facts (the current drill depth, and "this cell exits one
+    // level") into one label, and answered a question ("how do I get back
+    // out") the operator never asked while asking a different one ("how
+    // deep am I") to go unanswered in its own right.
+    //
+    // STEP 1 (2026-08-09): the indicator is now a dedicated header ROW
+    // (FroggersNodeIds::kModulationHeader, AppendModulationHeaderRow()
+    // below) spanning the right block's full width, between the bank tabs
+    // row and the first row of parameter cells -- not attached to any
+    // button or cell, exactly the operator's own description. This node
+    // (kVcoScope) and the Target/Back encoder cell both keep NO copy of
+    // this text: three renderings of the same one fact (the current drill
+    // level) would be OMNI §8 duplication, and the two that would remain
+    // here/there are the ones already proven either unreachable (kVcoScope)
+    // or actively confusing (Target/Back).
     void AppendScopeCell(synth::ui::Builder& builder, float rowWeight) const {
         synth::ui::LayoutOptions layout;
         layout.main = synth::ui::Extent::Weight(rowWeight);
@@ -826,6 +866,9 @@ private:
             case FroggersCellMap::RightKind::BankTabs:
                 AppendBankTabsRow(builder);
                 return;
+            case FroggersCellMap::RightKind::Header:
+                AppendModulationHeaderRow(builder);
+                return;
             case FroggersCellMap::RightKind::EncoderRow:
                 AppendEncoderRow(builder, row.firstEncoderIndex);
                 return;
@@ -863,7 +906,86 @@ private:
         });
     }
 
-    // Rows 2-5: the 16-slot grid, 4 slots per row -- LOOPED over
+    // Row 2 (STEP 1, operator 2026-08-09, fourth session on the same
+    // complaint -- see this file's git history for F7/S5.2/the Target-Back
+    // badge, all rejected). Operator, verbatim: "i don't know why you
+    // thought i wanted the header to be 'Back' and by the back button,
+    // instead of a HEADER above all the modulation parameters, below the
+    // bank button row?? ... nothing needs to be labeled 'back' there, that
+    // implementation sucks." Unambiguous ask: a header BAR spanning the
+    // grid's width, between the bank tabs row and the first row of
+    // parameter cells -- not attached to any button or cell.
+    //
+    // APPROACH: a dedicated row in the right block's CELL MAP
+    // (FroggersCellMap::RightKind::Header, kRightRows), a fixed-height Draw
+    // node -- the same Extent::Px sizing idiom the transport plates already
+    // use (kTransportPlateSize) for a chrome element that must not stretch.
+    // A dedicated row is now explicitly ACCEPTABLE (operator's own
+    // instruction), superseding the earlier "do not disturb the 6x6 grid"
+    // guidance for this one case.
+    //
+    // WHAT MOVED: no row/column WEIGHT value changed anywhere -- every
+    // pre-existing Weight(1.0) right-block row stays Weight(1.0), and
+    // kLeftBlockWeight/kRightBlockWeight/kSliderWidthFraction are untouched.
+    // Inserting one more FIXED-size sibling simply leaves less remaining
+    // space for the six pre-existing weighted rows to divide
+    // (AllocateExtents, PortableUILayout.hpp:165-241: `remaining =
+    // contentExtent - totalGaps - nonWeighted`, then split by weight) -- an
+    // arithmetic CONSEQUENCE of the insertion, not a declared change.
+    // Computed (not eyeballed) at the real 900x632 config: kRightBlock is
+    // 600px tall; 7 rows now cost 6 gaps of 14 = 84, and this row's fixed
+    // 26px, leaving 490 for the six Weight(1.0) rows to split, 81.67px each
+    // -- down from 88.33px (a ~7.5% reduction). Nothing moves horizontally,
+    // no row is reordered, and the encoder grid's own 4-column-per-row
+    // internal structure (ids, order, weights) is completely untouched.
+    // Verified in FroggersSurfaceTests.cpp's
+    // modulation_header_sits_below_bank_row_and_above_parameter_cells,
+    // which computes the resolved bounds rather than asserting this
+    // comment's arithmetic.
+    //
+    // CONTENT: "Modulation Level <N>" (N = FroggersModulationDrillIn::
+    // Level() via app_->DrillLevel(), the same source F7 originally read,
+    // never a hardcoded per-level string), drawn ONLY while drilled in
+    // (level > 0) -- an empty Draw at level 0, per the operator's own spec.
+    // The row's own SPACE is always reserved (constant Px height regardless
+    // of drill state): the same "always emit the node, sometimes with empty
+    // commands, so sibling geometry never jumps" idiom AppendEncoderCell
+    // already uses for a hidden slot in the modulation view (see that
+    // method's own comment) -- entering/exiting a drilldown never reflows
+    // the bank tabs or the parameter grid by even one pixel; only this
+    // row's own content changes.
+    static constexpr float kModulationHeaderRowHeight = 26.0f;
+    static constexpr synth::Color kModulationHeaderBandColor = synth::Color::Rgb(32, 38, 44);
+    // Centered, not left-aligned like the retired scope-cell/Target-Back
+    // attempts: this is now a genuine full-width title bar, not a label
+    // squeezed into a corner of unrelated content, so a centered title
+    // reads as a header rather than another chip.
+    static constexpr synth::ui::TextStyle kModulationHeaderTextStyle{
+        20.0f, synth::Color::Rgb(255, 255, 255), synth::ui::TextAlign::Center};
+
+    void AppendModulationHeaderRow(synth::ui::Builder& builder) const {
+        synth::ui::LayoutOptions layout;
+        layout.main = synth::ui::Extent::Px(kModulationHeaderRowHeight);
+        layout.cross = synth::ui::Extent::Weight(1.0f);
+        const std::size_t drillLevel = app_ != nullptr ? app_->DrillLevel() : 0;
+        builder.Draw(FroggersNodeIds::kModulationHeader, layout,
+                     [drillLevel](synth::ui::Bounds extent) -> std::vector<synth::ui::DrawCommand> {
+                         if (drillLevel == 0) {
+                             return {};
+                         }
+                         std::vector<synth::ui::DrawCommand> commands;
+                         commands.push_back(synth::ui::DrawCommand::Fill(
+                             synth::ui::Bounds{0.0f, 0.0f, extent.width, extent.height},
+                             kModulationHeaderBandColor));
+                         commands.push_back(synth::ui::DrawCommand::Text(
+                             synth::ui::Bounds{0.0f, 0.0f, extent.width, extent.height},
+                             "Modulation Level " + std::to_string(drillLevel), kModulationHeaderTextStyle));
+                         return commands;
+                     });
+    }
+
+    // Rows 3-6 (renumbered by STEP 1's inserted header row; the 16-slot
+    // grid, 4 slots per row) -- LOOPED over
     // `FroggersEncoderGridLayout::kColumns`, the row/col mapping
     // (`firstEncoderIndex / kColumns` below, `ix / kColumns`/`ix % kColumns`
     // in spirit) surviving task F.3's deletion of `BoundsForIndex`'s pixel
@@ -909,20 +1031,18 @@ private:
     // action/drag) when hidden keeps the grid geometry stable and is the
     // established Sheaf idiom this surface's own header comment points at
     // (Braid4UI.hpp:154-160).
-    // Target/Back drill-level badge tokens (relocated here 2026-08-08 from
-    // AppendScopeCell -- see that method's own comment for the full
-    // investigation of why the "Modulation Level N" indicator has to live
-    // on a grid cell, not the scope, to ever be seen). Deliberately NOT the
-    // same numbers the old scope header used: this cell resolves to roughly
-    // 136x88px at the real window size (`encoder_cell_never_emits_a_frame_
-    // draw_command`'s own traced geometry, FroggersSurfaceTests.cpp),
-    // nowhere near the scope cell's ~285x181px, and a header sized for the
-    // wider panel would not fit the narrower one -- the same
-    // present-but-not-legible failure this task exists to stop repeating.
-    static constexpr float kDrillBackBadgeHeight = 18.0f;
-    static constexpr synth::Color kDrillBackBadgeBandColor = synth::Color::Rgb(32, 38, 44);
-    static constexpr synth::ui::TextStyle kDrillBackBadgeTextStyle{
-        12.0f, synth::Color::Rgb(255, 255, 255), synth::ui::TextAlign::Center};
+    // REMOVED 2026-08-09 (operator, fourth session on the same complaint):
+    // the drill-level indicator briefly lived here as a "BACK L<N>" badge
+    // painted on the Target/Back cell (S5.2, 2026-08-08). Operator: "i
+    // don't know why you thought i wanted the header to be 'Back' and by
+    // the back button... nothing needs to be labeled 'back' there, that
+    // implementation sucks." It is now a real header ROW spanning the
+    // grid's width, between the bank tabs row and the first parameter row
+    // -- see AppendModulationHeaderRow() and FroggersNodeIds::
+    // kModulationHeader. This cell carries no drill-level text of any kind
+    // any more (verified: FroggersSurfaceTests.cpp's
+    // modulation_header_sits_below_bank_row_and_above_parameter_cells
+    // asserts nothing reading "BACK" is drawn anywhere in the tree).
 
     void AppendEncoderCell(synth::ui::Builder& builder, std::size_t ix) const {
         const bool showingModulationView =
@@ -970,27 +1090,6 @@ private:
         // not per-bank or per-cell (OMNI §8).
         state.wantsFrame = false;
 
-        // F7/S5.2, relocated 2026-08-08 (AppendScopeCell's own comment has
-        // the full investigation): the drill-level indicator now lives on
-        // the Target/Back cell -- the one cell `Bank::OpenModulationView`
-        // always places the selected parameter's own cell at
-        // (`physicalLayout.back()`, ParameterModulation.cpp:2854-2857), and
-        // `FullPhysicalLayout` is the same fixed 0-15 span at every drill
-        // depth (this file's own FullPhysicalLayout comment,
-        // FroggersModulation.hpp:187-204), so `kEncoderCount - 1` is that
-        // cell at every level, not just level 1. Gated on
-        // `showingModulationView` (already computed above for `hidden`,
-        // not re-derived) and `!hidden` (defensive: `isTargetBackCell`
-        // implies `state.connected`, since `hidden` is
-        // `showingModulationView && !state.connected` -- but the guard
-        // costs nothing and keeps this branch inert if that ever stops
-        // being true). `drillLevel` is only fetched -- one atomic load via
-        // `app_->DrillLevel()` -- when it will actually be used, not once
-        // per cell (OMNI §10).
-        const bool isTargetBackCell =
-            showingModulationView && !hidden && ix == FroggersEncoderGridLayout::kEncoderCount - 1;
-        const std::size_t drillLevel = isTargetBackCell && app_ != nullptr ? app_->DrillLevel() : 0;
-
         const std::string encoderId = FroggersNodeIds::Encoder(ix);
         if (!hidden && visualizer != nullptr && visualizer->Visible()) {
             // Design D9b/D10: bump/comb transfer-function underlays and
@@ -1031,42 +1130,20 @@ private:
         }
         builder.Draw(
             encoderId,
-            [state, hidden, isTargetBackCell, drillLevel](synth::ui::Bounds extent) {
-                if (hidden) {
-                    return std::vector<synth::ui::DrawCommand>{};
-                }
-                std::vector<synth::ui::DrawCommand> commands = synth::ui::BuildEncoderDrawCommands(state, extent);
-                if (isTargetBackCell) {
-                    // Same "opaque band behind explicitly-styled text,
-                    // appended LAST so it paints on top" technique
-                    // AppendScopeCell used to use (PortableJuceBackend.hpp's
-                    // paint() walks a node's commands_ with one plain
-                    // sequential for loop and no z-ordering pass, so vector
-                    // order is paint order -- see that method's own comment
-                    // history) -- just sized for THIS cell and, unlike the
-                    // old placement, actually inside the region
-                    // drill_back_badge_resolves_inside_the_grid_region_the_operator_actually_sees
-                    // (FroggersSurfaceTests.cpp) proves the operator is
-                    // looking at.
-                    const float bandHeight = std::min(kDrillBackBadgeHeight, extent.height);
-                    commands.push_back(synth::ui::DrawCommand::Fill(
-                        synth::ui::Bounds{0.0f, 0.0f, extent.width, bandHeight}, kDrillBackBadgeBandColor));
-                    commands.push_back(synth::ui::DrawCommand::Text(
-                        synth::ui::Bounds{0.0f, 0.0f, extent.width, bandHeight},
-                        "BACK L" + std::to_string(drillLevel), kDrillBackBadgeTextStyle));
-                }
-                return commands;
+            [state, hidden](synth::ui::Bounds extent) {
+                return hidden ? std::vector<synth::ui::DrawCommand>{} : synth::ui::BuildEncoderDrawCommands(state, extent);
             },
             cellStyle);
     }
 
-    // Row 6: Randomize Page | Randomize All, each spanning 2 of the 4
+    // Row 7 (STEP 1 renumbered this from 6 -- see AppendModulationHeaderRow()'s
+    // own comment): Randomize Page | Randomize All, each spanning 2 of the 4
     // encoder columns (`Extent::Weight(2)`, matching the encoder rows'
     // per-column `Weight(1)` unit so the two rows visually align).
     //
     // Task 10.7 (design D11/D14): moved here from the old bank-header group
     // by the CELL MAP -- row 1 is bank tabs only now (AppendBankTabsRow()
-    // above); Randomize Page and Randomize All sit together in row 6.
+    // above); Randomize Page and Randomize All sit together in the last row.
     // Exactly one Randomize All control exists anywhere in this surface
     // (task 10.2's constraint, unchanged).
     void AppendRandomizeRow(synth::ui::Builder& builder) const {

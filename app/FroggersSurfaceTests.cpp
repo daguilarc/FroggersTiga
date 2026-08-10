@@ -132,33 +132,31 @@ const synth::ui::Node* FindNodeById(const synth::ui::NodeTree& tree, const std::
 //
 // GENERALISED, 2026-08-08 (see AppendScopeCell's and AppendEncoderCell's
 // own comments, FroggersUiSurface.hpp, for the full investigation): the
-// carrying node used to always be kVcoScope; proven unreachable by the
-// operator while drilled in, the indicator moved to the Target/Back grid
-// cell instead, so these three helpers now take the node id as a parameter
-// rather than assuming kVcoScope -- generalised rather than given a second,
-// near-identical scanner for the new node (OMNI §8).
+// carrying node used to always be kVcoScope, then briefly the Target/Back
+// grid cell -- both are dead ends the operator rejected (unreachable, then
+// mislabelled "BACK"). These three helpers already took the node id as a
+// parameter rather than assuming one fixed id, which is exactly what let
+// the carrying node move a SECOND time (STEP 1, 2026-08-09) to its own
+// dedicated header row (`FroggersNodeIds::kModulationHeader`,
+// AppendModulationHeaderRow()) with no changes needed here.
 //
-// LAST match, not first (found the hard way -- this returned the WRONG
-// command the first time this was run against a real Target/Back cell):
-// kVcoScope's draw list only ever held at most one Text command (the old
-// header, or none), so "first" and "last" were the same thing there. An
-// encoder cell is not that simple -- `AppendBadge` (EncoderDraw.hpp:607)
-// emits its own `DrawCommand::Text` for every modulator/gesture badge chip
-// (e.g. "M1"), unconditionally, for ANY connected cell, drilled in or not.
-// The Target/Back cell is a real, connected parameter and can carry those
-// same badges, so "the first Kind::Text command" finds a badge label, not
-// this indicator. This indicator is always appended LAST (AppendEncoderCell
-// pushes it after `BuildEncoderDrawCommands`'s own output, same "append,
-// never insert" convention AppendScopeCell used), so the LAST Kind::Text
-// command is the one that is actually this indicator, on every carrying
-// node this file uses (kVcoScope included, where last-or-first make no
-// difference).
+// LAST match, not first: kept for the reason it was added -- an encoder
+// cell (still used below by the Target/Back-cell REMOVAL guards, which now
+// assert ABSENCE of any "BACK" text rather than presence of the old badge)
+// can carry its own unrelated `AppendBadge` (EncoderDraw.hpp:607)
+// `DrawCommand::Text` entries (e.g. "M1") for any connected, modulated
+// parameter, so "the first Kind::Text command" on such a cell finds a badge
+// label, not this file's own indicator. `kModulationHeader` itself never
+// carries badges (it is not an encoder cell -- `AppendBadge` is only ever
+// reached from `BuildEncoderDrawCommands`, which AppendModulationHeaderRow
+// never calls), so last-vs-first is moot for its own carrying node, but
+// stays general rather than special-cased per node id.
 //
 // The permanent overdraw regression guard
-// (drill_back_badge_resolves_inside_the_grid_region_the_operator_actually_sees
-// below) needs the indicator's INDEX within its node's command list, to
-// check what -- if anything -- follows it; DrillBadgeTextCommand below only
-// ever needed the command itself. Rather than let a second caller grow a
+// (modulation_header_sits_below_bank_row_and_above_parameter_cells below)
+// needs the indicator's INDEX within its node's command list, to check
+// what -- if anything -- follows it; DrillBadgeTextCommand below only ever
+// needed the command itself. Rather than let a second caller grow a
 // second scan of the same list, this is the one scan site and
 // DrillBadgeTextCommand is rewritten in terms of it (OMNI §8/§14: a third
 // use of "find a node's Kind::Text command" must not become a third scan).
@@ -194,12 +192,51 @@ std::optional<synth::ui::DrawCommand> DrillBadgeTextCommand(const synth::ui::Nod
 }
 
 // Reused across every level checked by
-// drill_level_header_shown_only_while_drilled_in_and_matches_the_level below
+// modulation_header_shown_only_while_drilled_in_and_matches_the_level below
 // (OMNI §6: 2+ uses, isolates a distinct read from the raw draw-command
 // list).
 std::optional<std::string> DrillBadgeText(const synth::ui::NodeTree& tree, const std::string& nodeId) {
     const std::optional<synth::ui::DrawCommand> command = DrillBadgeTextCommand(tree, nodeId);
     return command.has_value() ? std::optional<std::string>(command->text) : std::nullopt;
+}
+
+// STEP 1 (2026-08-09) removal guards: "BACK L<N>" must never be drawn
+// anywhere again -- not just absent from whichever node happened to carry
+// it. Unlike DrillBadgeText above (which finds THE ONE indicator text on a
+// node known to carry at most one), a Target/Back-style encoder cell can
+// legitimately carry OTHER Text commands (modulator/gesture badges, e.g.
+// "M1" -- see DrillBadgeTextIndex's own comment), so the removal guard
+// cannot assert "this node has no Text command at all"; it has to check
+// the CONTENT of whatever Text commands do exist. One low-level scan
+// (CommandsContainText) shared by both the whole-tree and single-node
+// forms below (OMNI §8: two callers must not duplicate the same loop).
+bool CommandsContainText(const std::vector<synth::ui::DrawCommand>& commands, const std::string& needle) {
+    for (const synth::ui::DrawCommand& command : commands) {
+        if (command.kind == synth::ui::DrawCommand::Kind::Text && command.text.find(needle) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Scoped guard: the task's literal ask ("nothing reading 'BACK' is drawn on
+// the Target/Back cell").
+bool NodeDrawnTextContains(const synth::ui::NodeTree& tree, const std::string& nodeId, const std::string& needle) {
+    const synth::ui::Node* node = FindNodeById(tree, nodeId);
+    return node != nullptr && CommandsContainText(node->drawCommands, needle);
+}
+
+// Whole-tree guard: strictly stronger than the scoped one above -- the
+// operator's actual complaint was that a "BACK" label showed up somewhere
+// they were looking, not that it showed up on one specific pre-named node,
+// so this closes off the same regression appearing on any OTHER node too.
+bool AnyDrawnTextContains(const synth::ui::NodeTree& tree, const std::string& needle) {
+    for (const synth::ui::Node& node : tree.nodes) {
+        if (CommandsContainText(node.drawCommands, needle)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // A resolved node's `bounds` are PARENT-relative, not accumulated screen
@@ -695,29 +732,36 @@ TEST_CASE(clicking_the_active_bank_while_drilled_in_exits_to_the_top_level_grid)
 // reach the same depth, so this is a proven-valid path, not a guess.
 //
 // S5.2 (operator regression report, 2026-08-07: "i still don't see a header
-// label counting the drilldown levels") extends this same test rather than
+// label counting the drilldown levels") extended this same test rather than
 // adding a parallel one: once drilled to level 1, also asserts the resolved
 // TextStyle is an explicit, deliberate choice (not TextStyle{}'s own
 // default), and that an opaque Fill (the backing band) immediately precedes
-// the Text command in the carrying node's own draw list.
+// the Text command in the carrying node's own draw list. Both properties
+// carry forward unchanged below.
 //
-// RELOCATED, 2026-08-08 (see AppendScopeCell's and AppendEncoderCell's own
-// comments, FroggersUiSurface.hpp, for the full investigation): the
-// carrying node used to be kVcoScope -- proven, by
-// drill_back_badge_resolves_inside_the_grid_region_the_operator_actually_sees
-// below, to sit in a region of the window the operator is not looking at
-// while drilled in -- and is now the Target/Back cell
-// (`Encoder(kEncoderCount - 1)`, present at every drill depth by
-// construction). Same F7/S5.2 properties, same test, new node and new,
-// cell-sized text ("BACK L<N>" rather than "Modulation Level N" -- this
-// cell resolves to ~136px wide, not the old header's ~285px, so the text
-// itself had to shrink along with the node it moved to).
-TEST_CASE(drill_level_header_shown_only_while_drilled_in_and_matches_the_level) {
+// RELOCATED TWICE since (see AppendScopeCell's and AppendModulationHeaderRow's
+// own comments, FroggersUiSurface.hpp, for the full investigation): first to
+// kVcoScope (F7's original placement -- unreachable, the operator never
+// looks there while drilled in), then to the Target/Back grid cell
+// (S5.2/relocation-1, 2026-08-08, as a "BACK L<N>" badge) -- reachable, but
+// rejected on SUBSTANCE, not visibility: "i don't know why you thought i
+// wanted the header to be 'Back' and by the back button... nothing needs to
+// be labeled 'back' there, that implementation sucks." STEP 1 (2026-08-09)
+// moves it a second time, to its own dedicated, non-interactive header row
+// (`FroggersNodeIds::kModulationHeader`). Same F7/S5.2 content/styling
+// properties, same test identity (renamed to match), new carrying node --
+// plus a new removal guard proving the Target/Back cell no longer carries
+// this text either.
+TEST_CASE(modulation_header_shown_only_while_drilled_in_and_matches_the_level) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
         /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("drill_level_header"));
     rig.RunBlocks(4);
 
     synth::ui::Surface& surface = rig.Application().PortableSurface();
+    const std::string headerId = synth_froggers::FroggersNodeIds::kModulationHeader;
+    // Not the carrying node any more, but still the specific site the
+    // rejected S5.2 attempt mislabelled "BACK" -- this test's own removal
+    // guard below needs it.
     const std::string backId = synth_froggers::FroggersNodeIds::Encoder(
         synth_froggers::FroggersEncoderGridLayout::kEncoderCount - 1);
 
@@ -728,43 +772,57 @@ TEST_CASE(drill_level_header_shown_only_while_drilled_in_and_matches_the_level) 
     const std::size_t levelBeforeDrilling = rig.Application().ActiveDrillIn().Level();
     std::cout << "[OBSERVED] drill level before any encoder press: " << levelBeforeDrilling << "\n";
     REQUIRE_TRUE(levelBeforeDrilling == 0);
-    REQUIRE_TRUE(!DrillBadgeText(surface.BuildTree(), backId).has_value());
+    {
+        // At level 0 the row is RESERVED (present, so sibling geometry
+        // never jumps when entering/exiting a drilldown -- see
+        // AppendModulationHeaderRow's own comment) but must draw NOTHING:
+        // not just "no text" but no draw commands at all, so this cannot
+        // pass merely because the node doesn't exist yet.
+        const synth::ui::NodeTree undrilledTree = surface.BuildTree();
+        const synth::ui::Node* headerAtLevel0 = FindNodeById(undrilledTree, headerId);
+        REQUIRE_TRUE(headerAtLevel0 != nullptr);
+        REQUIRE_TRUE(headerAtLevel0->drawCommands.empty());
+    }
 
     surface.DispatchAction(
         synth::ui::Action::WithValue(synth_froggers::FroggersActions::kEncoderPress, "0"));
     rig.RunBlocks(4);
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 1);
     const synth::ui::NodeTree drilledTree = surface.BuildTree();
-    REQUIRE_TRUE(DrillBadgeText(drilledTree, backId).value_or("") == "BACK L1");
-    // Removal guard: kVcoScope must not grow a second copy of this text --
-    // see AppendScopeCell's own comment on why a second copy would be OMNI
-    // §8 duplication of the one fact this surface needs to communicate.
+    REQUIRE_TRUE(DrillBadgeText(drilledTree, headerId).value_or("") == "Modulation Level 1");
+    // Removal guards: neither kVcoScope (the first rejected placement) nor
+    // the Target/Back cell (the second) may carry this text any more. The
+    // Target/Back check is a substring search, not "no Text command at
+    // all" -- that cell is a real, connected parameter and can legitimately
+    // carry unrelated modulator-badge text (e.g. "M1"; see
+    // DrillBadgeTextIndex's own comment above).
     REQUIRE_TRUE(!DrillBadgeText(drilledTree, synth_froggers::FroggersNodeIds::kVcoScope).has_value());
+    REQUIRE_TRUE(!NodeDrawnTextContains(drilledTree, backId, "BACK"));
 
     // S5.2 styling assertions, carried over to the new location -- the text
     // must not be a bare, default-styled DrawCommand::Text. The drawing
-    // branch (AppendEncoderCell, FroggersUiSurface.hpp) is identical at
-    // every level > 0 (only the interpolated number changes, already
-    // covered by the three "== BACK L<N>" checks in this test), so checking
-    // the style and band once here is not a guess about levels 2/3 -- it is
-    // the same code path they also execute.
-    const std::optional<synth::ui::DrawCommand> headerCommand = DrillBadgeTextCommand(drilledTree, backId);
+    // branch (AppendModulationHeaderRow, FroggersUiSurface.hpp) is
+    // identical at every level > 0 (only the interpolated number changes,
+    // already covered by the three "== Modulation Level <N>" checks in this
+    // test), so checking the style and band once here is not a guess about
+    // levels 2/3 -- it is the same code path they also execute.
+    const std::optional<synth::ui::DrawCommand> headerCommand = DrillBadgeTextCommand(drilledTree, headerId);
     REQUIRE_TRUE(headerCommand.has_value());
     // Different from TextStyle{}'s own 14px default (PortableUI.hpp) -- the
-    // concrete, testable form of "an explicit size, not a default." Not
-    // pinned as ">14px" the way the old kVcoScope header was: this badge is
-    // deliberately SMALLER than that header was, to fit a ~136px-wide cell
-    // instead of a ~285px-wide one (see AppendEncoderCell's own comment on
-    // kDrillBackBadgeTextStyle) -- "explicitly chosen" is the property that
-    // survived the move, not "larger."
+    // concrete, testable form of "an explicit size, not a default."
     REQUIRE_TRUE(headerCommand->textStyle.size != synth::ui::TextStyle{}.size);
 
-    const synth::ui::Node* backNode = FindNodeById(drilledTree, backId);
-    REQUIRE_TRUE(backNode != nullptr);
-    const std::optional<std::size_t> headerIndex = DrillBadgeTextIndex(drilledTree, backId);
+    const synth::ui::Node* headerNode = FindNodeById(drilledTree, headerId);
+    REQUIRE_TRUE(headerNode != nullptr);
+    // Exactly two commands (the backing Fill then the Text) -- a precise,
+    // non-vacuous form of "nothing else is drawn on this row and nothing
+    // follows the text," stronger than looping over a range that happens to
+    // be empty (this row carries no badges -- it is not an encoder cell).
+    REQUIRE_TRUE(headerNode->drawCommands.size() == 2);
+    const std::optional<std::size_t> headerIndex = DrillBadgeTextIndex(drilledTree, headerId);
     REQUIRE_TRUE(headerIndex.has_value());
-    REQUIRE_TRUE(*headerIndex > 0);  // a Text command with nothing before it can't have a backing band
-    const synth::ui::DrawCommand& bandBeforeText = backNode->drawCommands[*headerIndex - 1];
+    REQUIRE_TRUE(*headerIndex == 1);  // the Text command is the LAST of the two
+    const synth::ui::DrawCommand& bandBeforeText = headerNode->drawCommands[*headerIndex - 1];
     REQUIRE_TRUE(bandBeforeText.kind == synth::ui::DrawCommand::Kind::Fill &&
                  bandBeforeText.bounds.height == headerCommand->bounds.height);
 
@@ -773,55 +831,46 @@ TEST_CASE(drill_level_header_shown_only_while_drilled_in_and_matches_the_level) 
         std::to_string(static_cast<std::size_t>(synth_froggers::kModSlotVco1Audio))));
     rig.RunBlocks(4);
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 2);
-    REQUIRE_TRUE(DrillBadgeText(surface.BuildTree(), backId).value_or("") == "BACK L2");
+    REQUIRE_TRUE(DrillBadgeText(surface.BuildTree(), headerId).value_or("") == "Modulation Level 2");
 
     surface.DispatchAction(synth::ui::Action::WithValue(
         synth_froggers::FroggersActions::kEncoderPress,
         std::to_string(static_cast<std::size_t>(synth_froggers::kModSlotVco2Audio))));
     rig.RunBlocks(4);
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 3);
-    REQUIRE_TRUE(DrillBadgeText(surface.BuildTree(), backId).value_or("") == "BACK L3");
+    REQUIRE_TRUE(DrillBadgeText(surface.BuildTree(), headerId).value_or("") == "Modulation Level 3");
 }
 
-// STEP 1/STEP 3 (operator re-report, 2026-08-08, third session on the same
-// complaint): "the header is STILL not visible." The first fix (S5.2,
-// restyling) and the second (proving the header is never overdrawn WITHIN
-// kVcoScope's own node) were each correct about the property they checked
-// and both irrelevant to the actual complaint, because neither asked
-// whether kVcoScope's cell is anywhere near the region the operator is
-// looking at while drilled in. It is not, computed (not eyeballed) here and
-// in AppendScopeCell's own comment: at the real 900x632 config, kVcoScope
-// resolves to roughly {16, 16, 284.7, 181.3} (x-range [16, 300.7]) while the
-// right block -- bank tabs, the 16-slot grid, and Randomize, i.e. the ENTIRE
-// region whose CONTENT is what a drill-in actually changes -- resolves to
-// roughly {314.7, 16, 569.3, 600} (x-range [314.7, 884]). A 14px gap
-// (FroggersPageLayout::kGap) separates those x-ranges; they never meet.
-// Existence-in-the-tree and non-overdraw-within-its-own-node are both true
-// of kVcoScope's old header and BOTH IRRELEVANT to whether the operator's
-// eyes ever cross that region -- which is why three sessions of "fixing" it
-// never fixed anything the operator could see. This test is the permanent,
-// computed proof of the property that actually matters -- containment
-// inside the region the operator sees populated cells in -- kept alive as
-// the regression guard the previous two sessions were missing.
+// STEP 1 (operator, 2026-08-09, fourth session on the same complaint -- see
+// AppendModulationHeaderRow's own comment, FroggersUiSurface.hpp, for the
+// full history: F7 put the header on kVcoScope, unreachable; S5.2/
+// relocation-1 moved it to the Target/Back cell as a "BACK L<N>" badge,
+// which the operator rejected on SUBSTANCE, not visibility -- "i don't know
+// why you thought i wanted the header to be 'Back' and by the back button,
+// instead of a HEADER above all the modulation parameters, below the bank
+// button row?? ... nothing needs to be labeled 'back' there"). Their spec is
+// unambiguous and geometric: a header BAR spanning the grid's width, BELOW
+// the bank tabs row, ABOVE the first row of parameter cells. This test
+// computes (not eyeballs) exactly that claim against the real resolved
+// tree, replacing the previous packet's containment-only guard
+// (drill_back_badge_resolves_inside_the_grid_region_the_operator_actually_sees,
+// which only proved the old badge was somewhere inside the right block --
+// true of the rejected Target/Back placement too, and therefore
+// insufficient on its own to distinguish an accepted fix from a rejected
+// one).
 //
-// "The region the operator actually sees" is not invented for this test: it
-// is `kRightBlock`'s own resolved bounds, the same container
-// `every_encoder_cell_lies_fully_inside_the_grid_region` above already
-// proves holds all 16 physical slots at every non-drilled build. This test
-// extends that same containment claim into the DRILLED-IN state
-// specifically -- the only state either the old or the new indicator ever
-// renders anything in.
-//
-// kModSlotRandomSh6 ("Random S&H 6") is the OMNI §9.1 positive control: the
-// one modulation source registered `/*connected=*/true` unconditionally
-// (FroggersModulation.hpp:539-540, its own GangedRandomLfoVisualizer), so it
-// is guaranteed to be a live, rendering cell in the drilled-in grid with no
-// patch setup needed, and it proves the region this test checks against is
-// the REAL one the operator sees populated cells in -- not a coincidentally
-// passing empty rectangle.
-TEST_CASE(drill_back_badge_resolves_inside_the_grid_region_the_operator_actually_sees) {
+// OMNI §9.1 positive controls, three of them, so this cannot pass against
+// coincidentally-empty geometry: the bank tabs row and a populated
+// parameter cell (kModSlotRandomSh6, "Random S&H 6" -- the one modulation
+// source registered `/*connected=*/true` unconditionally,
+// FroggersModulation.hpp:539-540, so it is guaranteed to be a live,
+// rendering cell in the drilled-in grid with no patch setup needed) both
+// resolve to real, populated, in-region geometry, AND the header itself is
+// checked for its actual "Modulation Level 1" text, not merely for having
+// nonzero bounds.
+TEST_CASE(modulation_header_sits_below_bank_row_and_above_parameter_cells) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
-        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("drill_header_overdraw"));
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("drill_header_position"));
     rig.RunBlocks(4);
 
     synth::ui::Surface& surface = rig.Application().PortableSurface();
@@ -834,8 +883,13 @@ TEST_CASE(drill_back_badge_resolves_inside_the_grid_region_the_operator_actually
     const synth::ui::Bounds gridRegion = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kRightBlock);
     REQUIRE_TRUE(gridRegion.width > 0.0f && gridRegion.height > 0.0f);
 
-    // OMNI §9.1 positive control: a cell the operator demonstrably DOES see
-    // while drilled in. Its own nonzero command count is real, load-bearing
+    // Positive control 1: the bank tabs row is real, in-region geometry.
+    const synth::ui::Bounds bankRow = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kBankTabsRow);
+    REQUIRE_TRUE(bankRow.width > 0.0f && bankRow.height > 0.0f);
+    REQUIRE_TRUE(FullyInside(bankRow, gridRegion));
+
+    // Positive control 2: a cell the operator demonstrably DOES see while
+    // drilled in. Its own nonzero command count is real, load-bearing
     // evidence, not an assumption -- AppendEncoderCell emits zero ring
     // commands for a hidden/disconnected cell (BuildEncoderDrawCommands
     // returns {} when !state.connected, EncoderDraw.hpp:653-656).
@@ -845,46 +899,52 @@ TEST_CASE(drill_back_badge_resolves_inside_the_grid_region_the_operator_actually
     REQUIRE_TRUE(sourceRing != nullptr);
     REQUIRE_TRUE(sourceRing->drawCommands.size() > 0);
     const synth::ui::Bounds sourceBounds = AbsoluteBounds(tree, sourceId);
+    REQUIRE_TRUE(FullyInside(sourceBounds, gridRegion));
 
-    // The new indicator: the Target/Back cell's own "BACK L<N>" band+text,
-    // folded to ABSOLUTE (screen) coordinates -- containment has to be
-    // checked in the same coordinate space as the region it is checked
-    // against, unlike the node-local check below.
-    const std::string backId = synth_froggers::FroggersNodeIds::Encoder(
-        synth_froggers::FroggersEncoderGridLayout::kEncoderCount - 1);
-    const std::optional<std::size_t> headerIndex = DrillBadgeTextIndex(tree, backId);
-    REQUIRE_TRUE(headerIndex.has_value());
-    const synth::ui::Node* backNode = FindNodeById(tree, backId);
-    REQUIRE_TRUE(backNode != nullptr);
-    const synth::ui::Bounds headerLocalBounds = backNode->drawCommands[*headerIndex].bounds;
-    const synth::ui::Bounds backCellAbsolute = AbsoluteBounds(tree, backId);
-    const synth::ui::Bounds headerAbsoluteBounds{
-        backCellAbsolute.x + headerLocalBounds.x,
-        backCellAbsolute.y + headerLocalBounds.y,
-        headerLocalBounds.width,
-        headerLocalBounds.height,
-    };
+    // The header itself, folded to ABSOLUTE (screen) coordinates.
+    const std::string headerId = synth_froggers::FroggersNodeIds::kModulationHeader;
+    const synth::ui::Bounds header = AbsoluteBounds(tree, headerId);
+    REQUIRE_TRUE(header.width > 0.0f && header.height > 0.0f);
+    REQUIRE_TRUE(FullyInside(header, gridRegion));
+    // Positive control 3: the region checked is a REAL, populated header,
+    // not a coincidentally passing empty rectangle.
+    REQUIRE_TRUE(DrillBadgeText(tree, headerId).value_or("") == "Modulation Level 1");
+
+    // Every parameter cell's own absolute bounds -- checked against all 16,
+    // not just whichever row happens to be topmost, so "above EVERY
+    // modulation-parameter cell" cannot pass by only having checked one.
+    std::vector<synth::ui::Bounds> cellBounds;
+    cellBounds.reserve(synth_froggers::FroggersEncoderGridLayout::kEncoderCount);
+    for (std::size_t ix = 0; ix < synth_froggers::FroggersEncoderGridLayout::kEncoderCount; ++ix) {
+        cellBounds.push_back(AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::Encoder(ix)));
+    }
 
     std::cout << "[OBSERVED] gridRegion={" << gridRegion.x << "," << gridRegion.y << "," << gridRegion.width << ","
-              << gridRegion.height << "} sourceBounds={" << sourceBounds.x << "," << sourceBounds.y << ","
-              << sourceBounds.width << "," << sourceBounds.height << "} headerAbsoluteBounds={"
-              << headerAbsoluteBounds.x << "," << headerAbsoluteBounds.y << "," << headerAbsoluteBounds.width << ","
-              << headerAbsoluteBounds.height << "}\n";
+              << gridRegion.height << "} bankRow={" << bankRow.x << "," << bankRow.y << "," << bankRow.width << ","
+              << bankRow.height << "} header={" << header.x << "," << header.y << "," << header.width << ","
+              << header.height << "} firstParamCell={" << cellBounds.front().x << "," << cellBounds.front().y << ","
+              << cellBounds.front().width << "," << cellBounds.front().height << "} sourceBounds={" << sourceBounds.x
+              << "," << sourceBounds.y << "," << sourceBounds.width << "," << sourceBounds.height << "}\n";
 
-    // The containment claim this whole test exists to encode, computed
-    // (FullyInside, already used throughout this file for exactly this kind
-    // of check), not eyeballed from a screenshot.
-    REQUIRE_TRUE(FullyInside(sourceBounds, gridRegion));          // the positive control really is in-region
-    REQUIRE_TRUE(FullyInside(headerAbsoluteBounds, gridRegion));  // ... and so is the new indicator
-
-    // Local anti-overdraw check on the Target/Back cell's OWN command list
-    // (node-local coordinates on both sides, NOT mixed with the absolute
-    // bounds above): no command appended after the badge text may overlap
-    // its bounds -- the same guard this test's predecessor kept for
-    // kVcoScope, carried to the node that actually owns this text now.
-    for (std::size_t ix = *headerIndex + 1; ix < backNode->drawCommands.size(); ++ix) {
-        REQUIRE_TRUE(!Overlaps(headerLocalBounds, backNode->drawCommands[ix].bounds));
+    // The containment/position claims this whole test exists to encode,
+    // computed (FullyInside, already used throughout this file for exactly
+    // this kind of check), not eyeballed from a screenshot.
+    constexpr float kTolerance = 0.01f;
+    // BELOW the bank button row.
+    REQUIRE_TRUE(header.y + kTolerance >= bankRow.y + bankRow.height);
+    // ABOVE every modulation-parameter cell.
+    for (const synth::ui::Bounds& cell : cellBounds) {
+        REQUIRE_TRUE(header.y + header.height <= cell.y + kTolerance);
     }
+
+    // Removal guards. The operator's actual complaint was about a "back"
+    // label appearing where they were looking, not about one specific
+    // pre-named node, so this checks both: scoped exactly to the task's own
+    // wording (the Target/Back cell) and, strictly stronger, the whole tree.
+    const std::string backId = synth_froggers::FroggersNodeIds::Encoder(
+        synth_froggers::FroggersEncoderGridLayout::kEncoderCount - 1);
+    REQUIRE_TRUE(!NodeDrawnTextContains(tree, backId, "BACK"));
+    REQUIRE_TRUE(!AnyDrawnTextContains(tree, "BACK"));
 }
 
 // S5.1 (operator regression report, 2026-08-07: "the drilldown back button
@@ -914,7 +974,7 @@ TEST_CASE(pressing_target_back_cell_through_the_surface_pops_exactly_one_drill_l
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 0);
 
     // Drill to level 3 -- the identical proven-valid encoder-id sequence
-    // drill_level_header_shown_only_while_drilled_in_and_matches_the_level
+    // modulation_header_shown_only_while_drilled_in_and_matches_the_level
     // and fourth_level_drill_in_is_refused (FroggersModulationTests.cpp) use.
     surface.DispatchAction(
         synth::ui::Action::WithValue(synth_froggers::FroggersActions::kEncoderPress, "0"));
