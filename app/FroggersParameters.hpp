@@ -33,8 +33,8 @@
 //     graph.
 //
 // One ParameterManager, one mono ParameterGroup (task 4.1); six banks sharing
-// one BankSlot (task 4.4), each bank holding one v2 page's nine parameters at
-// slots 0-8, a local Crispy at slot 14, and the single shared global Crunchy
+// one BankSlot (task 4.4), each bank holding one v2 page's fourteen parameters
+// at slots 0-13, a local Crispy at slot 14, and the single shared global Crunchy
 // Parameter at slot 15 in every bank (task 4.2/4.6). See FroggersBankLayouts()
 // below for the independently re-derived per-page parameter lists.
 //
@@ -74,7 +74,7 @@ enum class FroggersBankId : std::size_t {
 };
 
 inline constexpr std::size_t kFroggersBankCount = 6;
-inline constexpr std::size_t kFroggersParamsPerBank = 9;  // bank slots 0-8
+inline constexpr std::size_t kFroggersParamsPerBank = 14;  // bank slots 0-13
 inline constexpr std::size_t kFroggersSlotsPerBank = 16;  // bank slots 0-15
 inline constexpr std::size_t kFroggersCrispySlot = 14;    // design D5a/D6
 inline constexpr std::size_t kFroggersCrunchySlot = 15;   // design D5a/D6
@@ -155,31 +155,104 @@ inline const std::array<FroggersBankLayout, kFroggersBankCount>& FroggersBankLay
             {"VCO1", "VCO1", 0.2468f}, {"VCO2", "VCO2", 0.3471f}, {"VCO3", "VCO3", 0.4058f},
             {"Shape 1", "Shp1"}, {"Shape 2", "Shp2"}, {"Shape 3", "Shp3"},
             {"Phase mod 1", "PM1"}, {"Phase mod 2", "PM2"}, {"Phase mod 3", "PM3"},
+            // Ring Mod strict-executor packet (task A3): the ordinary
+            // unset 0.0f default already sits at/below each Ring Mod knob's
+            // own zero floor (dsp::Vco::kRingModFloor, 0.05f) -- a fresh
+            // launch's ring-mod amount is exactly 0 (dsp::Vco::
+            // RingModDepthScale(0.0f) == 0), so it sounds identical to
+            // before Ring Mod existed. No explicit default needed here.
+            {"Ring mod 1", "RM1"}, {"Ring mod 2", "RM2"}, {"Ring mod 3", "RM3"},
+            // Task B: the ordinary unset 0.0f default reproduces today's PM
+            // LFO rate exactly -- ExpMapCompute(min, max, 0.0f) == min ==
+            // dsp::Vco::kPmLfoMinHz, the SAME rate the old pmKnob01-derived
+            // formula gave at the PM depth knobs' own 0.0f default (PM1/PM2/
+            // PM3 above). No explicit default needed here either.
+            {"PM rate", "PMrt"},
+            // Task C: 0.5f is this mapping's own centre (dsp::
+            // ComputeVcoBalanceWeights, VoiceEnvelope.hpp), which gives
+            // exactly equal weights (1/3, 1/3, 1/3) by construction --
+            // reproducing the pre-packet hardcoded equal-thirds average
+            // exactly, so a fresh launch is unchanged.
+            {"VCO balance", "VBal", 0.5f},
         }}},
         {FroggersBankId::Envelope, "Envelope", synth::Color::Green, {{
-            {"Attack VCO1", "Atk1"}, {"Sustain VCO1", "Sus1", 1.0f}, {"Release VCO1", "Rel1"},
-            {"Attack VCO2", "Atk2"}, {"Sustain VCO2", "Sus2", 1.0f}, {"Release VCO2", "Rel2"},
-            {"Attack VCO3", "Atk3"}, {"Sustain VCO3", "Sus3", 1.0f}, {"Release VCO3", "Rel3"},
+            {"Attack VCO1", "A1"}, {"Decay VCO1", "D1"}, {"Sustain VCO1", "S1", 1.0f}, {"Release VCO1", "R1"},
+            {"Attack VCO2", "A2"}, {"Decay VCO2", "D2"}, {"Sustain VCO2", "S2", 1.0f}, {"Release VCO2", "R2"},
+            {"Attack VCO3", "A3"}, {"Decay VCO3", "D3"}, {"Sustain VCO3", "S3", 1.0f}, {"Release VCO3", "R3"},
+            {"Curve", "Curv"}, {"Grace", "Grac"},
         }}},
         {FroggersBankId::Filter, "Filter", synth::Color::Blue, {{
             {"Comb offset", "CmbOff"}, {"Peak freq", "PkFreq"}, {"Peak gain", "PkGain"},
             {"Peak Q", "PkQ"}, {"Comb delay", "CmbDly"}, {"Comb feedback", "CmbFb"},
             {"Comb LP", "CmbLP"}, {"Comb/Peak", "Cmb/Pk"}, {"Scoop", "Scoop"},
+            // Task E (packet -- Filter slots 9-13 defaults, chosen so a
+            // fresh launch is unchanged from before this packet):
+            //   Topology 0.0f -> FilterFxChain::Process's topology==0,
+            //     bit-identical to the old always-parallel behaviour.
+            //   Scoop freq/width 0.0f -> ExpMapCompute(min,max,0)==min,
+            //     the SAME min the Peak freq/width knobs (slots 1/3) reach
+            //     at their own current 0.0f defaults -- reproduces exactly
+            //     what bumpFreq/bumpWidth gave scoopNotch before Task B.
+            //   Comb drive 0.5f -> ExpMapCompute(0.25f, 4.0f, 0.5f) ==
+            //     0.25f * sqrt(16.0f) == 1.0f, unity gain (see
+            //     RouteAudioSample's own Filter slot 12 wiring).
+            //   Scoop depth 0.0f -> same default the existing Scoop
+            //     parameter (slot 8, above) already carries.
+            {"Topology", "Topo", 0.0f}, {"Scoop freq", "ScFq", 0.0f}, {"Scoop width", "ScWd", 0.0f},
+            {"Comb drive", "CDrv", 0.5f}, {"Scoop depth", "ScDp", 0.0f},
         }}},
         {FroggersBankId::Drive, "Drive", synth::Color::Orange, {{
             {"Drive", "Drive"}, {"Shape", "Shape"}, {"SRR 1", "SRR1"},
             {"SRR 2", "SRR2"}, {"XOR", "XOR"}, {"Bit depth", "BitDp"},
             {"Fuzz", "Fuzz"}, {"Blend", "Blend"}, {"Phase", "Phase"},
+            // D1/D2/D3/D5 (strict-executor packet): default knob 0.5f for
+            // each of these four -- ABrt's ExpMapCompute(0.32,0.5,·), Link's
+            // knob*0.5f, Fold's ExpMapCompute(1,16,·), and Bias's
+            // 0.02f*(2*knob-1) mappings all reproduce their pre-packet
+            // literal (0.4f / 0.25f / 4.0f / 0.0f respectively) exactly at
+            // knob==0.5f -- see each setter's own comment in dsp/Drive.hpp.
+            {"Anti-alias brightness", "ABrt", 0.5f}, {"Link", "Link", 0.5f}, {"Fold", "Fold", 0.5f},
+            // D4: default knob 1.0f -- ExpMapCompute(0.02,1.0,1.0) == 1.0
+            // exactly, an exact-identity (bypass) alpha, see SetTone's own
+            // comment (dsp/Drive.hpp).
+            {"Tone", "Tone", 1.0f}, {"Waveshaper offset", "Bias", 0.5f},
         }}},
         {FroggersBankId::Delay, "Delay", synth::Color::Indigo, {{
             {"Delay time", "DlyTm"}, {"Send", "Send"}, {"Feedback", "Fb"},
             {"Stereo width", "Width"}, {"Detune", "Detune"}, {"Mod depth", "ModDp"},
             {"Wet mix", "WetMx"}, {"Color", "Color"}, {"Halo", "Halo"},
+            // D6/D8 (strict-executor packet): default knob 0.5f -- FbDr's
+            // ExpMapCompute(0.25,4,·) reproduces unity (1.0f) exactly at
+            // 0.5f, MdRt's ExpMapCompute(0.05,1.25,·) reproduces 0.25Hz
+            // exactly at 0.5f -- see each setter's own comment
+            // (dsp/Delay.hpp).
+            {"Feedback drive", "FbDr", 0.5f},
+            // D7/D9: default knob 1.0f -- FbTn's alpha reaches an exact
+            // bypass (1.0f) at knob 1.0f (same idiom as Drive's Tone
+            // above); WBal's identity map reproduces widthBalance == 1.0f,
+            // i.e. today's fixed 0.35f/0.5f literals, exactly at knob 1.0f.
+            {"Feedback tone", "FbTn", 1.0f}, {"Mod rate", "MdRt", 0.5f},
+            {"Width balance", "WBal", 1.0f},
+            // D10: default knob 0.0f -- SetCrush's own mapping gives
+            // freq==1.01 (>= 1.0f) at knob 0.0f, SampleRateReducer's exact
+            // bypass branch, i.e. no crushing.
+            {"Crush", "Crsh", 0.0f},
         }}},
         {FroggersBankId::Reverb, "Reverb", synth::Color::Cyan, {{
             {"Wet/dry", "Wet"}, {"Room size", "Room"}, {"Decay", "Decay"},
             {"Pre-delay", "PreDly"}, {"Damping", "Damp"}, {"Stereo width", "Width"},
             {"Diffusion", "Diff"}, {"Mod depth", "ModDp"}, {"Hold", "Hold"},
+            // R1-R5 (strict-executor packet): default knob 0.5f for MdRt/
+            // TkDv/Tilt/Tund -- MdRt's ExpMapCompute(0.07,1.75,·) reproduces
+            // 0.35Hz exactly, TkDv's ExpMapCompute(0.25,4,·) reproduces
+            // unity (1.0f) exactly, Tilt's centre crossfade weight is exactly
+            // 0.0f, Tund's (2*knob-1) offset is exactly 0 samples -- all at
+            // knob==0.5f -- see each constant's own comment (dsp/Reverb.hpp).
+            // Grit defaults 0.0f -- dsp::DigitalReorganizer::SetFlip/SetHash
+            // both reduce to flip==0/hashBits==0 at knob 0.0f, its own exact
+            // bypass (same file).
+            {"Mod rate", "MdRt", 0.5f}, {"Tank drive", "TkDv", 0.5f}, {"Grit", "Grit", 0.0f},
+            {"Tilt", "Tilt", 0.5f}, {"Tuned", "Tund", 0.5f},
         }}},
     }};
     return layouts;
@@ -212,16 +285,15 @@ public:
     // either one is always audible. This is a deliberate product decision,
     // not an oversight -- do not "restore" Braid 4's convention here.
     static constexpr std::size_t kNumScenes = 2;
-    // Sized for this packet's 61 top-level parameters (6 banks x 9 page
-    // parameters + 6 per-bank Crispy + 1 shared Crunchy = 61, independently
-    // matching design D14's "61 top-level parameters" count) plus a little
+    // Sized for this packet's 91 top-level parameters (6 banks x 14 page
+    // parameters + 6 per-bank Crispy + 1 shared Crunchy = 91) plus a little
     // slack. Modulation-depth parameters (packet 6; up to 915 level-1 plus
     // more at level 2) are deliberately NOT sized for here -- that growth
     // rides ParameterGroup's own storage-batch request mechanism
     // (RequestParameterStorageBatch / ParameterMessageOutBus) once a later
     // packet wires the modulation slate; out of this packet's
     // "parameter/bank model only" scope.
-    static constexpr std::size_t kMaxParameters = 64;
+    static constexpr std::size_t kMaxParameters = 96;
 
     // Task 9.3 (design D10): attach the Filter bank's bump/comb
     // transfer-function visualizers as underlays via
@@ -280,7 +352,7 @@ public:
             // SelectBank call after this loop sets the real default.
             slot_->SelectBank(&bank);
 
-            // task 4.2/4.3: nine page parameters at offset 0, this bank's
+            // task 4.2/4.3: fourteen page parameters at offset 0, this bank's
             // colour on every one of them (D5a/D9a colour mechanism --
             // Bank::BankColor() itself renders nothing; encoder colour reads
             // only ParameterConfig::baseColor).
@@ -428,7 +500,7 @@ private:
     // no separate write path.
     //
     // Row identity (task 5.1, D6 resolved): each parameter's 0-based slot
-    // index within its 16-slot bank -- page params are rows 0-8, Crispy is
+    // index within its 16-slot bank -- page params are rows 0-13, Crispy is
     // row kFroggersCrispySlot (14) in every bank. Crunchy is the shared
     // global control (not itself keyed to a "row" here, task 5.6 below).
     //

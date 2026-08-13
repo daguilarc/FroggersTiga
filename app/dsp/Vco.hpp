@@ -108,8 +108,31 @@ struct Vco
     static constexpr float kPmLfoFloor = 0.02f;
     static constexpr float kPmLfoRampWidth = 0.08f;
 
+    // Strict-executor packet (Ring Mod, Audio slots 9-11; task A1): the
+    // internal ring-mod carrier's own frequency range -- deliberately NOT
+    // PitchToPhaseIncrement's 20/20000 Hz pitch literals. 20 Hz-5000 Hz
+    // covers sub-audio "throb" through the classic clangy ring-mod register
+    // while staying well below Nyquist at every sample rate this app
+    // supports, so the carrier itself never folds into noise before the
+    // ring-modulated product does.
+    static constexpr float kRingModMinHz = 20.0f;
+    static constexpr float kRingModMaxHz = 5000.0f;
+
+    // Task A2: Ring Mod's OWN zero-off floor/ramp -- a separate pair of
+    // constants from kPmLfoFloor/kPmLfoRampWidth (not merely a separate
+    // call), since a bare product carrier is a much more drastic audible
+    // change at any nonzero depth than PM's phase offset, so a slightly
+    // higher floor and wider ramp keeps the bottom of the knob's travel
+    // forgiving.
+    static constexpr float kRingModFloor = 0.05f;
+    static constexpr float kRingModRampWidth = 0.10f;
+
     float carrierPhase = 0.0f;
     float pmLfoPhase = 0.0f;
+    // Task A1: this VCO's own internal ring-mod carrier phase -- stepped the
+    // same way carrierPhase is (WrapPhase(phase + increment)), never derived
+    // from or read by any other Vco instance.
+    float ringCarrierPhase = 0.0f;
 
     // F3.3 SPEC CORRECTED 2026-08-07 (openspec/changes/
     // archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md): Tier
@@ -134,41 +157,75 @@ struct Vco
     }
 
     // FroggersEngine.hpp:150-165 (PmDepthScale). Thresholds at :147-148.
+    // Body lives in dsp::TrueZeroDepthTaper (DspMath.hpp), shared with any
+    // other knob needing the same true-zero taper shape with its own
+    // floor/ramp width.
     static float PmDepthScale(float pmKnob01)
     {
-        if (pmKnob01 <= kPmLfoFloor)
-        {
-            return 0.0f;
-        }
-        const float rampTop = kPmLfoFloor + kPmLfoRampWidth;
-        if (pmKnob01 >= rampTop)
-        {
-            return 1.0f;
-        }
-        const float t = (pmKnob01 - kPmLfoFloor) / kPmLfoRampWidth;
-        return t * t * (3.0f - 2.0f * t);
+        return TrueZeroDepthTaper(pmKnob01, kPmLfoFloor, kPmLfoRampWidth);
+    }
+
+    // Task B (PM rate, Audio slot 12): this VCO's own ring-mod depth taper
+    // uses TrueZeroDepthTaper with Ring Mod's own floor/ramp (task A2) --
+    // NOT kPmLfoFloor/kPmLfoRampWidth, no second copy of the taper itself.
+    static float RingModDepthScale(float ringModKnob01)
+    {
+        return TrueZeroDepthTaper(ringModKnob01, kRingModFloor, kRingModRampWidth);
+    }
+
+    // Task A1: ring-mod carrier's phase increment -- same ExpMapCompute
+    // shape PitchToPhaseIncrement uses for pitch, over kRingModMinHz/MaxHz.
+    static float RingModPhaseIncrement(float ringModKnob01, float sampleRate)
+    {
+        return ExpMapCompute(kRingModMinHz / sampleRate, kRingModMaxHz / sampleRate, ringModKnob01);
     }
 
     // FroggersEngine.hpp:706-712 (StepIndependentPmLfo) -- advances this
     // VCO's own PM LFO by one sample; returns its PRE-advance sine value.
-    // pmKnob01 maps exponentially to [kPmLfoMinHz, kPmLfoMaxHz].
-    float StepPmLfo(float pmKnob01, float sampleRate)
+    // Strict-executor packet (task B): the RATE argument is now the shared
+    // PM-rate knob (Audio slot 12, one knob feeding all three VCOs'
+    // StepPmLfo calls), decoupled from the per-VCO PM depth knob that used
+    // to drive both -- pmRateKnob01 maps exponentially to [kPmLfoMinHz,
+    // kPmLfoMaxHz], same formula as before, just fed by a different knob.
+    float StepPmLfo(float pmRateKnob01, float sampleRate)
     {
-        const float hz = ExpMapCompute(kPmLfoMinHz, kPmLfoMaxHz, pmKnob01);
+        const float hz = ExpMapCompute(kPmLfoMinHz, kPmLfoMaxHz, pmRateKnob01);
         const float lfoValue = Sine01(pmLfoPhase);
         pmLfoPhase = WrapPhase(pmLfoPhase + hz / sampleRate);
         return lfoValue;
     }
 
-    // FroggersEngine.hpp:735-744, the m_simIndependentPm branch only.
-    float Process(float pitchKnob01, float morphKnob01, float pmKnob01, float sampleRate)
+    // FroggersEngine.hpp:735-744, the m_simIndependentPm branch, plus this
+    // packet's Ring Mod (task A) and PM-rate decoupling (task B). pmKnob01
+    // still drives ONLY this VCO's own PM depth (PmDepthScale); pmRateKnob01
+    // is the new shared Audio-slot-12 rate knob; ringModKnob01 is this VCO's
+    // own Ring Mod knob (Audio slot 9/10/11).
+    float Process(float pitchKnob01, float morphKnob01, float pmKnob01, float pmRateKnob01, float ringModKnob01,
+                  float sampleRate)
     {
         const float phaseIncrement = PitchToPhaseIncrement(pitchKnob01, sampleRate);
         // :741-743 -- the depth multiply is at the caller of
         // StepIndependentPmLfo, not inside it; ported the same way.
-        const float pmOffset = kPmLfoDepth * PmDepthScale(pmKnob01) * StepPmLfo(pmKnob01, sampleRate);
+        const float pmOffset = kPmLfoDepth * PmDepthScale(pmKnob01) * StepPmLfo(pmRateKnob01, sampleRate);
         const float modulatedPhase = WrapPhase(carrierPhase + pmOffset);
-        const float output = EvalWaveMorph(modulatedPhase, morphKnob01);
+        const float dry = EvalWaveMorph(modulatedPhase, morphKnob01);
+
+        // Task A: this SAME VCO's own internal ring-mod carrier -- stepped
+        // every sample regardless of depth (same practice as pmLfoPhase
+        // above, so raising the knob never causes a phase jump), multiplied
+        // against `dry` (the pre-ASR-gate wave-morph output -- this struct
+        // has no ASR gate of its own; that happens later in
+        // dsp::MixOscVoices/VcoAdsrState::apply, so "pre-gate" is the only
+        // choice available here and the one this port makes). Blended by
+        // RingModDepthScale's taper amount so the bottom of the knob is an
+        // exact identity and the top is a full ring-mod product; convex
+        // blend of two values already in [-1,1] (dry, and dry*carrier, whose
+        // magnitude is <= |dry| since |carrier| <= 1) stays in [-1,1].
+        const float ringCarrier = Sine01(ringCarrierPhase);
+        ringCarrierPhase = WrapPhase(ringCarrierPhase + RingModPhaseIncrement(ringModKnob01, sampleRate));
+        const float ringAmount = RingModDepthScale(ringModKnob01);
+        const float output = dry * (1.0f - ringAmount) + dry * ringCarrier * ringAmount;
+
         carrierPhase = WrapPhase(carrierPhase + phaseIncrement);
 
         // UI-rework ITEM 3 (design.md A3d, tasks.md B.3, 2026-07-29): this
@@ -225,13 +282,21 @@ struct Vco
     {
         carrierPhase = 0.0f;
         pmLfoPhase = 0.0f;
+        ringCarrierPhase = 0.0f;
         overCeilingSeconds = 0.0f;
     }
 
-    // Tasks 2.3/2.4 (Tier 1/Tier 2 recovery): both are pure recursive state,
-    // no coefficients to exclude.
-    bool StateFinite() const { return std::isfinite(carrierPhase) && std::isfinite(pmLfoPhase); }
-    float StateMagnitude() const { return std::max(std::fabs(carrierPhase), std::fabs(pmLfoPhase)); }
+    // Tasks 2.3/2.4 (Tier 1/Tier 2 recovery): all three are pure recursive
+    // state (ringCarrierPhase added by the Ring Mod strict-executor packet,
+    // task A1), no coefficients to exclude.
+    bool StateFinite() const
+    {
+        return std::isfinite(carrierPhase) && std::isfinite(pmLfoPhase) && std::isfinite(ringCarrierPhase);
+    }
+    float StateMagnitude() const
+    {
+        return std::max({std::fabs(carrierPhase), std::fabs(pmLfoPhase), std::fabs(ringCarrierPhase)});
+    }
 
 private:
     synth::Color scopeColor_ = synth::Color::Cyan;

@@ -2,7 +2,6 @@
 
 ## Purpose
 Monophonic Sheaf parameter/bank model for Froggers: one sixteen-slot bank per Froggers page, fixed Crispy/Crunchy slots at indices 14/15, Shape controls registered as ordinary bank parameters, per-bank colors, Sheaf scene state, and a defined non-neutral initial patch — with Sheaf's `ParameterManager` as the sole parameter authority.
-
 ## Requirements
 ### Requirement: Monophonic Sheaf parameter model
 All Froggers parameters SHALL be registered through Sheaf's `ParameterManager` into `ParameterGroup`s configured with `numVoices = 1`. Froggers value scaling SHALL be preserved for every ported parameter. No bespoke parameter, inventory, or randomization model SHALL be introduced beside Sheaf's.
@@ -18,7 +17,9 @@ All Froggers parameters SHALL be registered through Sheaf's `ParameterManager` i
 - **THEN** no parallel parameter table, page-state, or randomization mutator exists
 
 ### Requirement: One sixteen-slot bank per Froggers page
-Each existing Froggers page SHALL become exactly one bank of sixteen parameter slots. Pages SHALL NOT be merged. A bank's own parameters SHALL occupy the leading slots; remaining parameter slots MAY be empty.
+Each existing Froggers page SHALL become exactly one bank of sixteen parameter slots. Pages SHALL NOT be
+merged. A bank's own parameters SHALL occupy the leading slots; remaining parameter slots MAY be empty,
+or MAY hold additional named parameters where a bank's slate has been explicitly decided and expanded.
 
 #### Scenario: Page identity is preserved
 - **WHEN** the banks are enumerated
@@ -30,11 +31,116 @@ Each existing Froggers page SHALL become exactly one bank of sixteen parameter s
 - **THEN** the unused slots render as empty
 - **THEN** the occupied slots keep their positions rather than being renumbered
 
-#### Scenario: Every bank holds nine parameters
-- **WHEN** the six banks are enumerated
-- **THEN** each holds nine parameters at slot indices 0 through 8, without every one of the nine necessarily originating as a page row
-- **THEN** the Audio bank is the exception that makes up its nine: three of its nine are the VCO Shape controls rather than page rows
-- **THEN** slot indices 9 through 13 are empty in every bank
+#### Scenario: The Audio bank holds fourteen parameters, complete
+- **WHEN** the Audio bank is enumerated
+- **THEN** it holds fourteen named parameters at slot indices 0 through 13, not nine
+- **THEN** slots 0-8 are unchanged from the Audio bank's existing nine parameters, without every one of
+  the nine necessarily originating as a page row
+- **THEN** three of the original nine are the VCO Shape controls rather than page rows
+- **THEN** slots 9 through 11 are Ring Mod (short names `RM1`, `RM2`, `RM3`), one per VCO — each VCO's own
+  ring modulator carrying an internal carrier generated inside that VCO's own ring-mod stage, never a
+  signal from another VCO
+- **THEN** each Ring Mod knob's resolved value sets its own VCO's internal carrier frequency across an
+  audio-rate range, mapped the same exponential way the Audio bank's existing pitch knobs already map
+  pitch, and each VCO's own signal is multiplied by its own carrier's output
+- **THEN** the bottom of each Ring Mod knob's travel is a true zero position, gating that VCO's ring-mod
+  amount to exactly zero and ramping smoothly out of it, so the knob is continuous and the VCO can be heard
+  unmodulated, per the shared ramp the `froggers-vco-topology` delta requires
+- **THEN** each Ring Mod knob defaults to a position at or below that zero floor, so the instrument at its
+  defaults sounds exactly as it did before Ring Mod existed
+- **THEN** slot 12 is PM Rate (short name `PMrt`), the phase-modulation LFO's own rate, shared across all
+  three VCOs and independent of the phase-modulation depth the existing Phase-mod knobs already control
+- **THEN** slot 13 is VCO Balance (short name `VBal`), a single tilt sweeping mix emphasis across VCO1
+  through VCO3, replacing the fixed equal-thirds average with a constant-total-gain crossfade, subject to
+  the floor and cap the "VCO Balance keeps every VCO in the mix" scenario below requires
+
+#### Scenario: VCO Balance keeps every VCO in the mix
+- **WHEN** the VCO Balance crossfade weights are computed for any knob position
+- **THEN** the three weights SHALL sum to exactly 1
+- **THEN** each weight SHALL stay within the range 0.10 to 0.80 inclusive
+- **THEN** no knob position reduces any VCO's weight to 0, and no knob position raises any VCO's weight to
+  1.0
+- **THEN** the three-VCO, 10%-floor arithmetic caps any single VCO's weight at 1 minus two floors, i.e.
+  0.80, so the floor and the cap are the same constraint expressed from opposite ends
+
+#### Scenario: The Envelope bank holds fourteen parameters in interleaved ADSR order
+- **WHEN** the Envelope bank is enumerated
+- **THEN** it holds fourteen named parameters at slot indices 0 through 13, not nine
+- **THEN** slots 0-3 are Attack VCO1, Decay VCO1, Sustain VCO1, Release VCO1 (short names A1, D1, S1, R1)
+- **THEN** slots 4-7 are Attack VCO2, Decay VCO2, Sustain VCO2, Release VCO2 (short names A2, D2, S2, R2)
+- **THEN** slots 8-11 are Attack VCO3, Decay VCO3, Sustain VCO3, Release VCO3 (short names A3, D3, S3, R3)
+- **THEN** slot 12 is Curve, applying to all three voices' Attack/Decay/Release ramp shape
+- **THEN** slot 13 is Grace, a minimum Hold duration so a short gate cannot clip a note before its
+  envelope completes Attack and Decay
+- **THEN** each voice's Attack ramps to a peak, Decay then falls from that peak to the voice's own
+  Sustain target level, and Hold sustains at that level exactly as it does today
+
+#### Scenario: The Filter bank holds fourteen parameters, complete
+- **WHEN** the Filter bank is enumerated
+- **THEN** it holds fourteen named parameters at slot indices 0 through 13, not nine
+- **THEN** slots 0-8 are unchanged from the Filter bank's existing nine parameters
+- **THEN** slot 9 is Topology (short name `Topo`), a continuous morph of the Comb and Peak stages from
+  parallel at one end to series at the other, with no switched positions anywhere in its travel
+- **THEN** at its minimum the chain behaves exactly as it does today, with the Peak stage reading the chain's
+  own input
+- **THEN** at its maximum the Peak stage reads the Comb stage's output instead, which is the series topology
+- **THEN** the Comb/Peak blend, the Scoop blend, and every output trim and limiter in the chain stay in
+  force at every position of this control, including its extremes
+- **THEN** slot 10 is Scoop Freq (short name `ScFq`), the Scoop notch's own center frequency, independent
+  of the Peak stage's frequency
+- **THEN** slot 11 is Scoop Width (short name `ScWd`), the Scoop notch's own width, independent of the
+  Peak stage's width
+- **THEN** slot 12 is Comb Drive (short name `CDrv`), a pre-gain applied to the input of the Comb stage's
+  own in-loop saturator, never to that saturator's output, so the loop's per-sample bound is unchanged at
+  every setting
+- **THEN** slot 13 is Scoop Depth (short name `ScDp`), the Scoop notch's own dip depth, independent of
+  the same notch's wet/dry blend into the output
+
+#### Scenario: The Drive bank holds fourteen parameters, complete
+- **WHEN** the Drive bank is enumerated
+- **THEN** it holds fourteen named parameters at slot indices 0 through 13, not nine
+- **THEN** slots 0-8 are unchanged from the Drive bank's existing nine parameters
+- **THEN** slot 9 is Anti-Alias Brightness (short name `ABrt`), the oversampling anti-alias filter's own
+  cutoff
+- **THEN** slot 10 is Link (short name `Link`), the coupling weight between the Drive knob's resolved
+  gain and the Shape stage's own asymmetric coefficients, independent of Drive's and Shape's own values
+- **THEN** slot 11 is Fold (short name `Fold`), the pre-fold scale ahead of the sine-fold stage,
+  independent of the Drive knob's own gain
+- **THEN** slot 12 is Tone (short name `Tone`), a post-chain one-pole lowpass applied after every other
+  Drive stage
+- **THEN** slot 13 is Bias (short name `Bias`), a DC offset applied before the polynomial waveshaper and
+  exactly cancelled afterward so silence-in still produces silence-out
+
+#### Scenario: The Delay bank holds fourteen parameters, complete
+- **WHEN** the Delay bank is enumerated
+- **THEN** it holds fourteen named parameters at slot indices 0 through 13, not nine
+- **THEN** slots 0-8 are unchanged from the Delay bank's existing nine parameters
+- **THEN** slot 9 is Feedback Drive (short name `FbDr`), a pre-gain applied to the input of the feedback
+  loop's own in-loop saturator, never to that saturator's output
+- **THEN** slot 10 is Feedback Tone (short name `FbTn`), a one-pole lowpass damping the feedback tap
+  ahead of the same in-loop saturator
+- **THEN** slot 11 is Mod Rate (short name `MdRt`), the delay's own modulation LFO rate
+- **THEN** slot 12 is Width Balance (short name `WBal`), the ratio between the Width knob's time-offset
+  spread and its cross-feed blend, independent of the Width knob's own value
+- **THEN** the cross-feed weight this balance produces stays within 0 to 1 inclusive at every knob position,
+  so the left/right feedback pair stays a convex combination of the two delay-line reads
+- **THEN** the time-offset spread this balance produces never lengthens a read tap beyond the delay
+  buffer's own capacity
+- **THEN** slot 13 is Crush (short name `Crsh`), a bitcrush stage applied to the feedback tap's repeats
+
+#### Scenario: The Reverb bank holds fourteen parameters, complete
+- **WHEN** the Reverb bank is enumerated
+- **THEN** it holds fourteen named parameters at slot indices 0 through 13, not nine
+- **THEN** slots 0-8 are unchanged from the Reverb bank's existing nine parameters
+- **THEN** slot 9 is Mod Rate (short name `MdRt`), the tank's own modulation LFO rate
+- **THEN** slot 10 is Tank Drive (short name `TkDv`), a pre-gain applied to the input of the tank feedback
+  path's own in-loop saturator, never to that saturator's output
+- **THEN** slot 11 is Grit (short name `Grit`), the tank feedback path routed through a bit-scramble
+  stage ahead of that same in-loop saturator
+- **THEN** slot 12 is Tilt (short name `Tilt`), a bipolar post-tank tone shave applied before the
+  existing wet limiter
+- **THEN** slot 13 is Tuned (short name `Tund`), the tank's own delay-line lengths driven directly by
+  this parameter's resolved value, with no pitch tracker
 
 ### Requirement: Fixed global control slots
 Bank slots SHALL be indexed from zero (`0..15`). In every bank, the local **Crispy** control SHALL occupy slot index **14** and the global **Crunchy** control SHALL occupy slot index **15**. These positions SHALL be identical across all banks and SHALL NOT change when the active bank changes.
@@ -113,3 +219,43 @@ The app SHALL ship a defined initial patch: a small, enumerated set of parameter
 #### Scenario: No other parameter departs from its ordinary default
 - **WHEN** the app starts for the first time
 - **THEN** every parameter outside the enumerated initial-patch set reads its ordinary default value
+
+### Requirement: Bank-slate growth is safe for existing saved patches by construction
+A patch saved before a bank's occupied parameter slots grow SHALL continue to load every parameter it
+named at its own previously-saved value, whether that growth added new parameters or reassigned existing
+parameters to different slot indices within the same bank. Parameter identity for the purpose of saving
+and loading SHALL be the parameter's own name, never its bank-slot position, so that slot reassignment
+cannot cause one parameter's stored value to be silently applied to a different parameter.
+
+#### Scenario: Reordering an occupied bank's existing slots does not swap values
+- **WHEN** a bank's existing named parameters are reassigned to different slot indices within that bank
+- **THEN** a patch saved before the reassignment still applies each parameter's stored value to that same
+  parameter, not to whatever parameter now occupies its old slot index
+
+#### Scenario: A newly added parameter loads at its ordinary default from an older patch
+- **WHEN** a patch saved before a bank gained a new parameter is loaded
+- **THEN** the new parameter is not present in that patch's saved data
+- **THEN** the new parameter reads its own ordinary default value, exactly as any other parameter absent
+  from a loaded patch already does
+
+#### Scenario: Modulation depth assignments follow their own source, not the target's slot
+- **WHEN** a bank's target parameter is reassigned to a different slot index
+- **THEN** any modulation depth already assigned to that parameter from a given source keeps that same
+  source's assignment
+- **THEN** this holds because modulation depth is stored per modulation-source index, not per target
+  slot index
+
+### Requirement: A newly exposed hardcoded value defaults to the value it replaces
+A new parameter SHALL default to the value that was hardcoded before it existed, whenever that parameter's whole purpose is to expose an existing hardcoded literal, so that exposing the literal does not change how the instrument sounds at its own defaults. Where the value being replaced was derived from another parameter at runtime rather than fixed, the new parameter SHALL default to whatever that derivation produces at the other parameter's own default.
+
+#### Scenario: An unlocked literal's default reproduces today's sound
+- **WHEN** a parameter is added whose purpose is to expose a value that is hardcoded today
+- **THEN** its default value maps to that same hardcoded value
+- **THEN** the instrument at its defaults sounds exactly as it did before the parameter existed
+
+#### Scenario: A value derived at runtime defaults to what that derivation produces
+- **WHEN** a new parameter replaces a value that was previously computed from another parameter, so no fixed
+  default reproduces the old behaviour across that other parameter's whole range
+- **THEN** the new parameter defaults to the value that derivation produces at the other parameter's default
+- **THEN** the tracking itself is not reproduced, which is the point of decoupling them
+

@@ -101,6 +101,38 @@ TEST_CASE(vco_pm_depth_scale_zero_off_gate_and_smoothstep) {
     REQUIRE_NEAR(dsp::Vco::PmDepthScale(mid), 0.5f, 1e-6);
 }
 
+TEST_CASE(dsp_true_zero_depth_taper_monotonic_smoothstep_and_pm_parity) {
+    // DspMath.hpp TrueZeroDepthTaper, generalized from PmDepthScale
+    // (FroggersEngine.hpp:150-165). A step function would also pass a
+    // floor/ramp-top-only check, so this sweeps the whole [0,1] range and
+    // checks (a) monotonic non-decreasing, (b) strictly inside (0,1)
+    // strictly inside the ramp window (a step fails this), and (c) exact
+    // parity with Vco::PmDepthScale called at kPmLfoFloor/kPmLfoRampWidth.
+    float prev = -1.0f;
+    const int steps = 200;
+    for (int i = 0; i <= steps; ++i) {
+        const float knob = static_cast<float>(i) / static_cast<float>(steps);
+        const float value = dsp::TrueZeroDepthTaper(knob, dsp::Vco::kPmLfoFloor, dsp::Vco::kPmLfoRampWidth);
+
+        // (a) monotonic non-decreasing across the whole sweep.
+        REQUIRE_TRUE(value + 1e-6f >= prev);
+        prev = value;
+
+        // (b) strictly inside the ramp window, the value is strictly
+        // between 0 and 1 -- a hard step would instead jump straight to
+        // 0 or 1 here.
+        const float rampTop = dsp::Vco::kPmLfoFloor + dsp::Vco::kPmLfoRampWidth;
+        if (knob > dsp::Vco::kPmLfoFloor && knob < rampTop) {
+            REQUIRE_TRUE(value > 0.0f);
+            REQUIRE_TRUE(value < 1.0f);
+        }
+
+        // (c) parity: shared function called with PM's own thresholds
+        // must match Vco::PmDepthScale exactly, at every sampled knob.
+        REQUIRE_TRUE(value == dsp::Vco::PmDepthScale(knob));
+    }
+}
+
 TEST_CASE(vco_pm_zero_at_or_below_floor_leaves_carrier_unmodulated) {
     // At pmKnob <= floor, PmDepthScale == 0, so the depth multiply
     // (FroggersEngine.hpp:741-743) must zero the PM offset entirely --
@@ -111,7 +143,8 @@ TEST_CASE(vco_pm_zero_at_or_below_floor_leaves_carrier_unmodulated) {
     const float morphKnob = 0.4f;
     float refPhase = 0.0f;
     for (int i = 0; i < 32; ++i) {
-        const float out = vco.Process(pitchKnob, morphKnob, /*pmKnob=*/0.0f, sr);
+        const float out =
+            vco.Process(pitchKnob, morphKnob, /*pmKnob=*/0.0f, /*pmRateKnob=*/0.0f, /*ringModKnob=*/0.0f, sr);
         const float expected = dsp::EvalWaveMorph(refPhase, morphKnob);
         REQUIRE_NEAR(out, expected, 1e-5);
         refPhase = dsp::WrapPhase(refPhase + dsp::Vco::PitchToPhaseIncrement(pitchKnob, sr));
@@ -124,8 +157,8 @@ TEST_CASE(vco_pm_above_floor_actually_modulates) {
     const float sr = 48000.0f;
     bool sawDifference = false;
     for (int i = 0; i < 64; ++i) {
-        const float a = withPm.Process(0.3f, 0.4f, /*pmKnob=*/1.0f, sr);
-        const float b = withoutPm.Process(0.3f, 0.4f, /*pmKnob=*/0.0f, sr);
+        const float a = withPm.Process(0.3f, 0.4f, /*pmKnob=*/1.0f, /*pmRateKnob=*/0.5f, /*ringModKnob=*/0.0f, sr);
+        const float b = withoutPm.Process(0.3f, 0.4f, /*pmKnob=*/0.0f, /*pmRateKnob=*/0.5f, /*ringModKnob=*/0.0f, sr);
         if (std::fabs(a - b) > 1e-4f) {
             sawDifference = true;
         }
@@ -142,15 +175,18 @@ TEST_CASE(vco_zero_cross_vco_terms_independent_of_other_instances) {
     dsp::Vco alone;
     std::vector<float> aloneSeq;
     for (int i = 0; i < 16; ++i) {
-        aloneSeq.push_back(alone.Process(0.6f, 0.2f, 0.7f, sr));
+        aloneSeq.push_back(alone.Process(0.6f, 0.2f, 0.7f, /*pmRateKnob=*/0.3f, /*ringModKnob=*/0.6f, sr));
     }
 
     dsp::Vco interleavedA;
     dsp::Vco interleavedB;
     std::vector<float> interleavedSeq;
     for (int i = 0; i < 16; ++i) {
-        interleavedSeq.push_back(interleavedA.Process(0.6f, 0.2f, 0.7f, sr));
-        interleavedB.Process(0.9f, 0.8f, 0.1f, sr);  // different knobs, driven "in between"
+        interleavedSeq.push_back(interleavedA.Process(0.6f, 0.2f, 0.7f, /*pmRateKnob=*/0.3f, /*ringModKnob=*/0.6f, sr));
+        // different knobs, driven "in between" -- proves zero cross-VCO
+        // terms hold for the new Ring Mod carrier too (each instance's own
+        // internal carrier, never the other's).
+        interleavedB.Process(0.9f, 0.8f, 0.1f, /*pmRateKnob=*/0.9f, /*ringModKnob=*/0.4f, sr);
     }
 
     REQUIRE_TRUE(aloneSeq.size() == interleavedSeq.size());
@@ -176,12 +212,20 @@ TEST_CASE(vco_adsr_state_attacks_holds_and_releases) {
     dsp::VcoAdsrState adsr;
     adsr.init(1000.0f);  // 1 kHz for easy-to-reason step counts
     adsr.setGate(true);
-    float last = -1.0f;
+    // Strict-executor packet (Decay): the old per-sample monotonic-rise
+    // assertion no longer holds bit-for-bit -- Attack now ramps to 1.0f (not
+    // sustainLevel) and a new Decay stage then falls from there down to
+    // sustainLevel, so the trace genuinely dips partway through. What still
+    // must hold, and is checked below instead: the level reaches (very
+    // close to) 1.0f during Attack, then settles at MapSustain(0.8f) once
+    // Attack+Decay have had time to complete.
+    float peak = 0.0f;
     for (int i = 0; i < 2000; ++i) {
-        const float level = adsr.apply(0, 1.0f, /*attack=*/0.5f, /*sustain=*/0.8f, /*release=*/0.5f);
-        REQUIRE_TRUE(level >= last - 1e-6f);  // monotonic rise during attack/hold
-        last = level;
+        const float level = adsr.apply(0, 1.0f, /*attack=*/0.5f, /*decay=*/0.5f, /*sustain=*/0.8f, /*release=*/0.5f);
+        peak = std::max(peak, level);
     }
+    REQUIRE_NEAR(peak, 1.0f, 1e-3);  // Attack reached its independent peak
+    const float last = adsr.apply(0, 1.0f, 0.5f, 0.5f, 0.8f, 0.5f);
     // F3-adjacent (2026-08-07): sustain is now floored by
     // dsp::VcoAdsrState::kMinSustainLevel so audio-rate modulation cannot gate
     // a voice to silence, so a 0.8 KNOB no longer settles at a 0.8 LEVEL.
@@ -192,9 +236,9 @@ TEST_CASE(vco_adsr_state_attacks_holds_and_releases) {
 
     adsr.setGate(false);
     for (int i = 0; i < 20000; ++i) {
-        adsr.apply(0, 1.0f, 0.5f, 0.8f, 0.5f);
+        adsr.apply(0, 1.0f, 0.5f, 0.5f, 0.8f, 0.5f);
     }
-    const float released = adsr.apply(0, 1.0f, 0.5f, 0.8f, 0.5f);
+    const float released = adsr.apply(0, 1.0f, 0.5f, 0.5f, 0.8f, 0.5f);
     REQUIRE_NEAR(released, 0.0f, 1e-3);
 }
 
@@ -222,8 +266,14 @@ TEST_CASE(max_attack_knob_reaches_sustain_within_the_new_one_second_ceiling) {
 
     float level = 0.0f;
     const int samplesAt2s = static_cast<int>(2.0f * kSampleRate);
+    // Strict-executor packet (Decay): decayKnob=0.0f (the fastest mapped
+    // decay time, kMinTimeSeconds) isolates THIS test's own concern --
+    // attack's ceiling/timing -- from decay's, which is not what this test
+    // is about. At 0.0f decay, Decay completes in well under a millisecond
+    // once Attack's 1.0s finishes, so it cannot meaningfully eat into the
+    // 2.0s budget this test measures against.
     for (int i = 0; i < samplesAt2s; ++i) {
-        level = adsr.apply(0, 1.0f, /*attack=*/1.0f, /*sustain=*/kSustain, /*release=*/0.0f);
+        level = adsr.apply(0, 1.0f, /*attack=*/1.0f, /*decay=*/0.0f, /*sustain=*/kSustain, /*release=*/0.0f);
     }
     REQUIRE_NEAR(level, dsp::VcoAdsrState::MapSustain(kSustain), 1e-6);
 }
@@ -244,12 +294,12 @@ TEST_CASE(mix_osc_voices_applies_asr_per_voice_then_averages) {
         const float v2 = -0.3f;
         const float v3 = 0.9f;
         const float mixed = dsp::MixOscVoices(adsrForMix, v1, v2, v3,
-                                               0.1f, 0.6f, 0.2f,
-                                               0.2f, 0.7f, 0.3f,
-                                               0.05f, 0.5f, 0.1f);
-        const float e1 = adsrReference.apply(0, v1, 0.1f, 0.6f, 0.2f);
-        const float e2 = adsrReference.apply(1, v2, 0.2f, 0.7f, 0.3f);
-        const float e3 = adsrReference.apply(2, v3, 0.05f, 0.5f, 0.1f);
+                                               0.1f, 0.15f, 0.6f, 0.2f,
+                                               0.2f, 0.25f, 0.7f, 0.3f,
+                                               0.05f, 0.35f, 0.5f, 0.1f);
+        const float e1 = adsrReference.apply(0, v1, 0.1f, 0.15f, 0.6f, 0.2f);
+        const float e2 = adsrReference.apply(1, v2, 0.2f, 0.25f, 0.7f, 0.3f);
+        const float e3 = adsrReference.apply(2, v3, 0.05f, 0.35f, 0.5f, 0.1f);
         const float expected = (e1 + e2 + e3) * (1.0f / 3.0f);
         REQUIRE_NEAR(mixed, expected, 1e-6);
     }
@@ -810,7 +860,7 @@ TEST_CASE(filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend) {
 
     for (int i = 0; i < 8; ++i) {
         const float input = 0.1f * static_cast<float>(i + 1);
-        const float actual = chain.Process(input, /*useParallel=*/true, combPeakBlend, scoopMix);
+        const float actual = chain.Process(input, /*topology=*/0.0f, combPeakBlend, scoopMix);
 
         const float combRaw = refComb.Process(refPureDelay.Process(input));
         const float trimState = refTrimSmoother.Process(rawCombTrim);
@@ -860,12 +910,12 @@ TEST_CASE(comb_branch_output_stays_at_or_below_computed_bound_at_max_feedback) {
     constexpr int kAssertSamples = 2000;
 
     for (int i = 0; i < kSettleSamples; ++i) {
-        chain.Process(inputAmplitude, /*useParallel=*/true, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
+        chain.Process(inputAmplitude, /*topology=*/0.0f, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
     }
 
     for (int i = 0; i < kAssertSamples; ++i) {
         const float combPath =
-            chain.Process(inputAmplitude, /*useParallel=*/true, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
+            chain.Process(inputAmplitude, /*topology=*/0.0f, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
         REQUIRE_TRUE(std::fabs(combPath) <= bound + 1.0e-4f);
     }
 }
@@ -932,14 +982,14 @@ TEST_CASE(comb_branch_output_stays_at_or_below_computed_bound_under_audio_rate_f
         chain.comb.SetFeedback(0.0f);
         constexpr int kSettleSamples = 500;
         for (int i = 0; i < kSettleSamples; ++i) {
-            chain.Process(inputAmplitude, /*useParallel=*/true, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
+            chain.Process(inputAmplitude, /*topology=*/0.0f, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
         }
         chain.comb.SetFeedback(kMaxFb);
         constexpr int kPostJumpSamples = 500;
         const float bound = boundFor(kMaxFb);
         for (int i = 0; i < kPostJumpSamples; ++i) {
             const float combPath =
-                chain.Process(inputAmplitude, /*useParallel=*/true, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
+                chain.Process(inputAmplitude, /*topology=*/0.0f, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
             REQUIRE_TRUE(std::fabs(combPath) <= bound + 1.0e-4f);
         }
     }
@@ -960,7 +1010,7 @@ TEST_CASE(comb_branch_output_stays_at_or_below_computed_bound_under_audio_rate_f
             const float fb = (2.0f * nextUniform01() - 1.0f) * kMaxFb;  // [-kMaxFb, kMaxFb)
             chain.comb.SetFeedback(fb);
             const float combPath =
-                chain.Process(inputAmplitude, /*useParallel=*/true, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
+                chain.Process(inputAmplitude, /*topology=*/0.0f, /*combPeakBlend=*/1.0f, /*scoopMix=*/0.0f);
             REQUIRE_TRUE(std::fabs(combPath) <= boundFor(fb) + 1.0e-4f);
         }
     }
@@ -993,12 +1043,12 @@ TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_at_max_height) {
     int sampleIx = 0;
     for (; sampleIx < kWarmupSamples; ++sampleIx) {
         const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
-        chain.Process(inputAmplitude * std::sin(phase), /*useParallel=*/true, /*combPeakBlend=*/0.0f,
+        chain.Process(inputAmplitude * std::sin(phase), /*topology=*/0.0f, /*combPeakBlend=*/0.0f,
                       /*scoopMix=*/0.0f);
     }
     for (int i = 0; i < kAssertSamples; ++i, ++sampleIx) {
         const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
-        const float peakPath = chain.Process(inputAmplitude * std::sin(phase), /*useParallel=*/true,
+        const float peakPath = chain.Process(inputAmplitude * std::sin(phase), /*topology=*/0.0f,
                                               /*combPeakBlend=*/0.0f, /*scoopMix=*/0.0f);
         REQUIRE_TRUE(std::fabs(peakPath) <= bound + 0.05f);
     }
@@ -1071,14 +1121,14 @@ TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_under_audio_rate_h
         constexpr int kSettleSamples = 500;
         for (; sampleIx < kSettleSamples; ++sampleIx) {
             const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
-            chain.Process(inputAmplitude * std::sin(phase), /*useParallel=*/true, /*combPeakBlend=*/0.0f,
+            chain.Process(inputAmplitude * std::sin(phase), /*topology=*/0.0f, /*combPeakBlend=*/0.0f,
                           /*scoopMix=*/0.0f);
         }
         chain.peak.SetHeight(kMaxHeight);
         constexpr int kPostJumpSamples = 4000;  // resonance buildup window, same as the static test above.
         for (int i = 0; i < kPostJumpSamples; ++i, ++sampleIx) {
             const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
-            const float peakPath = chain.Process(inputAmplitude * std::sin(phase), /*useParallel=*/true,
+            const float peakPath = chain.Process(inputAmplitude * std::sin(phase), /*topology=*/0.0f,
                                                   /*combPeakBlend=*/0.0f, /*scoopMix=*/0.0f);
             REQUIRE_TRUE(std::fabs(peakPath) <= inputAmplitude + 0.05f);
         }
@@ -1110,7 +1160,7 @@ TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_under_audio_rate_h
             const float height = 1.0f + nextUniform01() * (kMaxHeight - 1.0f);
             chain.peak.SetHeight(height);
             const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(i);
-            const float peakPath = chain.Process(inputAmplitude * std::sin(phase), /*useParallel=*/true,
+            const float peakPath = chain.Process(inputAmplitude * std::sin(phase), /*topology=*/0.0f,
                                                   /*combPeakBlend=*/0.0f, /*scoopMix=*/0.0f);
             REQUIRE_TRUE(std::fabs(peakPath) <= ceilingBound + 1.0e-3f);
         }
@@ -1174,43 +1224,95 @@ TEST_CASE(peak_branch_output_respects_computed_bound_under_audio_rate_height_mod
         const float height = 1.0f + nextUniform01() * (kMaxHeight - 1.0f);
         chain.peak.SetHeight(height);
         const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(i);
-        const float peakPath = chain.Process(inputAmplitude * std::sin(phase), /*useParallel=*/true,
+        const float peakPath = chain.Process(inputAmplitude * std::sin(phase), /*topology=*/0.0f,
                                               /*combPeakBlend=*/0.0f, /*scoopMix=*/0.0f);
         REQUIRE_TRUE(std::fabs(peakPath) <= bound + 1.0e-2f);
     }
 }
 
-TEST_CASE(filter_fx_chain_serial_matches_delay_then_comb_then_peak) {
-    dsp::FilterFxChain chain;
-    chain.pureDelay.delaySamples = 1.0f;
-    chain.comb.delaySamples = 1;
-    chain.comb.SetFeedback(0.2f);
-    chain.comb.SetCutoffAlpha(0.5f);
-    chain.peak.SetFreq(0.03f);
-    chain.peak.SetHeight(1.2f);
-    chain.peak.SetWidth(1.0f);
+// filter_fx_chain_serial_matches_delay_then_comb_then_peak DELETED (Task A,
+// this packet): it pinned the `useParallel == false` series branch
+// (`pureDelay -> comb -> peak`, no trims/limiter/blend, ignoring
+// combPeakBlend/scoopMix) that FilterFxChain::Process no longer has --
+// dead code, confirmed by grep, deleted rather than kept beside the new
+// `topology` morph per this packet's brief. No replacement test: there is
+// no longer a distinct series code path to pin, and topology's behaviour
+// across [0,1] is covered by Task F's headroom sweep test below plus
+// filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend at
+// topology==0.
 
-    dsp::PureDelay refPureDelay;
-    refPureDelay.delaySamples = 1.0f;
-    dsp::Comb refComb;
-    refComb.delaySamples = 1;
-    refComb.SetFeedback(0.2f);
-    refComb.SetCutoffAlpha(0.5f);
-    dsp::ResonantBump refPeak;
-    refPeak.SetFreq(0.03f);
-    refPeak.SetHeight(1.2f);
-    refPeak.SetWidth(1.0f);
+// -----------------------------------------------------------------------
+// Task F (packet -- Filter slot 9 "Topology"): at high topology the peak
+// biquad's input is `combPath` (the comb branch's OWN output,
+// FilterFxChain::Process, FilterFx.hpp) instead of the raw chain input -- a
+// new operating point for a stage whose ceiling this codebase has already
+// had to lower (kMaxResonantBumpHeight's own history, FilterFx.hpp; the
+// peak-branch limiter's own B5 history, this file above). Sweeps topology
+// across the WHOLE [0,1] range -- not just the endpoints; the midpoint
+// genuinely mixes both paths and is its own case -- drives the peak branch
+// (isolated via combPeakBlend=0/scoopMix=0, this file's own established
+// idiom, e.g. peak_branch_output_stays_at_or_below_computed_bound_at_max_
+// height above) with a full-scale sine at the peak's own resonant
+// frequency, comb feedback pinned at its own maximum (the worst case for
+// how far combPath can depart from the raw input), and RECORDS the
+// measured peak absolute output at each topology -- printed below, per
+// this task's own brief that a bare pass/fail is not a result.
+// -----------------------------------------------------------------------
+TEST_CASE(topology_morph_peak_branch_headroom_across_full_range) {
+    constexpr float sampleRate = 48000.0f;
+    const float inputAmplitude = 1.0f;  // full-scale.
+    const float freqNormalized = 0.05f;  // matches this file's other peak-branch bound tests.
+    const float maxHeight = dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, 1.0f);
+    const float maxFeedback = dsp::Comb::GetFeedback(1.0f);  // +0.95, kMaxFeedbackMagnitude.
 
-    for (int i = 0; i < 8; ++i) {
-        const float input = 0.05f * static_cast<float>(i + 1);
-        const float actual = chain.Process(input, /*useParallel=*/false, 0.0f, 0.0f);
+    // Not just the endpoints -- the midpoint (0.5) mixes both paths and is
+    // its own case, per this task's own brief.
+    const float topologies[] = {0.0f, 0.1f, 0.25f, 0.5f, 0.75f, 0.9f, 1.0f};
 
-        float expected = refPureDelay.Process(input);
-        expected = refComb.Process(expected);
-        expected = refPeak.Process(expected);
+    std::cout << "  [Task F] topology sweep, peak-branch-isolated (combPeakBlend=0, scoopMix=0), "
+                 "full-scale sine at peak freq, comb feedback pinned at max magnitude:\n";
 
-        REQUIRE_NEAR(actual, expected, 1e-5);
+    float overallMax = 0.0f;
+    for (float topology : topologies) {
+        dsp::FilterFxChain chain;
+        chain.Configure(sampleRate);  // real peakLimiter coefficients, not the constructor's assumed-48kHz default.
+        chain.comb.delaySamples = 1;
+        chain.comb.SetFeedback(maxFeedback);
+        chain.comb.SetCutoffAlpha(1.0f);  // identity lowpass -- isolates the feedback loop gain, worst case for combPath.
+        chain.pureDelay.delaySamples = 0.0f;
+        chain.peak.SetFreq(freqNormalized);
+        chain.peak.SetHeight(maxHeight);
+        chain.peak.SetWidth(1.0f);
+
+        constexpr int kWarmupSamples = 4000;  // resonance buildup window, matches this file's other peak tests.
+        constexpr int kAssertSamples = 400;
+        int sampleIx = 0;
+        float maxLevel = 0.0f;
+        for (; sampleIx < kWarmupSamples; ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
+            chain.Process(inputAmplitude * std::sin(phase), topology, /*combPeakBlend=*/0.0f, /*scoopMix=*/0.0f);
+        }
+        for (int i = 0; i < kAssertSamples; ++i, ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
+            const float level = chain.Process(inputAmplitude * std::sin(phase), topology, /*combPeakBlend=*/0.0f,
+                                               /*scoopMix=*/0.0f);
+            REQUIRE_TRUE(std::isfinite(level));
+            maxLevel = std::max(maxLevel, std::fabs(level));
+        }
+        overallMax = std::max(overallMax, maxLevel);
+        std::cout << "  [Task F]   topology=" << topology << "  peak abs output=" << maxLevel << "\n";
     }
+
+    // Safety net only, deliberately NOT a tight "topology must never exceed
+    // topology==0's own level" assertion: this task's own brief is that a
+    // measurement showing topology's new operating point running hotter
+    // than topology==0 must be REPORTED plainly (see the numbers printed
+    // above), not hidden behind a bound tuned to pass regardless of what
+    // the measurement finds. `< 5.0f` only guards against a genuine
+    // blowup -- an order of magnitude past every ceiling this file's
+    // limiters/trims already target -- which finiteness above does not by
+    // itself rule out.
+    REQUIRE_TRUE(overallMax < 5.0f);
 }
 
 // =========================================================================
@@ -2738,6 +2840,383 @@ TEST_CASE(free_running_source_keeps_producing_new_values_across_two_full_cycles)
         }
     }
     REQUIRE_TRUE(sawADifference);
+}
+
+// =========================================================================
+// Drive/Delay slots 9-13 (strict-executor packet, D1-D10). Each mapping's
+// own default-reproduces-today's-literal claim is pinned here through the
+// REAL setter, not just by inspecting the in-class fallback default that
+// the tests above (frog_block_process_matches_manual_chain_replica,
+// delay_feedback_loop_stays_bounded_at_max_feedback, etc.) already happen
+// to exercise by never calling these setters at all.
+// =========================================================================
+
+TEST_CASE(drive_set_anti_alias_brightness_default_knob_reproduces_0_4f_cutoff) {
+    // D1: knob 0.5f -> ExpMapCompute(0.32,0.5,0.5) == sqrt(0.16) == 0.4f exactly.
+    dsp::Oversampler2x over;
+    over.SetAntiAliasBrightness(0.5f);
+    dsp::OnePoleLowPass reference;
+    reference.SetAlphaFromNatFreq(0.4f);
+    REQUIRE_NEAR(over.antiAlias.alpha, reference.alpha, 1e-6);
+}
+
+TEST_CASE(polynomial_drive_set_link_default_knob_reproduces_0_25f_coupling) {
+    // D2: knob 0.5f -> linkScalar == 0.5f*0.5f == 0.25f exactly, matching the
+    // pre-packet hardcoded literal this same formula (polynomial_drive_set_
+    // coefs_matches_space_filling_curve_formula above) already pins.
+    dsp::PolynomialDrive drive;
+    drive.SetGain(0.5f);
+    const float computedGain = drive.gain;
+    drive.SetLink(0.5f);
+    drive.SetCoefs(0.3f);
+
+    const float coefsKnob = dsp::ZeroedExpCompute(30.0f, 0.3f);
+    REQUIRE_NEAR(drive.coefs[1], 10.0f * dsp::Sine01(coefsKnob * 1.618f + 0.25f * (computedGain - 1.0f)), 1e-5);
+    REQUIRE_NEAR(drive.coefs[3], 10.0f * dsp::Sine01(coefsKnob * 3.141f + 0.25f * (computedGain - 1.0f)), 1e-5);
+}
+
+TEST_CASE(frog_block_set_fold_divisor_stays_strictly_positive_across_full_knob_range) {
+    // D3's binding requirement: the divisor must never reach or cross zero
+    // (out/0 -> +-inf -> Sine01's floor() turns it into NaN). ExpMapCompute's
+    // floor is `min` (1.0 here), so this holds by construction across the
+    // whole representable knob range, checked densely here as a regression
+    // guard rather than trusted on paper alone.
+    dsp::FrogBlock block;
+    for (int i = 0; i <= 200; ++i) {
+        const float knob = static_cast<float>(i) / 200.0f;
+        block.SetFold(knob);
+        REQUIRE_TRUE(block.foldDivisor > 0.0f);
+        REQUIRE_TRUE(std::isfinite(block.foldDivisor));
+    }
+    block.SetFold(0.5f);
+    REQUIRE_NEAR(block.foldDivisor, 4.0f, 1e-5);  // default knob reproduces today's literal exactly.
+}
+
+// D1/D3/D4/D5's combined claim: at the exact default knob values recorded in
+// FroggersParameters.hpp (0.5f/0.5f/1.0f/0.5f for ABrt/Fold/Tone/Bias), a
+// FrogBlock wired through the real setters must be bit-for-bit identical to
+// one that never calls them at all (the pre-packet behaviour) -- the actual
+// claim "a fresh launch sounds EXACTLY as it does today" makes, verified
+// through the production call path rather than by inspecting field defaults.
+TEST_CASE(frog_block_default_knob_values_reproduce_pre_packet_output_exactly) {
+    dsp::FrogBlock blockOld;  // never touches SetAntiAliasBrightness/SetFold/SetTone/SetBias.
+    blockOld.polynomialDrive.SetGain(0.4f);
+    blockOld.polynomialDrive.SetCoefs(0.7f);
+    blockOld.sampleRateReducer1.SetFreq(0.8f);
+    blockOld.sampleRateReducer2.SetFreq(0.75f);
+    blockOld.digitalReorganizer.SetFlip(0.2f);
+    blockOld.digitalReorganizer.SetHash(0.5f);
+    blockOld.fuzz = 0.3f;
+
+    dsp::FrogBlock blockNew;  // same knobs, PLUS the four new setters at their FroggersParameters.hpp defaults.
+    blockNew.polynomialDrive.SetGain(0.4f);
+    blockNew.polynomialDrive.SetLink(0.5f);
+    blockNew.polynomialDrive.SetCoefs(0.7f);
+    blockNew.sampleRateReducer1.SetFreq(0.8f);
+    blockNew.sampleRateReducer2.SetFreq(0.75f);
+    blockNew.digitalReorganizer.SetFlip(0.2f);
+    blockNew.digitalReorganizer.SetHash(0.5f);
+    blockNew.fuzz = 0.3f;
+    blockNew.oversampler.SetAntiAliasBrightness(0.5f);
+    blockNew.SetFold(0.5f);
+    blockNew.SetTone(1.0f);
+    blockNew.SetBias(0.5f);
+
+    for (int i = 0; i < 64; ++i) {
+        const float input = 0.6f * std::sin(0.21f * static_cast<float>(i));
+        REQUIRE_NEAR(blockOld.Process(input), blockNew.Process(input), 1e-5);
+    }
+}
+
+TEST_CASE(stereo_delay_feedback_tone_default_knob_is_exact_bypass_alpha) {
+    dsp::StereoDelay delay;
+    delay.SetFeedbackTone(1.0f);  // D7 default knob.
+    REQUIRE_NEAR(delay.fbToneL.alpha, 1.0f, 1e-6);
+    REQUIRE_NEAR(delay.fbToneR.alpha, 1.0f, 1e-6);
+}
+
+TEST_CASE(stereo_delay_crush_default_knob_is_exact_bypass_freq) {
+    dsp::StereoDelay delay;
+    delay.SetCrush(0.0f);  // D10 default knob.
+    REQUIRE_TRUE(delay.crushL.freq >= 1.0f);
+    REQUIRE_TRUE(delay.crushR.freq >= 1.0f);
+}
+
+// D9's two binding bounds, checked across the WHOLE widthBalance knob range
+// (not just the default), matching this task's own "must hold by
+// construction of the mapping, not by luck" requirement.
+TEST_CASE(stereo_delay_width_balance_mapping_keeps_cross_in_0_1_and_spread_at_or_below_todays_max) {
+    dsp::StereoDelay delay;
+    for (int wb = 0; wb <= 20; ++wb) {
+        const float widthBalanceKnob = static_cast<float>(wb) / 20.0f;
+        delay.SetWidthBalance(widthBalanceKnob);
+        for (int dw = 0; dw <= 20; ++dw) {
+            const float dwid = static_cast<float>(dw) / 20.0f;  // p.dwid's own established [0,1] invariant.
+            const float baseSeconds = 2.0f;                     // baseSeconds' own max (kMaxDelaySeconds).
+            const float cross = dwid * 0.5f * delay.widthBalance;
+            const float spread = dwid * baseSeconds * 0.35f * delay.widthBalance;
+            const float spreadCeilingToday = dwid * baseSeconds * 0.35f;
+            REQUIRE_TRUE(cross >= 0.0f && cross <= 1.0f);          // bound (a).
+            REQUIRE_TRUE(spread <= spreadCeilingToday + 1e-6f);    // bound (b): never exceeds today's own max.
+        }
+    }
+    delay.SetWidthBalance(1.0f);
+    REQUIRE_NEAR(delay.widthBalance, 1.0f, 1e-6);  // default knob reproduces today's 0.35/0.5 ratio exactly.
+}
+
+// D6's binding placement requirement: fbDrive multiplies the ARGUMENT of
+// Saturate only, so the per-sample write bound `|inSignal| + fbk` must hold
+// REGARDLESS of fbDrive -- checked here at fbDrive's own maximum (knob 1.0f
+// -> ExpMapCompute(0.25,4,1.0) == 4.0x), the same scenario
+// delay_feedback_loop_stays_bounded_at_max_feedback above pins at fbDrive's
+// (implicit) default of 1.0x.
+TEST_CASE(stereo_delay_feedback_drive_at_maximum_does_not_raise_the_per_sample_bound) {
+    dsp::StereoDelay delay;
+    const float sr = 48000.0f;
+    delay.SetSampleRate(sr);
+    delay.SetFeedbackDrive(1.0f);  // -> fbDrive == 4.0x, ExpMapCompute(0.25,4,1.0).
+
+    dsp::DelayParams p;
+    p.dtim = 0.0f;
+    p.dsnd = 1.0f;
+    p.dfbk = 1.0f;  // -> fbk clamps to 0.98.
+    p.dwid = 0.3f;
+    p.ddet = 0.0f;
+    p.dmod = 0.0f;
+
+    const float inputAmplitude = 1.0f;
+    const float fbk = 0.98f;
+    const float bound = inputAmplitude * p.dsnd + fbk;  // same |inSignal| + fbk bound as B2's own test.
+
+    for (int i = 0; i < 3000; ++i) {
+        const dsp::DelayWetPair wet = delay.Process(inputAmplitude, p);
+        REQUIRE_TRUE(std::isfinite(wet.l) && std::isfinite(wet.r));
+        REQUIRE_TRUE(std::fabs(wet.l) <= bound + 1.0e-4f);
+        REQUIRE_TRUE(std::fabs(wet.r) <= bound + 1.0e-4f);
+    }
+}
+
+// D6/D7/D8/D9/D10's combined claim, same shape as the FrogBlock version
+// above: at the exact default knob values recorded in FroggersParameters.hpp
+// (0.5f/1.0f/0.5f/1.0f/0.0f for FbDr/FbTn/MdRt/WBal/Crsh), a StereoDelay
+// wired through the real setters is bit-for-bit identical to one that never
+// calls them, across enough samples (and a nonzero dmod) to exercise the
+// mod-rate LFO path D8 touches.
+TEST_CASE(stereo_delay_default_knob_values_reproduce_pre_packet_output_exactly) {
+    const float sr = 48000.0f;
+    dsp::StereoDelay delayOld;
+    delayOld.SetSampleRate(sr);  // never touches SetFeedbackDrive/SetFeedbackTone/SetModRate/SetWidthBalance/SetCrush.
+
+    dsp::StereoDelay delayNew;
+    delayNew.SetSampleRate(sr);
+    delayNew.SetFeedbackDrive(0.5f);
+    delayNew.SetFeedbackTone(1.0f);
+    delayNew.SetModRate(0.5f);
+    delayNew.SetWidthBalance(1.0f);
+    delayNew.SetCrush(0.0f);
+
+    dsp::DelayParams p;
+    p.dtim = 0.3f;
+    p.dsnd = 1.0f;
+    p.dfbk = 0.6f;
+    p.dwid = 0.4f;
+    p.ddet = 0.1f;
+    p.dmod = 0.5f;  // nonzero -- exercises the mod-rate LFO path D8's SetModRate touches.
+
+    for (int i = 0; i < 4000; ++i) {
+        const float input = 0.5f * std::sin(0.05f * static_cast<float>(i));
+        const dsp::DelayWetPair wetOld = delayOld.Process(input, p);
+        const dsp::DelayWetPair wetNew = delayNew.Process(input, p);
+        REQUIRE_NEAR(wetOld.l, wetNew.l, 1e-4);
+        REQUIRE_NEAR(wetOld.r, wetNew.r, 1e-4);
+    }
+}
+
+// =========================================================================
+// Strict-executor packet -- Ring Mod (Audio slots 9-11, task A), PM rate
+// (Audio slot 12, task B), VCO balance (Audio slot 13, task C).
+// =========================================================================
+
+TEST_CASE(ring_mod_depth_scale_zero_off_gate_and_smoothstep_uses_own_floor) {
+    // Task A2: Ring Mod's OWN floor/ramp -- not PM's kPmLfoFloor/
+    // kPmLfoRampWidth, confirmed distinct, then the same taper shape check
+    // vco_pm_depth_scale_zero_off_gate_and_smoothstep above runs for PM.
+    REQUIRE_TRUE(dsp::Vco::kRingModFloor != dsp::Vco::kPmLfoFloor ||
+                 dsp::Vco::kRingModRampWidth != dsp::Vco::kPmLfoRampWidth);
+    REQUIRE_TRUE(dsp::Vco::RingModDepthScale(0.0f) == 0.0f);
+    REQUIRE_TRUE(dsp::Vco::RingModDepthScale(dsp::Vco::kRingModFloor) == 0.0f);
+    REQUIRE_TRUE(dsp::Vco::RingModDepthScale(dsp::Vco::kRingModFloor + dsp::Vco::kRingModRampWidth) == 1.0f);
+    REQUIRE_TRUE(dsp::Vco::RingModDepthScale(1.0f) == 1.0f);
+    const float mid = dsp::Vco::kRingModFloor + 0.5f * dsp::Vco::kRingModRampWidth;
+    REQUIRE_NEAR(dsp::Vco::RingModDepthScale(mid), 0.5f, 1e-6);
+}
+
+TEST_CASE(ring_mod_phase_increment_uses_its_own_range_not_pitch_range) {
+    // Task A1: same ExpMapCompute shape PitchToPhaseIncrement uses, but
+    // NOT its 20/20000 Hz literals.
+    const float sr = 48000.0f;
+    REQUIRE_NEAR(dsp::Vco::RingModPhaseIncrement(0.0f, sr), dsp::Vco::kRingModMinHz / sr, 1e-9);
+    REQUIRE_NEAR(dsp::Vco::RingModPhaseIncrement(1.0f, sr), dsp::Vco::kRingModMaxHz / sr, 1e-6);
+    REQUIRE_TRUE(dsp::Vco::kRingModMinHz != 20.0f || dsp::Vco::kRingModMaxHz != 20000.0f);
+}
+
+TEST_CASE(ring_mod_at_default_zero_is_bit_identical_to_no_ring_mod_at_all) {
+    // Task A3: Ring Mod's default (0.0f, FroggersParameters.hpp, at/below
+    // kRingModFloor) must leave a fresh launch sounding exactly as it did
+    // before Ring Mod existed -- same structure as
+    // vco_pm_zero_at_or_below_floor_leaves_carrier_unmodulated above.
+    dsp::Vco vco;
+    const float sr = 48000.0f;
+    const float pitchKnob = 0.4f;
+    const float morphKnob = 0.3f;
+    float refPhase = 0.0f;
+    for (int i = 0; i < 32; ++i) {
+        const float out =
+            vco.Process(pitchKnob, morphKnob, /*pmKnob=*/0.0f, /*pmRateKnob=*/0.0f, /*ringModKnob=*/0.0f, sr);
+        const float expected = dsp::EvalWaveMorph(refPhase, morphKnob);
+        REQUIRE_NEAR(out, expected, 1e-5);
+        refPhase = dsp::WrapPhase(refPhase + dsp::Vco::PitchToPhaseIncrement(pitchKnob, sr));
+    }
+}
+
+TEST_CASE(ring_mod_above_floor_actually_modulates_and_stays_within_unit_bound) {
+    dsp::Vco withRingMod;
+    dsp::Vco withoutRingMod;
+    const float sr = 48000.0f;
+    bool sawDifference = false;
+    for (int i = 0; i < 64; ++i) {
+        const float a = withRingMod.Process(0.3f, 0.4f, 0.0f, 0.0f, /*ringModKnob=*/1.0f, sr);
+        const float b = withoutRingMod.Process(0.3f, 0.4f, 0.0f, 0.0f, /*ringModKnob=*/0.0f, sr);
+        REQUIRE_TRUE(a >= -1.0f - 1e-5f && a <= 1.0f + 1e-5f);  // convex-blend bound (task A2).
+        if (std::fabs(a - b) > 1e-4f) {
+            sawDifference = true;
+        }
+    }
+    REQUIRE_TRUE(sawDifference);
+}
+
+TEST_CASE(ring_mod_carrier_is_internal_never_reads_another_vco) {
+    // Task A1's own binding requirement: the carrier is generated INSIDE
+    // each Vco instance. Same proof shape as
+    // vco_zero_cross_vco_terms_independent_of_other_instances above,
+    // isolated to Ring Mod: driving a second, differently-tuned Vco (with a
+    // different ring-mod knob) "in between" calls must not perturb the
+    // first instance's own sequence at all.
+    const float sr = 48000.0f;
+    dsp::Vco alone;
+    std::vector<float> aloneSeq;
+    for (int i = 0; i < 24; ++i) {
+        aloneSeq.push_back(alone.Process(0.5f, 0.5f, 0.0f, 0.0f, /*ringModKnob=*/0.8f, sr));
+    }
+
+    dsp::Vco interleavedA;
+    dsp::Vco interleavedB;
+    std::vector<float> interleavedSeq;
+    for (int i = 0; i < 24; ++i) {
+        interleavedSeq.push_back(interleavedA.Process(0.5f, 0.5f, 0.0f, 0.0f, /*ringModKnob=*/0.8f, sr));
+        interleavedB.Process(0.2f, 0.9f, 0.0f, 0.0f, /*ringModKnob=*/0.05f, sr);  // different carrier entirely.
+    }
+
+    REQUIRE_TRUE(aloneSeq.size() == interleavedSeq.size());
+    for (size_t i = 0; i < aloneSeq.size(); ++i) {
+        REQUIRE_NEAR(aloneSeq[i], interleavedSeq[i], 1e-7);
+    }
+}
+
+TEST_CASE(pm_rate_default_knob_reproduces_todays_rate_at_pm_depth_knobs_default) {
+    // Task B: today's rate at the PM depth knob's own 0.0f default
+    // (FroggersParameters.hpp PM1/PM2/PM3) is ExpMapCompute(min,max,0.0f)
+    // == kPmLfoMinHz (min^0-power identity, independent of min/max). The
+    // new PMrt slot's own 0.0f default (unset in FroggersParameters.hpp)
+    // reproduces the exact same rate through the exact same formula, now
+    // fed by pmRateKnob01 instead of pmKnob01.
+    const float sr = 48000.0f;
+    dsp::Vco vco;
+    vco.StepPmLfo(/*pmRateKnob01=*/0.0f, sr);
+    REQUIRE_NEAR(vco.pmLfoPhase, dsp::Vco::kPmLfoMinHz / sr, 1e-9);
+}
+
+TEST_CASE(pm_rate_is_shared_across_vcos_and_decoupled_from_each_vcos_own_depth_knob) {
+    // Task B's binding shape: ONE rate knob feeds all three VCOs'
+    // StepPmLfo calls; each VCO's own PM knob still controls only depth.
+    const float sr = 48000.0f;
+
+    // Same shared rate knob, different depth knobs -> identical LFO phase
+    // trajectories (rate is decoupled from depth).
+    dsp::Vco lowDepth;
+    dsp::Vco highDepth;
+    const float sharedRateKnob = 0.7f;
+    for (int i = 0; i < 32; ++i) {
+        lowDepth.Process(0.3f, 0.3f, /*pmKnob=*/0.0f, sharedRateKnob, /*ringModKnob=*/0.0f, sr);
+        highDepth.Process(0.3f, 0.3f, /*pmKnob=*/1.0f, sharedRateKnob, /*ringModKnob=*/0.0f, sr);
+        REQUIRE_NEAR(lowDepth.pmLfoPhase, highDepth.pmLfoPhase, 1e-7);
+    }
+
+    // Same depth knob, different rate knobs -> phases must diverge.
+    dsp::Vco rateA;
+    dsp::Vco rateB;
+    bool sawDivergence = false;
+    for (int i = 0; i < 32; ++i) {
+        rateA.Process(0.3f, 0.3f, /*pmKnob=*/1.0f, /*pmRateKnob=*/0.1f, /*ringModKnob=*/0.0f, sr);
+        rateB.Process(0.3f, 0.3f, /*pmKnob=*/1.0f, /*pmRateKnob=*/0.9f, /*ringModKnob=*/0.0f, sr);
+        if (std::fabs(rateA.pmLfoPhase - rateB.pmLfoPhase) > 1e-4f) {
+            sawDivergence = true;
+        }
+    }
+    REQUIRE_TRUE(sawDivergence);
+}
+
+// Task C1: BINDING INVARIANT (operator ruling) -- the WEIGHTS themselves
+// are asserted directly (not an output-level proxy, which the task
+// explicitly calls "strictly weaker evidence"), swept across the full
+// [0,1] knob range at fine granularity.
+TEST_CASE(vco_balance_weights_sum_to_one_and_stay_within_bounds_across_full_sweep) {
+    for (int i = 0; i <= 200; ++i) {
+        const float knob = static_cast<float>(i) / 200.0f;
+        float w1 = 0.0f;
+        float w2 = 0.0f;
+        float w3 = 0.0f;
+        dsp::ComputeVcoBalanceWeights(knob, w1, w2, w3);
+        REQUIRE_NEAR(w1 + w2 + w3, 1.0f, 1e-6);
+        REQUIRE_TRUE(w1 >= 0.10f - 1e-6f && w1 <= 0.80f + 1e-6f);
+        REQUIRE_TRUE(w2 >= 0.10f - 1e-6f && w2 <= 0.80f + 1e-6f);
+        REQUIRE_TRUE(w3 >= 0.10f - 1e-6f && w3 <= 0.80f + 1e-6f);
+    }
+    // Default (centre, 0.5f) reproduces the exact pre-packet equal-thirds
+    // mix MixOscVoices used to hardcode.
+    float w1 = 0.0f;
+    float w2 = 0.0f;
+    float w3 = 0.0f;
+    dsp::ComputeVcoBalanceWeights(0.5f, w1, w2, w3);
+    REQUIRE_NEAR(w1, 1.0f / 3.0f, 1e-6);
+    REQUIRE_NEAR(w2, 1.0f / 3.0f, 1e-6);
+    REQUIRE_NEAR(w3, 1.0f / 3.0f, 1e-6);
+}
+
+TEST_CASE(mix_osc_voices_default_balance_knob_reproduces_pre_packet_equal_thirds_average) {
+    // Task C's own "default = centre, exactly the equal-thirds mix it
+    // replaces" requirement, verified through the actual production call
+    // path (MixOscVoices), not just the weight helper in isolation.
+    dsp::VcoAdsrState adsrOld;
+    adsrOld.init(1000.0f);
+    adsrOld.setGate(true);
+    dsp::VcoAdsrState adsrNew;
+    adsrNew.init(1000.0f);
+    adsrNew.setGate(true);
+
+    for (int i = 0; i < 200; ++i) {
+        const float v1 = 0.5f;
+        const float v2 = -0.3f;
+        const float v3 = 0.9f;
+        const float oldStyle =
+            (adsrOld.apply(0, v1, 0.1f, 0.15f, 0.6f, 0.2f) + adsrOld.apply(1, v2, 0.2f, 0.25f, 0.7f, 0.3f) +
+             adsrOld.apply(2, v3, 0.05f, 0.35f, 0.5f, 0.1f)) *
+            (1.0f / 3.0f);
+        const float mixed = dsp::MixOscVoices(adsrNew, v1, v2, v3, 0.1f, 0.15f, 0.6f, 0.2f, 0.2f, 0.25f, 0.7f, 0.3f,
+                                               0.05f, 0.35f, 0.5f, 0.1f, /*curveKnob=*/0.0f, /*graceKnob=*/0.0f,
+                                               /*balanceKnob01=*/0.5f);
+        REQUIRE_NEAR(mixed, oldStyle, 1e-6);
+    }
 }
 
 }  // namespace

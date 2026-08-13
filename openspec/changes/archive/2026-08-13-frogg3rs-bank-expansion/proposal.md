@@ -134,7 +134,8 @@ VCO Balance's crossfade — no VCO may fall below 10% or reach 100% of the mix, 
 80% (§4.4, §9.5). This is not a new candidate or a new slot; it tightens VCO Balance's own already-decided
 specification. Its effect ripples through §4.4 (rewritten: the mechanism is now a provable invariant, not
 a to-be-measured risk), §9.5 (VCO Balance's own entry, rewritten), §9.6 (the headroom-flagged list drops
-from three items to two — **Comb Drive and Bias only**), and §11 (updated to match). No other bank slot,
+from three items to two — **Comb Drive and Bias only**, the composition session 6 later changed again to
+Bias and Topology, §9.6), and §11 (updated to match). No other bank slot,
 ruling, or open item changes in this session.
 
 **Session 5 (2026-08-12, this update) corrects Ring Mod's design entirely — the design this document
@@ -163,18 +164,23 @@ twenty-seven of thirty).** ~~One genuine implementation detail remains open, not
 whether the knob's range reaches down to sub-audio rate (an effectively-clean position at the bottom,
 mirroring PM LFO's `kPmLfoMinHz = 0.05f`-`kPmLfoMaxHz = 20.0f` span, `app/dsp/Vco.hpp:103-104`) or stays
 audio-rate across the whole sweep.~~ **Struck by the session-6 audit: a sub-audio carrier is not a clean
-position (a product has no unity position at any frequency), so that item's premise was false. What is
-actually open — how Ring Mod is turned off at all — IS a blocker and an operator question (§1a finding 2,
-§4.2, §8, T8.0).**
+position (a product has no unity position at any frequency), so that item's premise was false. What that
+question should have been — how Ring Mod is turned off at all — was put to the operator and ANSWERED:
+a true zero position at the bottom of its own knob, implemented as one function shared with PM (§3a ruling
+9, §4.5, §9.5, T8.0). Nothing about Ring Mod is open.**
 
 ## 1a. Session 6 (2026-08-12) — the OMNI §14 PREFLIGHT audit's own findings, recorded before execution
 
 **§11 previously declared this change "Ready for OMNI §14 PREFLIGHT." The audit ran; this section is its
 result. It did not reject the change's decisions — it rejected the claim that the change was ready to
-execute, and §11 is rewritten accordingly. Three of the five findings below needed the operator's judgement;
-all three were put to the operator; ONE came back answered (ruling 9 — see §3a, and §4.5 for the shared
-zero-off gate it requires) and TWO are still out (§3a items 10-11). A brief version of this document recorded
-all three as answered, misreading one reply as three — corrected at §3a and §11.** What held up and what did not:
+execute, and §11 is rewritten accordingly. Three of the five findings below needed the operator's judgement
+and all three were put to the operator. The first reply (*"i choose #1"*) answered ONE of them — Ring Mod
+(ruling 9, §3a, and §4.5 for the shared zero-off gate it requires) — and a brief version of this document
+recorded all three as answered on the strength of it, misreading one reply as three. The other two were
+re-put and answered separately: PM Rate (ruling 10) and patch compatibility (ruling 11). A fourth question
+the operator raised themselves — is Topology even continuous? — is ruling 12. All four are now rulings,
+each carrying the operator's own words; nothing in this section is still out. The misreading is kept on
+record at §3a rather than tidied away.** What held up and what did not:
 
 **Held up under re-verification (checked directly against the current tree, not taken from any prior
 session's report):** every one of the roughly dozen hardcoded-literal claims this change rests on. `0.25f *
@@ -203,13 +209,17 @@ discharged by construction (§4.4). Both were re-derived here, not accepted.
    the PM LFO's frequency "is an exponential function of the PM knob," and with its scenario "Phase
    modulation is self-contained," which PM Rate's one-knob-shared-across-three-VCOs shape breaks.** A real
    collision was missed while a phantom one was litigated three times. New spec delta:
-   `specs/froggers-vco-topology/spec.md`; new operator gate T7.0 (§9.5).
+   `specs/froggers-vco-topology/spec.md`; put to the operator as T7.0 — **since answered, ruling 10** (§9.5).
 2. **Ring Mod as specified has no off position and no depth control**, and §8's claim that a sub-audio low
    end gives "an effectively-clean position at the very bottom" is FALSE — a 0.05 Hz sine carrier is a
-   20-second full-depth tremolo through zero, not a clean position (§4.2, §8, §9.5, new gate T8.0).
+   20-second full-depth tremolo through zero, not a clean position (§4.2, §8, §9.5). Put to the operator as
+   T8.0 — **since answered, ruling 9**: a true zero position, shared with PM as one function (§4.5).
 3. **Nothing required an unlocked literal's new parameter to DEFAULT to the literal it replaces**, so all
-   twelve Tier-1-style unlocks would have changed every existing patch's sound on upgrade — silently, with
-   every stored value intact (§4.1, new spec requirement, new task block T9).
+   twelve Tier-1-style unlocks would have changed the instrument's own voice the moment they shipped
+   (§4.1, new spec requirement). The audit framed this as a saved-patch hazard and wrote a task block (T9)
+   for it; **ruling 11 verified there are no saved patches at all**, so the requirement survives on the
+   narrower fresh-launch-voice ground and T9 is deleted — one `defaultValue` line per registration task
+   (T2.6/T3.6/T4.3/T5.8/T7.3/T8.3) instead of a work package.
 4. **Decay is a three-part change, not two:** `attackStep` is `sustainLevel / attackTime`, so raising
    Attack's ceiling without changing that numerator stretches attack time by `1/sustainLevel` — up to 10x at
    the `kMinSustainLevel = 0.10f` floor (§4.3, T1.1).
@@ -217,6 +227,61 @@ discharged by construction (§4.4). Both were re-derived here, not accepted.
    unbounded 5th-order polynomial, which is this document's own reason for flagging Bias. The conclusion
    survives on a measurement instead (§9.2). **Fold's "no matter how small the divisor gets" invites a
    division by zero** into a NaN path this codebase has already been silenced by once (§9.2).
+
+## 1b. Session 7 (2026-08-12) — OMNI audit of this change's own artifacts, after the rulings landed
+
+**Nothing about the change's decisions moved this session. What moved is the set of places that had not
+caught up with the operator's own rulings 9-12 and with §7a — the failure mode this change already names
+twice (§0a's session-5 addendum, §7a's own preamble): one concept restated in many places, and the
+restatements drifting apart.** Findings, each fixed where it lives rather than only listed here:
+
+1. **§11 and §1a still declared two of the audit's questions open** ("one answered, two still out") while
+   §3a recorded all four as rulings with the operator's own words, and `tasks.md` recorded them as
+   answered. Three documents, two contradictory answers to "is this change gated?". Both are rewritten.
+2. **The task block deleted by ruling 11 was still referenced nine times.** `T9` survived as a live pointer
+   in `tasks.md`'s session-6 header, in T3.2, T3.3, T4.2a, the T7 and T8 headers, and the carried-forward
+   list — each telling an implementer to consult a block that no longer exists. All now point at the
+   `defaultValue` line in the relevant registration task, which is what ruling 11 replaced it with.
+3. **§11a still named the ⚠ list as "Comb Drive, Bias"** — the pair from before this very session's own
+   §7a withdrawal and ruling 12. §9.6 had it right (Bias, Topology); §11a contradicted it two sections
+   later. Corrected, and the two session changelogs that state the older pair now say which pair they are.
+4. **§7a's worked "inside" example did not match the placement its own tasks specify.** It wrote the comb
+   case as `Saturate(g * tapped)`, putting the gain ahead of the in-loop lowpass; T2.3 and the Filter spec
+   scenario both put it after (`Saturate(g * filter.Process(tapped))`). Both placements are bounded, so
+   the rule's conclusion is unaffected — but a rule that pins placement must not itself be ambiguous about
+   placement. §7a now writes all three sites out explicitly.
+5. **§4.3 stated both counts of the Decay change.** The session-6 correction ("a THREE-part change") was
+   inserted above a paragraph still concluding "a two-part change," and neither was marked as superseding
+   the other. The paragraph is corrected to three, with the third part named.
+6. **Two stale sub-questions inside otherwise-correct blocks:** T8.1 still told an implementer the knob's
+   low bound was an open design question ("sub-audio floor vs. audio-rate-only") that T8.4, six lines
+   below, records as withdrawn on a false premise; and `tasks.md`'s carried-forward list still carried the
+   Envelope migrate-or-reset question that the same list's own intro declares closed.
+7. **Wrong task number in a standing constraint:** §0's positive-control rule pointed at T1.4 (Grace's
+   design pass, which measures nothing) instead of T1.5, and named no other measurement task. All seven
+   are now enumerated.
+8. **Two typos with meaning:** a duplicated "a mandatory a mandatory" in §9.6, and a duplicated `### 11a.`
+   heading (the second is now §11b).
+9. **T6's HOW was never traced, and the audit's own first answer to it was wrong.** Chasing what looked
+   like a wording question (do `Crispy`/`Crnchy` get shorter text — and to WHAT? no candidate was ever
+   recorded) established correctly that `EncoderDrawState` exposes no configuration field for the label,
+   and then asserted from that — without reading further — that T6 therefore needed a Sheaf unpin. **It
+   does not.** `BuildFourteenSegmentCommands` is public with `numChars` as an ordinary parameter, and the
+   app owns the `std::vector<DrawCommand>` that `BuildEncoderDrawCommands` returns, so the app composes
+   its own label block. **This session both made and caught the error; the wrong version reached an
+   upstream issue before it was caught, which was withdrawn and closed.** The lesson is the one §0a's
+   session-5 addendum already records: "no lever exists" is a claim about the whole surface, and it takes
+   reading the whole surface — a missing config field is not the same fact. Full trace at §10; **T6.1-T6.4
+   are executable app-side, §0 holds, and no operator gate is added.**
+
+**Re-verified, not taken from session 6's report** (OMNI §1: a claim repeated is the repeater's claim):
+`PadeSaturator::Saturate`'s terminal `std::max(-1.0f, std::min(1.0f, output))` (`app/dsp/FilterFx.hpp`)
+and all three of §7a's call sites (`FilterFx.hpp`'s comb, `Delay.hpp`'s two `WriteSample` lines,
+`Reverb.hpp`'s `aIn`/`bIn`), so §7a's bound rests on a clamp this session read; and **Link's measurement,
+recomputed independently from `SetCoefs`/`Process` as they stand — worst case 200.45 today versus 212.06
+with the gain/phase pairing freed at `gain = 5`, +5.8%, +0.49 dB**, matching §9.2's 200.5 / 212.1 / +0.5 dB.
+That number is the only thing keeping Link off the ⚠ list, so it is the one worth reproducing rather than
+citing.
 
 ## 2. Verified facts — re-confirmed by reading, 2026-08-11
 
@@ -309,8 +374,9 @@ task brief without a fresh check:
    (ruling 2, below); that claimed collision was never real. **Ring Mod is no longer a blocker; Audio slots
    9-11 are DECIDED** (§9.5). ~~One implementation detail remains genuinely open, not a blocker — whether the
    knob's low end reaches sub-audio rate~~ — **session 6 audit: that framing is withdrawn (its premise, that
-   a sub-audio carrier is an effectively-clean position, is false). The ruling itself stands; what is open is
-   how Ring Mod is turned off, which IS a blocker and an operator question — §4.2, §8, T8.0.**
+   a sub-audio carrier is an effectively-clean position, is false). The ruling itself stands; the question it
+   should have been — how Ring Mod is turned off — is itself now DECIDED, ruling 9: a true zero position
+   shared with PM as one function (§3a, §4.2, §4.5, §8, T8.0).**
 2. **Cross XOR is CUT.** *"cross couplers dont make sense anymore because of mod lvl 1"* — the
    modulation system already routes VCO audio sources onto any parameter, so a dedicated cross-VCO
    coupler is redundant. **This ruling is not merely a taste call — it restates an existing, in-force
@@ -651,6 +717,15 @@ its travel) would re-open the operator's own continuous-range rule (§3 ruling 3
 call under the same rule that cut Cycle and Hard Sync. §8 carries the item; the old sub-audio framing is
 withdrawn from that list, since it was a smaller question resting on a false premise.
 
+**ANSWERED — §3a ruling 9, same session, and it is the second option above without the objection this
+paragraph raised against it.** The operator took the fold-into-the-same-knob route: the bottom of the Ring
+Mod knob's own travel gates the amount to exactly zero and **ramps smoothly out of it**, so it is not the
+"dead zone" this paragraph feared and §3 ruling 3's continuous-range rule is not re-opened — a smooth taper
+is exactly what `Vco::PmDepthScale` already does to the PM knob, which is why the operator required the two
+to share one function rather than carry two copies (§4.5). It costs no slots, which is what made the
+three-slot depth-leg option unnecessary. The paragraph above is kept because its analysis of *why* a pure
+product has no clean position is what made the question answerable.
+
 ### 4.3 Decay is a materially bigger Tier-2 item than the design doc credited
 
 The design doc's evidence for Decay ("New `Stage::Decay` inserted into the existing enum ... reusing the
@@ -676,8 +751,11 @@ same ceiling `Vco`'s own output already has), with Decay then ramping from that 
 `kMinSustainLevel = 0.10f` — added 2026-08-07, one day after the design doc's read, per that operator's
 own comment: *"the sustain minimum value is too low ... audio rate modulation ... would result in
 silence"*). Still Tier 2 (reuses the same divide-by-mapped-time idiom `attackStep`/`releaseStep` already
-establish) but a two-part change (raise Attack's ceiling; add the falling stage), not a one-part
-insertion.
+establish) but a **three**-part change — raise Attack's ceiling; retarget `attackStep`'s numerator to that
+new peak (the part above, without which the ceiling change silently restretches attack time); add the
+falling stage — not the one-part insertion the design doc costed. **This sentence read "a two-part change"
+until the session-6 correction above landed and was left unreconciled with it; corrected here rather than
+leaving the section arguing both counts.**
 
 **Not a §7 (headroom) trip in the strict sense** — the peak level still never exceeds `1.0`, the same
 bound `Vco`'s own amplitude already has, so `chainIn`'s average-of-three-gated-signals bound (§2) is
@@ -831,8 +909,10 @@ what T8.0a's test asserts.
   absorb (§4.1); the `[0, 1]` cross-feed bound and the buffer-capacity bound on Delay's Width Balance (§9.3);
   and **a second spec delta, `specs/froggers-vco-topology/spec.md`** — required because PM Rate collides with
   two in-force clauses of that spec and Ring Mod's internal carrier is worth asserting there rather than only
-  claiming here (§9.5). The vco-topology delta relaxes a live requirement and is gated on the operator
-  (T7.0).
+  claiming here (§9.5). The vco-topology delta relaxes a live requirement, so it was gated on the operator
+  (T7.0) — **since ANSWERED, ruling 10: it stands as written.** That same delta also carries ruling 9's
+  shared zero-off ramp, broadening the live "Phase modulation has a true zero position" requirement to cover
+  Ring Mod as well (§4.5).
 
 **Not specified, not implemented, no task below closes it:**
 - Cross XOR, Cycle, Hard Sync, Peak Slope, self-FM, Glide/portamento/slew, VCO Spread, Sub-Oscillator, PM
@@ -860,10 +940,13 @@ what T8.0a's test asserts.
   change does not build.
 - **No AI attribution on commits** — applies when this change (or its follow-on implementation) is
   committed.
-- **An implementer may not close a task whose resolution requires an operator decision** — see tasks.md;
-  the Envelope implementation task is written but explicitly blocked on the still-open migration/reset
-  question (§8), and the Ring Mod line item is not written as an implementation task at all, only as a
-  recorded, blocked design note, because two prerequisite questions (§4.2) are unanswered.
+- **An implementer may not close a task whose resolution requires an operator decision** — see tasks.md.
+  **Session 6: no task block is gated by this rule any more.** The two that were are both closed by the
+  operator's own rulings: T1.0 (Envelope migrate-or-reset) is MOOT on verified evidence — zero saved
+  patches, zero MIDI-learn mappings (§3a ruling 11) — and Ring Mod, which through session 4 had no
+  implementation task at all, is a full task block (T8) whose one open design question was answered by
+  ruling 9. T7.0 (relaxing `froggers-vco-topology` for PM Rate) was answered by ruling 10. The rule itself
+  stands for anything a later session adds; it currently gates nothing.
 
 ## 7. Standing headroom rule (carried forward, restated because it binds anything picked up from §8)
 
@@ -896,8 +979,12 @@ flag on Feedback Drive (§9.3).
 **The placement this rule depends on, pinned here because the proposal previously left it ambiguous
 ("a pre-multiply inserted before that call" reads both ways):** the gain multiplies what goes INTO
 `Saturate`, not what comes out of it.
-- **Inside** — `Saturate(g * tapped)` — bound `|x| + |k|`, unchanged for any `g`. This is also the musically
-  correct reading of "drive": more signal into a nonlinearity, same ceiling.
+- **Inside** — `Saturate(g * ·)`, i.e. the comb's `Saturate(g * filter.Process(tapped))`, the delay's
+  `Saturate(g * fbL)`, the tank's `Saturate(g * aFb)` — bound `|x| + |k|`, unchanged for any `g`. This is
+  also the musically correct reading of "drive": more signal into a nonlinearity, same ceiling. **Written
+  out per site because an earlier draft of this rule wrote the comb's case as `Saturate(g * tapped)`, which
+  puts the gain ahead of the in-loop lowpass instead of after it — a different (though equally bounded)
+  placement from the one T2.3 and the spec's own `THEN` line specify.**
 - **Outside** — `g * k * Saturate(·)` — bound becomes `|x| + g*|k|`, and the comb's own trim would have to
   become `1/(1 + g*|fb|)`. Recorded so a later implementer who puts it there knows what else must change,
   rather than silently invalidating a formula.
@@ -963,8 +1050,9 @@ controls, was never an empty-slot candidate to begin with. **Session 5 closes Au
 VCO Balance (slots 12-13) were already decided (§9.5); Ring Mod (slots 9-11) is now DECIDED as well, its
 prior blocker framing corrected and removed (§3 ruling 1, §4.2). **All six banks are now fully decided at
 fourteen parameters each; this change records zero remaining bank-slot blockers.** **Session 6 audit: still
-true of the SLOTS — no bank slot is undecided — but not true of execution. Three operator gates now block it:
-T7.0, T8.0 and the default-parity question (§11) — all three since answered.**
+true of the SLOTS — no bank slot is undecided — but at the time not true of execution, which three operator
+questions stood in front of: T7.0, T8.0, and default parity. All three are answered, as is a fourth the
+operator raised themselves about Filter Topology (§3a rulings 9-12), so nothing gates execution either.**
 
 ## 9. Filter, Drive, Delay, Reverb, Audio bank decisions — sessions 2-3
 
@@ -1300,8 +1388,9 @@ further about internal ordering is decided or implied by this document beyond th
   same knob sweeps the carrier frequency as already specified. This is `Vco::PmDepthScale`'s exact shape, and
   per the operator's instruction it ships as **one shared function used by both PM and Ring Mod**, not a
   second copy — mechanism, §8 enumeration, and §6 justification at §4.5; tasks at T8.0/T8.0a. **Default
-  parity follows for free** (ruling 11): a default at or below the gate's floor means an existing patch loads
-  with Ring Mod inert and sounds exactly as it does today. The knob's low frequency end (T8.4) is now a
+  parity follows for free**: a default at or below the gate's floor means the instrument starts with Ring Mod
+  inert and sounds exactly as it does today — which, since ruling 11 verified there are no saved patches, is
+  the whole of what default parity has to buy here. The knob's low frequency end (T8.4) is now a
   by-ear taste question with nothing riding on it, since "off" no longer depends on it.
 - **Slot 12 — PM Rate (`PMrt`), composes-existing.** §0a's worked example, carried into a decision this
   session: `Vco::StepPmLfo`'s rate (`const float hz = ExpMapCompute(kPmLfoMinHz, kPmLfoMaxHz, pmKnob01);`,
@@ -1332,8 +1421,10 @@ further about internal ordering is decided or implied by this document beyond th
   **A new spec delta is added for this change: `specs/froggers-vco-topology/spec.md`** — the topology
   requirement re-worded so the LFO rate comes from a rate control (each VCO keeping its own LFO instance and
   its own depth), the self-contained scenario re-scoped to depth, and a new scenario stating plainly that the
-  shared rate control is shared by design. **This delta RELAXES an in-force requirement, so it needs the
-  operator's confirmation before an implementer acts on it — new gate T7.0.** The same delta also adds a
+  shared rate control is shared by design. **This delta RELAXES an in-force requirement, so it needed the
+  operator's confirmation before an implementer acts on it — put as T7.0, ANSWERED by ruling 10 (*"A:1"*):
+  PM Rate keeps Audio slot 12 and the delta stands as written, the one-knob-for-three-VCOs trade accepted
+  explicitly.** The same delta also adds a
   scenario making Ring Mod's internal carrier a spec-level assertion rather than a proposal-level claim; that
   half strengthens the spec and needs no ruling.
 - **Slot 13 — VCO Balance (`VBal`), composes-existing. NOT headroom-flagged — session 4 discharges the
@@ -1365,7 +1456,7 @@ further about internal ordering is decided or implied by this document beyond th
   across its full range and would actually observe a violation if the invariant were ever broken; an
   invariant-only test that never exercises the knob's extremes is worthless as a regression guard.
 
-### 9.6 Totals — sessions 1-5 combined, the thirty-parameter target slate, now COMPLETE
+### 9.6 Totals — sessions 1-6 combined, the thirty-parameter target slate, now COMPLETE
 
 **Every bank now has a target of fourteen parameters (30 new parameters total across the six banks: `(14 -
 9) * 6 = 30`, since every bank started at nine). This session's own count, verified against §9.1-9.5 and
@@ -1444,7 +1535,7 @@ does not wonder why the count dropped from three to two.** It carried the flag i
 whether its crossfade preserved §K's "no limiter needed for Audio" verdict depended on which shape an
 implementer chose at build time — a naive shape could have raised `chainIn` above the equal-thirds
 bound, and only measurement could have ruled that out. The operator's session-4 ruling — a mandatory
-a mandatory floor of 10% and cap of 80% on every VCO's own weight (§4.4, §9.5) — makes the
+floor of 10% and cap of 80% on every VCO's own weight (§4.4, §9.5) — makes the
 crossfade a convex combination by definition, which is bounded by `max(|v1|,|v2|,|v3|)` regardless of
 implementation shape. The risk that justified the flag is now closed by the parameter's own specification,
 not by a future measurement — so it is an asserted invariant (`sum(w) == 1`, each `w` in `[0.10, 0.80]`),
@@ -1495,6 +1586,63 @@ page parameters" this count is scoped to, which is why they were not missed by a
 over-length labels" reads as the total, and the total is 25 label sites (23 page + Crispy + Crunchy). T6 is
 updated to say which of the two it fixes and which it deliberately leaves.
 
+**Session 7 audit — HOW the rework is built was never traced, and the answer is "app-side, no Sheaf change."
+An earlier pass this session claimed the opposite (that T6 needed an unpin) and was WRONG; the wrong claim is
+recorded here rather than deleted, because it is the same error this change already names twice — asserting a
+mechanism from adjacent evidence instead of reading it (OMNI §1). Traced by reading:**
+
+- **Both halves of T6.1's treatment are computed inside `External/Sheaf`, from geometry this app does not
+  own.** In `BuildEncoderDrawCommands` (`External/Sheaf/projects/synth/include/synth/EncoderDraw.hpp`):
+  `displayHeight = Clamp(baseRadius * 0.34f, 14.0f, 24.0f)`, `displayWidth = displayHeight * 3.3f`, and then
+  `const std::string label = UpperShortLabel(state.shortLabel);` — the truncation applied with its default
+  `maxChars = 4`, unconditionally, at the same site that sizes the box.
+- **The app's ONE call site passes only `state` and `extent`** (`app/FroggersUiSurface.hpp`'s
+  `BuildEncoderDrawCommands(state, extent)`). Both the box size and the ring radius are linear in those
+  bounds, so a bigger cell scales the segment display WITH it — **and `maxChars` stays 4 at every size.**
+  "A larger box with smaller text" is not reachable by passing different bounds.
+- **`EncoderDrawState`'s only label-related field is `shortLabel` itself** — read in full; there is no font
+  scale, no `maxChars`, no display-bounds override. `wantsFrame` is the sole app-facing rendering lever of
+  that kind and it governs the frame, not the label.
+- **The precedent is in this app's own code and it is the identical shape.** `FroggersUiSurface.hpp`'s S6.1
+  comment records the frame/ring overlap: two quantities, both linear in the same app-supplied bounds,
+  colliding inside the same Sheaf function — *"shrinking the bounds this app passes into
+  `BuildEncoderDrawCommands` is not a usable fix."* The resolution there was to use an existing
+  `EncoderDrawState` field, and where the geometry itself could not be reached, the operator's decision was
+  to **drop the element** rather than resize it.
+
+**The correct conclusion — and what the wrong one missed.** All of the above is true and none of it
+blocks anything, because **the app is not limited to what `BuildEncoderDrawCommands` emits.** Three facts,
+each read this session:
+
+- **`BuildFourteenSegmentCommands` is public and inline in the same header**
+  (`EncoderDraw.hpp`), and `numChars` is an ordinary parameter — `4` is only its DEFAULT. Passing
+  `numChars <= 0` makes it auto-size to `text.size()`. The app can call it directly, at any character
+  count and any bounds it likes.
+- **`BuildEncoderDrawCommands` returns `std::vector<DrawCommand>` BY VALUE** into the app's own draw
+  lambda (`FroggersUiSurface.hpp`), and `DrawCommand` is a plain struct with `Kind::Fill` /
+  `Kind::FillRoundedRect` among its kinds (`PortableUI.hpp`). The app owns that vector and may append to,
+  truncate, or paint over it before returning it.
+- **The label block is the LAST thing appended** before `return commands;` (`EncoderDraw.hpp`), so it is an
+  identifiable suffix — and the app already composes additional draw nodes over the same cell through
+  `overlayOf` (`FroggersUiSurface.hpp`, the visualizer underlay), so even the no-erase version works.
+
+**So T6.1 is buildable entirely app-side, with `External/Sheaf` untouched and §0 intact:** in the surface's
+own lambda, take the returned commands, cover or drop the trailing 4-character block, and append an opaque
+`FillRoundedRect` plus `BuildFourteenSegmentCommands(fullLabel, largerBounds, on, off, /*numChars=*/0)`.
+That IS "slightly larger colored boxes with smaller text," in the app, in about fifteen lines. **The
+earlier claim that this needed an upstream change was wrong, and an issue filed on that premise was
+withdrawn and closed the same session.** The one real cost, recorded so T6.1's implementer expects it: the
+replacement re-derives its own display bounds rather than reading Sheaf's, and covering the original block
+depends on it being emitted last — an ordering detail that is not part of Sheaf's contract, so T6.2's
+visual check is what catches it if that ever changes.
+
+**Consequence for the label TEXT, which is what the question started as:** with the rendering solved
+app-side, shortening `shortName` strings is no longer forced. `Crispy`/`Crnchy` and the other 23 keep their
+words and simply render in full. **No operator gate is needed and none is written**; T6.1-T6.4 proceed as
+originally specified. For the record, today's rendered output is the hard
+prefix: `Crispy` → `CRIS`, `Crnchy` → `CRNC` — and `Crnchy` is already a hand-abbreviation of "Crunchy" that
+still does not fit, and whose truncation reads worse than the unabbreviated word's would (`CRNC` vs `CRUN`).
+
 **Acceptance criterion, recorded here because a prior UI change in this project took four attempts by
 asserting a weaker property than "the operator can see it":** this is a VISUAL acceptance criterion, not
 a code-shape one. The operator's own direction: *"they can just be slightly larger colored boxes with
@@ -1503,36 +1651,40 @@ indicators) — any resize or font change must be checked against that chip rend
 the label text in isolation, because the two share the same cell. See `tasks.md` for the enumerated task
 and its acceptance criterion.
 
-## 11. OMNI §14 PREFLIGHT — RUN, session 6: one question answered, two still out
+## 11. OMNI §14 PREFLIGHT — RUN, session 6: all four questions answered, nothing gated
 
-**Correction, session 6, recorded before the section it corrects: this section briefly said all three audit
-questions were answered. Only one was.** The operator's *"i choose #1"* answered the Ring Mod question
-(ruling 9); the PM Rate and default-parity questions were not seen when they were asked. Reading one answer
-as three is the lead inventing operator intent — the same error §0a's session-5 addendum already names twice
-in this change. Items 10 and 11 in §3a are open questions with an attached recommendation, not rulings, and
-nothing in `tasks.md` may close them by choosing. **They are questions, not standing gates** — the operator
-was explicit about that distinction — so the rest of the change proceeds; these two decide the shape of PM
-Rate's slot and of every unlocked literal's default, not whether the other twenty-eight parameters can be
-built.
+**Correction kept on the record, because it is the same failure this change has now made three times:
+this section once said all three audit questions were answered when only one was.** The operator's *"i
+choose #1"* answered the Ring Mod question (ruling 9); the PM Rate and default-parity questions had not
+been seen when that reply arrived. Reading one answer as three is the lead inventing operator intent — the
+same error §0a's session-5 addendum already names twice. **The two were then re-put and answered for real
+(rulings 10 and 11), and the operator raised and answered a fourth themselves (ruling 12).** All four
+carry the operator's own words at §3a. **They were questions, not standing gates** — the operator was
+explicit about that distinction — and none of them is open now.
 
-### 11a. What the audit found and what the one answer changed
+### 11a. What the audit found and what the four answers changed
 
 **Session 6 supersedes this section's session-5 verdict: the preflight audit ran (§1a), found five things
-that did not hold, and put the three needing the operator's judgement to the operator. One came back
-answered (ruling 9); two are still out (§3a items 10-11). None is a standing blocker; each was a question
-this document should have asked instead of declaring itself ready.** The audit did not disturb the change's
-decisions — every hardcoded-literal claim held, Ring Mod's non-collision with `froggers-vco-topology`'s
-coupling requirement held, and VCO Balance's convexity held.
+that did not hold, and put the three needing the operator's judgement to the operator; a fourth question
+came from the operator. All four are answered (§3a rulings 9-12). None was ever a standing blocker; each
+was a question this document should have asked instead of declaring itself ready.** The audit did not
+disturb the change's decisions — every hardcoded-literal claim held, Ring Mod's non-collision with
+`froggers-vco-topology`'s coupling requirement held, and VCO Balance's convexity held.
 
-What the one answer changed, and what the two open questions still decide:
+What the four answers changed:
 
-1. **OPEN — PM Rate's collision with `froggers-vco-topology`** (§3a item 10, §9.5, T7.0). The delta relaxing
-   the two clauses is written to the audit's recommendation and awaits the operator.
+1. **PM Rate keeps Audio slot 12 and `froggers-vco-topology` is relaxed to match** (ruling 10, §3a, §9.5,
+   T7.0). The delta stands as written; the accepted trade is one rate knob moving all three VCOs' LFOs.
 2. **Ring Mod gains a true zero position** at the bottom of its own knob, implemented as ONE function shared
    with PM per the operator's own instruction — the change's only new named concept, justified against §6's
    2-of-4 and enumerated against §8 before writing (ruling 9, §4.5, T8.0/T8.0a).
-3. **OPEN — default parity for the twelve unlocked literals** (§3a item 11, §4.1, T9). The spec requirement
-   and T9 are written to the audit's recommendation; if the operator picks the reset instead, both come out.
+3. **Patch compatibility is a non-goal, verified rather than assumed** (ruling 11, §3a, §4.1): zero saved
+   patches, zero MIDI-learn mappings on disk. T1.0 — this change's oldest gate — is MOOT and the Envelope
+   block is unblocked. The default-parity spec requirement survives on fresh-launch-voice grounds alone;
+   the T9 task block written for it is deleted, folded into one `defaultValue` line per registration task.
+4. **Filter Topology is a continuous morph, not a switch** (ruling 12, §3a, §9.1, T2.1/T2.1a) — built by
+   morphing what the peak stage reads, with the dead series branch deleted rather than brought to parity.
+   It is the reason the ⚠ list's composition changed this session.
 
 **One item the audit raised and then withdrew, recorded rather than quietly dropped:** the app open-codes six
 knob-fed `ExpMapCompute` calls in `RouteAudioSample` while `ParameterManager` ships a mapping family it never
@@ -1544,12 +1696,13 @@ in `tasks.md`'s "Recorded, not scheduled" so it is not re-proposed.
 
 Everything else stands as written and re-verified: every DECIDED slot (§9.1-9.5) carries a symbol-cited trace
 of the code it unlocks or composes, re-read against the tree in session 6 and found accurate; the
-headroom-flagged list is still exactly two items (Comb Drive, Bias), with Link's clearance now resting on a
-measurement instead of an invalid proof and three other clearances tightened (§9.6); and this change remains
-markdown-only end to end (§6), with nothing built or executed. §VERIFY at the end of `tasks.md` records
-session 6's own `openspec validate --all --strict` result.
+headroom-flagged list is still exactly two items, but **not the same two — Comb Drive came off (its flag was
+wrong, §7a) and Filter Topology came on (ruling 12), so the list is Bias and Topology** (§9.6), with Link's
+clearance now resting on a measurement instead of an invalid proof and three other clearances tightened; and
+this change remains markdown-only end to end (§6), with nothing built or executed. §VERIFY at the end of
+`tasks.md` records session 6's own `openspec validate --all --strict` result.
 
-### 11a. Superseded — session 5's readiness claim, kept for the record
+### 11b. Superseded — session 5's readiness claim, kept for the record
 
 This change is markdown-only end to end (§6); nothing under it has been built or executed. Per the OMNI
 workflow pipeline (`omni-rule.md` §13: structural intent check → OpenSpec → **proposal** → **preflight

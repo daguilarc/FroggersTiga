@@ -129,10 +129,9 @@ TEST_CASE(bank_layouts_have_nine_named_parameters_plus_fixed_crispy_and_crunchy)
             REQUIRE_TRUE(param->BaseColor() == layout.color);
         }
 
-        // Slots 9-13 render empty (D5a: "sparse 4x4 is expected, not a defect").
-        for (synth::PhysicalEncoderId encoderId = 9; encoderId <= 13; ++encoderId) {
-            REQUIRE_TRUE(bank.VisibleParameter(encoderId) == nullptr);
-        }
+        // Slots 9-13 are now ordinary page parameters too (grown from 9 to
+        // 14 per bank); the loop above already covers them, so there is no
+        // longer any "sparse, empty slots 9-13" region to assert on here.
 
         synth::Parameter* crispy = bank.VisibleParameter(
             static_cast<synth::PhysicalEncoderId>(synth_froggers::kFroggersCrispySlot));
@@ -145,10 +144,10 @@ TEST_CASE(bank_layouts_have_nine_named_parameters_plus_fixed_crispy_and_crunchy)
         REQUIRE_TRUE(crunchy->BaseColor() == synth_froggers::FroggersCrunchyColor());
     }
 
-    // 61 top-level parameters total (independently matches design D14's
-    // stated count): 6 banks x 9 page params + 6 per-bank Crispy + 1 SHARED
-    // Crunchy -- not 66, because Crunchy is one Parameter, not six.
-    REQUIRE_TRUE(manager.ParameterCount() == 61);
+    // 91 top-level parameters total: 6 banks x 14 page params + 6 per-bank
+    // Crispy + 1 SHARED Crunchy -- not 96, because Crunchy is one Parameter,
+    // not six.
+    REQUIRE_TRUE(manager.ParameterCount() == 91);
 }
 
 // --- 4.5 check 2: Crispy/Crunchy identity stable across bank changes -------
@@ -302,10 +301,10 @@ TEST_CASE(shared_crunchy_resolves_and_moves_identically_from_any_bank) {
     REQUIRE_NEAR(afterReverbTurn, afterAudioTurn + 0.2f, 0.02f);
 
     // Check (c): "PopulateUIState publishes one parameter, not six" -- the
-    // manager's own parameter count is 61 (not 66; see the first test case),
+    // manager's own parameter count is 91 (not 96; see the first test case),
     // and the value read through the UI-state cell at slot 15 is identical
     // regardless of which bank is currently active.
-    REQUIRE_TRUE(rig.Engine().Manager().ParameterCount() == 61);
+    REQUIRE_TRUE(rig.Engine().Manager().ParameterCount() == 91);
 
     // Let the uiDisplayCenter slew fully settle onto the post-turn value
     // BEFORE comparing snapshots across banks -- otherwise two reads taken

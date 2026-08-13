@@ -390,6 +390,20 @@ struct Comb
     float feedback = 0.0f;
     PadeSaturator saturator;
 
+    // Packet (Filter slot 12, "Comb drive", "CDrv"): knob-driven pre-gain
+    // applied to the SATURATOR'S ARGUMENT only (see Process() below) --
+    // NOT a post-saturator multiply on `feedback * Saturate(...)`, which
+    // would break `rawCombTrim = 1/(1+|feedback|)` (FilterFxChain::Process)
+    // by widening the per-sample bound to `|input| + combDrive*|feedback|`.
+    // Placing it inside Saturate keeps that bound at `|input| + |feedback|`
+    // unconditionally: `PadeSaturator::Saturate` clamps to +-1 regardless
+    // of what its argument was scaled by, so `feedback * Saturate(anything)`
+    // is still bounded by `|feedback| * 1.0` no matter how hot `combDrive`
+    // drives the saturator's input. Default 1.0f (unity) -- see
+    // RouteAudioSample's own Filter slot 12 wiring for the knob mapping and
+    // default that reproduces this.
+    float combDrive = 1.0f;
+
     // F3.3 SPEC CORRECTED 2026-08-07: Tier 2's per-unit sustained-over-
     // ceiling counter, owned here rather than in FroggersAppCore -- see
     // dsp::Vco::overCeilingSeconds's own comment (app/dsp/Vco.hpp) for the
@@ -398,12 +412,15 @@ struct Comb
 
     void SetFeedback(float fb) { feedback = fb; }
     void SetCutoffAlpha(float cutoff) { filter.alpha = cutoff; }
+    void SetDrive(float drive) { combDrive = drive; }
 
-    // src/core/Comb.hpp:54, verbatim: out = in + fb*sat(lp(delay[i-N])).
+    // src/core/Comb.hpp:54, verbatim: out = in + fb*sat(lp(delay[i-N])),
+    // with `combDrive` inserted on Saturate's ARGUMENT only (load-bearing
+    // placement -- see combDrive's own declaration comment above).
     float Process(float input)
     {
         const float tapped = delayLine[(index + kSize - delaySamples) % kSize];
-        const float output = input + feedback * PadeSaturator::Saturate(filter.Process(tapped));
+        const float output = input + feedback * PadeSaturator::Saturate(combDrive * filter.Process(tapped));
         delayLine[index] = output;
         index = (index + 1) % kSize;
         return output;
@@ -700,61 +717,74 @@ struct FilterFxChain
     // frozen engine derives them from smoothed knob reads via RuntimeParam,
     // which is parameter-smoothing infrastructure, not a DSP unit in scope
     // for task 3.6 -- callers pass the already-smoothed 0..1 value).
-    float Process(float input, bool useParallel, float combPeakBlend, float scoopMix)
+    //
+    // `topology` (Filter slot 9, "Topology"/"Topo") replaces the old
+    // `bool useParallel`. The old `useParallel == false` branch (:834-839,
+    // `pureDelay -> comb -> peak` with no trims/limiter/blend, ignoring
+    // combPeakBlend and scoopMix entirely) was DEAD CODE -- the only
+    // production call site always passed `true` -- and has been deleted
+    // rather than kept beside a morph, per this packet's brief. The
+    // surviving path is the former `useParallel == true` branch, continuous
+    // morphed by `topology` in [0,1] on ONLY the peak stage's input:
+    //   peakIn = input * (1 - topology) + combPath * topology
+    // Every other computation (combTrim, peakTrim, peakLimiter, the
+    // Comb/Peak blend, the Scoop blend) stays exactly as it was and stays
+    // in force at every topology value. At `topology == 0`,
+    // `peakIn == input * 1.0f + combPath * 0.0f == input` bit-for-bit (IEEE
+    // multiply-by-1 and multiply-by-0/add-0 are exact for finite operands),
+    // reproducing the old `useParallel == true` branch's `peak.Process(input)`
+    // call exactly -- so this is a strict superset, not a behaviour change,
+    // at the default topology. Every stateful unit (comb, peak, pureDelay,
+    // combTrimSmoother, peakTrimSmoother, peakLimiter) is still processed
+    // exactly once per sample, in the same order as before.
+    float Process(float input, float topology, float combPeakBlend, float scoopMix)
     {
-        if (useParallel)
-        {
-            // :824-833
-            const float combRaw = comb.Process(pureDelay.Process(input));
-            // W2.2a: exact output trim `1/(1+|fb|)` on the comb branch
-            // ONLY, before the blend with peakPath below. `|comb| <= A +
-            // |fb|` (PadeSaturator bounds the fed-back term to +-1,
-            // Comb::Process above), so this normalizes the worst case
-            // (A=0, i.e. the comb's own decaying tail with no input) to
-            // exactly 1.0 at |fb| == kMaxFeedbackMagnitude (0.95), while
-            // leaving +3.5 dB of bloom across the rest of the feedback
-            // travel. A scalar on a branch output moves level, not
-            // frequency response -- the comb's peaks/notches/ring/decay
-            // are unchanged. `fb` is read as a MAGNITUDE (GetFeedback is
-            // asymmetric +-0.95) directly from Comb's own state, not
-            // threaded as a new parameter.
-            const float rawCombTrim = 1.0f / (1.0f + std::fabs(comb.feedback));
-            const float combTrim = combTrimSmoother.Process(rawCombTrim);
-            const float combPath = combRaw * combTrim;
-            // B1: exact output trim `1/height` on the peak branch, the path
-            // W2.2a deliberately left uncompensated ("one variable at a
-            // time"). `|peakRaw| <= A * height` (RBJ peaking biquad, centre
-            // gain == height -- W2.1-MATH), so this normalizes the worst
-            // case (input at the bump's own resonant frequency) to exactly
-            // A, matching the comb trim's treatment of its own worst case.
-            // `height >= 1.0` always (`ExpMapCompute(1, kMaxResonantBumpHeight,
-            // knob)`), so the divisor can never be zero -- no guard needed
-            // for an unreachable case.
-            const float peakRaw = peak.Process(input);
-            const float rawPeakTrim = 1.0f / peak.height;
-            const float peakTrim = peakTrimSmoother.Process(rawPeakTrim);
-            const float peakTrimmed = peakRaw * peakTrim;
-            // B5: the scalar trim above cannot fully bound the peak branch
-            // on its own (B1's own finding -- see peakLimiter's declaration
-            // comment above and the kPeakLimiter* tuning comment near this
-            // file's top) because the biquad's stored energy survives a
-            // height DROP and a same-instant scalar cannot retroactively
-            // remove energy already in its state. `peakLimiter` is
-            // inserted HERE -- after the trim, before the blend with
-            // combPath below -- so it catches exactly the residual the
-            // trim leaves behind, not instead of the trim (B1's trim stays;
-            // this is additive).
-            const float peakPath = peakLimiter.Process(peakTrimmed);
-            const float mixed = peakPath * (1.0f - combPeakBlend) + combPath * combPeakBlend;
-            const float scooped = scoopNotch.Process(mixed);
-            return mixed * (1.0f - scoopMix) + scooped * scoopMix;
-        }
-
-        // :834-839
-        float output = pureDelay.Process(input);
-        output = comb.Process(output);
-        output = peak.Process(output);
-        return output;
+        const float combRaw = comb.Process(pureDelay.Process(input));
+        // W2.2a: exact output trim `1/(1+|fb|)` on the comb branch
+        // ONLY, before the blend with peakPath below. `|comb| <= A +
+        // |fb|` (PadeSaturator bounds the fed-back term to +-1,
+        // Comb::Process above), so this normalizes the worst case
+        // (A=0, i.e. the comb's own decaying tail with no input) to
+        // exactly 1.0 at |fb| == kMaxFeedbackMagnitude (0.95), while
+        // leaving +3.5 dB of bloom across the rest of the feedback
+        // travel. A scalar on a branch output moves level, not
+        // frequency response -- the comb's peaks/notches/ring/decay
+        // are unchanged. `fb` is read as a MAGNITUDE (GetFeedback is
+        // asymmetric +-0.95) directly from Comb's own state, not
+        // threaded as a new parameter.
+        const float rawCombTrim = 1.0f / (1.0f + std::fabs(comb.feedback));
+        const float combTrim = combTrimSmoother.Process(rawCombTrim);
+        const float combPath = combRaw * combTrim;
+        // Topology morph: at topology==0 this is exactly `input` (see this
+        // method's own header comment for the bit-identity argument).
+        const float peakIn = input * (1.0f - topology) + combPath * topology;
+        // B1: exact output trim `1/height` on the peak branch, the path
+        // W2.2a deliberately left uncompensated ("one variable at a
+        // time"). `|peakRaw| <= A * height` (RBJ peaking biquad, centre
+        // gain == height -- W2.1-MATH), so this normalizes the worst
+        // case (input at the bump's own resonant frequency) to exactly
+        // A, matching the comb trim's treatment of its own worst case.
+        // `height >= 1.0` always (`ExpMapCompute(1, kMaxResonantBumpHeight,
+        // knob)`), so the divisor can never be zero -- no guard needed
+        // for an unreachable case.
+        const float peakRaw = peak.Process(peakIn);
+        const float rawPeakTrim = 1.0f / peak.height;
+        const float peakTrim = peakTrimSmoother.Process(rawPeakTrim);
+        const float peakTrimmed = peakRaw * peakTrim;
+        // B5: the scalar trim above cannot fully bound the peak branch
+        // on its own (B1's own finding -- see peakLimiter's declaration
+        // comment above and the kPeakLimiter* tuning comment near this
+        // file's top) because the biquad's stored energy survives a
+        // height DROP and a same-instant scalar cannot retroactively
+        // remove energy already in its state. `peakLimiter` is
+        // inserted HERE -- after the trim, before the blend with
+        // combPath below -- so it catches exactly the residual the
+        // trim leaves behind, not instead of the trim (B1's trim stays;
+        // this is additive).
+        const float peakPath = peakLimiter.Process(peakTrimmed);
+        const float mixed = peakPath * (1.0f - combPeakBlend) + combPath * combPeakBlend;
+        const float scooped = scoopNotch.Process(mixed);
+        return mixed * (1.0f - scoopMix) + scooped * scoopMix;
     }
 };
 

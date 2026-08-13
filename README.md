@@ -9,8 +9,11 @@ hardware firmware and the pre-Sheaf desktop/browser simulators (`desktop/`, `des
 development — while that work continues.
 
 - **Sheaf app docs:** [`app/README.md`](app/README.md) — build instructions, Sheaf submodule pin, status
-- **Daisy Field operator docs:** [`MANUAL.md`](MANUAL.md) — pages, buttons, modulation workflow, safe flash sequence
-- **Quick Dict:** [`QUICK_DICT.md`](QUICK_DICT.md) — abbreviated parameter glossary
+- **Manual:** [`MANUAL.md`](MANUAL.md) — global controls and all six parameter banks for the current
+  Sheaf app, plus a frozen Daisy Field hardware firmware appendix (pages, buttons, modulation workflow,
+  safe flash sequence)
+- **Quick Dict:** [`QUICK_DICT.md`](QUICK_DICT.md) — terse, slot-ordered parameter glossary for the
+  current Sheaf app
 - **License:** MIT — see [`LICENSE`](LICENSE) (copyright JoYoFresh and Diego Aguilar-Canabal)
 
 ## Frogg3rs — Sheaf app (current development)
@@ -36,6 +39,10 @@ reading "green" into a partial result.
 
 Planning and design history for this app live under [`openspec/`](openspec/) (change proposals,
 specs, design docs, handoffs) — see [Local Planning And Hygiene](#local-planning-and-hygiene) below.
+
+Parameter reference for this app: [`MANUAL.md`](MANUAL.md) (global controls, then all six banks —
+Audio, Envelope, Filter, Drive, Delay, Reverb — parameter by parameter) and [`QUICK_DICT.md`](QUICK_DICT.md)
+(the same six banks, one line per parameter).
 
 ## Daisy Field firmware (frozen)
 
@@ -301,7 +308,10 @@ cd web && npm run build:wasm    # verifies exports after copy
 - Default **44.1 kHz** (`audioContext.sampleRate`)
 - **Mic** toggle default **off** (VCO-only until enabled)
 
-**Help docs:** `SIM_MANUAL.md` (sim operators — embedded in desktop/web Help → Manual) and `MANUAL.md` (Daisy Field firmware — repository only, not shipped to sim hosts). `QUICK_DICT.md` is a short parameter glossary.
+**Help docs:** `SIM_MANUAL.md` (sim operators for this frozen web/desktop-v1 surface — embedded in
+desktop/web Help → Manual). `MANUAL.md` and `QUICK_DICT.md` now document the current Sheaf app under
+`app/` (MANUAL.md keeps a Daisy Field firmware appendix, repository only, not shipped to sim hosts) —
+they no longer describe this frozen web sim's own parameter layout.
 
 **Host page labels:** `sim/ParamDisplayNames.hpp` and `sim/HostPanelLayout.hpp` are the authorities; `web/src/hostDisplay.generated.ts` is generated for instant UI labels. `node scripts/generate-host-display.mjs --check` runs on every web build and e2e run.
 
@@ -344,7 +354,13 @@ Links `src/core/` + `DesktopHostIO` only (no libDaisy). Transport bar: **Play/St
 
 **Release packages:** See [`desktop/PACKAGING.md`](desktop/PACKAGING.md) for DMG / Windows installer commands. Move tag `froggerstiga-v1` on `main` (force-push) to trigger `.github/workflows/desktop-release.yml` and publish assets on [GitHub Releases](https://github.com/daguilarc/FroggersTiga/releases).
 
-Parameter and host UX reference: [`SIM_MANUAL.md`](SIM_MANUAL.md) and [`QUICK_DICT.md`](QUICK_DICT.md). Local OpenSpec plans under `openspec/` are workspace planning state, not public repo documentation.
+Parameter and host UX reference for this frozen desktop-v1 surface: [`SIM_MANUAL.md`](SIM_MANUAL.md).
+`QUICK_DICT.md` now documents the current Sheaf app under `app/` rather than this surface's own
+parameter layout — see the note on `QUICK_DICT.md` in the browser-simulator section above; the desktop-v1
+app's own embedded **FroggersTiga → Quick Dict** menu entry (line above) still bundles whatever copy was
+in the tree when that build was made, so a rebuilt desktop-v1 binary would need its own review before
+this repo-root file is trusted as its in-app reference again. Local OpenSpec plans under `openspec/` are
+workspace planning state, not public repo documentation.
 
 ## Local Planning And Hygiene
 

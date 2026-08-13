@@ -1223,6 +1223,70 @@ TEST_CASE(encoder_cell_never_emits_a_frame_draw_command) {
     REQUIRE_TRUE(!sawFrame);
 }
 
+// --- operator brief: long shortLabels no longer truncate to 4 characters ---
+
+// Operator (verbatim): "they can just be slightly larger colored boxes with
+// smaller text." Sheaf's own trailing label block (EncoderDraw.hpp:782-794)
+// hardcodes a 4-character cap, silently clipping any shortLabel longer than
+// that -- 25 sites in FroggersParameters.hpp, e.g. Filter bank slot 0
+// ("Comb offset", shortName "CmbOff", 6 chars) used to render "CMBO".
+// AppendEncoderCell (FroggersUiSurface.hpp) now strips Sheaf's own 4-char
+// block by its exact, deterministic size (60 commands -- see that call
+// site's own comment) and appends its own label block sized from the FULL
+// shortLabel instead. This test proves the full character count actually
+// reaches the rendered draw list, not just that some box is bigger.
+//
+// BuildFourteenSegmentCommands emits exactly one small decimal-point
+// FillEllipse per character slot, unconditionally, per character
+// (EncoderDraw.hpp:528-531) -- distinctly small (a few px) vs. the cell's
+// two big body-fill ellipses (EncoderDraw.hpp:678-686, roughly
+// 2*baseRadius wide, tens of px). Counting the small ones is therefore a
+// direct, robust read of how many character slots actually rendered:
+// Sheaf's own default was a hardcoded 4 (truncating "CmbOff" to "CMBO");
+// this app's fix must instead render all 6.
+TEST_CASE(encoder_cell_renders_the_full_short_label_not_truncated_to_four_chars) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("encoder_full_label"));
+    rig.RunBlocks(4);
+    rig.UIState();  // forces a synchronous publish
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+
+    // Filter bank (index 2, FroggersParameters.hpp's FroggersBankId::Filter)
+    // slot 0 is "Comb offset" / shortName "CmbOff" -- one of the 25 sites
+    // the truncation bug clipped.
+    surface.DispatchAction(synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBankSelect, "2"));
+    rig.RunBlocks(4);
+    rig.UIState();  // forces a synchronous publish of the newly-selected bank
+
+    const synth::ui::NodeTree tree = surface.BuildTree();
+    const synth::ui::Node* encoder = FindNodeById(tree, synth_froggers::FroggersNodeIds::Encoder(0));
+    REQUIRE_TRUE(encoder != nullptr);
+
+    std::size_t dpDotCount = 0;
+    bool sawLabelPlate = false;
+    for (const synth::ui::DrawCommand& command : encoder->drawCommands) {
+        if (command.kind == synth::ui::DrawCommand::Kind::FillEllipse && command.bounds.width < 5.0f) {
+            ++dpDotCount;
+        }
+        // The app's own label plate (FroggersUiSurface.hpp) is a
+        // FillRoundedRect well larger than either a modulator/gesture
+        // badge chip (badges top out near 28% of the cell's smaller
+        // dimension, ~24px at this cell size -- see
+        // encoder_cell_never_emits_a_frame_draw_command's own header
+        // comment for the traced badge geometry) or Sheaf's own 4-char
+        // box (46.2px wide at this cell's baseRadius).
+        if (command.kind == synth::ui::DrawCommand::Kind::FillRoundedRect && command.bounds.width > 50.0f) {
+            sawLabelPlate = true;
+        }
+    }
+
+    // "CmbOff" upper-cased is 6 characters -- proves the truncation is
+    // gone, not just that some larger box exists.
+    REQUIRE_TRUE(dpDotCount == 6);
+    REQUIRE_TRUE(sawLabelPlate);
+}
+
 // --- 3.5: scene buttons toggle the blend to its extremes --------------------
 
 // Design E3d: S1/S2's old behaviour (`SetLessSelectedScene`) reassigned

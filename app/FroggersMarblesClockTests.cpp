@@ -22,7 +22,9 @@
 #error "Froggers Marbles clock tests must not see JUCE headers"
 #endif
 
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <iostream>
@@ -255,11 +257,18 @@ TEST_CASE(no_random_sh_behaviour_parameter_exists_in_any_bank_and_no_seventh_ban
     const std::array<const char*, 6> forbiddenSubstrings{
         "Step chance", "Deja vu", "Bag size", "Slew", "Spread", "Bias",
     };
+    // Case-insensitive: a generic-sounding bank parameter name (e.g. "Drive
+    // bias") must not slip through this guard purely by luck of
+    // capitalisation.
+    auto toLower = [](std::string s) {
+        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
+        return s;
+    };
     for (const auto& layout : layouts) {
         for (const auto& spec : layout.params) {
-            const std::string name(spec.name);
+            const std::string name = toLower(std::string(spec.name));
             for (const char* forbidden : forbiddenSubstrings) {
-                REQUIRE_TRUE(name.find(forbidden) == std::string::npos);
+                REQUIRE_TRUE(name.find(toLower(forbidden)) == std::string::npos);
             }
         }
     }

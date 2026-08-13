@@ -55,6 +55,7 @@
 // ported params reproduce ProcessReverb + the Wet/dry blend exactly.
 
 #include "DspMath.hpp"
+#include "Drive.hpp"     // R3 below: reuse dsp::DigitalReorganizer AS-IS for the Grit knob (same reuse Delay.hpp's D10 makes of dsp::SampleRateReducer).
 #include "FilterFx.hpp"  // reuse dsp::PadeSaturator (S2a.1 below; same reuse Delay.hpp's B2 makes).
 #include "Limiter.hpp"
 
@@ -130,6 +131,13 @@ static_assert(kReverbWetLimiterThreshold < kReverbWetLimiterCeiling,
 inline constexpr float kReverbWetLimiterAttackSeconds = 2.0e-6f;   // 2 microseconds -- see comment above.
 inline constexpr float kReverbWetLimiterReleaseSeconds = kSharedReleaseSeconds;  // shared; see Limiter.hpp.
 
+// R1-R6 (strict-executor packet, Reverb slots 9-13 "MdRt"/"TkDv"/"Grit"/
+// "Tilt"/"Tund"): these five parameters were registered by an earlier
+// packet (FroggersParameters.hpp) but never read -- every knob defaulted
+// 0.0f and had no effect. No frozen Froggers original exists for any of
+// them (same footing as Mod depth/Hold above -- design D15's "newly
+// authored" category), so each mapping below is authored, with its own
+// derivation noted at its call site/setter.
 struct Reverb
 {
     // src/core/FroggersEngine.hpp:65 (x_rvSize).
@@ -139,8 +147,56 @@ struct Reverb
     // wow on the tank read-taps, deliberately small (well under one sample
     // at typical knob values) so it colors the tail without destabilising
     // the delay-line indexing.
-    static constexpr float kModLfoHz = 0.35f;
     static constexpr float kModMaxOffsetSamples = 24.0f;
+
+    // R1 (slot 9, "Mod rate" / "MdRt"): replaces the fixed 0.35 Hz baked
+    // into modLfoPhase's own increment below. Range [0.07, 1.75] Hz chosen
+    // so the geometric mean lands exactly on today's 0.35 Hz (0.07*1.75 ==
+    // 0.1225 == 0.35^2), the SAME "geometric-mean range" idiom this same
+    // packet's Delay bank already established for its own Mod rate knob
+    // (dsp::StereoDelay::SetModRate, dsp/Delay.hpp: range [0.05, 1.25],
+    // 25x ratio, geometric mean 0.25 Hz) -- reused directly, including the
+    // 25x lo/hi ratio (0.07*25 == 1.75), not invented fresh. Default knob
+    // 0.5f reproduces exactly 0.35 Hz: ExpMapCompute(0.07,1.75,0.5) ==
+    // sqrt(0.07*1.75) == sqrt(0.1225) == 0.35.
+    static constexpr float kModLfoHzMin = 0.07f;
+    static constexpr float kModLfoHzMax = 1.75f;
+
+    // R2 (slot 10, "Tank drive" / "TkDv"): SAME [0.25, 4.0] ExpMapCompute
+    // range and knob-0.5-is-unity convention already established for a
+    // "drive" pre-gain into a saturator elsewhere in this packet (Delay's
+    // Feedback drive, dsp/Delay.hpp SetFeedbackDrive; Filter's Comb drive,
+    // FroggersAppCore.hpp Task E) -- reused, not reinvented. Default knob
+    // 0.5f reproduces unity (1.0f) exactly: ExpMapCompute(0.25,4,0.5) ==
+    // 0.25*sqrt(16) == 1.0.
+    static constexpr float kTankDriveMin = 0.25f;
+    static constexpr float kTankDriveMax = 4.0f;
+
+    // R5 (slot 13, "Tuned" / "Tund"): a static (non-LFO) offset on dA/dB,
+    // fed through the SAME offsetSamples/applyMod mechanism Mod depth's
+    // LFO wow already uses below -- per the recorded decision (operator)
+    // that there is no pitch tracker on this control, it is an ordinary
+    // parameter, not a tracked oscillator pitch. Range +-300 samples
+    // (chosen and MEASURED for stability under rapid sweeps -- see R6's
+    // own measurement, reported in the packet report, not asserted here
+    // silently). Default knob 0.5f reproduces an exact zero offset
+    // ((2*0.5-1)*300 == 0), i.e. dA/dB unchanged from what Room size alone
+    // produces today.
+    static constexpr float kTunedMaxOffsetSamples = 300.0f;
+
+    // R4 (slot 12, "Tilt" / "Tilt"): bipolar post-tank tone shave, crossfaded
+    // around the knob's centre (0.5f) between a direct lowpass tap and its
+    // complementary highpass (input - lowpass(input)). kTiltCrossoverHz is
+    // the FIXED corner both taps share (the knob controls only the
+    // low/high BALANCE, never the corner itself); kTiltDepth is the
+    // maximum weight applied to the low/high difference at either extreme.
+    // Both values were chosen, then the wetLimiter's existing tuning was
+    // RE-MEASURED against this stage at its brightest setting -- see the
+    // packet report for the measured peak levels (centre vs. brightest)
+    // and the sabotage check that confirms the measurement can see a
+    // change.
+    static constexpr float kTiltCrossoverHz = 1000.0f;
+    static constexpr float kTiltDepth = 1.0f;
 
     float lineA[kSize]{};
     float lineB[kSize]{};
@@ -154,6 +210,19 @@ struct Reverb
     // including the shared-state quirk of filtering A then B in sequence
     // through the same one-pole state each sample).
     OnePoleLowPass dampFilter;
+
+    // R4 (slot 12, "Tilt"): twin OnePoleLowPass instances sharing the same
+    // fixed corner (kTiltCrossoverHz, recomputed from `sampleRate` every
+    // Process() call, same "recompute fresh, sampleRate is a per-call
+    // argument here" idiom modLfoPhase's own increment below already uses)
+    // -- tiltLowPass provides the direct lowpass tap, tiltHighPass provides
+    // the complementary highpass tap via `input - tiltHighPass.Process(input)`
+    // in Process() below. Two separate instances (not one reused twice)
+    // because each carries its own persistent one-pole state; reusing a
+    // single instance for both taps would advance that state twice per
+    // sample and desync the two reads.
+    OnePoleLowPass tiltLowPass;
+    OnePoleLowPass tiltHighPass;
 
     float wetL = 0.0f;
     float wetR = 0.0f;
@@ -225,6 +294,12 @@ struct Reverb
         indexB = 0;
         preIndex = 0;
         dampFilter.output = 0.0f;
+        // R4: `tiltLowPass`/`tiltHighPass` carry their own recursive
+        // one-pole state, same "must reset them too" rationale as
+        // `dampFilter.output` just above -- new state sitting downstream of
+        // the tank this clear is meant to silence.
+        tiltLowPass.output = 0.0f;
+        tiltHighPass.output = 0.0f;
         wetL = 0.0f;
         wetR = 0.0f;
         modLfoPhase = 0.0f;
@@ -252,7 +327,7 @@ struct Reverb
     bool StateFinite() const
     {
         if (!std::isfinite(dampFilter.output) || !std::isfinite(wetL) || !std::isfinite(wetR) ||
-            !std::isfinite(modLfoPhase))
+            !std::isfinite(modLfoPhase) || !std::isfinite(tiltLowPass.output) || !std::isfinite(tiltHighPass.output))
         {
             return false;
         }
@@ -283,7 +358,8 @@ struct Reverb
     // clear" apart from "cleared once, then refilled."
     float StateMagnitude() const
     {
-        float magnitude = std::max({std::fabs(dampFilter.output), std::fabs(wetL), std::fabs(wetR)});
+        float magnitude = std::max({std::fabs(dampFilter.output), std::fabs(wetL), std::fabs(wetR),
+                                     std::fabs(tiltLowPass.output), std::fabs(tiltHighPass.output)});
         for (size_t i = 0; i < kSize; ++i)
         {
             magnitude = std::max({magnitude, std::fabs(lineA[i]), std::fabs(lineB[i]), std::fabs(preLine[i])});
@@ -309,6 +385,22 @@ struct Reverb
     // :459, :574 Damping -- the ExpMap output IS the damping filter's alpha.
     static float DampAlphaFromKnob(float knob01) { return ExpMapCompute(0.001f, 0.2f, 1.0f - knob01); }
 
+    // R1 (slot 9, Mod rate) -- see kModLfoHzMin/Max's own comment above.
+    static float ModRateHzFromKnob(float knob01) { return ExpMapCompute(kModLfoHzMin, kModLfoHzMax, knob01); }
+
+    // R2 (slot 10, Tank drive) -- see kTankDriveMin/Max's own comment above.
+    static float TankDriveFromKnob(float knob01) { return ExpMapCompute(kTankDriveMin, kTankDriveMax, knob01); }
+
+    // R5 (slot 13, Tuned) -- see kTunedMaxOffsetSamples's own comment above.
+    // Identity-shaped around the centre (knob 0.5f -> 0 exactly), same
+    // bipolar-around-centre idiom DriveBlendPhase's own aTarget mapping
+    // uses (dsp/Drive.hpp), scaled to a sample-count range instead of an
+    // allpass coefficient range.
+    static float TunedOffsetSamplesFromKnob(float knob01)
+    {
+        return (2.0f * knob01 - 1.0f) * kTunedMaxOffsetSamples;
+    }
+
     // Returns the fully mixed (dry/wet-blended) output, i.e. what
     // ApplyOutputFx's `(1.0f - rvMix) * output + rvMix * rvb` computes
     // (FroggersEngine.hpp:844-846), folding the Wet/dry knob (:455) in here
@@ -323,7 +415,19 @@ struct Reverb
                    float diffusionKnob01,
                    float sampleRate,
                    float modDepthKnob01 = 0.0f,
-                   float holdKnob01 = 0.0f)
+                   float holdKnob01 = 0.0f,
+                   // R1-R5 (slots 9-13, strict-executor packet): every
+                   // default below reproduces today's exact pre-packet
+                   // behavior bit-for-bit when a caller omits them (see
+                   // each default's own derivation at its constant's
+                   // comment above) -- so every existing call site in this
+                   // file's own tests, which never pass these five, is
+                   // unaffected.
+                   float modRateKnob01 = 0.5f,
+                   float tankDriveKnob01 = 0.5f,
+                   float gritKnob01 = 0.0f,
+                   float tiltKnob01 = 0.5f,
+                   float tunedKnob01 = 0.5f)
     {
         // :458, :497-504 -- pre-delay tap.
         const float preNorm = PreDelayNormFromKnob(preKnob01, sampleRate);
@@ -347,9 +451,20 @@ struct Reverb
         // Authored Mod depth: a small sinusoidal wow on the read taps.
         // modDepthKnob01 == 0 -> modOffset == 0 -> dA/dB unchanged, so this
         // never disturbs the parity case.
-        modLfoPhase = WrapPhase(modLfoPhase + kModLfoHz / sampleRate);
+        // R1: modLfoHz now knob-driven (was the fixed kModLfoHz == 0.35f
+        // literal) -- modRateKnob01 == 0.5f reproduces exactly 0.35 Hz (see
+        // kModLfoHzMin/Max's own comment), so this alone never disturbs the
+        // parity case either.
+        const float modLfoHz = ModRateHzFromKnob(modRateKnob01);
+        modLfoPhase = WrapPhase(modLfoPhase + modLfoHz / sampleRate);
         const float modOffset = modDepthKnob01 * kModMaxOffsetSamples * Sine01(modLfoPhase);
-        const long offsetSamples = std::lround(modOffset);
+        // R5: Tuned adds a static (non-LFO) offset through this SAME
+        // offsetSamples/applyMod mechanism -- tunedKnob01 == 0.5f reproduces
+        // exactly a zero offset (see kTunedMaxOffsetSamples's own comment),
+        // so dA/dB are unchanged from today's Room-size-only result at the
+        // default, exactly like modOffset==0 above.
+        const float tunedOffset = TunedOffsetSamplesFromKnob(tunedKnob01);
+        const long offsetSamples = std::lround(modOffset + tunedOffset);
         const auto applyMod = [&](size_t baseDelay) -> size_t {
             long modulated = static_cast<long>(baseDelay) + offsetSamples;
             modulated = std::max<long>(1, std::min<long>(static_cast<long>(kSize) - 1, modulated));
@@ -407,8 +522,37 @@ struct Reverb
         // untouched by that fix) -- this is that same split, one loop
         // further in, per the operator's own framing: "a structural guard,
         // not a tone change."
-        const float aIn = preOut + fb * PadeSaturator::Saturate(aFb);
-        const float bIn = preOut + fb * PadeSaturator::Saturate(bFb);
+        //
+        // R3 (slot 11, Grit): routes aFb/bFb through dsp::DigitalReorganizer
+        // (Drive.hpp), reused AS-IS -- not hand-rolled -- specifically so
+        // its own DC-blocked Process() (Mangle(input,·,·) - Mangle(0,·,·))
+        // is what runs here, not a copy that would reintroduce the f(0)!=0
+        // defect that DC-block construction exists to fix (see Drive.hpp's
+        // own divergence-note comment). Local instance (no persistent
+        // signal state of its own -- flip/hashBits are config, reassigned
+        // fresh every call from gritKnob01, same idiom dampFilter.alpha
+        // uses above). gritKnob01 == 0.0f -> flip == 0, hashBits == 0 ->
+        // Mangle(x,0,0) - Mangle(0,0,0) == x - 0 == x exactly (Drive.hpp's
+        // own Mangle formula reduces to the identity at flip==hashBits==0),
+        // an EXACT bit-identical bypass, not merely a small value -- the
+        // pre-packet aFb/bFb pass through this stage unchanged at default.
+        DigitalReorganizer gritReorganizer;
+        gritReorganizer.SetFlip(gritKnob01);
+        gritReorganizer.SetHash(gritKnob01);
+        const float aFbGrit = gritReorganizer.Process(aFb);
+        const float bFbGrit = gritReorganizer.Process(bFb);
+        // R2 (slot 10, Tank drive): pre-gain on the ARGUMENT of Saturate
+        // ONLY, per this task's binding placement requirement -- Saturate's
+        // own +-1 clamp still bounds this line to `|preOut| + fb` regardless
+        // of tankDrive (writing `tankDrive * fb * Saturate(...)` instead
+        // would raise that bound; deliberately not done, same reasoning
+        // Delay's own D6/Feedback drive comment gives, dsp/Delay.hpp).
+        // tankDriveKnob01 == 0.5f reproduces tankDrive == 1.0f exactly
+        // (unity -- see kTankDriveMin/Max's own comment), so this alone
+        // never disturbs the parity case either.
+        const float tankDrive = TankDriveFromKnob(tankDriveKnob01);
+        const float aIn = preOut + fb * PadeSaturator::Saturate(tankDrive * aFbGrit);
+        const float bIn = preOut + fb * PadeSaturator::Saturate(tankDrive * bFbGrit);
 
         dampFilter.alpha = DampAlphaFromKnob(dampKnob01);  // :459, :574
         const float aOut = dampFilter.Process(valA);
@@ -428,6 +572,26 @@ struct Reverb
         const float mix = mixKnob01;  // :455, direct passthrough
         const float mixedOut = (1.0f - mix) * input + mix * wet;  // :846
 
+        // R4 (slot 12, Tilt): bipolar post-tank tone shave, applied to
+        // mixedOut BEFORE wetLimiter.Process() below. tiltLowPass/
+        // tiltHighPass share the same fixed corner (kTiltCrossoverHz,
+        // recomputed from `sampleRate` every call, same per-call-argument
+        // idiom modLfoHz's own increment above uses) -- tiltLow is the
+        // direct lowpass tap, tiltHigh is its complement
+        // (`mixedOut - tiltHighPass.Process(mixedOut)`). tiltAmount is 0.0f
+        // EXACTLY at tiltKnob01 == 0.5f (centre), so `tiltAmount * (...)`
+        // is an exact 0.0f multiply and `tilted` equals `mixedOut` bit-for-
+        // bit at the default -- both filters still run every call (so their
+        // state stays live for a knob move mid-tail), but their output is
+        // provably unreachable at centre, the same "still computed, exact
+        // no-op by a zero multiply" idiom modOffset/tunedOffset above use.
+        tiltLowPass.SetAlphaFromNatFreq(kTiltCrossoverHz / sampleRate);
+        tiltHighPass.SetAlphaFromNatFreq(kTiltCrossoverHz / sampleRate);
+        const float tiltLow = tiltLowPass.Process(mixedOut);
+        const float tiltHigh = mixedOut - tiltHighPass.Process(mixedOut);
+        const float tiltAmount = tiltKnob01 - 0.5f;  // -0.5 (darkest) .. 0 (centre) .. 0.5 (brightest)
+        const float tilted = mixedOut + tiltAmount * (tiltHigh - tiltLow) * kTiltDepth;
+
         // B6b (tasks.md CONSOLIDATED PUSH table; "Group B outcomes" /
         // operator: "why can't we just have limiters for reverb and
         // delay?"): applied to the fully mixed dry/wet output, AFTER both
@@ -439,8 +603,11 @@ struct Reverb
         // now], so Hold keeps sustaining exactly as before; this only bounds the
         // LEVEL that escapes this stage toward the master limiter. See this
         // file's header comment (above the struct) for the tuning and its
-        // measurement.
-        return wetLimiter.Process(mixedOut);
+        // measurement. R4: now applied to `tilted` (== `mixedOut` exactly
+        // at Tilt's centre default) rather than `mixedOut` directly --
+        // MEASURED against the brightest Tilt setting, see the packet
+        // report.
+        return wetLimiter.Process(tilted);
     }
 };
 

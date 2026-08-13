@@ -52,6 +52,27 @@ inline float ZeroedExpCompute(float base, float value)
     return (std::pow(base, value) - 1.0f) / (base - 1.0f);
 }
 
+// -- src/core/FroggersEngine.hpp:150-165 (Vco::PmDepthScale), generalized -
+// true-zero depth taper: exactly 0 at/below `floor`, a smoothstep
+// t*t*(3-2t) ramp up to 1 across `rampWidth` above `floor`, then 1. Shared
+// by any knob that needs PmDepthScale's exact shape with its own floor/
+// ramp width (see Vco::PmDepthScale, which now calls this with
+// kPmLfoFloor/kPmLfoRampWidth).
+inline float TrueZeroDepthTaper(float knob01, float floor, float rampWidth)
+{
+    if (knob01 <= floor)
+    {
+        return 0.0f;
+    }
+    const float rampTop = floor + rampWidth;
+    if (knob01 >= rampTop)
+    {
+        return 1.0f;
+    }
+    const float t = (knob01 - floor) / rampWidth;
+    return t * t * (3.0f - 2.0f * t);
+}
+
 // -- src/core/OPLowPassFilter.hpp, verbatim formula -----------------------
 struct OnePoleLowPass
 {

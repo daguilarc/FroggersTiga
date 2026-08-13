@@ -16,10 +16,13 @@ requirements at all. The collision the audit found is with **PM Rate** (Audio sl
   three VCOs' `StepPmLfo` calls (`../../proposal.md` §9.5's own recorded compromise), so moving it changes
   all three VCOs at once.
 
-**This delta relaxes an in-force requirement and therefore needs the operator's confirmation before any
+**This delta relaxes an in-force requirement and therefore needed the operator's confirmation before any
 implementer acts on it** (T7.0 in `../../tasks.md`). It is written here rather than left unrecorded because
 an unrecorded collision with a live requirement is exactly what a §14 preflight exists to catch; the
-alternative — shipping PM Rate against a requirement that forbids it — is not available.
+alternative — shipping PM Rate against a requirement that forbids it — is not available. **That
+confirmation was given in the same session (`../../proposal.md` §3a ruling 10, operator: *"A:1"*): PM Rate
+keeps Audio slot 12 and this delta stands as written, with the one-rate-knob-for-three-VCOs trade accepted
+explicitly rather than by omission.**
 
 The second MODIFIED requirement below **strengthens** rather than relaxes: it makes Ring Mod's internal
 carrier an asserted property of the spec instead of a claim living only in a proposal, so a future

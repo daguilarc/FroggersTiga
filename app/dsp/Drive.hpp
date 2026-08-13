@@ -86,8 +86,24 @@ struct PolynomialDrive
     float gain = 1.0f;
     float coefs[5] = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 
+    // D2 (Drive slot 10, "Link", strict-executor packet): knob-driven
+    // scalar replacing the hardcoded 0.25f coefs[1]/coefs[3] coupling term
+    // below (see SetLink). Default 0.25f -- matches today's literal for any
+    // instance that never calls SetLink (e.g. the existing
+    // polynomial_drive_set_coefs_matches_space_filling_curve_formula parity
+    // test, which pins the OLD hardcoded-0.25f formula directly).
+    float link = 0.25f;
+
     // PolynomialDrive.hpp:32-36 (SetGain).
     void SetGain(float gainKnob01) { gain = ExpMapCompute(1.0f, 5.0f, gainKnob01); }
+
+    // D2: linkScalar = knob * 0.5f, linear -- default knob 0.5f reproduces
+    // exactly 0.25f (today's hardcoded literal: 0.5*0.5==0.25). Doubling to
+    // 0.5f at knob==1 is the "pairing unlocked" case already measured
+    // externally per this task's own brief (worst-case |Process| 200.5
+    // today vs 212.1 unlocked, +0.5 dB) -- no further headroom work
+    // required. Call before SetCoefs, which reads `link`.
+    void SetLink(float linkKnob01) { link = linkKnob01 * 0.5f; }
 
     // PolynomialDrive.hpp:38-66 (SetCoefs). Uses the CURRENT `gain` (the
     // frozen code's m_gain.m_target, i.e. the un-smoothed target) -- call
@@ -98,9 +114,9 @@ struct PolynomialDrive
         const float coefsKnob = ZeroedExpCompute(30.0f, shapeKnob01);
 
         coefs[0] = 1.0f + 10.0f * Sine01(coefsKnob * 1.0f);
-        coefs[1] = 10.0f * Sine01(coefsKnob * 1.618f + 0.25f * (computedGain - 1.0f));
+        coefs[1] = 10.0f * Sine01(coefsKnob * 1.618f + link * (computedGain - 1.0f));
         coefs[2] = 10.0f * Sine01(coefsKnob * 2.718f);
-        coefs[3] = 10.0f * Sine01(coefsKnob * 3.141f + 0.25f * (computedGain - 1.0f));
+        coefs[3] = 10.0f * Sine01(coefsKnob * 3.141f + link * (computedGain - 1.0f));
         coefs[4] = 10.0f * Sine01(coefsKnob * 4.669f);
     }
 
@@ -113,6 +129,21 @@ struct PolynomialDrive
         const float input5 = input3 * input2;
         return gain * (input * coefs[0] + input2 * coefs[1] + input3 * coefs[2]
                         + input4 * coefs[3] + input5 * coefs[4]);
+    }
+
+    // D5 (Drive slot 13, "Waveshaper offset" / "Bias", strict-executor
+    // packet): subtract-after-shift construction, generalized from
+    // DigitalReorganizer::Process's own `Mangle(input) - Mangle(0)` shape
+    // above in this file (same "compute fresh every call, don't cache"
+    // idiom -- `gain`/`coefs` are public fields that can be reassigned
+    // directly, bypassing SetGain()/SetCoefs()). Closes f(0)==0 exactly at
+    // every bias setting: Process(0.0f) is always exactly 0.0f for any
+    // gain/coefs (every polynomial term multiplies by an increasing power
+    // of the input), so at bias==0 this reduces to Process(input) - 0.0f,
+    // bit-identical to the pre-D5 call site.
+    float ProcessBiased(float input, float bias) const
+    {
+        return Process(input + bias) - Process(bias);
     }
 };
 
@@ -131,6 +162,27 @@ struct Oversampler2x
     float overCeilingSeconds = 0.0f;
 
     Oversampler2x() { antiAlias.SetAlphaFromNatFreq(0.4f); }
+
+    // D1 (Drive slot 9, "Anti-alias brightness" / "ABrt", strict-executor
+    // packet): knob-driven cutoff replacing the constructor's hardcoded
+    // 0.4f above. ExpMapCompute range [0.32, 0.5] cycles/sample -- narrow
+    // and centered on today's fixed value, a brightness fine-tune around
+    // the original design point rather than an unbounded range that could
+    // introduce audible aliasing (too low) or muffle the oversampled top
+    // end (too low a floor). Default knob 0.5f reproduces exactly 0.4f:
+    // ExpMapCompute(0.32,0.5,0.5) == sqrt(0.32*0.5) == sqrt(0.16) == 0.4
+    // (0.16 == 0.4^2 by choice of range, same squared-range trick as
+    // FrogBlock::SetFold below). SetAlphaFromNatFreq's own
+    // std::min(kMaxCutoff, ·) clamp (0.499) silently caps the top sliver of
+    // this range (max 0.5 vs kMaxCutoff 0.499) -- harmless, sub-audible.
+    // Never called by a raw `Oversampler2x over;` construction (e.g. the
+    // existing oversampler2x_first_sample_processes_twice_then_interpolates
+    // parity test), so the constructor's own 0.4f stays exactly reachable
+    // without this setter ever running.
+    void SetAntiAliasBrightness(float knob01)
+    {
+        antiAlias.SetAlphaFromNatFreq(ExpMapCompute(0.32f, 0.5f, knob01));
+    }
 
     template <typename ProcessFunc>
     float Process(float input, ProcessFunc processFunc)
@@ -355,6 +407,24 @@ struct FrogBlock
     Oversampler2x oversampler;
     float fuzz = 0.0f;
 
+    // D3 (Drive slot 11, "Fold", strict-executor packet): knob-mapped
+    // divisor for the sinIn fold below, replacing the hardcoded 4.0f.
+    // Default 4.0f -- matches today's literal for any instance that never
+    // calls SetFold (e.g. frog_block_process_matches_manual_chain_replica,
+    // which pins the OLD hardcoded `out / 4.0f` formula directly).
+    float foldDivisor = 4.0f;
+
+    // D4 (Drive slot 12, "Tone", strict-executor packet): post-chain
+    // low-pass. Default alpha 1.0f (bypass -- see SetTone) so an instance
+    // that never calls SetTone (same parity test as above) still processes
+    // as an exact identity, matching today's FrogBlock exactly.
+    OnePoleLowPass tone{1.0f};
+
+    // D5 (Drive slot 13, "Waveshaper offset" / "Bias", strict-executor
+    // packet): default 0.0f (no offset) -- see SetBias /
+    // PolynomialDrive::ProcessBiased above.
+    float bias = 0.0f;
+
     // F3.3 (openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md):
     // this struct's own contribution to the "every stateful unit in the
     // audio path" enumeration -- lists ONLY the members declared above that
@@ -370,18 +440,54 @@ struct FrogBlock
         visit(oversampler, Magnitude{});
     }
 
-    // PolynomialDrive.hpp:187-202 (FrogBlock::Process), verbatim order.
+    // D3: ExpMapCompute range [1.0, 16.0] -- strictly positive by
+    // construction (ExpMapCompute's floor is `min`, here 1.0, and a
+    // positive min raised to any finite power stays strictly positive, so
+    // the divisor can never reach or cross zero), satisfying this task's
+    // binding requirement: `out / 0` would be +-inf, and Sine01's own
+    // `phase - std::floor(phase)` turns that into NaN, which this codebase
+    // has already been silenced permanently by once. Default knob 0.5f
+    // reproduces exactly 4.0f: ExpMapCompute(1,16,0.5) == sqrt(16) == 4
+    // (16 == 4^2 by choice of range, same trick as SetAntiAliasBrightness
+    // above).
+    void SetFold(float foldKnob01) { foldDivisor = ExpMapCompute(1.0f, 16.0f, foldKnob01); }
+
+    // D4: alpha fed directly (Reverb.hpp's own damping-filter idiom -- "the
+    // ExpMap output IS the alpha", not run through SetAlphaFromNatFreq).
+    // Range [0.02, 1.0]; default knob 1.0f reproduces alpha == 1.0f
+    // exactly, which makes OnePoleLowPass::Process an exact identity
+    // (output = 1.0*input + 0.0*output) -- "removes nothing" bit-exactly
+    // at default, not merely approximately.
+    void SetTone(float toneKnob01) { tone.alpha = ExpMapCompute(0.02f, 1.0f, toneKnob01); }
+
+    // D5: bias in [-0.02, 0.02] -- MEASURED (packet report): sweeping bias
+    // across candidate ranges against PolynomialDrive::Process's own
+    // worst-case |output| (several gain/shape settings, representative
+    // +-1.2 input) shows peak swing rises with ANY nonzero bias (it cannot
+    // stay at or below the bias==0 ceiling for bias != 0 -- the polynomial
+    // is unbounded and DC cancellation does not bound peak swing, only
+    // f(0)==0). +-0.02 is the largest tested range keeping the worst-case
+    // increase in the low single digits over the bias==0 baseline (+6.1%
+    // measured) rather than silently widening past it. Default knob 0.5f
+    // reproduces bias == 0.0f exactly (2*0.5-1 == 0).
+    void SetBias(float biasKnob01) { bias = 0.02f * (2.0f * biasKnob01 - 1.0f); }
+
+    // PolynomialDrive.hpp:187-202 (FrogBlock::Process), same order as
+    // before D3/D4/D5; D5's bias is applied to polynomialDrive's own input
+    // (via ProcessBiased), D3's foldDivisor replaces the old literal
+    // divisor, and D4's tone stage is appended after the ported chain.
     float Process(float input)
     {
         float output = oversampler.Process(input, [this](float in) -> float {
-            const float out = polynomialDrive.Process(in);
-            const float sinIn = out / 4.0f;
+            const float out = polynomialDrive.ProcessBiased(in, bias);
+            const float sinIn = out / foldDivisor;
             return Sine01(sinIn) * (1.0f - fuzz) + fuzz * PadeSaturator::Saturate(out);
         });
 
         output = digitalReorganizer.Process(output);
         output = sampleRateReducer1.Process(output);
         output = sampleRateReducer2.Process(output);
+        output = tone.Process(output);
         return output;
     }
 };

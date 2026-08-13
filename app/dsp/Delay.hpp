@@ -39,6 +39,7 @@
 // DelayParams mapping, the Color/Halo fold, and StereoDelay itself.
 
 #include "DspMath.hpp"
+#include "Drive.hpp"    // D10: reuse dsp::SampleRateReducer AS-IS for the Crush knob (see StereoDelay::SetCrush below).
 #include "FilterFx.hpp"
 #include "Limiter.hpp"
 
@@ -167,6 +168,32 @@ struct StereoDelay
     OutputLimiter wetLimiterL;
     OutputLimiter wetLimiterR;
 
+    // D6 (Delay slot 9, "Feedback drive" / "FbDr", strict-executor packet):
+    // pre-gain on the ARGUMENT of Saturate only, see Process() below.
+    // Default 1.0f (unity) -- matches today's un-driven feedback exactly
+    // for any instance that never calls SetFeedbackDrive.
+    float fbDrive = 1.0f;
+
+    // D7 (Delay slot 10, "Feedback tone" / "FbTn"): per-channel damping
+    // ahead of Saturate. Default alpha 1.0f (bypass, exact identity -- see
+    // FrogBlock::SetTone's own comment, Drive.hpp, for why alpha==1.0f is
+    // an exact bypass rather than an approximation).
+    OnePoleLowPass fbToneL{1.0f};
+    OnePoleLowPass fbToneR{1.0f};
+
+    // D9 (Delay slot 12, "Width balance" / "WBal"): default 1.0f reproduces
+    // today's 0.35f/0.5f literals exactly (see Process() below and
+    // SetWidthBalance).
+    float widthBalance = 1.0f;
+
+    // D10 (Delay slot 13, "Crush" / "Crsh"): feedback-tap crush, reused
+    // dsp::SampleRateReducer AS-IS (Drive.hpp) rather than a hand-rolled
+    // copy. Default freq 1.0f -- SampleRateReducer::Process's own
+    // `freq >= 1.0f` branch returns input unchanged, an exact bypass ("no
+    // crushing") for any instance that never calls SetCrush.
+    SampleRateReducer crushL{/*freq=*/1.0f};
+    SampleRateReducer crushR{/*freq=*/1.0f};
+
     // :33-40 (clearBuffers).
     void ClearBuffers()
     {
@@ -185,6 +212,14 @@ struct StereoDelay
         // state after a clear, matching `lfoPhase`'s own reset rationale.
         wetLimiterL.Reset();
         wetLimiterR.Reset();
+        // D7/D10: same "must reset them too" rationale as the wet limiters
+        // just above -- the feedback-tap tone filter and crush stage are
+        // new recursive state sitting inside the loop this clear is meant
+        // to silence.
+        fbToneL.output = 0.0f;
+        fbToneR.output = 0.0f;
+        crushL.Reset();
+        crushR.Reset();
     }
 
     // Task 2.3 (Tier 1 recovery, app/FroggersAppCore.hpp): a thin name
@@ -297,6 +332,74 @@ struct StereoDelay
                                kDelayWetLimiterAttackSeconds, kDelayWetLimiterReleaseSeconds);
     }
 
+    // D6: ExpMapCompute range [0.25, 4.0] -- the SAME idiom already
+    // established in this codebase for a "drive" pre-gain into a saturator
+    // (FilterFxChain's Comb Drive, FroggersAppCore.hpp Task C / Filter slot
+    // 12), reused rather than a fresh range invented for the same concept.
+    // Default knob 0.5f reproduces fbDrive == 1.0f exactly (unity):
+    // ExpMapCompute(0.25,4,0.5) == 0.25*sqrt(16) == 1.0.
+    void SetFeedbackDrive(float knob01) { fbDrive = ExpMapCompute(0.25f, 4.0f, knob01); }
+
+    // D7: alpha fed directly, same idiom as FrogBlock::SetTone (Drive.hpp).
+    // Default knob 1.0f reproduces alpha == 1.0f exactly (bypass).
+    void SetFeedbackTone(float knob01)
+    {
+        const float alpha = ExpMapCompute(0.02f, 1.0f, knob01);
+        fbToneL.alpha = alpha;
+        fbToneR.alpha = alpha;
+    }
+
+    // D8 (Delay slot 11, "Mod rate" / "MdRt"): replaces the hardcoded
+    // 0.25Hz baked into SetSampleRate's own lfoInc formula above. Range
+    // [0.05, 1.25] Hz chosen so the geometric mean lands exactly on today's
+    // 0.25Hz (0.05*1.25 == 0.0625 == 0.25^2), giving an exact default at
+    // knob 0.5f: ExpMapCompute(0.05,1.25,0.5) == sqrt(0.0625) == 0.25.
+    // Recomputes lfoInc with the SAME formula SetSampleRate uses (2*pi*hz/
+    // sampleRate); only has effect once SetSampleRate has already run
+    // (every production/test caller already does, see SetSampleRate's own
+    // comment above) -- until then, SetSampleRate's own fixed-0.25Hz
+    // fallback (unchanged above) still applies.
+    void SetModRate(float knob01)
+    {
+        const float hz = ExpMapCompute(0.05f, 1.25f, knob01);
+        lfoInc = 2.0f * 3.14159265f * hz / sampleRate;
+    }
+
+    // D9: identity map -- widthBalance == knob01 directly, relying on the
+    // SAME [0,1] knob-range invariant `p.dwid` itself already relies on
+    // (Process()'s own pre-existing comment below: "p.dwid*0.5f cannot
+    // exceed 0.5"). Because both new weights in Process() are
+    // `<literal> * widthBalance * p.dwid` and widthBalance never exceeds
+    // 1.0f (it IS the raw [0,1] knob value), neither weight can exceed its
+    // OLD ceiling (0.35f / 0.5f respectively) at any knob position:
+    //   (a) cross-feed stays in [0,1]: max is 0.5*1.0*1.0 == 0.5, the same
+    //       ceiling as today, itself already inside [0,1].
+    //   (b) spread never exceeds today's own maximum
+    //       (0.35f*baseSeconds*dwid): widthBalance<=1 makes the new term a
+    //       pointwise-smaller-or-equal version of the old one for every
+    //       (dwid, baseSeconds) pair, so no combination of settings newly
+    //       reaches the pre-existing buffer-capacity overrun that did not
+    //       already reach it today -- reachability can only shrink, never
+    //       grow.
+    // Default knob 1.0f reproduces widthBalance == 1.0f exactly, i.e.
+    // today's fixed 0.35f/0.5f literals exactly.
+    void SetWidthBalance(float knob01) { widthBalance = knob01; }
+
+    // D10: SampleRateReducer, reused AS-IS -- same mapping shape already
+    // used for the Drive bank's SRR1/SRR2 knobs (FroggersAppCore.hpp Drive
+    // bank wiring), reused rather than invented fresh for the same
+    // concept. Default knob 0.0f gives
+    // freq == 1e-2 + ZeroedExpCompute(10,1) == 1.01 >= 1.0f, which is
+    // SampleRateReducer::Process's own exact-bypass branch -- "no
+    // crushing" at default is bit-identical passthrough, not merely an
+    // approximation.
+    void SetCrush(float knob01)
+    {
+        const float freq = 1e-2f + ZeroedExpCompute(10.0f, 1.0f - knob01);
+        crushL.SetFreq(freq);
+        crushR.SetFreq(freq);
+    }
+
     // :58-101 (process).
     DelayWetPair Process(float bumpIn, const DelayParams& p)
     {
@@ -313,7 +416,10 @@ struct StereoDelay
             lfoPhase -= 6.2831853f;
         }
         const float modSeconds = std::sin(lfoPhase) * p.dmod * baseSeconds * 0.08f;
-        const float widthSpread = p.dwid * baseSeconds * 0.35f;
+        // D9: 0.35f now scaled by widthBalance (SetWidthBalance, never
+        // exceeds 1.0f) -- see that setter's own comment for how bound (b)
+        // holds by construction.
+        const float widthSpread = p.dwid * baseSeconds * 0.35f * widthBalance;
         float timeL = std::max(0.001f, baseSeconds + modSeconds);
         float timeR = std::max(0.001f, baseSeconds + modSeconds + widthSpread);
 
@@ -327,12 +433,26 @@ struct StereoDelay
         const float dL = ReadAt(timeL, lineL);
         const float dR = ReadAt(timeR, lineR);
 
-        const float cross = p.dwid * 0.5f;
-        const float fbL = dL * (1.0f - cross) + dR * cross;
-        const float fbR = dR * (1.0f - cross) + dL * cross;
+        // D9: 0.5f now scaled by widthBalance -- see SetWidthBalance's own
+        // comment for how bound (a) (cross-feed stays in [0,1]) holds by
+        // construction.
+        const float cross = p.dwid * 0.5f * widthBalance;
+        float fbL = dL * (1.0f - cross) + dR * cross;
+        float fbR = dR * (1.0f - cross) + dL * cross;
         const float fbk = std::min(std::max(p.dfbk, 0.0f), 0.98f);
         const float send = std::min(std::max(p.dsnd, 0.0f), 1.0f);
         const float inSignal = bumpIn * send;
+
+        // D10 (Crush): feedback tap's repeats routed through
+        // SampleRateReducer, reused AS-IS, ahead of D7's tone filter and
+        // D6's drive gain below. Both bypass exactly at their own defaults
+        // (see field comments above), so this is a no-op chain at defaults.
+        fbL = crushL.Process(fbL);
+        fbR = crushR.Process(fbR);
+
+        // D7 (Feedback tone): damps the tap ahead of Saturate.
+        fbL = fbToneL.Process(fbL);
+        fbR = fbToneR.Process(fbR);
 
         // B2 (tasks.md CONSOLIDATED PUSH table; W2.1-MATH-2's "delay is the
         // only unsaturated feedback stage"): `fbL`/`fbR` are unbounded reads
@@ -347,8 +467,14 @@ struct StereoDelay
         // unconditionally, so this line can never write more than
         // `|inSignal| + fbk` regardless of how many round trips have
         // already run -- a per-sample bound, not just a steady-state one.
-        WriteSample(inSignal + fbk * PadeSaturator::Saturate(fbL), lineL);
-        WriteSample(inSignal + fbk * PadeSaturator::Saturate(fbR), lineR);
+        //
+        // D6 (Feedback drive): fbDrive multiplies the ARGUMENT of Saturate
+        // ONLY, per this task's binding placement requirement -- Saturate's
+        // own +-1 clamp still bounds this line to `|inSignal| + fbk`
+        // regardless of fbDrive (writing `fbDrive * fbk * Saturate(...)`
+        // instead would raise that bound; deliberately not done).
+        WriteSample(inSignal + fbk * PadeSaturator::Saturate(fbDrive * fbL), lineL);
+        WriteSample(inSignal + fbk * PadeSaturator::Saturate(fbDrive * fbR), lineR);
         AdvanceWrite();
 
         // B6a (tasks.md CONSOLIDATED PUSH table; "Group B outcomes" /

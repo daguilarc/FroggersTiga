@@ -1128,10 +1128,129 @@ private:
             cellStyle.pointerDragAction =
                 synth::ui::Action::WithValue(FroggersActions::kEncoderDrag, FormatFroggersEncoderDrag(ix, 0.0f));
         }
+        // Operator brief (verbatim): "they can just be slightly larger
+        // colored boxes with smaller text." Sheaf's own trailing label
+        // block (EncoderDraw.hpp:782-794) hardcodes BOTH the display box
+        // size (14-24px tall, 3.3x that wide) AND a 4-character cap
+        // (UpperShortLabel's/BuildFourteenSegmentCommands's own default
+        // `maxChars`/`numChars`), silently truncating any shortLabel over
+        // 4 chars -- 25 sites in FroggersParameters.hpp, e.g. "CmbOff" ->
+        // "CMBO", "PkFreq" -> "PKFR", "Crispy"/"Crnchy" -> "CRIS"/"CRNC".
+        // `EncoderDrawState` has no field to change either the cap or the
+        // size, but `BuildEncoderDrawCommands` returns its command vector
+        // BY VALUE with that block appended LAST (EncoderDraw.hpp:793-796),
+        // and both `BuildFourteenSegmentCommands` (numChars<=0 auto-sizes
+        // to the text, EncoderDraw.hpp:544-548) and `UpperShortLabel`
+        // (maxChars is an ordinary parameter) are public/inline -- so this
+        // app strips Sheaf's trailing block by its exact, deterministic
+        // size and appends its own larger one, instead of re-deriving any
+        // of Sheaf's geometry from scratch.
         builder.Draw(
             encoderId,
             [state, hidden](synth::ui::Bounds extent) {
-                return hidden ? std::vector<synth::ui::DrawCommand>{} : synth::ui::BuildEncoderDrawCommands(state, extent);
+                if (hidden) {
+                    return std::vector<synth::ui::DrawCommand>{};
+                }
+
+                std::vector<synth::ui::DrawCommand> commands = synth::ui::BuildEncoderDrawCommands(state, extent);
+                if (!state.connected) {
+                    // BuildEncoderDrawCommands returns {} immediately for a
+                    // disconnected cell (EncoderDraw.hpp:653-656) -- there
+                    // is no trailing label block to strip or replace.
+                    return commands;
+                }
+
+                // Sheaf's trailing block size is exactly
+                // kSheafLabelCommandsPerChar (15: 14 AppendCharacter
+                // segment polygons -- 4 horizontal/G-bar + 6 vertical + 4
+                // diagonal, EncoderDraw.hpp:495-526, every one of which
+                // returns a non-empty polygon at any real display size --
+                // plus 1 unconditional decimal-point FillEllipse,
+                // EncoderDraw.hpp:528-531) times kSheafLabelDefaultChars
+                // (4, BuildFourteenSegmentCommands's own numChars default,
+                // EncoderDraw.hpp:540) = 60 commands, always, for a
+                // connected cell.
+                constexpr std::size_t kSheafLabelCommandsPerChar = 15;
+                constexpr std::size_t kSheafLabelDefaultChars = 4;
+                constexpr std::size_t kSheafLabelCommandCount =
+                    kSheafLabelCommandsPerChar * kSheafLabelDefaultChars;
+                if (commands.size() >= kSheafLabelCommandCount) {
+                    commands.resize(commands.size() - kSheafLabelCommandCount);
+                }
+
+                // Recompute the same cell geometry BuildEncoderDrawCommands
+                // derives internally (EncoderDraw.hpp:658-669) so this
+                // app's label plate lands exactly where Sheaf's did, plus
+                // growth -- not an independent guess.
+                constexpr float x_Inset = 4.0f;
+                const synth::ui::Bounds bounds{
+                    x_Inset,
+                    x_Inset,
+                    std::max(0.0f, extent.width - x_Inset * 2.0f),
+                    std::max(0.0f, extent.height - x_Inset * 2.0f),
+                };
+                const float centerX = bounds.x + bounds.width * 0.5f;
+                const float displayCenterY = bounds.y + bounds.height * 0.5f;
+                const float baseRadius = std::min(bounds.width, bounds.height) * 0.43f;
+
+                const float sheafDisplayHeight = synth::ui::Clamp(baseRadius * 0.34f, 14.0f, 24.0f);
+                const float sheafDisplayWidth = sheafDisplayHeight * 3.3f;
+
+                // "Slightly larger" box: 20% taller, 40% wider than
+                // Sheaf's own 4-char box. At this app's actual encoder
+                // cell size (~136x88px -- FroggersSurfaceTests.cpp's own
+                // measured encoder(0) bounds, see
+                // encoder_cell_never_emits_a_frame_draw_command's header
+                // comment), that puts a 6-character label (the longest
+                // shortLabel in FroggersParameters.hpp -- "Crnchy",
+                // "Crispy", "PreDly", "PkGain", "PkFreq", "Detune",
+                // "CmbOff", "CmbDly", "Cmb/Pk") at a ~0.64:1 glyph
+                // width:height ratio, vs. Sheaf's fixed 0.825:1 four-char
+                // ratio -- narrower ("smaller text") but still comfortably
+                // legible (14-segment displays stay readable well below
+                // that ratio), while a 4-char label (still the common
+                // case) actually gets slightly WIDER glyphs than before
+                // (~0.96:1), since the box no longer shrinks to fit
+                // exactly 4 characters. Width has wide clearance against
+                // the cell (~65px of ~128px available at this cell size,
+                // well short of the neighbouring cell), and height has
+                // ~4.7px of clearance below (~21.5px available at this
+                // cell size) before the cell's own bottom inset.
+                const float labelHeight = sheafDisplayHeight * 1.2f;
+                const float labelWidth = sheafDisplayWidth * 1.4f;
+                // SAME y Sheaf used (EncoderDraw.hpp:786) -- growth goes
+                // only down/outward from that anchor, never up, so this
+                // box's clearance from the gesture badge chips below
+                // centre (AppendBadge/drawBadges, EncoderDraw.hpp:
+                // 697-724) is never worse than Sheaf's own baseline.
+                const synth::ui::Bounds labelBounds{
+                    centerX - labelWidth * 0.5f,
+                    displayCenterY + baseRadius * 0.54f,
+                    labelWidth,
+                    labelHeight,
+                };
+
+                const synth::Color cellColor = state.baseColor;
+                const synth::Color onColor = synth::Brighten(cellColor, 0.45f);
+                const synth::Color offColor = synth::Color::Rgb(36, 40, 42);
+                // Same plate colour AppendBadge already uses for its own
+                // chip background (EncoderDraw.hpp:595) -- "a colour
+                // consistent with the existing cell treatment", not a new
+                // one.
+                const synth::Color plateColor = synth::Color::Rgb(32, 34, 36);
+                commands.push_back(synth::ui::DrawCommand::FillRoundedRect(
+                    labelBounds, labelHeight * 0.15f, plateColor));
+
+                // Full label, uppercased, no truncation (maxChars ==
+                // shortLabel.size()); numChars=0 below then auto-sizes the
+                // glyph grid to that same full length.
+                const std::string fullLabel =
+                    synth::ui::UpperShortLabel(state.shortLabel, state.shortLabel.size());
+                std::vector<synth::ui::DrawCommand> labelCommands = synth::ui::BuildFourteenSegmentCommands(
+                    fullLabel, labelBounds, onColor, offColor, /*numChars=*/0);
+                commands.insert(commands.end(), labelCommands.begin(), labelCommands.end());
+
+                return commands;
             },
             cellStyle);
     }

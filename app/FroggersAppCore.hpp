@@ -772,15 +772,20 @@ public:
                 // them wet, exactly as it would if the transport were still
                 // running. So this edge does NOT clear unconditionally.
                 // `audioAdsr_.setGate(gateOpen)` above already ran for this
-                // sample with the transport-forced-closed gate, so
-                // AllIdle() here already reflects the post-edge stage:
-                // false if that gate transition just moved a voice into
-                // Stage::Release (setGate() reassigns every voice's stage on
-                // a high->low transition, VoiceEnvelope.hpp:62-73 -- none of
-                // them can already be Idle in that case), true only if the
-                // gate was already closed *before* this edge (e.g. the
-                // transport stopped during the closed half of the ASR gate
-                // cycle) and every voice had already finished its Release
+                // sample, so AllIdle() here already reflects the post-edge
+                // stage: false if that gate transition just occurred on a
+                // live voice (Grace/slot 13 packet: setGate(false) no longer
+                // forces Stage::Release synchronously -- it marks
+                // m_releasePending and stepVoice() resolves it, see
+                // VoiceEnvelope.hpp's own comments -- but a voice that was
+                // Attack/Decay/Hold the sample before this edge is still
+                // Attack/Decay/Hold immediately after it, i.e. still not
+                // Idle, so this branch's "not Idle" conclusion holds
+                // regardless of which mechanism moves it toward Release),
+                // true only if the gate was already closed *before* this
+                // edge (e.g. the transport stopped during the closed half of
+                // the ASR gate cycle) and every voice had already finished
+                // its Release
                 // naturally.
                 if (audioAdsr_.AllIdle()) {
                     // Nothing is left to inject further energy into
@@ -1182,11 +1187,20 @@ private:
         // (carrierPhase/pmLfoPhase) plus this call's own arguments -- no
         // cross-VCO term exists (Vco.hpp's own header comment) -- so the
         // iteration order across i cannot change any instance's output.
+        // Strict-executor packet (Ring Mod slots 9-11 + PM rate slot 12):
+        // slot 12 (PMrt) is read ONCE here and passed identically to all
+        // three Process() calls -- task B's explicit "ONE knob shared
+        // across all three VCOs' StepPmLfo calls, not three per-VCO rates".
+        // Slot i+9 (RM1/RM2/RM3) stays per-VCO, same (paramIx, +9) grouping
+        // the existing +3/+6 groups already use.
+        const float pmRateKnob = knob(FroggersBankId::Audio, 12);
         std::array<float, 3> vcoOut{};
         for (std::size_t i = 0; i < audioVcos_.size(); ++i) {
             vcoOut[i] = audioVcos_[i].Process(knob(FroggersBankId::Audio, i),
                                                knob(FroggersBankId::Audio, i + 3),
                                                knob(FroggersBankId::Audio, i + 6),
+                                               pmRateKnob,
+                                               knob(FroggersBankId::Audio, i + 9),
                                                sampleRate_);
         }
 
@@ -1232,12 +1246,23 @@ private:
         };
 
         dsp::GatedVoices gatedVoices;
+        // Envelope bank slots are interleaved ADSR, slot = 4*vco +
+        // {0:Attack, 1:Decay, 2:Sustain, 3:Release} (FroggersParameters.hpp's
+        // Envelope layout), plus slot 12 Curve and slot 13 Grace, shared
+        // across all three voices. MixOscVoices now reads Decay (slots
+        // 1/5/9), Curve (slot 12) and Grace (slot 13) too -- see
+        // VoiceEnvelope.hpp's own task A/B/C comments for the ramp-shape and
+        // deferred-release mechanisms these drive.
+        // Task C: Audio slot 13 (VBal) drives the mixed-average's crossfade
+        // weights (dsp::ComputeVcoBalanceWeights); outGated's raw per-voice
+        // values (scope tap below) are unaffected by balance.
         const float chainIn = dsp::MixOscVoices(
             audioAdsr_, vcoOut[0], vcoOut[1], vcoOut[2],
-            knob(FroggersBankId::Envelope, 0), knob(FroggersBankId::Envelope, 1), releaseKnob(2),
-            knob(FroggersBankId::Envelope, 3), knob(FroggersBankId::Envelope, 4), releaseKnob(5),
-            knob(FroggersBankId::Envelope, 6), knob(FroggersBankId::Envelope, 7), releaseKnob(8),
-            &gatedVoices);
+            knob(FroggersBankId::Envelope, 0), knob(FroggersBankId::Envelope, 1), knob(FroggersBankId::Envelope, 2), releaseKnob(3),
+            knob(FroggersBankId::Envelope, 4), knob(FroggersBankId::Envelope, 5), knob(FroggersBankId::Envelope, 6), releaseKnob(7),
+            knob(FroggersBankId::Envelope, 8), knob(FroggersBankId::Envelope, 9), knob(FroggersBankId::Envelope, 10), releaseKnob(11),
+            knob(FroggersBankId::Envelope, 12), knob(FroggersBankId::Envelope, 13),
+            knob(FroggersBankId::Audio, 13), &gatedVoices);
 
         // Post-gate scope tap (design.md A3d): write the GATED values, not
         // the raw pre-gate VCO output -- so the scope stays flat until the
@@ -1253,6 +1278,8 @@ private:
         // are the authored DriveBlendPhase stage, crossfading dry (chainIn)
         // against wet (FrogBlock's output).
         drive_.polynomialDrive.SetGain(knob(FroggersBankId::Drive, 0));
+        // D2 (Drive slot 10, "Link"): must precede SetCoefs, which reads `link`.
+        drive_.polynomialDrive.SetLink(knob(FroggersBankId::Drive, 10));
         drive_.polynomialDrive.SetCoefs(knob(FroggersBankId::Drive, 1));
         drive_.sampleRateReducer1.SetFreq(
             1e-2f + dsp::ZeroedExpCompute(10.0f, 1.0f - knob(FroggersBankId::Drive, 2)));
@@ -1261,6 +1288,11 @@ private:
         drive_.digitalReorganizer.SetFlip(knob(FroggersBankId::Drive, 4));
         drive_.digitalReorganizer.SetHash(knob(FroggersBankId::Drive, 5));
         drive_.fuzz = knob(FroggersBankId::Drive, 6);
+        // -- Drive slots 9, 11-13 (D1/D3/D4/D5, strict-executor packet) -----
+        drive_.oversampler.SetAntiAliasBrightness(knob(FroggersBankId::Drive, 9));
+        drive_.SetFold(knob(FroggersBankId::Drive, 11));
+        drive_.SetTone(knob(FroggersBankId::Drive, 12));
+        drive_.SetBias(knob(FroggersBankId::Drive, 13));
         const float driveWet = drive_.Process(chainIn);
         const float driveOut = driveBlendPhase_.Process(
             chainIn, driveWet, knob(FroggersBankId::Drive, 7), knob(FroggersBankId::Drive, 8));
@@ -1268,17 +1300,15 @@ private:
         // -- Filter bank -> dsp::FilterFxChain (task 3.6) -------------------
         // FroggersEngine.hpp:463,465-481 mapping (Comb offset -> pureDelay,
         // Peak freq/gain/Q -> ResonantBump, Comb delay/feedback/LP -> Comb,
-        // Comb/Peak -> blend, Scoop -> scoopMix). `useParallel` mirrors
-        // `SetUseV2FilterParallel(UsesV2Fuego(hostKind))`
-        // (src/core/DesktopHostIO.hpp:330, PagedHostIO.hpp:81) -- the same
-        // flag class that gates `SetSimIndependentPm` (which task 3.1's Vco
-        // port always takes, D7) and `DelayState::setUseV2Layout` (which
-        // Delay.hpp's port always takes, "this app IS the V2 layout"); this
-        // app is a V2-fuego host in every other place that flag appears, so
-        // it is `true` here too. Clamped to `PureDelay::kSize` so a very high
-        // host sample rate cannot push `SetDelaySeconds` past the ported
-        // unit's fixed-size ring buffer (defensive; PureDelay itself,
-        // packet 3, is not modified).
+        // Comb/Peak -> blend, Scoop -> scoopMix). The old `useParallel` bool
+        // (which used to mirror `SetUseV2FilterParallel(UsesV2Fuego(hostKind))`,
+        // src/core/DesktopHostIO.hpp:330, always `true` for this app) has
+        // been replaced by the Filter slot-9 "Topology" knob, a continuous
+        // morph -- see FilterFxChain::Process's own comment (FilterFx.hpp).
+        // Clamped to `PureDelay::kSize` so a very high host sample rate
+        // cannot push `SetDelaySeconds` past the ported unit's fixed-size
+        // ring buffer (defensive; PureDelay itself, packet 3, is not
+        // modified).
         const float combOffsetSeconds = std::min(
             dsp::ExpMapCompute(0.001f, 0.1f, knob(FroggersBankId::Filter, 0)),
             static_cast<float>(dsp::PureDelay::kSize - 1) / sampleRate_);
@@ -1297,9 +1327,10 @@ private:
         // item 1) can still ring for seconds -- 10x was the primary gain
         // offender in the operator's blowout (design.md A1: stage 5 of 10,
         // multiplying the comb's saturator-pinned output before the
-        // limiter). scoopNotch (below) shares this same freq/width but its
-        // own height is a DIP (max(0.05, 1-0.95*scoop)), not a gain, so it
-        // is unaffected and untouched.
+        // limiter). scoopNotch (below) has its own independent freq/width
+        // knobs (Task B, Filter slots 10/11) but its own height is a DIP
+        // (max(0.05, 1-0.95*scoop)), not a gain, so it is unaffected and
+        // untouched.
         // Item 2 (design A2): ceiling 4.0f (+12 dB), NOT the frozen firmware's 10.0f
         // (+20 dB). A pinned self-oscillating comb through a 20 dB peak is what put
         // ~20x full scale into the output stage. Deliberate divergence from the port
@@ -1338,8 +1369,17 @@ private:
         // processes unconditionally, so a poisoned state reaches the output
         // even at `scoopMix == 0` -- IEEE `NaN * 0` is `NaN`.
         // Height is a DIP, not a gain: max(0.05, 1 - 0.95 * scoop).
-        filterChain_.scoopNotch.SetFreq(bumpFreq);
-        filterChain_.scoopNotch.SetWidth(bumpWidth);
+        // Task B (packet -- Filter slots 10/11, "Scoop freq"/"Scoop width",
+        // "ScFq"/"ScWd"): the scoop notch used to share the peak bump's
+        // freq/width verbatim (bumpFreq/bumpWidth above); it now gets its
+        // own independent knobs, mapped with the SAME shape (same
+        // ExpMapCompute min/max) so the two controls behave consistently
+        // with one another.
+        const float scoopFreq =
+            dsp::ExpMapCompute(20.0f / sampleRate_, 20000.0f / sampleRate_, knob(FroggersBankId::Filter, 10));
+        const float scoopWidth = dsp::ExpMapCompute(0.1f, 10.0f, knob(FroggersBankId::Filter, 11));
+        filterChain_.scoopNotch.SetFreq(scoopFreq);
+        filterChain_.scoopNotch.SetWidth(scoopWidth);
         filterChain_.scoopNotch.SetHeight(
             std::max(0.05f, 1.0f - 0.95f * knob(FroggersBankId::Filter, 8)));
         const float combFreq =
@@ -1352,8 +1392,25 @@ private:
             dsp::ExpMapCompute(4.0f * combFreq, 20000.0f / sampleRate_, knob(FroggersBankId::Filter, 6));
         // FroggersEngine.hpp:430-432 (Alpha): 1 - exp(-2*pi*natFreq).
         filterChain_.comb.SetCutoffAlpha(1.0f - std::exp(-2.0f * static_cast<float>(M_PI) * cmlp));
-        const float filterOut = filterChain_.Process(
-            driveOut, /*useParallel=*/true, knob(FroggersBankId::Filter, 7), knob(FroggersBankId::Filter, 8));
+        // Task C (Filter slot 12, "Comb drive", "CDrv"): knob-driven
+        // pre-gain on the comb saturator's argument (dsp::Comb::Process,
+        // FilterFx.hpp), exponential map (dsp::ExpMapCompute, same shape
+        // used throughout this method), range 0.25x-4.0x so unity (1.0x)
+        // is reachable exactly at knob==0.5 -- ExpMapCompute(0.25, 4.0,
+        // 0.5) == 0.25 * sqrt(16) == 1.0. The Filter slot-12 default
+        // (FroggersParameters.hpp) is set to 0.5f for exactly this reason
+        // (Task E).
+        filterChain_.comb.SetDrive(dsp::ExpMapCompute(0.25f, 4.0f, knob(FroggersBankId::Filter, 12)));
+        // Task A (Filter slot 9, "Topology", "Topo"): continuous morph
+        // replacing the old `useParallel` bool -- see FilterFxChain::Process's
+        // own comment (FilterFx.hpp) for why topology==0 is bit-identical to
+        // the old always-true `useParallel` behaviour.
+        // Task D (Filter slot 13, "Scoop depth", "ScDp"): scoopMix now reads
+        // its own slot instead of re-reading slot 8 (SetHeight above still
+        // reads slot 8, unchanged).
+        const float filterOut =
+            filterChain_.Process(driveOut, knob(FroggersBankId::Filter, 9), knob(FroggersBankId::Filter, 7),
+                                  knob(FroggersBankId::Filter, 13));
 
         // -- Delay bank -> dsp::StereoDelay (task 3.10) ---------------------
         // Positioned exactly where the frozen engine's `m_simFxInsert` hook
@@ -1370,6 +1427,12 @@ private:
             knob(FroggersBankId::Delay, 0), knob(FroggersBankId::Delay, 1), knob(FroggersBankId::Delay, 2),
             knob(FroggersBankId::Delay, 3), knob(FroggersBankId::Delay, 4), knob(FroggersBankId::Delay, 5),
             knob(FroggersBankId::Delay, 6), knob(FroggersBankId::Delay, 7), knob(FroggersBankId::Delay, 8));
+        // -- Delay slots 9-13 (D6-D10, strict-executor packet) ---------------
+        delay_.SetFeedbackDrive(knob(FroggersBankId::Delay, 9));
+        delay_.SetFeedbackTone(knob(FroggersBankId::Delay, 10));
+        delay_.SetModRate(knob(FroggersBankId::Delay, 11));
+        delay_.SetWidthBalance(knob(FroggersBankId::Delay, 12));
+        delay_.SetCrush(knob(FroggersBankId::Delay, 13));
         const dsp::DelayWetPair delayWet = delay_.Process(filterOut, delayParams);
         const float delayOut = delay_.ToReverbMono(filterOut, delayWet, delayParams.dmix);
 
@@ -1387,13 +1450,22 @@ private:
         // away the source. Applied to the mapped value, not the knob range, so
         // the control still sweeps its whole travel.
         constexpr float kMaxReverbWetMix = 0.7f;
+        // Reverb slots 9-13 (R1-R5, strict-executor packet: Mod rate/Tank
+        // drive/Grit/Tilt/Tuned) -- passed as Process()'s own trailing
+        // arguments, mirroring how slots 7-8 (Mod depth/Hold) are already
+        // wired here, rather than via separate Set*() calls (dsp::Reverb's
+        // own established convention differs from dsp::StereoDelay's, which
+        // does use separate setters -- see dsp/Reverb.hpp's own comment on
+        // each of these five).
         const float reverbOut = reverb_.Process(
             delayOut,
             kMaxReverbWetMix * knob(FroggersBankId::Reverb, 0),
             knob(FroggersBankId::Reverb, 1), knob(FroggersBankId::Reverb, 2),
             knob(FroggersBankId::Reverb, 3), knob(FroggersBankId::Reverb, 4), knob(FroggersBankId::Reverb, 5),
             knob(FroggersBankId::Reverb, 6), sampleRate_,
-            knob(FroggersBankId::Reverb, 7), knob(FroggersBankId::Reverb, 8));
+            knob(FroggersBankId::Reverb, 7), knob(FroggersBankId::Reverb, 8),
+            knob(FroggersBankId::Reverb, 9), knob(FroggersBankId::Reverb, 10), knob(FroggersBankId::Reverb, 11),
+            knob(FroggersBankId::Reverb, 12), knob(FroggersBankId::Reverb, 13));
 
         return SanitizeOutputSample(reverbOut);
     }

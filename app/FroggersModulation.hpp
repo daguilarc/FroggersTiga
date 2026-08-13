@@ -240,15 +240,14 @@ public:
 
     // task 6.1/6.2: register all 15 sources, in D5's order, one explicit
     // call per slot.
-    // Provisioned depth-parameter storage (see below): design D14 states the
-    // level-1 ceiling directly (915 parameters across 61 top-level
-    // parameters, 793 with external audio disconnected) plus up to 225 more
-    // for ONE focused parameter's level-2 fan-out (task 6.8's 240-total
-    // scope, of which 15 already count toward the 915). 915 + 225 = 1140;
-    // 1200 rounds that up with headroom. This is NOT the full 15x15x61
-    // level-2 matrix (13,725), which design D14 explicitly says is never
-    // materialized in one pass.
-    static constexpr std::size_t kDepthParameterStorageCapacity = 1200;
+    // Provisioned depth-parameter storage: worst case is every top-level
+    // parameter carrying a depth for every modulation source --
+    // FroggersParameterModel::kMaxParameters (96) *
+    // FroggersParameterModel::kNumModulators (15) = 1440. Expressed as that
+    // product (rather than a bare literal) so it cannot drift out of sync
+    // with either ceiling again.
+    static constexpr std::size_t kDepthParameterStorageCapacity =
+        FroggersParameterModel::kMaxParameters * FroggersParameterModel::kNumModulators;
 
     // `extraDepthCapacity` defaults to the provisioning task 6.8 needs
     // (kDepthParameterStorageCapacity); tests pass a small override to
@@ -262,7 +261,7 @@ public:
         // task 6.8's materialization ceiling (915 L1 depths, plus one
         // focused parameter's 225 L2 depths) exceeds packet 4's
         // kMaxParameters=64 initial batch (deliberately sized for only the
-        // 61 top-level parameters, per FroggersParameterModel's own Init
+        // 91 top-level parameters, per FroggersParameterModel's own Init
         // comment: "Modulation-depth parameters (packet 6; up to 915
         // level-1 plus more at level 2) are deliberately NOT sized for here
         // -- that growth rides ParameterGroup's own storage-batch request
@@ -386,10 +385,17 @@ public:
         randomSh6Output_ = gangedRandomLfo6_.Output(0);
 
         // VCO audio (slots 6-8): each VCO stepped from only its own knobs.
+        // Strict-executor packet (Ring Mod/PM-rate, dsp::Vco::Process's
+        // signature grew two params): this modulation-preview slate has no
+        // Ring Mod or PM-rate knob of its own (VcoDrive only carries
+        // pitch01/shape01/phaseMod01), so phaseMod01 is passed again as the
+        // rate argument -- reproducing exactly the old coupled rate-from-
+        // depth behaviour this call always had -- and Ring Mod is held at
+        // 0.0f (its own zero floor), so this source's output is unchanged.
         const float sr = static_cast<float>(sampleRate_);
-        const float vco1Raw = vco1_.Process(vco1.pitch01, vco1.shape01, vco1.phaseMod01, sr);
-        const float vco2Raw = vco2_.Process(vco2.pitch01, vco2.shape01, vco2.phaseMod01, sr);
-        const float vco3Raw = vco3_.Process(vco3.pitch01, vco3.shape01, vco3.phaseMod01, sr);
+        const float vco1Raw = vco1_.Process(vco1.pitch01, vco1.shape01, vco1.phaseMod01, vco1.phaseMod01, 0.0f, sr);
+        const float vco2Raw = vco2_.Process(vco2.pitch01, vco2.shape01, vco2.phaseMod01, vco2.phaseMod01, 0.0f, sr);
+        const float vco3Raw = vco3_.Process(vco3.pitch01, vco3.shape01, vco3.phaseMod01, vco3.phaseMod01, 0.0f, sr);
         vco1AudioSource_ = NormalizeBipolarToUnit(vco1Raw);
         vco2AudioSource_ = NormalizeBipolarToUnit(vco2Raw);
         vco3AudioSource_ = NormalizeBipolarToUnit(vco3Raw);
@@ -1085,7 +1091,7 @@ inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager,
 
     // Built once per call (not cached across calls: `connected` changes at
     // runtime, e.g. external-audio cabling) and reserved to the modulator
-    // count -- O(15), trivial even at Randomize All's 54 calls.
+    // count -- O(15), trivial even at Randomize All's 84 calls.
     const std::span<const synth::ModulatorMetadata> metadata = group.GetModulators().Metadata();
     std::vector<std::size_t> eligible;
     eligible.reserve(metadata.size());

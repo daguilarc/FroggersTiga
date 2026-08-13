@@ -1320,13 +1320,13 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
     vco1Pitch.SceneCenter(0) = 0.5f;  // nonzero VCO level, so there's signal to excite the tanks.
     model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;  // nonzero Drive.
 
-    // Envelope bank: rows 2/5/8 are Release VCO1-3 (FroggersParameters.hpp
-    // :160-162, "Attack/Sustain/Release x VCO1-3, 0-8 in that order" per
-    // FroggersAppCore.hpp:641). Sustain (rows 1/4/7) already defaults to
-    // 1.0f; Attack (rows 0/3/6) stays at its fast ~0 default.
-    model.PageParameter(synth_froggers::FroggersBankId::Envelope, 2).SceneCenter(0) = 1.0f;  // Release VCO1 -> ~10s.
-    model.PageParameter(synth_froggers::FroggersBankId::Envelope, 5).SceneCenter(0) = 1.0f;  // Release VCO2 -> ~10s.
-    model.PageParameter(synth_froggers::FroggersBankId::Envelope, 8).SceneCenter(0) = 1.0f;  // Release VCO3 -> ~10s.
+    // Envelope bank: interleaved ADSR, slot = 4*vco + {0:Attack, 1:Decay,
+    // 2:Sustain, 3:Release} (FroggersParameters.hpp:162-164), so rows 3/7/11
+    // are Release VCO1-3. Sustain (rows 2/6/10) already defaults to 1.0f;
+    // Attack (rows 0/4/8) stays at its fast ~0 default.
+    model.PageParameter(synth_froggers::FroggersBankId::Envelope, 3).SceneCenter(0) = 1.0f;  // Release VCO1 -> ~10s.
+    model.PageParameter(synth_froggers::FroggersBankId::Envelope, 7).SceneCenter(0) = 1.0f;  // Release VCO2 -> ~10s.
+    model.PageParameter(synth_froggers::FroggersBankId::Envelope, 11).SceneCenter(0) = 1.0f;  // Release VCO3 -> ~10s.
 
     // Delay bank: rows per dsp::MapRowsToDelayParams's own comment
     // (Delay.hpp:250-256) -- 0=Time, 1=Send, 2=Feedback, 6=Mix.

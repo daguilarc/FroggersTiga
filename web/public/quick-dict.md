@@ -1,238 +1,101 @@
 # FroggersTiga Quick Dict
 
-Short glosses for sim knob and mod labels. Full guide → in-app **Manual**. Daisy Field hardware → `MANUAL.md` in the repository.
+Terse parameter glossary for the current **Frogg3rs — Sheaf app** (`app/`). Full guide → [`MANUAL.md`](MANUAL.md).
+Daisy Field hardware firmware (frozen, different parameter model entirely) → `MANUAL.md` Appendix.
 
-## Sim mod sources
-
-v1 desktop and web sim use the sources below. Desktop v2 uses the **Permanent mod sources** section (fifteen lanes; no MIDI CC lanes).
-
-MIDI CC 1 — Hardware/Web MIDI CC → latched CV (default ch 1, CC 1); disable greys column and clears routes
-MIDI CC 2 — Hardware/Web MIDI CC → latched CV (default ch 1, CC 2); disable greys column and clears routes
-VCO Envelope — Slow level from VCO mix; scope trace
-Random S&H 1 — S&H random mod CV ch.1 — resample with Rand Resample; see Mod indicators in Manual
-Random S&H 2 — S&H random mod CV ch.2 — resample with Rand Resample; see Mod indicators in Manual
-
-Mod depth — Desktop v2: per-lane signed depth toward that mod source; 0 = lane off; multiple nonzero assignable lanes on a row sum into effective modulation. v1/web: crossfade between stored knob (base) and one mod source (0 = base only, 1 = mod only)
-
-## Transport
-
-Boot (desktop v2 standalone) — Healthy boot keeps the main window open after launch; instant exit indicates a build or runtime fault. Launch the Release build with `./scripts/open-desktop-v2.sh` or open `desktop-v2/build/FroggersTigaDesktopV2_artefacts/Release/FroggersTigaV2.app` directly.
-Play — Top transport/signal band: start audio processing; with Play active, internal VCOs drive sound by default (no MIDI or running sequencer required)
-Stop — Top transport/signal band: stop audio processing
-Record audio — Top transport/signal band: round red circle + **Record audio** label; captures stereo output to file. Requires **Play** first (v1 parity). Export format (WAV / MP3 / FLAC / OGG) is set in the **Audio** menu, not in the transport row. Distinct from sequencer **Write Seq.** (step snapshot capture).
-Ext. In. — Optional line/mic; parallel ring mod when gate open; VCO-only when off or silent
-Randomize — Per module: randomize all three scene slots (S1/S2/S3 stored positions) for every musical row on that page (not Crispy); control-core authority, then syncToHost. Does not change S1/S2/S3 endpoint selection or scene blend. Use **Rand mod** for mod depths on that page.
-Rand mod — Mod depths on current page from the 15-lane catalog
-Rand All — All modules: all three scene slots per musical row (not Crispy) + mod depths + global Crunchy scene slots; also randomizes L/R endpoint assignment and scene blend; clears gesture selection first. **All Scenes** / **Current Scene** scope pair under the button selects scene write target.
-Rand-seq — Sequencer toolbar dice: same scene-slot policy as Rand All (includes Crunchy slots); writes step buffer(s) per **Step** / **All steps** scope; also randomizes live L/R endpoints and blend once per press; does not write mod depths
-Rand Mods — Global-command band: randomize mod depths per **All Steps** / **Current Step** scope pair; when writing sequencer snapshots, respects sequencer toolbar **Step** / **All steps** scope
-Rand Resample — Resample both Random S&H channels (draws from bags)
-Rand waveforms — Randomize VCO morph (sine/saw/square blend)
-Crunchy — Global fuego on all pages and all Crispy instances (web global strip; desktop v2 global-command band scene encoder ring)
-
-## Top chrome (desktop v2)
-
-Transport / signal band — **Play**, **Stop**, **Record audio**, and the **global oscilloscope** (persistent across carousel and runtime pages)
-Global-command band — **Rand All**, **Rand Mods**, **Rand waveforms**, **Rand Resample**, **Crunchy** label + ring; scene/step scope radio pairs directly below **Rand All** and **Rand Mods**
-Global oscilloscope — Shell-level signal monitor in the transport band; default three color-coded VCO traces; source-group switching for LFO, pair buses, EFs, Random S&H, External Audio when inspected; samples come from the shared fifteen-lane CV history (one GetCvOut push per UI tick); separate from per-row CV LEDs and MOD drill-in
-Parameter detail underlay — Display-only source-activity waveform under each detail-grid depth encoder (manifest lane color); Target (Back) has none; same history store as the global oscilloscope; does not change ParamTurn / ModDrillIn hit targets
-All Scenes / Current Scene — Randomization scope under **Rand All**: write all three scene slots per row vs only the active scene edit target; preserves L/R endpoint picks and blend slider
-All Steps / Current Step — Randomization scope under **Rand Mods**: all 16 sequencer indices vs playhead (playing) or edit step (stopped)
-
-## Runtime pages (desktop v2)
-
-File — Right rail: patch identity, dirty state, save/load/revert, controller-mapping persistence results
-Audio — Right rail: hardware I/O, channels, sample rate, block size, external-input state, meters; no duplicate oscilloscope
-MIDI — Right rail: selected input, connection/receiving/error state, explicit mapping rows, multi-target fan-out summary, persistence status, target readback
-
-## Permanent mod sources (desktop v2)
-
-Fifteen lanes in the parameter-detail 4×4 grid (depth 0 = off; multi-lane depths sum when eligible). No module-row mod dropdown. MIDI CC A/B are **not** lanes — they are controller targets.
-
-VCO 1+2 — Audio-rate VCO pair bus (lane 1)
-VCO 2+3 — Audio-rate VCO pair bus (lane 2)
-VCO 1+3 — Audio-rate VCO pair bus (lane 3)
-VCO 1 EF — VCO 1 envelope follower
-VCO 2 EF — VCO 2 envelope follower
-VCO 3 EF — VCO 3 envelope follower
-VCO 1+2 EF — Adjacent-pair envelope follower
-VCO 2+3 EF — Adjacent-pair envelope follower
-LFO 1 — LFO module output 1
-LFO 2 — LFO module output 2
-LFO 3 — LFO module output 3
-Random S&H 1 — Random stepped source 1 (resample with **Rand Resample**; inspired by Mutable Instruments Marbles)
-Random S&H 2 — Random stepped source 2 (resample with **Rand Resample**)
-External Audio (audio rate) — External input audio-rate lane; visible but unavailable when input off
-External Audio (envelope follower) — External input EF lane; visible but unavailable when input off
-
-MOD / CV LED — Fixed-center click target on module encoder rings; opens 4×4 parameter-detail grid (ModDrillIn). Ring drag stays ParamTurn and does not open detail. Device-neutral: rotate/turn → ParamTurn; press (MOD LED or mapped MIDI encoder press via Controllers `…_encoder_mod_drill_in`) → ModDrillIn.
-Parameter detail — 4×4 modulation grid for one row: 15 independent depth encoders (each with a CV activity underlay) + **Target (Back)**; press Target (Back) to return to the module page
-Target (Back) — Sixteenth detail cell; ParamPress exits detail; no underlay
-
-## Page carousel (desktop v2)
-
-Module page — Left/right arrow buttons on the carousel header change the active module page. **Rand** / **Rand mod** on the carousel header randomize the current page (see §Transport).
-
-## Scenes (desktop v2 performance band)
-
-Cold start — Each row's three scene slots seed from factory defaults on launch; Audio VCO1–VCO3 default to **30 Hz** with **sine / square / saw** morphs respectively; audible baseline without editing rings.
-
-Scene S1 / S2 / S3 — Pick L/R morph endpoints (global across all modules): first press sets the left endpoint scene, second press sets the right. Active endpoints show **·L** / **·R** on buttons. Does not store current knob positions on button press.
-Scene blend — Morph between those two endpoints (slider ends labeled **L** / **R**; 0 = left scene ordinal, 1 = right)
-Encoder rings — With no gesture lane selected, turns edit the scene slot selected by blend; concentric L/R arcs show stored scene centers; blended dot shows morph position
-
-Scenes vs gestures vs sequencer — Scenes hold per-knob stored positions; gestures hold per-knob performance offsets; sequencer steps recall scenes/gestures on a timed grid (see Sequencer section).
-
-## Gestures (desktop v2 performance band)
-
-G1 / G2 — Short labels for **Gesture 1** / **Gesture 2** toggles in the performance band
-Gesture 1 (G1) — Select gesture lane 1, then turn an encoder ring to write offset for that lane; badge appears on affected encoders
-Gesture 2 (G2) — Select gesture lane 2, then turn an encoder ring to write offset for that lane; badge appears on affected encoders
-Gesture weight — Horizontal slider (0–1) per lane scales how much the lane affects rings
-Rand All — Clears gesture selection before randomizing
-
-## Sequencer (desktop v2)
-
-Fixed 16 steps — Exactly sixteen slots (indices 0..15)
-Written / unwritten — Each slot stores whether a step snapshot exists; unwritten slots are skipped during playback
-Direction — Toolbar icon cycles `<`, `>`, `RND` (default `>`)
-Speed — Toolbar icon cycles `/2`, `/1.5`, `1`, `x1.5`, `x2` (default `1`)
-Long-press clear — Hold a written step (mouse, touch, or mapped controller) past threshold to mark it unwritten and wipe its snapshot; short release cancels; not a general held-gesture route
-BPM — Pattern tempo (toolbar slider labeled BPM)
-Start Sequence — Begin sequencer pattern playback (toolbar; button reads **Stop Sequence** while playing). Distinct from audio **Play** / **Stop**.
-Write Seq. — Arm step snapshot capture into the step buffer (toolbar toggle; not **Record** or **Record audio**). **Stopped + armed:** changing edit step captures live → previous edit step, then recalls new edit step; disarming captures live → current edit step once. **Playing + armed:** pressing **Start Sequence** immediately captures playhead step and sets a one-beat skip so the first advance does not recapture step 0; each subsequent beat advance captures the step being left, then recalls landed step; edit step follows playhead while armed. Blank steps factory-seed on first visit during playback. Capture flash highlights the captured step cell briefly after every capture while armed.
-Edit step — Always exactly one step selected (default step 1 / index 0); toolbar arrows wrap within 16 slots; distinct from playback **playhead**
-Playhead — Current playback position during **Start Sequence**; both highlights visible when edit step and playhead differ
-Step gates — **Double-click** a step cell toggles gate lit/rest. Gates drive per-VCO AR envelopes **only while Start Sequence runs**. When stopped, lit gates are stored pattern data only (cells render dimmed); internal VCOs continue at full level.
-Single-click step — Select edit step; gate unchanged
-Double-click step — Toggle step gate; edit step becomes that step
-Right-click step — Context menu **Reset** (factory cold-start snapshot into that step) or **Randomize** (full step snapshot for that step only; does not change live L/R/blend)
-← / → — Previous/next edit step within 16 slots (wrap)
-Dice (Rand-seq) — Randomize scene slots into step buffer(s); **Step** scope = edit step when stopped, playhead when playing; **All steps** scope = every index 0..15; also randomizes live L/R endpoints and blend once per press (see Rand-seq above)
-Step / All steps — Scope radio pair beside dice: **Step** targets edit step when stopped, playhead when playing; **All steps** randomizes every step index 0..15, including steps that already contain data
-
-### VST v2 (Quick Dict only)
-
-No Play/Stop row — DAW owns audio transport; internal VCOs drive sound when the DAW is playing audio.
-Write Seq. — Host parameter and sequencer toolbar toggle (no **Record audio** row).
-Start Sequence — Same step grid and edit-step UX as standalone once audio is processing.
-DAW MIDI Start/Stop — May toggle sequencer playback (**Start Sequence** / **Stop Sequence**).
-Step gates — Same policy: affect envelopes only while sequencer is playing.
-
-## MIDI / Controllers (desktop v2 standalone)
-
-Performance-first layout — One primary MIDI input: explicit mapping rows for **Pitch**, **Gate**, **MIDI CC A**, **MIDI CC B**, **Scene S1–S3**, **QWERTY Ch**, optional **External MIDI clock**, plus inventory-generated **encoder turn** / **mod drill-in** targets per module-row parameter. No MIDI learn or recent-event list. Multi-target fan-out allowed. DAW-hosted build uses host parameters instead — no standalone MIDI picker.
-
-MIDI In — Pick one input stream: computer keyboard (QWERTY notes on virtual channel), none, or a hardware port
-Pitch — Page + row target (read-only parameter name); incoming notes bend that knob
-Gate — **Any** held note on/off drives Pair-AR envelope gates when enabled; OR-combines with **step gates** while **Start Sequence** runs
-MIDI CC A / MIDI CC B — Controller targets mapped to manifest parameter IDs; not permanent mod-rack lanes
-Scene S1 / S2 / S3 — MIDI triggers for scene L/R endpoint selection (Note or CC + Ch)
-QWERTY Ch — Virtual MIDI channel for computer keyboard notes (1–16)
-External MIDI clock — Optional sequencer clock source (timing only; not gesture routing)
-Encoder turn — Relative CC → `ParamTurn` for that inventory parameter (stable ID `…_encoder_turn`)
-Encoder mod drill-in — Button / note / CC threshold → `ModDrillIn` for that parameter (stable ID `…_encoder_mod_drill_in`); same enter-mod action as the MOD LED (Packet 15)
-
-## Pair-AR (desktop v2 module)
-
-Carousel page **Pair-AR** (page 7): per-VCO attack/release + page Crispy — **no sustain knobs** (web AR parity).
-
-| Row | Desktop v2 | Web Audio (pair-sum) |
-|-----|------------|----------------------|
-| Atk1 / Rel1 | VCO1 attack / release | Attack 1+2 / Release 1+2 |
-| Atk2 / Rel2 | VCO2 attack / release | Attack 2+3 / Release 2+3 |
-| Atk3 / Rel3 | VCO3 attack / release | — |
-| Crispy | Page fuego for rows 0–5 | Audio page Crispy (shared fuego stack on v2 hosts) |
-
-Gate policy — **open** when sequencer is stopped (`!m_playing`); while **Start Sequence** runs, gates follow step gates + MIDI note/CV. Knob edits are audible immediately; A/R times apply on the next gate edge.
-
-## Crunchy, Crispy, and pair-AR
-
-| Control | Page rows 1–7 | Pair-AR (web Audio / desktop v2 page 7) | Notes |
-|---------|---------------|----------------------------------------|-------|
-| Crispy | Scrambles musical rows | Included (Audio Crispy on web; Crispy row on Pair-AR page) | Mod affects scramble intensity |
-| Crunchy (global) | All rows all pages | Included on web + desktop v2 fuego hosts | Desktop v2: scene encoder ring (S1/S2/S3 + blend); web: single rotary |
+Six banks — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 14 page parameters (slots
+0–13) in the order below, a bank-local Crispy (slot 14), and one shared global Crunchy (slot 15).
 
 ## Global
 
-Crispy — Scramble knobs 1–7 on any page (mod applied first); moddable for scramble intensity (Field: FUEG — same fuegoizer, not external mix)
-Crunchy — Global fuego pass on every row every page including Crispy; stacks before page Crispy. **Desktop v2:** uses S1/S2/S3 scene slots and blend like module encoder rings (not a single unscened rotary). **Web:** single global rotary.
+Crispy (slot 14, per bank) — Fuego (bit-scramble) applied to that bank's own 14 parameters only; no-op at 0.
+Crunchy (slot 15, shared across all six banks) — Same fuego scramble applied to every parameter in every bank, and to every bank's own Crispy; no-op at 0.
+Bank select — Six buttons (Audio/Envelope/Filter/Drive/Delay/Reverb) choose which bank's slots are on screen; all six keep processing regardless.
+Play / Stop — Transport. No manual note-on: while running, the shared envelope gate auto-pulses open for the first half of every quarter note (at the BPM control's tempo) and closed for the second half. Stop forces a fast ~50 ms fade on all three voices and clears Delay/Reverb tails.
+Modulation assign — Click a parameter's encoder (or a bank's own Crispy) to open its 15-source depth view; each source has an independent signed depth (0 = off) and multiple non-zero sources sum. Sources: Random S&H 1–6, VCO1–3 Audio, VCO1–3 EF, Noise, External Audio, External Audio EF (the last two always unavailable — no external input in this app).
 
 ## Audio
 
-VCO1 — Frequency + morph; cold start **30 Hz**, **sine** morph
-VCO2 — Frequency + morph; cold start **30 Hz**, **square** morph
-VCO3 — Frequency + morph; cold start **30 Hz**, **saw** morph
-Cross-coupler — CCW 1→2, CW 2→3 from noon
-Phase mod 1 — VCO2 → VCO1 when coupled
-Phase mod 2 — VCO1+VCO3 → VCO2
-Phase mod 3 — VCO2 → VCO3 when cross-coupler is CW (2→3)
-Attack 1+2 — Pair-sum attack (VCO1+VCO2) — web Audio pair-AR
-Release 1+2 — Pair-sum release (VCO1+VCO2); not reverb Decay — web Audio pair-AR
-Attack 2+3 — Pair-sum attack (VCO2+VCO3) — web Audio pair-AR
-Release 2+3 — Pair-sum release (VCO2+VCO3) — web Audio pair-AR
+VCO1 / VCO2 / VCO3 (slots 0–2) — Pitch, 20 Hz–20 kHz exponential; defaults 110/220/330 Hz.
+Shape 1 / 2 / 3 (slots 3–5) — Per-VCO waveform morph, sine → saw → square.
+Phase mod 1 / 2 / 3 (slots 6–8) — Per-VCO phase-mod depth from that VCO's own internal LFO; no cross-VCO coupling.
+Ring mod 1 / 2 / 3 (slots 9–11) — Per-VCO ring mod against its own internal carrier (20 Hz–5 kHz); true zero at the floor.
+PM rate (slot 12) — One shared rate (0.05–20 Hz) for all three VCOs' phase-mod LFOs.
+VCO balance (slot 13) — Tilts mix emphasis VCO1 → VCO2 → VCO3; every VCO always keeps 10–80% of the mix.
 
-## Random
+## Envelope
 
-Step chance — Probability each channel resamples on Rand Resample press
-Deja vu 1 — Channel 1 bag walk / re-roll
-Bag size 1 — Channel 1 values (2–8)
-Slew 1 — Channel 1 glide between held values (not a clock) → Random S&H 1
-Deja vu 2 — Channel 2 bag walk / re-roll
-Bag size 2 — Channel 2 values (2–8)
-Slew 2 — Channel 2 glide between held values → Random S&H 2
-Spread — Random channel spread (web v2 row 8)
-Bias — Random channel bias (web v2 row 9)
-
-## Reverb
-
-Wet/dry — Reverb mix
-Room size — Delay line lengths
-Decay — Feedback / tail length
-Pre-delay — Time before reverb tank
-Damping — HF loss in feedback
-Stereo width — Reverb L/R spread
-Diffusion — Cross-feed between reverb lines
-Mod depth — Reverb modulation depth (web v2 row 8)
-Hold — Reverb hold (web v2 row 9)
+Attack VCO1/2/3 (slots 0/4/8) — Time to rise to full level on gate-open, 0.5 ms–1 s.
+Decay VCO1/2/3 (slots 1/5/9) — Time to fall from Attack peak to Sustain level, 0.5 ms–1 s.
+Sustain VCO1/2/3 (slots 2/6/10) — Held level while gate is open; floored at 10%, default full.
+Release VCO1/2/3 (slots 3/7/11) — Time to fall to silence on gate-close, 0.5 ms–2.5 s.
+Curve (slot 12) — Reshapes all three voices' Attack/Decay/Release ramps from linear (default) to ease-in.
+Grace (slot 13) — Minimum-hold before a gate-close is honored (0–1 s); no-op at default 0.
 
 ## Filter
 
-Comb offset — Short line before comb — smears strike, not pitch
-Peak freq — Peaking EQ frequency
-Peak gain — Peaking EQ gain
-Peak Q — Peaking EQ Q
-Comb delay — Comb pitch
-Comb feedback — Comb resonance
-Comb LP — Darken comb feedback
-Comb/Peak — Parallel comb and peak mix (web v2 row 8)
-Scoop — Filter scoop (web v2 row 9)
+Comb offset (slot 0) — Short pure delay ahead of the comb, 1–100 ms.
+Peak freq (slot 1) — Resonant peaking-EQ center frequency, 20 Hz–20 kHz.
+Peak gain (slot 2) — Peak boost height, up to +6 dB.
+Peak Q (slot 3) — Peak width/resonance.
+Comb delay (slot 4) — Comb filter pitch, 20 Hz–10 kHz.
+Comb feedback (slot 5) — Comb resonance, neutral at center, up to ±0.95 (always decays).
+Comb LP (slot 6) — Low-pass inside the comb feedback loop; darker when lower.
+Comb/Peak (slot 7) — Blend between peak and comb paths.
+Scoop (slot 8) — Depth of the resonant notch dip (0 = none, ~95% at max).
+Topology (slot 9) — Continuous morph, parallel (default) to series routing of comb into peak.
+Scoop freq (slot 10) — Notch's own center frequency, independent of Peak freq.
+Scoop width (slot 11) — Notch's own Q, independent of Peak Q.
+Comb drive (slot 12) — Pre-gain into the comb's saturator, 0.25×–4×, unity at default.
+Scoop depth (slot 13) — How much of the notch is blended into the output; independent of Scoop's own height.
 
 ## Drive
 
-Drive — Polynomial drive amount
-Shape — Drive curve
-SRR 1 — Sample-rate reducer 1
-SRR 2 — Sample-rate reducer 2
-XOR — XOR bit mask on samples
-Bit depth — Low-bit scramble depth
-Fuzz — Sine/tanh blend
-Blend — Drive blend (web v2 row 8)
-Phase — Drive phase offset (web v2 row 9)
+Drive (slot 0) — Input gain into the polynomial waveshaper, 1×–5×.
+Shape (slot 1) — Recomputes the waveshaper's coefficients; harmonic character.
+SRR 1 (slot 2) — First sample-rate reducer stage.
+SRR 2 (slot 3) — Second sample-rate reducer stage, in series after SRR 1.
+XOR (slot 4) — 8-bit XOR mask on the sample.
+Bit depth (slot 5) — How many low bits the digital reorganizer scrambles.
+Fuzz (slot 6) — Blend from sine-fold to tanh-style hard saturation.
+Blend (slot 7) — Dry/wet crossfade of the whole Drive chain.
+Phase (slot 8) — Allpass on the wet signal before Blend; silent effect at Blend 0.
+Anti-alias brightness (slot 9) — Oversampler anti-alias filter cutoff trim.
+Link (slot 10) — How strongly Drive amount skews Shape's coefficients.
+Fold (slot 11) — Sine-fold divisor, 1×–16×; lower folds harder.
+Tone (slot 12) — Low-pass at the end of the chain; bypass at default.
+Waveshaper offset (slot 13, `Bias`) — Small DC offset (±0.02) into the waveshaper, removed after; zero at default.
 
 ## Delay
 
-Delay time — ~0–2 s exponential
-Send — Output to delay
-Feedback — Delay feedback
-Stereo width — L/R separation
-Detune — Stereo pitch offset on repeats
-Mod depth — LFO on delay time
-Wet mix — Delay wet level
-Color — Delay tone color (web v2 row 8)
-Halo — Delay halo width (web v2 row 9)
+Delay time (slot 0) — Base delay length, ~1 ms–2 s.
+Send (slot 1) — Signal sent into the delay line; 0 = bypass.
+Feedback (slot 2) — Repeat feedback, capped below 98%.
+Stereo width (slot 3) — Cross-feed/time-spread between L/R taps.
+Detune (slot 4) — Pitches L/R repeats apart, up to ±50 cents.
+Mod depth (slot 5) — LFO wobble depth on delay time.
+Wet mix (slot 6) — Delay wet level continuing to Reverb.
+Color (slot 7) — Folds into/biases Detune.
+Halo (slot 8) — Folds into/biases Mod depth.
+Feedback drive (slot 9) — Pre-gain into the feedback saturator, 0.25×–4×, unity at default.
+Feedback tone (slot 10) — Low-pass inside the feedback loop; bypass at default.
+Mod rate (slot 11) — Delay-time LFO rate, 0.05–1.25 Hz.
+Width balance (slot 12) — Overall scalar on Stereo width's own spread; default reproduces original fixed behavior.
+Crush (slot 13) — Sample-rate reduction on the feedback tap only; off at default.
 
-## Field-only
+## Reverb
 
-FUEG — Scramble knobs 1–7 (mod first); also PM3 depth on Audio page; not external ring-mod mix
-Pickup badges, M1–M7 CV assign, SW pages, OLED abbreviations → repository `MANUAL.md`.
+Wet/dry (slot 0) — Reverb mix, capped at 70% wet.
+Room size (slot 1) — Both tank delay-line lengths.
+Decay (slot 2) — Tank feedback / tail length.
+Pre-delay (slot 3) — Time before input reaches the tank.
+Damping (slot 4) — HF loss in feedback; brighter tail at higher knob.
+Stereo width (slot 5) — Spread between the tank's two taps.
+Diffusion (slot 6) — Cross-feed between the tank's two lines.
+Mod depth (slot 7) — Sinusoidal wow depth on the tank's read taps.
+Hold (slot 8) — Pushes tank feedback toward, never to, self-oscillation.
+Mod rate (slot 9) — Mod depth LFO rate, 0.07–1.75 Hz.
+Tank drive (slot 10) — Pre-gain into the tank's feedback saturator, 0.25×–4×, unity at default.
+Grit (slot 11) — Digital reorganizer (bit-scramble) on the tank's feedback taps; bypass at 0.
+Tilt (slot 12) — Bipolar tone shave on the final output around ~1 kHz; center = no change.
+Tuned (slot 13) — Static offset on the tank's delay lengths, ±300 samples; center = zero offset.

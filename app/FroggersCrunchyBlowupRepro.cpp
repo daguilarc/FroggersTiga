@@ -169,22 +169,44 @@ struct ShadowChain {
         };
 
         // -- Audio bank -> 3x dsp::Vco --------------------------------------
+        // Not updated to read Ring Mod (slots 9-11) or PM rate (slot 12) --
+        // same "this repro harness is a diagnostic snapshot, not one of this
+        // packet's expected files" precedent as the Filter slot 9-13 comment
+        // below. The old 3-knob pmKnob argument is passed again as the new
+        // rate argument (reproduces the old coupled rate-from-depth
+        // behaviour exactly) and Ring Mod is held at its own zero floor
+        // (0.0f), so this tool's output is unchanged.
         const float v1 = vco1.Process(knob(FroggersBankId::Audio, 0), knob(FroggersBankId::Audio, 3),
-                                       knob(FroggersBankId::Audio, 6), sampleRate);
+                                       knob(FroggersBankId::Audio, 6), knob(FroggersBankId::Audio, 6), 0.0f,
+                                       sampleRate);
         const float v2 = vco2.Process(knob(FroggersBankId::Audio, 1), knob(FroggersBankId::Audio, 4),
-                                       knob(FroggersBankId::Audio, 7), sampleRate);
+                                       knob(FroggersBankId::Audio, 7), knob(FroggersBankId::Audio, 7), 0.0f,
+                                       sampleRate);
         const float v3 = vco3.Process(knob(FroggersBankId::Audio, 2), knob(FroggersBankId::Audio, 5),
-                                       knob(FroggersBankId::Audio, 8), sampleRate);
+                                       knob(FroggersBankId::Audio, 8), knob(FroggersBankId::Audio, 8), 0.0f,
+                                       sampleRate);
         if (StageEvent e = check("VCO", v1); e.stage) return e;
         if (StageEvent e = check("VCO", v2); e.stage) return e;
         if (StageEvent e = check("VCO", v3); e.stage) return e;
 
         // -- Envelope bank -> ASR + voice mix --------------------------------
+        // Envelope bank slots are interleaved ADSR, slot = 4*vco +
+        // {0:Attack, 1:Decay, 2:Sustain, 3:Release} (FroggersParameters.hpp).
+        // Decay (slots 1/5/9) is now read, matching FroggersAppCore.hpp's
+        // RouteAudioSample -- MixOscVoices's signature grew required decay
+        // arguments this packet, so this call had to be touched regardless.
+        // Curve (slot 12) / Grace (slot 13) are left at their default (0.0f,
+        // neutral) rather than read here -- same "this repro harness is a
+        // diagnostic snapshot, not one of this packet's expected files"
+        // precedent as the Filter slot 9-13 comment below (this tool's
+        // Curve/Grace behaviour stays exactly today's linear/no-deferral
+        // shape, deliberately, rather than tracking the two new knobs).
         const float chainIn = dsp::MixOscVoices(
             adsr, v1, v2, v3, knob(FroggersBankId::Envelope, 0), knob(FroggersBankId::Envelope, 1),
             knob(FroggersBankId::Envelope, 2), knob(FroggersBankId::Envelope, 3), knob(FroggersBankId::Envelope, 4),
             knob(FroggersBankId::Envelope, 5), knob(FroggersBankId::Envelope, 6), knob(FroggersBankId::Envelope, 7),
-            knob(FroggersBankId::Envelope, 8));
+            knob(FroggersBankId::Envelope, 8), knob(FroggersBankId::Envelope, 9), knob(FroggersBankId::Envelope, 10),
+            knob(FroggersBankId::Envelope, 11));
         if (StageEvent e = check("Envelope/Mix", chainIn); e.stage) return e;
 
         // -- Drive bank -> dsp::FrogBlock + DriveBlendPhase ------------------
@@ -223,7 +245,13 @@ struct ShadowChain {
         const float cmlp =
             dsp::ExpMapCompute(4.0f * combFreq, 20000.0f / sampleRate, knob(FroggersBankId::Filter, 6));
         filterChain.comb.SetCutoffAlpha(1.0f - std::exp(-2.0f * static_cast<float>(M_PI) * cmlp));
-        const float filterOut = filterChain.Process(driveOut, /*useParallel=*/true, knob(FroggersBankId::Filter, 7),
+        // Not updated for Task A/B/C/D's new Filter slots 9-13 (this repro
+        // harness is a diagnostic snapshot, not one of this packet's
+        // expected files) -- /*topology=*/0.0f reproduces the old
+        // always-`useParallel=true` behaviour bit-for-bit (FilterFxChain::
+        // Process's own comment, dsp/FilterFx.hpp) so this tool's output is
+        // unchanged.
+        const float filterOut = filterChain.Process(driveOut, /*topology=*/0.0f, knob(FroggersBankId::Filter, 7),
                                                       knob(FroggersBankId::Filter, 8));
         if (StageEvent e = check("Filter", filterOut); e.stage) return e;
 

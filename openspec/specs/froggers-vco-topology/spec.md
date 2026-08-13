@@ -2,19 +2,23 @@
 
 ## Purpose
 The Froggers three-oscillator topology (exponential pitch, continuous Shape morph, self-contained phase modulation) with no hardcoded cross-VCO coupling, exposing Sheaf's VCO scope UI-state and envelope followers, and gated by the master clock's quarter-note pulse so pitch and amplitude gating stay independent.
-
 ## Requirements
 ### Requirement: Froggers oscillator topology is preserved
-The app SHALL implement the Froggers three-oscillator topology: per-VCO pitch on an exponential map spanning roughly 20 Hz to 20 kHz; a continuous waveform **Shape** morph crossfading sine to saw over the lower half of its range and saw to square over the upper half; and per-VCO phase modulation driven by that VCO's **own** dedicated sine LFO whose frequency is an exponential function of the PM knob.
+The app SHALL implement the Froggers three-oscillator topology: per-VCO pitch on an exponential map spanning roughly 20 Hz to 20 kHz; a continuous waveform **Shape** morph crossfading sine to saw over the lower half of its range and saw to square over the upper half; and per-VCO phase modulation driven by that VCO's **own** dedicated sine LFO whose frequency is an exponential function of a phase-modulation **rate** control. Each VCO SHALL keep its own LFO instance and its own phase-modulation depth control; the rate control MAY be a single control shared by all three LFOs.
 
 #### Scenario: Shape morph sweeps continuously
 - **WHEN** a VCO's Shape control is swept from minimum to maximum
 - **THEN** the waveform morphs continuously from sine through saw to square without discontinuity
 
-#### Scenario: Phase modulation is self-contained
-- **WHEN** any VCO's phase-modulation control is raised
+#### Scenario: Phase-modulation depth is self-contained
+- **WHEN** any VCO's phase-modulation depth control is raised
 - **THEN** only that VCO's phase is modulated
 - **THEN** no other VCO's output changes as a result
+
+#### Scenario: The phase-modulation rate control is shared by design
+- **WHEN** the shared phase-modulation rate control is changed
+- **THEN** every VCO whose own phase-modulation depth is above zero changes its LFO rate together
+- **THEN** a VCO whose own phase-modulation depth is at zero stays unmodulated, unaffected by the rate
 
 ### Requirement: No hardcoded cross-VCO coupling
 The oscillator section SHALL contain no hardcoded VCO-to-VCO coupling terms. All inter-oscillator routing SHALL be expressed only through the modulation matrix.
@@ -29,12 +33,27 @@ The oscillator section SHALL contain no hardcoded VCO-to-VCO coupling terms. All
 - **THEN** those assignments are ordinary modulation-matrix entries the operator can remove like any other
 - **THEN** removing them restores full oscillator independence, with changing one oscillator no longer altering another
 
+#### Scenario: Ring-modulation carriers are internal to their own VCO
+- **WHEN** a VCO's ring modulator is processing
+- **THEN** its carrier is an oscillator generated inside that VCO's own ring-mod stage
+- **THEN** no other VCO's signal is read by that stage, so ring modulation adds no inter-oscillator routing
+
 ### Requirement: Phase modulation has a true zero position
-The phase-modulation control SHALL be fully inert at its minimum position, with a smooth ramp from that floor into its active range.
+The phase-modulation control SHALL be fully inert at its minimum position, with a smooth ramp from that floor into its active range. Every other per-VCO modulation amount that carries a zero position — ring-modulation depth today — SHALL behave the same way, and all of them SHALL derive that ramp from one shared function rather than from a per-control copy of it, each passing its own floor and ramp width so one control can be tuned without changing another's behaviour.
 
 #### Scenario: Minimum position is silent modulation
 - **WHEN** a VCO's phase-modulation control is at minimum
 - **THEN** that VCO's phase receives zero modulation depth
+
+#### Scenario: Ring modulation is inert at the bottom of its own control
+- **WHEN** a VCO's ring-modulation control is at or below its own zero floor
+- **THEN** that VCO's signal passes through its ring-mod stage unchanged, at any carrier frequency
+- **THEN** raising the control past the floor ramps the ring-modulation amount up smoothly, with no step
+
+#### Scenario: One ramp function serves every such control
+- **WHEN** the phase-modulation and ring-modulation depth ramps are computed
+- **THEN** both call the same shared ramp function, given their own floor and ramp width
+- **THEN** the phase-modulation control's own behaviour is unchanged from before that function was shared
 
 ### Requirement: Oscillators expose Sheaf scope state
 Each VCO SHALL expose the oscillator UI-state shape Sheaf's scope visualizer consumes — connection flag, scope writer reference, scope channel, and scope color — and SHALL accept a scope writer holder and color, publishing its UI state each block. The app SHALL NOT implement its own waveform drawing for VCO scopes.
@@ -68,3 +87,4 @@ The running transport's quarter-note pulse SHALL be the sole trigger for sound: 
 #### Scenario: Transport stopped is silence
 - **WHEN** the transport is not running
 - **THEN** the instrument produces no audible output, regardless of any other parameter setting
+
