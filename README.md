@@ -10,8 +10,9 @@ development — while that work continues.
 
 - **Sheaf app docs:** [`app/README.md`](app/README.md) — build instructions, Sheaf submodule pin, status
 - **Manual:** [`MANUAL.md`](MANUAL.md) — global controls and all six parameter banks for the current
-  Sheaf app, plus a frozen Daisy Field hardware firmware appendix (pages, buttons, modulation workflow,
-  safe flash sequence)
+  Sheaf app
+- **Daisy Field manual:** [`DAISY_MANUAL.md`](DAISY_MANUAL.md) — the frozen Eurorack firmware (pages,
+  buttons, modulation workflow, safe flash sequence)
 - **Quick Dict:** [`QUICK_DICT.md`](QUICK_DICT.md) — terse, slot-ordered parameter glossary for the
   current Sheaf app
 - **License:** MIT — see [`LICENSE`](LICENSE) (copyright JoYoFresh and Diego Aguilar-Canabal)
@@ -159,7 +160,7 @@ Enter **DFU mode** (hold BOOT, press RESET, release BOOT; `dfu-util -l` must sho
 make program-dfu
 ```
 
-`program-dfu` writes to `0x08000000` with `:leave` (auto-reset into firmware). Full procedure is in [`MANUAL.md`](MANUAL.md).
+`program-dfu` writes to `0x08000000` with `:leave` (auto-reset into firmware). Full procedure is in [`DAISY_MANUAL.md`](DAISY_MANUAL.md).
 
 ### Other apps (e.g. minimal Blink template)
 
@@ -310,7 +311,7 @@ cd web && npm run build:wasm    # verifies exports after copy
 
 **Help docs:** `SIM_MANUAL.md` (sim operators for this frozen web/desktop-v1 surface — embedded in
 desktop/web Help → Manual). `MANUAL.md` and `QUICK_DICT.md` now document the current Sheaf app under
-`app/` (MANUAL.md keeps a Daisy Field firmware appendix, repository only, not shipped to sim hosts) —
+`app/` (Daisy Field firmware is documented separately in `DAISY_MANUAL.md`, repository only, not shipped to sim hosts) —
 they no longer describe this frozen web sim's own parameter layout.
 
 **Host page labels:** `sim/ParamDisplayNames.hpp` and `sim/HostPanelLayout.hpp` are the authorities; `web/src/hostDisplay.generated.ts` is generated for instant UI labels. `node scripts/generate-host-display.mjs --check` runs on every web build and e2e run.

@@ -2,7 +2,7 @@
 
 **Release v1.0.4** — desktop app and web sim share this guide.
 
-On-screen knob names match this manual. For Daisy Field hardware, see `MANUAL.md` in the repository.
+On-screen knob names match this manual. For Daisy Field hardware, see `DAISY_MANUAL.md` in the repository.
 
 ## Getting sound
 

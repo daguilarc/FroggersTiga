@@ -1,7 +1,7 @@
 # FroggersTiga Quick Dict
 
 Terse parameter glossary for the current **Frogg3rs — Sheaf app** (`app/`). Full guide → [`MANUAL.md`](MANUAL.md).
-Daisy Field hardware firmware (frozen, different parameter model entirely) → `MANUAL.md` Appendix.
+Daisy Field hardware firmware (frozen, different parameter model entirely) → [`DAISY_MANUAL.md`](DAISY_MANUAL.md).
 
 Six banks — Audio, Envelope, Filter, Drive, Delay, Reverb — 16 slots each: 14 page parameters (slots
 0–13) in the order below, a bank-local Crispy (slot 14), and one shared global Crunchy (slot 15).
