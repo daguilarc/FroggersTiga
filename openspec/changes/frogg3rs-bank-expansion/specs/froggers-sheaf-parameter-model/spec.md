@@ -41,6 +41,17 @@ requirement. The Audio bank scenario below is rewritten to hold fourteen paramet
 Envelope/Filter/Drive/Delay/Reverb. This is the last of the six per-bank scenarios to reach fourteen; the
 main spec's uniform nine-parameter rule now has no bank left unmodified by this delta.
 
+**Session 6 (2026-08-12, this update — the OMNI §14 preflight audit) additions:** one new ADDED requirement,
+"A newly exposed hardcoded value defaults to the value it replaces." Twelve of this change's thirty new
+parameters expose a literal that is hardcoded today (`../../proposal.md` §9.6's own Tier-1-style tally), and
+nothing in this delta previously required their `defaultValue` to reproduce that literal. **The audit raised
+this as a saved-patch hazard; the operator's ruling 11 makes patch compatibility a non-goal (verified: no
+saved patches, no MIDI-learn mappings exist), so the requirement is kept on the narrower ground that a
+default which misses its literal changes how the instrument sounds at a fresh launch.** The Delay bank's Width Balance scenario also gains the `[0, 1]` bound its own headroom argument
+depends on (`../../proposal.md` §9.3). Two collisions the audit found with the in-force
+`froggers-vco-topology` spec are recorded in this change's second spec delta,
+`../froggers-vco-topology/spec.md`, not here.
+
 ## MODIFIED Requirements
 
 ### Requirement: One sixteen-slot bank per Froggers page
@@ -70,6 +81,11 @@ or MAY hold additional named parameters where a bank's slate has been explicitly
 - **THEN** each Ring Mod knob's resolved value sets its own VCO's internal carrier frequency across an
   audio-rate range, mapped the same exponential way the Audio bank's existing pitch knobs already map
   pitch, and each VCO's own signal is multiplied by its own carrier's output
+- **THEN** the bottom of each Ring Mod knob's travel is a true zero position, gating that VCO's ring-mod
+  amount to exactly zero and ramping smoothly out of it, so the knob is continuous and the VCO can be heard
+  unmodulated, per the shared ramp the `froggers-vco-topology` delta requires
+- **THEN** each Ring Mod knob defaults to a position at or below that zero floor, so the instrument at its
+  defaults sounds exactly as it did before Ring Mod existed
 - **THEN** slot 12 is PM Rate (short name `PMrt`), the phase-modulation LFO's own rate, shared across all
   three VCOs and independent of the phase-modulation depth the existing Phase-mod knobs already control
 - **THEN** slot 13 is VCO Balance (short name `VBal`), a single tilt sweeping mix emphasis across VCO1
@@ -101,14 +117,20 @@ or MAY hold additional named parameters where a bank's slate has been explicitly
 - **WHEN** the Filter bank is enumerated
 - **THEN** it holds fourteen named parameters at slot indices 0 through 13, not nine
 - **THEN** slots 0-8 are unchanged from the Filter bank's existing nine parameters
-- **THEN** slot 9 is Topology (short name `Topo`), selecting between the Comb and Peak stages running in
-  parallel or in series
+- **THEN** slot 9 is Topology (short name `Topo`), a continuous morph of the Comb and Peak stages from
+  parallel at one end to series at the other, with no switched positions anywhere in its travel
+- **THEN** at its minimum the chain behaves exactly as it does today, with the Peak stage reading the chain's
+  own input
+- **THEN** at its maximum the Peak stage reads the Comb stage's output instead, which is the series topology
+- **THEN** the Comb/Peak blend, the Scoop blend, and every output trim and limiter in the chain stay in
+  force at every position of this control, including its extremes
 - **THEN** slot 10 is Scoop Freq (short name `ScFq`), the Scoop notch's own center frequency, independent
   of the Peak stage's frequency
 - **THEN** slot 11 is Scoop Width (short name `ScWd`), the Scoop notch's own width, independent of the
   Peak stage's width
-- **THEN** slot 12 is Comb Drive (short name `CDrv`), a pre-gain into the Comb stage's own in-loop
-  saturator
+- **THEN** slot 12 is Comb Drive (short name `CDrv`), a pre-gain applied to the input of the Comb stage's
+  own in-loop saturator, never to that saturator's output, so the loop's per-sample bound is unchanged at
+  every setting
 - **THEN** slot 13 is Scoop Depth (short name `ScDp`), the Scoop notch's own dip depth, independent of
   the same notch's wet/dry blend into the output
 
@@ -131,13 +153,17 @@ or MAY hold additional named parameters where a bank's slate has been explicitly
 - **WHEN** the Delay bank is enumerated
 - **THEN** it holds fourteen named parameters at slot indices 0 through 13, not nine
 - **THEN** slots 0-8 are unchanged from the Delay bank's existing nine parameters
-- **THEN** slot 9 is Feedback Drive (short name `FbDr`), a pre-gain into the feedback loop's own in-loop
-  saturator
+- **THEN** slot 9 is Feedback Drive (short name `FbDr`), a pre-gain applied to the input of the feedback
+  loop's own in-loop saturator, never to that saturator's output
 - **THEN** slot 10 is Feedback Tone (short name `FbTn`), a one-pole lowpass damping the feedback tap
   ahead of the same in-loop saturator
 - **THEN** slot 11 is Mod Rate (short name `MdRt`), the delay's own modulation LFO rate
 - **THEN** slot 12 is Width Balance (short name `WBal`), the ratio between the Width knob's time-offset
   spread and its cross-feed blend, independent of the Width knob's own value
+- **THEN** the cross-feed weight this balance produces stays within 0 to 1 inclusive at every knob position,
+  so the left/right feedback pair stays a convex combination of the two delay-line reads
+- **THEN** the time-offset spread this balance produces never lengthens a read tap beyond the delay
+  buffer's own capacity
 - **THEN** slot 13 is Crush (short name `Crsh`), a bitcrush stage applied to the feedback tap's repeats
 
 #### Scenario: The Reverb bank holds fourteen parameters, complete
@@ -145,8 +171,8 @@ or MAY hold additional named parameters where a bank's slate has been explicitly
 - **THEN** it holds fourteen named parameters at slot indices 0 through 13, not nine
 - **THEN** slots 0-8 are unchanged from the Reverb bank's existing nine parameters
 - **THEN** slot 9 is Mod Rate (short name `MdRt`), the tank's own modulation LFO rate
-- **THEN** slot 10 is Tank Drive (short name `TkDv`), a pre-gain into the tank feedback path's own
-  in-loop saturator
+- **THEN** slot 10 is Tank Drive (short name `TkDv`), a pre-gain applied to the input of the tank feedback
+  path's own in-loop saturator, never to that saturator's output
 - **THEN** slot 11 is Grit (short name `Grit`), the tank feedback path routed through a bit-scramble
   stage ahead of that same in-loop saturator
 - **THEN** slot 12 is Tilt (short name `Tilt`), a bipolar post-tank tone shave applied before the
@@ -180,3 +206,17 @@ cannot cause one parameter's stored value to be silently applied to a different 
   source's assignment
 - **THEN** this holds because modulation depth is stored per modulation-source index, not per target
   slot index
+
+### Requirement: A newly exposed hardcoded value defaults to the value it replaces
+A new parameter SHALL default to the value that was hardcoded before it existed, whenever that parameter's whole purpose is to expose an existing hardcoded literal, so that exposing the literal does not change how the instrument sounds at its own defaults. Where the value being replaced was derived from another parameter at runtime rather than fixed, the new parameter SHALL default to whatever that derivation produces at the other parameter's own default.
+
+#### Scenario: An unlocked literal's default reproduces today's sound
+- **WHEN** a parameter is added whose purpose is to expose a value that is hardcoded today
+- **THEN** its default value maps to that same hardcoded value
+- **THEN** the instrument at its defaults sounds exactly as it did before the parameter existed
+
+#### Scenario: A value derived at runtime defaults to what that derivation produces
+- **WHEN** a new parameter replaces a value that was previously computed from another parameter, so no fixed
+  default reproduces the old behaviour across that other parameter's whole range
+- **THEN** the new parameter defaults to the value that derivation produces at the other parameter's default
+- **THEN** the tracking itself is not reproduced, which is the point of decoupling them

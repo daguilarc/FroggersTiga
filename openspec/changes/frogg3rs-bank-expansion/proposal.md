@@ -159,10 +159,64 @@ source)` (§2). **Consequences: there is no carrier decision (the carrier is int
 no cross-VCO coupling, and therefore no collision with `froggers-vco-topology`'s requirement — that claimed
 collision was never real and is deleted below, not merely softened. Ring Mod is no longer a blocker; Audio
 slots 9-11 are DECIDED, completing all six banks at fourteen parameters each (thirty of thirty, up from
-twenty-seven of thirty).** One genuine implementation detail remains open, not a blocker (§8, §9.5):
+twenty-seven of thirty).** ~~One genuine implementation detail remains open, not a blocker (§8, §9.5):
 whether the knob's range reaches down to sub-audio rate (an effectively-clean position at the bottom,
 mirroring PM LFO's `kPmLfoMinHz = 0.05f`-`kPmLfoMaxHz = 20.0f` span, `app/dsp/Vco.hpp:103-104`) or stays
-audio-rate across the whole sweep.
+audio-rate across the whole sweep.~~ **Struck by the session-6 audit: a sub-audio carrier is not a clean
+position (a product has no unity position at any frequency), so that item's premise was false. What is
+actually open — how Ring Mod is turned off at all — IS a blocker and an operator question (§1a finding 2,
+§4.2, §8, T8.0).**
+
+## 1a. Session 6 (2026-08-12) — the OMNI §14 PREFLIGHT audit's own findings, recorded before execution
+
+**§11 previously declared this change "Ready for OMNI §14 PREFLIGHT." The audit ran; this section is its
+result. It did not reject the change's decisions — it rejected the claim that the change was ready to
+execute, and §11 is rewritten accordingly. Three of the five findings below needed the operator's judgement;
+all three were put to the operator; ONE came back answered (ruling 9 — see §3a, and §4.5 for the shared
+zero-off gate it requires) and TWO are still out (§3a items 10-11). A brief version of this document recorded
+all three as answered, misreading one reply as three — corrected at §3a and §11.** What held up and what did not:
+
+**Held up under re-verification (checked directly against the current tree, not taken from any prior
+session's report):** every one of the roughly dozen hardcoded-literal claims this change rests on. `0.25f *
+(computedGain - 1.0f)` in BOTH `coefs[1]` and `coefs[3]` (`Drive.hpp:101,103`); `const float sinIn = out /
+4.0f;` (`Drive.hpp:378`); `p.dwid * baseSeconds * 0.35f` and `p.dwid * 0.5f` (`Delay.hpp:316,330`);
+`kPmLfoDepth = 0.15f` (`Vco.hpp:105`, used at `:169`); `kModLfoHz = 0.35f` (`Reverb.hpp:142`, used at
+`:350`); `antiAlias.SetAlphaFromNatFreq(0.4f)` (`Drive.hpp:133`); `lfoInc = 2.0f * 3.14159265f * 0.25f /
+sampleRate` (`Delay.hpp:285`); the single hardcoded `/*useParallel=*/true` call site
+(`FroggersAppCore.hpp:1356`); and the doubled `knob(FroggersBankId::Filter, 8)` read — `SetHeight` at
+`:1344`, `scoopMix` at `:1356`. Also confirmed: `rawCombTrim`'s formula and the comb's in-loop saturator
+(`FilterFx.hpp:721,406`), `MixOscVoices`'s equal-thirds return (`VoiceEnvelope.hpp:294`), Attack's
+`sustainLevel` ceiling (`:205`), `Sine01`'s own phase wrap making it bounded to `[-1, 1]` for ANY argument
+(`DspMath.hpp:28-33`), `EvalWaveMorph`'s `[-1, 1]` bound (`Vco.hpp:68-84`), and §10's short-label count —
+**23 of 54, Drive 5 of 9, and every per-bank split, re-counted independently and all exact.**
+
+**Also held up: the two claims §11 most depended on.** `froggers-vco-topology`'s *"No hardcoded cross-VCO
+coupling"* requirement IS satisfied, not violated, by an internal per-VCO carrier (§4.2's correction is
+sound). And VCO Balance's convexity argument IS valid: `Σw = 1` with `w ≥ 0` gives `|Σ w·v| ≤
+max(|v1|,|v2|,|v3|)`, the identical supremum the equal-thirds average has, so the ⚠ flag is genuinely
+discharged by construction (§4.4). Both were re-derived here, not accepted.
+
+**Did not hold up — five findings, each recorded at its own section rather than only here:**
+1. **The collision hunt looked at one requirement, not the spec.** Sessions 3-5 checked Ring Mod against
+   `froggers-vco-topology`'s coupling requirement and never read that file's other requirements. **PM Rate
+   (Audio slot 12) collides with the requirement "Froggers oscillator topology is preserved," which states
+   the PM LFO's frequency "is an exponential function of the PM knob," and with its scenario "Phase
+   modulation is self-contained," which PM Rate's one-knob-shared-across-three-VCOs shape breaks.** A real
+   collision was missed while a phantom one was litigated three times. New spec delta:
+   `specs/froggers-vco-topology/spec.md`; new operator gate T7.0 (§9.5).
+2. **Ring Mod as specified has no off position and no depth control**, and §8's claim that a sub-audio low
+   end gives "an effectively-clean position at the very bottom" is FALSE — a 0.05 Hz sine carrier is a
+   20-second full-depth tremolo through zero, not a clean position (§4.2, §8, §9.5, new gate T8.0).
+3. **Nothing required an unlocked literal's new parameter to DEFAULT to the literal it replaces**, so all
+   twelve Tier-1-style unlocks would have changed every existing patch's sound on upgrade — silently, with
+   every stored value intact (§4.1, new spec requirement, new task block T9).
+4. **Decay is a three-part change, not two:** `attackStep` is `sustainLevel / attackTime`, so raising
+   Attack's ceiling without changing that numerator stretches attack time by `1/sustainLevel` — up to 10x at
+   the `kMinSustainLevel = 0.10f` floor (§4.3, T1.1).
+5. **Link's "Headroom: none, provably" argument is invalid** — bounded coefficients do not bound an
+   unbounded 5th-order polynomial, which is this document's own reason for flagging Bias. The conclusion
+   survives on a measurement instead (§9.2). **Fold's "no matter how small the divisor gets" invites a
+   division by zero** into a NaN path this codebase has already been silenced by once (§9.2).
 
 ## 2. Verified facts — re-confirmed by reading, 2026-08-11
 
@@ -253,8 +307,10 @@ task brief without a fresh check:
    the carrier is internal and per-VCO, not one of the other named VCOs — **and therefore no cross-VCO
    coupling and no collision with `froggers-vco-topology`'s "No hardcoded cross-VCO coupling" requirement**
    (ruling 2, below); that claimed collision was never real. **Ring Mod is no longer a blocker; Audio slots
-   9-11 are DECIDED** (§9.5). One implementation detail remains genuinely open, not a blocker — whether the
-   knob's low end reaches sub-audio rate — carried forward at §8, not decided here.
+   9-11 are DECIDED** (§9.5). ~~One implementation detail remains genuinely open, not a blocker — whether the
+   knob's low end reaches sub-audio rate~~ — **session 6 audit: that framing is withdrawn (its premise, that
+   a sub-audio carrier is an effectively-clean position, is false). The ruling itself stands; what is open is
+   how Ring Mod is turned off, which IS a blocker and an operator question — §4.2, §8, T8.0.**
 2. **Cross XOR is CUT.** *"cross couplers dont make sense anymore because of mod lvl 1"* — the
    modulation system already routes VCO audio sources onto any parameter, so a dedicated cross-VCO
    coupler is redundant. **This ruling is not merely a taste call — it restates an existing, in-force
@@ -362,6 +418,98 @@ task brief without a fresh check:
    operator-judged lowering, `VoiceEnvelope.hpp`), not to add a knob that lets the player rescale it
    live. See §8 for where this open item is carried forward.
 
+## 3a. Session 6 operator rulings — the three audit questions, answered
+
+9. **Ring Mod gets a true zero position at the bottom of its own knob, implemented as a SHARED function with
+   PM — DECIDED, session 6.** Operator: *"i choose #1 and this should be implemented in an omni rule
+   compliant way as a shared function between PM and RM and any other, and we can abstract from this to
+   establish an array of limiter functions that vary depending on an array of parameter types."* This closes
+   §1a finding 2 (no off position). It costs no slots: the bottom of the Ring Mod knob's travel gates the
+   ring-mod amount to exactly zero and ramps smoothly out of it, and the rest of the travel sweeps the
+   carrier frequency — the same shape `Vco::PmDepthScale` already implements for the PM knob, which is why
+   the operator required one function rather than two. Mechanism, the §8 enumeration behind it, and the
+   answer to the operator's own "isn't this already part of the parameter class?" question: **§4.5**.
+**Process note, recorded rather than tidied away: this document briefly recorded all three as rulings on the
+strength of one reply that only covered the first.** The operator's *"i choose #1"* answered Ring Mod; the
+other two questions had not been seen. Reading one answer as three is the same failure §0a's session-5
+addendum already names twice in this change — the lead inventing what the operator decided. The questions
+were re-put and answered separately; all three rulings below are now the operator's own.
+
+10. **PM Rate keeps Audio slot 12; `froggers-vco-topology` is relaxed to match — DECIDED, session 6.**
+    Operator: *"A:1"*. The delta at `specs/froggers-vco-topology/spec.md` stands as written: the PM LFO's
+    rate comes from a rate control, each VCO keeps its own LFO instance and its own depth, and the shared
+    rate control is shared by design. The trade the operator accepted, stated plainly so a later session does
+    not treat it as an oversight: **one PM Rate knob moves all three VCOs' LFO rates together** — per-VCO
+    rates would need three slots the bank does not have (§9.5). That same delta independently carries ruling
+    9's shared zero position.
+11. **Patch compatibility is a NON-GOAL for this change — DECIDED, session 6.** Operator: *"who gives a
+    shit, i haven't saved any old patches?"* **Verified rather than taken on the operator's word, since it
+    voids a gate that has blocked T1 since session 1:** `~/Library/Sheaf/synth/sheaf-patch/patches/frogg3rs/`
+    is empty (zero patch files), and the runtime config's MIDI-instrument block is `"controllers":[]` (zero
+    MIDI-learn mappings) — the two surfaces §4.1 identified as slot- or name-sensitive both hold nothing.
+    **Consequences, each recorded where it lands:**
+    - **What is empty is the DATA, not the machinery — stated explicitly so a later session does not read
+      this ruling as "the app cannot save."** Both features exist and both already live at the Sheaf level,
+      not in this app: `External/Sheaf/projects/synth/src/PatchPersistence.cpp` (`BuildPatchJSON` /
+      `LoadPatchJSON`, via `ParameterManager::ParameterValuesToJSON`) and
+      `External/Sheaf/projects/synth/src/MidiController.cpp` (encoder in/out configs carrying `slotIx`).
+      `app/` contains no patch or MIDI persistence file of its own — confirmed by listing both directories.
+      So this is shared, pinned infrastructure the app gets for free and cannot change; the operator has
+      simply never saved a patch or learned a controller on this machine. **And when they do, neither needs
+      anything from this change** — see the corrected §4.1 bullet: parameter values are keyed by qualified
+      name, so a newly registered parameter saves and loads with no per-parameter work, and MIDI mappings are
+      keyed by controller slot and physical encoder position, so they are indifferent to which parameter sits
+      in which bank slot.
+    - **T1.0 — the Envelope migrate-or-reset gate — is MOOT, and T1.1-T1.6 are unblocked.** It asked how to
+      handle saved patches across the Envelope renumbering. There are none, and no MIDI mapping to scramble
+      either. The ergonomics half ("which physical encoder is Sustain under") survives only as a thing the
+      operator will notice on the hardware, not as a decision anyone must make first.
+    - **The default-parity RULE survives, on a different and much smaller justification.** Not migration —
+      the instrument's own baseline voice. A knob whose default does not reproduce today's literal changes
+      how the synth sounds at startup, and choosing the range so the default lands on the literal costs
+      nothing at write time. Kept for that reason alone — as one spec requirement and one `defaultValue` line
+   per registration task (T2.6/T3.6/T4.3/T5.8/T7.3/T8.3), not as the task block the audit first wrote.
+    - **Everything written as migration machinery comes out**, per the operator's own framing: the Scoop
+      Freq/Width and Scoop Depth "deliberate behaviour change to existing patches" apparatus (§4.1, §9.1) is
+      now just "pick sensible defaults."
+    - **Session 6, second pass — the operator pushed again: does bank expansion need to solve saved state at
+      all, or does Sheaf already handle these parameters as-is? It already handles them, and the whole T9
+      task block is deleted as over-scaffolding.** Verified across all three surfaces:
+      `ParameterManager::ParameterValuesToJSON` iterates **every registered `Parameter*`** and keys by
+      qualified `Name()`, so each of the thirty new parameters saves and loads with **zero per-parameter
+      work**; modulation depths are keyed by modulation-source index, untouched by any target's slot; and
+      MIDI mappings are keyed by hardware position, not parameter identity (corrected §4.1). **What is left
+      is not a problem to solve, it is one field per registration:** `FroggersParamSpec::defaultValue`,
+      already in the struct every task here already writes. Folded into T2.6/T3.6/T4.3/T5.8/T7.3/T8.3 as one
+      line each. The single spec requirement stays, because "a new knob's default reproduces the literal it
+      replaced" is a real property worth stating once — but it needed no task block behind it.
+
+12. **Filter Topology is a CONTINUOUS morph, not a switch — DECIDED, session 6.** Operator: *"idiotic, i
+    pick (a)"*, on the question they raised themselves (is Topology even continuous? — it was a `bool`,
+    §9.1). **The implementation is NOT "compute both branches and crossfade," and this document says so
+    before an implementer tries it:** `Comb::Process` advances a delay line and index, `ResonantBump::Process`
+    is a `BiquadDf1` carrying `x[n-1]`/`x[n-2]`/`y[n-1]`/`y[n-2]`, and `pureDelay`, `combTrimSmoother`,
+    `peakTrimSmoother` and `peakLimiter` are all stateful too (`app/dsp/FilterFx.hpp`, read this session).
+    Calling any of them twice in one sample double-advances its state. A naive two-branch crossfade therefore
+    costs a **second full set of instances** — two combs ringing independently — which is a different
+    instrument, not a morph.
+    **The construction that is actually continuous, single-instance, and strictly less code than today
+    (§9.1 carries it in full): morph what the peak stage READS, not which branch runs.** Today's parallel
+    branch already computes `combPath` (trimmed) and `peakPath = peakLimiter(peak(input) * peakTrim)`, then
+    blends them by slot 7 and applies Scoop. Feed `peak` a crossfade between `input` and `combPath` instead
+    of `input` alone, driven by the Topology knob, and: at 0 it is bit-identical to today's parallel; at 1
+    the peak is processing the comb's output, which IS series; in between it is a genuine continuous morph.
+    **Every trim, the peak limiter, the Comb/Peak blend and the Scoop blend stay in force at every Topology
+    position** — which is the whole reason the old `useParallel == false` branch was dangerous. **So the dead
+    series branch is DELETED rather than brought to parity** (per OMNI §1's corollary: when honouring an
+    instruction forces a worse structure — here a duplicated stateful chain — challenge the instruction; the
+    operator's "(a)" is satisfiable in a cleaner shape than the one the question offered). One code path, one
+    set of units, one new lerp.
+    **What still needs measuring, and why it stays flagged:** at high Topology the peak biquad sees the
+    comb's output rather than the raw input, so its own worst-case input changes even though `peakTrim` and
+    `peakLimiter` remain in place — a new operating point for the stage this file's blowout history is
+    about (T2.1a).
+
 ## 4. New findings from this session's own re-verification (beyond the ones the task named)
 
 ### 4.1 Patch persistence is keyed by parameter NAME, not by bank-slot index
@@ -404,10 +552,49 @@ and what remains genuinely open (§8 keeps it open, deliberately):
 - The renumbering still changes which PHYSICAL encoder Sustain/Release sit under — an ergonomics/muscle-
   memory question, not a data-integrity one, and this finding says nothing about whether that alone
   justifies a migration UX (e.g., a one-time notice) independent of any file-format risk.
-- This finding audited the patch-file path specifically; it does not claim every other stateful surface
-  in the app (e.g., any MIDI-learn mapping, which `MidiController.cpp`'s `MessageIn` JSON does serialize
-  by raw `bankIx`/`slotIx` — a *different* mechanism from patch persistence, not audited further here
-  because it is out of this change's scope) is equally safe.
+- ~~This finding audited the patch-file path specifically; it does not claim every other stateful surface in
+  the app (e.g., any MIDI-learn mapping, which `MidiController.cpp`'s `MessageIn` JSON does serialize by raw
+  `bankIx`/`slotIx`) is equally safe.~~ **WRONG — corrected session 6, after the operator asked why any of
+  this is bank expansion's problem. The MIDI caveat was session 1's, and session 6 repeated it twice before
+  reading the header; a repeated claim is the repeater's claim (OMNI §1).** `EncoderMidiMapping` is
+  `{MidiControlAddress control; std::size_t slotIx; std::size_t position;}`
+  (`External/Sheaf/projects/synth/include/synth/MidiController.hpp:227-231`), and in context — beside
+  `visibleEncoderCount = 16` in every profile-options struct in that header — **`slotIx` is the CONTROLLER
+  slot and `position` is the physical encoder position, both hardware-side. Neither is a bank-parameter
+  index.** A learned CC maps to "encoder position 3 of controller 0", which then drives whatever parameter
+  the current bank holds there. **So MIDI mappings are entirely insensitive to which parameter occupies which
+  bank slot**: renumbering Envelope cannot scramble them, and encoder positions 9-13 already exist and
+  currently drive empty slots. There was never a second at-risk surface.
+
+**Session 6 audit — this finding was load-bearing for a guarantee it does not actually provide; then ruling
+11 made the whole question moot. Both halves recorded, in order.** T2/T7/T8's headers each cite this finding
+as "patch-safety by construction." It does guarantee that no stored VALUE is misapplied; it does not
+guarantee that a patch still SOUNDS the same, and three mechanisms in this change break that. **But there are
+zero saved patches and zero MIDI-learn mappings on disk (verified, §3a ruling 11), so none of the three has
+anything to break.** What survives is the third bullet's rule, on the far smaller ground that a default sets
+the instrument's own startup voice:
+
+1. **Twelve of the thirty new parameters exist to expose a value that is hardcoded today** (§9.6's own
+   Tier-1-style tally). A patch saved before them has no key for them, so they load at their
+   `defaultValue` — and unless that default maps to the literal it replaced, the patch's sound changes.
+   `FroggersParamSpec` already carries a `defaultValue` field and `FroggersBankLayouts()` already uses it
+   for non-neutral cases (the Audio bank's own pitch defaults `0.2468f`/`0.3471f`/`0.4058f`, and every
+   Sustain's `1.0f`), so this is cheap to get right and cheap to get wrong. **This is the one part ruling 11
+   keeps** — not for patches, but because a default that misses the literal changes what the instrument
+   sounds like on a fresh launch. Binding spec requirement ("A newly exposed hardcoded value defaults to the
+   value it replaces"), carried out as one `defaultValue` line in each bank's own registration task rather
+   than as a separate work package.
+2. **Two of the twelve have no literal to default to: Scoop Freq and Scoop Width** (a live-patch problem
+   before ruling 11, now only a question of what number they start at). Today `scoopNotch`
+   is fed the *same runtime locals* as `peak` — `bumpFreq`/`bumpWidth`, themselves derived from Filter
+   slots 1 and 3 (`FroggersAppCore.hpp:1341-1342` vs `:1292`/`:1327`). Their old behaviour is a function of
+   two other knobs, not a constant, so no fixed default reproduces it across those knobs' range. **Post-ruling
+   11 this is not a patch problem at all** — pick the value the Peak knobs' own defaults produce today and
+   the fresh-launch voice is unchanged; there is nothing else to preserve (§9.1).
+3. **Scoop Depth narrows an existing parameter's meaning** — T2.5 keeps slot 8 ("Scoop") on `SetHeight` and
+   moves `scoopMix` to the new slot 13. Worth knowing, but with no saved patches it costs nothing: give slot
+   13 the same default slot 8 has and a fresh launch is unchanged. **Recorded as a note, not as the
+   migration hazard an earlier version of this section made it** (ruling 11).
 
 ### 4.2 Ring Mod's design, corrected in full — session 5
 
@@ -444,6 +631,26 @@ entire sweep. Both satisfy the operator's continuous-range rule (§3 ruling 3); 
 whether Ring Mod can be dialled effectively off at one end of its travel, not whether it can be built. See
 §9.5 for the full DECIDED entry.
 
+**Session 6 audit — the paragraph immediately above is WRONG in its premise, and the real open question is a
+different and larger one. Recorded here plainly, not deleted.** The claim that a sub-audio low end gives "an
+effectively-clean position at the very bottom" does not survive contact with what the stage computes. Ring
+modulation is a *product*: `vcoOut * carrier`. At a 0.05 Hz carrier the product is not clean — it is a
+20-second full-depth tremolo that passes through zero and inverts phase twice per cycle. Lowering the
+carrier's frequency lowers the *rate* of the amplitude modulation, never its *depth*. Worse, a sine carrier
+evaluates to `0` at phase zero, so the neighbourhood of "DC" is silence, not unity. **There is no knob
+position, at any frequency, at which the design as specified passes the VCO through unchanged**, because the
+knob's only job is frequency and nothing in the design carries depth or mix.
+
+**So the genuinely open item is not "sub-audio or not" — it is "what makes Ring Mod inaudible?", and that is
+an operator question, not an implementation detail.** Every existing patch is affected: the moment Ring Mod
+ships, all three VCOs are ring-modulated unconditionally, and no default value restores today's sound (the
+§4.1 default-parity rule cannot help — there is no neutral position to default to). This is recorded as a
+blocking gate, T8.0, and **deliberately not answered here**: a depth or dry/wet leg per VCO would cost three
+more slots the bank does not have, and folding depth into the same knob (e.g. a dead zone at the bottom of
+its travel) would re-open the operator's own continuous-range rule (§3 ruling 3). Both are the operator's
+call under the same rule that cut Cycle and Hard Sync. §8 carries the item; the old sub-audio framing is
+withdrawn from that list, since it was a smaller question resting on a false premise.
+
 ### 4.3 Decay is a materially bigger Tier-2 item than the design doc credited
 
 The design doc's evidence for Decay ("New `Stage::Decay` inserted into the existing enum ... reusing the
@@ -452,6 +659,16 @@ same per-sample step/`mapTime` idiom") undercounts the work. Reading `VcoAdsrSta
 attackStep)` — there is no separate peak above Sustain for a Decay stage to fall FROM. Inserting
 `Stage::Decay` between Attack and Hold without also raising Attack's ceiling would produce a Decay stage
 that starts and ends at the same level: no audible decay at all.
+
+**Session 6 audit correction — it is a THREE-part change, not two, and the third part is the one that
+silently changes existing patches.** `attackStep` is not a constant slope: it is `sustainLevel /
+std::max(mapAttack(attackKnob) * m_sampleRate, 1.0f)` (`VoiceEnvelope.hpp`, confirmed by reading — the
+numerator is `sustainLevel`, the same value that is also today's ceiling, which is exactly why the ramp
+takes `attackTime` to arrive). Raise the ceiling to `1.0` and leave that numerator alone and the ramp still
+climbs at `sustainLevel/attackTime` per second toward a target of `1.0`, so **the actual attack time becomes
+`attackTime / sustainLevel` — up to 10x longer at the `kMinSustainLevel = 0.10f` floor.** Every existing
+patch's Attack knob would quietly change meaning. So part (c): `attackStep`'s numerator becomes the new peak,
+not the sustain level. T1.1 is updated.
 
 A working Decay needs Attack's ceiling raised to an independent peak (the natural choice is `1.0`, the
 same ceiling `Vco`'s own output already has), with Decay then ramping from that peak down to
@@ -515,6 +732,83 @@ whole knob sweep. This is an assertable invariant of the mapping from knob posit
 by inspecting the mapping function directly, not a property that needs measuring `chainIn`'s output level
 at runtime. §9.5 and §9.6 are updated accordingly: VCO Balance is no longer on the headroom-flagged list.
 
+**Session 6 audit — the convexity argument is CORRECT and the flag stays discharged; what was missing is the
+§4.3-shaped note that goes with it.** Re-derived independently: for any `w ≥ 0` with `Σw = 1`, `|Σ wᵢvᵢ| ≤ Σ
+wᵢ|vᵢ| ≤ max(|v1|,|v2|,|v3|)`, and that supremum is exactly the equal-thirds average's own supremum (both are
+attained when the three voices are identical), so §K's verdict survives across the whole floored range. The
+bound does not move. **The level does.** At the tilt's extreme one voice's weight goes from `1/3` to `0.80`
+— **+7.6 dB on that voice's own contribution, and about +3 dB on the three-voice sum for uncorrelated VCOs**
+(`√(0.80² + 0.10² + 0.10²) = 0.81` versus `√3/3 = 0.58`). That is precisely the case §7's standing rule and
+§4.3's Decay finding exist to name: *a proposal can fail to raise the sample ceiling while still changing
+perceived loudness.* Recorded here in the same terms §4.3 used — **audible, not unsafe** — so that "came off
+the headroom-flagged list" is not read as "changes nothing downstream." Everything after the mix (the Drive
+chain's trims, the comb trim, the wet limiters) sees a louder average at the tilt's ends than it does today
+at any setting.
+
+### 4.5 The shared zero-off gate, and what the parameter class already provides — session 6
+
+**The operator's question, verbatim: *"this is probably already a thing, like part of the class constructor
+of parameters, no?"* Answered by reading `External/Sheaf/projects/synth/include/synth/
+ParameterModulation.hpp` and its `.cpp`, not from memory. The answer is: half of it exists, one half of that
+half is inert, and the app uses none of it.**
+
+- **A per-parameter type tag DOES exist in the constructor.** `ParameterConfig` carries `RangeKind range`
+  (`Unipolar`/`Bipolar`) and `std::size_t switchValues` alongside `name`/`shortName`/`defaultValue`
+  (`ParameterModulation.hpp:260-269`). So the shape the operator remembers is real.
+- **But the one type-driven post-processing function ignores the type.** `ClampToRange(float value,
+  RangeKind range)` is, in full: `(void)range; return std::clamp(value, 0.0f, 1.0f);`
+  (`ParameterModulation.cpp:449-452`). Bipolar and Unipolar clamp identically. **This is the function
+  `Parameter::GetRaw` applies to every resolved value (§2), so today "parameter type" changes nothing about
+  how a value is bounded.** Recorded as a finding, not a complaint: `External/Sheaf` is pinned and
+  unpatchable (`tasks.md` §0), so this is not ours to fix — it is the reason the gate cannot live there.
+- **The "array of functions that vary by parameter type" the operator described also already exists — one
+  layer up, as mapping rather than limiting.** `ParameterManager` exposes six of them: `GetLinear`,
+  `GetExponential`, `GetZeroBasedExponential`, `GetBipolarLinear`, `GetBipolarExponential`,
+  `GetBipolarZeroBasedExponential` (`ParameterModulation.hpp:805-811`). **This app calls none of them —
+  zero hits across `app/`.** `FroggersAppCore.hpp`'s `RouteAudioSample` instead reads a raw knob
+  (`knob()` → `CachedKnobValue(0)`) and open-codes the map at each site: **six knob-fed
+  `dsp::ExpMapCompute` calls in that one function.** That is a §8 repetition finding with a ready-made
+  destination. **Session 6, second look: this was written up as an §8 finding and then withdrawn** — §8 asks
+whether the same logic is WRITTEN twice, and in this app it is written once and called six times, which is
+what §8 asks for; the second copy is in a pinned dependency, and consuming it would put a throwing,
+out-of-line call in a per-sample audio path. The rejection is recorded in `tasks.md`'s "Recorded, not
+scheduled." **What survives from this whole line of inquiry is the answer to the operator's question, above:
+the parameter class carries a type tag, its one type-driven function ignores it, and the zero-off ramp
+therefore lives app-side.**
+
+**So the gate is app-side, and it is ONE function, per the operator's instruction.** Proposed home:
+`app/dsp/DspMath.hpp`, beside `ExpMapCompute`/`ZeroedExpCompute`/`WrapPhase`/`Sine01` — the file that already
+holds this app's shared scalar primitives, so it adds no new file and no new concept location.
+
+**§8 enumeration, by operand rather than by syntax, before writing anything.** Searching for the concept's
+operands (`Floor`, `RampWidth`, the smoothstep `3.0f - 2.0f * t`, and the zero-threshold comparisons) finds
+**one** full instance and two near-misses that are deliberately different — classified, per §8, rather than
+collapsed:
+1. **`Vco::PmDepthScale`** (`app/dsp/Vco.hpp:137-150`) — floor `kPmLfoFloor = 0.02f`, ramp
+   `kPmLfoRampWidth = 0.08f`, smoothstep `t*t*(3-2t)`. **The one true instance.** Ring Mod's gate makes two,
+   which is what promotes this from a private static to a shared primitive.
+2. **`StereoDelay::Process`'s `p.dsnd <= 0.0001f` early-out** (`app/dsp/Delay.hpp:303`) — NOT the same
+   concept and must not be folded in: it is a whole-stage bypass for cost, with no ramp, and giving it one
+   would make the delay partially process where it currently does not run at all.
+3. **`MapSustain`'s `kMinSustainLevel` floor** (`app/dsp/VoiceEnvelope.hpp:177`) — the *opposite* concept, a
+   floor that forbids zero. It is the same family as VCO Balance's 10%/80% clamp (§4.4) and as Fold's
+   strictly-positive divisor (§9.2). **So there are two families, not one**, which is the useful half of the
+   operator's "array of limiter functions" idea:
+   - **Family A — true zero at the bottom, smooth ramp up.** PM depth; Ring Mod depth. Shared function.
+   - **Family B — never reach zero, floor the value.** Sustain; VCO Balance weights; Fold's divisor. Each
+     has a different floor for a different reason, so this family shares a *rule*, not yet a function —
+     three call sites with three different bounds do not pass §6's 2-of-4 as one helper.
+**Recorded honestly: found 3, sharing 1 (plus Ring Mod's new one), leaving 2 classified as deliberately
+different** — a partial de-duplication reported as partial, per §8.
+
+**§6 2-of-4 check on the new helper, since this change is what creates it:** (1) reused — PM and Ring Mod,
+two uses on day one ✓; (2) isolates a distinct transformation stage — knob position → depth taper, separate
+from knob position → frequency ✓; (4) prevents repetition of structurally similar code ✓. Three of four; the
+helper is allowed. It takes the floor and ramp width as arguments rather than baking PM's `0.02`/`0.08` in,
+so Ring Mod can be tuned by ear (T8.4) without touching PM's parity-critical constants — and PM's own call
+passes exactly today's two constants, so **PM's behaviour is bit-identical after the refactor**, which is
+what T8.0a's test asserts.
+
 ## 5. What this change specifies for implementation vs. leaves untouched
 
 **Specified (spec delta in `specs/froggers-sheaf-parameter-model/`):**
@@ -532,6 +826,13 @@ at runtime. §9.5 and §9.6 are updated accordingly: VCO Balance is no longer on
   expansion — because it is true today, independent of Envelope specifically, and every bank-fill
   decided across sessions 2-5 (Filter/Drive/Delay/Reverb/Audio) relies on the same guarantee rather than
   re-deriving it.
+- **Session 6 additions (the §14 preflight audit):** a second requirement in the same delta, "A newly
+  exposed hardcoded value defaults to the value it replaces," with scenarios for the two cases no default can
+  absorb (§4.1); the `[0, 1]` cross-feed bound and the buffer-capacity bound on Delay's Width Balance (§9.3);
+  and **a second spec delta, `specs/froggers-vco-topology/spec.md`** — required because PM Rate collides with
+  two in-force clauses of that spec and Ring Mod's internal carrier is worth asserting there rather than only
+  claiming here (§9.5). The vco-topology delta relaxes a live requirement and is gated on the operator
+  (T7.0).
 
 **Not specified, not implemented, no task below closes it:**
 - Cross XOR, Cycle, Hard Sync, Peak Slope, self-FM, Glide/portamento/slew, VCO Spread, Sub-Oscillator, PM
@@ -572,6 +873,42 @@ literally raise the sample ceiling while still changing perceived loudness in a 
 "Already has a downstream limiter as a backstop" is not the same as "measured safe" (the design doc's own
 words, carried forward unchanged: *tasks.md's own §K standing rule*).
 
+### 7a. The in-loop saturator pre-gain rule — stated ONCE, for all three sites (session 6)
+
+**Why this exists: three parameters in this change are the same construct, and sessions 2-3 reasoned about
+them three separate times and reached two different answers.** The operator caught it by asking why knob
+extremes are new problems. This is §8's own failure mode at the level of *arguments* rather than code — one
+concept, restated per site, drifting between restatements — so the fix is to state it once here and have
+every site cite it.
+
+**The construct.** Three feedback loops in this app write `x + k * PadeSaturator::Saturate(·)`:
+- `Comb::Process`: `input + feedback * Saturate(filter.Process(tapped))` (`app/dsp/FilterFx.hpp`)
+- `StereoDelay::Process`: `inSignal + fbk * Saturate(fbL)` (same for `fbR`) (`app/dsp/Delay.hpp`)
+- `Reverb`'s tank: `preOut + fb * Saturate(aFb)` (same for `bFb`) (`app/dsp/Reverb.hpp`)
+
+**The rule.** `PadeSaturator::Saturate` ends in `std::max(-1.0f, std::min(1.0f, output))`
+(`app/dsp/FilterFx.hpp`) — an unconditional hard clamp for any finite input. So each loop's per-sample bound
+is `|x| + |k|`, **for any gain applied to the saturator's ARGUMENT**. A pre-gain into an in-loop
+`Saturate(·)` therefore cannot raise that loop's bound, and needs no re-derivation. This is not a new
+argument: it is the one this change already accepted, in `Delay.hpp`'s own words, to withdraw the round-1
+flag on Feedback Drive (§9.3).
+
+**The placement this rule depends on, pinned here because the proposal previously left it ambiguous
+("a pre-multiply inserted before that call" reads both ways):** the gain multiplies what goes INTO
+`Saturate`, not what comes out of it.
+- **Inside** — `Saturate(g * tapped)` — bound `|x| + |k|`, unchanged for any `g`. This is also the musically
+  correct reading of "drive": more signal into a nonlinearity, same ceiling.
+- **Outside** — `g * k * Saturate(·)` — bound becomes `|x| + g*|k|`, and the comb's own trim would have to
+  become `1/(1 + g*|fb|)`. Recorded so a later implementer who puts it there knows what else must change,
+  rather than silently invalidating a formula.
+
+**What the rule does NOT cover, kept explicit so it is not over-applied:** it bounds the peak, not the
+perceived level. Heavier drive pins the saturator nearer ±1 more of the time, so the loop's typical output
+rises toward a worst case that itself does not move — **audible, not unsafe**, the same distinction §4.3
+(Decay) and §4.4 (VCO Balance) already draw. And it says nothing about a gain applied anywhere other than a
+saturator's input: Reverb Tuned still needs its measurement (§9.4), because sweeping a delay LENGTH inside a
+loop is a different mechanism entirely.
+
 ## 8. Non-goals — explicitly STILL OPEN, not filled in by this change
 
 Restated and, where later sessions changed the facts, updated — because inventing an answer to any of
@@ -582,12 +919,17 @@ left on this list — was itself wrong and is removed, not resolved by an operat
 §4.2, §9.5). What remains here is what is still genuinely open for reasons other than "the research hadn't
 been written yet" or "the framing was wrong":
 
-- **Whether the Ring Mod knob's range reaches sub-audio at its low end — session 5, an implementation
-  detail, NOT a blocker (§4.2, §9.5).** Whether the bottom of the knob's sweep drops into sub-audio (an
-  effectively-clean position, the way `Vco`'s PM LFO spans `kPmLfoMinHz = 0.05f` to `kPmLfoMaxHz = 20.0f`)
-  or stays audio-rate across the whole range. Both satisfy the operator's continuous-range rule (§3 ruling
-  3); this affects only whether Ring Mod can be dialled off, not whether it can be built — settle it at
-  build time.
+- ~~How Ring Mod is turned off.~~ **ANSWERED, session 6 — §3a ruling 9, §4.5, §9.5.** A true zero position at
+  the bottom of Ring Mod's own knob, implemented as one function shared with PM. Costs no slots, keeps the
+  knob continuous, and gives default parity for free. Session 5's "whether the knob's low end reaches
+  sub-audio" item stays withdrawn (false premise) and what replaced it is now decided, so nothing about Ring
+  Mod remains on this list except the by-ear frequency range (T8.4), which no longer gates anything.
+- ~~Whether relaxing `froggers-vco-topology` for PM Rate is acceptable.~~ **ANSWERED — §3a ruling 10.** PM
+  Rate keeps Audio slot 12; the `specs/froggers-vco-topology/spec.md` delta stands as written.
+- ~~What Filter Topology should be.~~ **ANSWERED — §3a ruling 12: a continuous morph.** Raised by the
+  operator, answered by the operator in the same session. The dead series branch is deleted rather than
+  brought to parity, because morphing the peak stage's input reaches the same sound with one set of stateful
+  units instead of two (§9.1).
 - **Whether `kPmLfoDepth = 0.15` is the right maximum PM depth — session 3, an open by-ear tuning item, NOT
   a parameter (§3 ruling 8).** PM Depth Max (a knob to rescale this ceiling live) is CUT — a meta-control,
   not a sound. The ceiling's own correctness is a separate, still-open question: if by-ear testing finds
@@ -597,11 +939,18 @@ been written yet" or "the framing was wrong":
   modulate anything, and the 15-source slate is full, with three slots (VCO EF) partially duplicating
   what a true envelope source would do better. A modulation-slate question, not a bank-slot question.
   Untouched by sessions 2-5.
-- **Whether the Envelope renumbering migrates or resets saved patches** — §4.1 changes the evidence this
-  decision is made against (no silent value-corruption risk via the patch-file mechanism specifically)
-  but does not make the decision. The operator still needs to weigh the ergonomics/muscle-memory
-  consequence and any other stateful surface not audited here (§4.1's own caveat). Untouched by sessions
-  2-5.
+- ~~Whether the Envelope renumbering migrates or resets saved patches.~~ **MOOT — §3a ruling 11, session 6.**
+  There are no saved patches and no MIDI-learn mappings on disk (verified, not assumed), so there is nothing
+  to migrate or reset. **T1.0, the gate that has blocked the Envelope implementation since session 1, is
+  closed and T1.1-T1.6 are unblocked.** What is left is the ergonomics of Sustain and Release moving to
+  different physical encoders — something the operator will notice at the hardware, not a decision anyone
+  must make before building.
+
+- ~~Default parity for the twelve unlocked literals; how its three unabsorbable cases are handled.~~
+  **ANSWERED — §3a ruling 11: patch compatibility is a non-goal, verified against an empty patch directory
+  and an empty MIDI-controller list.** The default-parity rule survives only as a fresh-launch-voice
+  convenience, one `defaultValue` per registration; the migration machinery and the T9 block written for
+  it are both deleted.
 
 **Reverb, Filter, Drive, Delay, and — as of session 5 — Audio are no longer on this list.** Session 1 left
 Reverb fully untouched; session 2 made it COMPLETE (§9.4); session 3 made Filter, Drive, and Delay COMPLETE
@@ -613,7 +962,9 @@ three DECIDED — the fourth option named in that recommendation, the existing D
 controls, was never an empty-slot candidate to begin with. **Session 5 closes Audio too** — PM Rate and
 VCO Balance (slots 12-13) were already decided (§9.5); Ring Mod (slots 9-11) is now DECIDED as well, its
 prior blocker framing corrected and removed (§3 ruling 1, §4.2). **All six banks are now fully decided at
-fourteen parameters each; this change records zero remaining bank-slot blockers.**
+fourteen parameters each; this change records zero remaining bank-slot blockers.** **Session 6 audit: still
+true of the SLOTS — no bank slot is undecided — but not true of execution. Three operator gates now block it:
+T7.0, T8.0 and the default-parity question (§11) — all three since answered.**
 
 ## 9. Filter, Drive, Delay, Reverb, Audio bank decisions — sessions 2-3
 
@@ -644,10 +995,43 @@ the current tree rather than trusting either round's research verbatim.
 
 ### 9.1 Filter bank — COMPLETE, all fourteen slots DECIDED
 
-- **Slot 9 — Topology (`Topo`), Tier 1, already covered by §2's verified facts.**
-  `FilterFxChain::Process`'s `useParallel` bool is hardcoded `/*useParallel=*/true` at its one production
-  call site (`FroggersAppCore.hpp`'s `RouteAudioSample`). Exposing it as a knob lets Peak process Comb's
-  OUTPUT (series) instead of always running in parallel — real, unreachable DSP.
+- **Slot 9 — Topology (`Topo`) — DECIDED as a CONTINUOUS morph, session 6 (§3a ruling 12); the operator
+  asked whether it was continuous, and it was not.** `FilterFxChain::Process`'s `useParallel` bool is
+  hardcoded `/*useParallel=*/true` at its one production call site (`FroggersAppCore.hpp`'s
+  `RouteAudioSample`) — verified, and unchanged. What sessions 1-5 never did is read the branch it would
+  switch INTO.
+  - **It was a `bool`, which fails §3 ruling 3's continuous-range test** — the rule that cut Cycle and Hard
+    Sync. Topology carried a "Tier 1, already covered" tag from session 1, i.e. from before that rule existed
+    in session 2, and **no session re-tested it after the rule arrived.** §3 ruling 6's "Kept: Filter
+    Topology" was Topology vs Peak Slope, not a continuity check.
+  - **The two branches were never the same filter wired differently — one carries the entire blowout defence
+    and the other has none.** Confirmed by reading `FilterFxChain::Process` in full (`app/dsp/FilterFx.hpp`):
+    the parallel branch applies `combTrim` (`rawCombTrim`, smoothed), `peakTrim` (`1/peak.height`, smoothed)
+    and `peakLimiter`, then the Comb/Peak blend and the Scoop blend. The series branch is, entire:
+    `output = pureDelay.Process(input); output = comb.Process(output); output = peak.Process(output); return
+    output;` — **no comb trim, no peak trim, no peak limiter, and `combPeakBlend` and `scoopMix` unused**, so
+    a switch to series would also have silently disabled slot 7 and all four Scoop parameters (8/10/11/13).
+    Dead code today, never executed, and the port's pre-blowout-fix shape.
+  - **DECIDED shape (§3a ruling 12) — morph the peak stage's INPUT, keep one instance of everything:**
+    ```
+    combPath = combTrim  * comb.Process(pureDelay.Process(input))     // unchanged, once per sample
+    peakIn   = input * (1 - topo) + combPath * topo                   // the new line
+    peakPath = peakLimiter(peak.Process(peakIn) * peakTrim)           // unchanged, once per sample
+    mixed    = peakPath * (1 - combPeakBlend) + combPath * combPeakBlend   // unchanged
+    return     mixed * (1 - scoopMix) + scooped * scoopMix                 // unchanged
+    ```
+    `topo = 0` is bit-identical to today; `topo = 1` is series (peak processing the comb's output); between
+    is a real morph. **Every unit is still processed exactly once per sample** — which matters because
+    `Comb::Process` advances a delay line and `ResonantBump::Process` is a `BiquadDf1` with four state terms,
+    so the naive "run both branches and crossfade" would need a duplicate stateful chain (§3a ruling 12).
+    **The `useParallel` parameter and the dead series branch are deleted**, not kept beside the morph.
+  - **Kept live by construction, where the switch would have killed them:** slot 7's Comb/Peak blend still
+    mixes dry comb against the peak path at every Topology position, and Scoop still applies. Cost:
+    reuses-existing plus one lerp; no new state, no new struct.
+  - **⚠ HEADROOM FLAGGED, and this one is real rather than provisional (§9.6, T2.1a):** at high Topology the
+    peak biquad's input is the comb's output rather than the raw input, so the stage's worst case moves even
+    though `peakTrim` and `peakLimiter` stay in place. Measure across the whole Topology sweep, not only at
+    its ends — the midpoint is its own operating point.
 - **Slot 10 — Scoop Freq (`ScFq`), pure reuse.** `filterChain_.scoopNotch.SetFreq(bumpFreq)` is fed the
   identical local variable passed to `peak.SetFreq(bumpFreq)` (§2, session 2 addition) — Scoop has no
   frequency of its own today, only its height/mix knob. `dsp::ResonantBump::SetFreq` (`app/dsp/
@@ -656,15 +1040,28 @@ the current tree rather than trusting either round's research verbatim.
   formula.
 - **Slot 11 — Scoop Width (`ScWd`), pure reuse.** Same gap, same `dsp::ResonantBump::SetWidth`,
   same 100%-reuse story as Scoop Freq. Cost: reuses-existing. Headroom: none.
-- **Slot 12 — Comb Drive (`CDrv`), composes-existing, ⚠ HEADROOM FLAGGED.** Reuses `dsp::PadeSaturator`,
-  already the comb's own in-loop saturator (`feedback * PadeSaturator::Saturate(filter.Process(tapped))`,
-  `app/dsp/FilterFx.hpp`) — a pre-multiply inserted before that call. **This invalidates the comb
-  branch's measured output-trim bound and needs the bound re-derived before shipping, not merely
-  re-measured against the same worst case.** §2's session-2 addition records the exact bound this
-  invalidates: `rawCombTrim = 1.0f / (1.0f + std::fabs(comb.feedback))`, measured against `|comb| <= A +
-  |fb|` at **unity input gain** — the very trim/headroom history `FilterFx.hpp`'s own header comment
-  documents this codebase already having been burned by once. A pre-gain into the saturator raises that
-  worst case; the trim needs re-derivation, not re-assumption, per the standing rule (§7).
+- **Session 6 audit — Scoop Freq and Scoop Width are the two parameters with no literal to default to.**
+  Today's scoop frequency and width are not constants: they are `bumpFreq`/`bumpWidth`, the same runtime
+  locals `peak` uses, derived from Filter slots 1 and 3 (`FroggersAppCore.hpp:1341-1342` vs `:1292`/`:1327`).
+  Once slots 10/11 own them, the scoop stops tracking the Peak knobs — the whole point of the decoupling.
+  **With no saved patches (§3a ruling 11) this needs no migration story, only a default:** set them to the
+  values the Peak knobs' own defaults produce today and a fresh launch sounds unchanged (T2.6).
+- **Slot 12 — Comb Drive (`CDrv`), composes-existing. ⚠ FLAG WITHDRAWN — session 6, and the flag was wrong
+  rather than merely cautious.** Reuses `dsp::PadeSaturator`, already the comb's own in-loop saturator
+  (`feedback * PadeSaturator::Saturate(filter.Process(tapped))`, `app/dsp/FilterFx.hpp`) — a pre-multiply on
+  that call's ARGUMENT (§7a pins the placement).
+  **Why the flag was wrong, recorded rather than quietly dropped.** Sessions 2-3 flagged this on the reasoning
+  that `rawCombTrim = 1.0f / (1.0f + std::fabs(comb.feedback))` was measured against `|comb| <= A + |fb|` at
+  unity input gain, so a pre-gain raises the worst case. **It does not: `Saturate` hard-clamps to ±1 before
+  the multiply by `feedback`, so `|output| <= |input| + |fb|` for ANY pre-gain, and the trim's own premise is
+  untouched.** That is the identical argument this same document used to withdraw the round-1 flag on Delay
+  Feedback Drive (§9.3) — over the identical construct, `x + k * Saturate(·)`. **Keeping one and withdrawing
+  the other was an inconsistency, not a difference between the two stages**; §7a now states the rule once so a
+  fourth site cannot drift again. The operator found this by asking why knob extremes are new problems.
+  **What remains, and it is not a headroom item:** heavier drive pins the saturator nearer ±1 more of the
+  time, so the comb branch's typical level rises toward a worst case that does not move — **audible, not
+  unsafe** (§7a, §4.3's own phrasing). Default is unity gain, so today's voice is the knob's starting point
+  (T2.6).
 - **Slot 13 — Scoop Depth (`ScDp`), reuses-existing — session 3.** Confirmed by reading
   `FroggersAppCore.hpp`'s `RouteAudioSample`: `knob(FroggersBankId::Filter, 8)` is read **twice**, at two
   different call sites, for two different jobs:
@@ -687,7 +1084,10 @@ the current tree rather than trusting either round's research verbatim.
   Width's own precedent exactly. Headroom: none — `SetHeight`'s formula is a dip bounded to `<= 1.0`
   (`max(0.05f, 1.0f - 0.95f * x)`) regardless of the knob value, and `scoopMix` is a convex blend of two
   already-bounded signals (`mixed`, `scooped`); decoupling the two cannot raise output level under any
-  combination.
+  combination. **Session 6 audit — the headroom claim holds (both formulas re-read and confirmed).** T2.5 leaves slot
+  8 driving `SetHeight` and moves `scoopMix` to slot 13; give slot 13 the same default slot 8 carries and the
+  fresh-launch voice is unchanged, which is all that is required now that patch compatibility is a non-goal
+  (§3a ruling 11). T2.6 records the number.
 
 ### 9.2 Drive bank — COMPLETE, all fourteen slots DECIDED
 
@@ -707,6 +1107,26 @@ the current tree rather than trusting either round's research verbatim.
   power of `input`, so `Process(0) == 0` exactly regardless of the coefficients, at every Link setting; and
   `coefs[1]`/`coefs[3]` are `10 * Sine01(...)`, bounded to `[-10, 10]` for any argument, so scaling the
   coupling weight cannot push them outside the range they already reach today.
+  **Session 6 audit — the literal and the reuse story are confirmed exactly (`Drive.hpp:101,103`); the
+  "provably" is WITHDRAWN, and replaced with a measurement rather than deleted.** Two defects in the argument
+  as written: (a) bounded coefficients do not bound this stage's output, because `PolynomialDrive::Process`
+  is an unbounded 5th-order polynomial — *this document's own Bias entry (slot 13, below) rejects exactly
+  this inference*, so clearing Link on it is internally inconsistent; and (b) "the range they already reach
+  today" is the wrong set. Today the coupling term is `0.25 * (gain - 1)` with `gain = ExpMapCompute(1, 5,
+  knob)` (`Drive.hpp:90`), i.e. a phase offset spanning exactly `[0, 1]` — one full `Sine01` cycle — but
+  **locked to gain**: at `gain = 5` the offset is exactly `1.0 ≡ 0`, the same coefficient curve as `gain =
+  1`. Link unlocks that pairing, so maximum gain can be combined with coefficient phases that today occur
+  only at intermediate gains. The reachable `(gain, coefs)` set grows; boundedness of `coefs` says nothing
+  about it.
+  **Measured rather than argued, per §7 and OMNI §9.1.** A grid search over `|input| ≤ 1`, `gain ∈ [1, 5]`,
+  `shape ∈ [0, 1]` (401 shape steps, 201 gain steps, 0.005 input steps) gives today's worst-case
+  `|Process|` as **200.5**, at `gain = 5`; with the offset freed at `gain = 5` (400 offset steps) the
+  worst case is **212.1** — **+6%, +0.5 dB.** The controlling quantity moved across its whole range and the
+  measured maximum moved with it, so this is a live measurement, not a vacuous one. **Conclusion: Link stays
+  OFF the ⚠ list, on the strength of that number rather than of the invalid proof** — a 6% enlargement of a
+  worst case this stage already reaches today, into the same oversampler and downstream limiter that already
+  handle 200x. T3.2 records the measurement as the reason, so a later session does not re-derive it from the
+  bound.
 - **Slot 11 — Fold (`Fold`), reuses-existing — session 3.** Confirmed by reading `FrogBlock::Process`
   (`app/dsp/Drive.hpp`): `const float sinIn = out / 4.0f;` immediately followed by `Sine01(sinIn) * (1.0f
   - fuzz) + fuzz * PadeSaturator::Saturate(out)`. The pre-fold divisor is a bare `4.0f` literal; Fold
@@ -716,6 +1136,17 @@ the current tree rather than trusting either round's research verbatim.
   regardless of the divisor, and `Sine01`'s output is bounded to `[-1, 1]` for any argument by definition,
   so no matter how small the divisor gets, this branch can never exceed the range it already occupies
   today; `PadeSaturator::Saturate` remains bounded by its own clamp on the other branch.
+  **Session 6 audit — the literal is confirmed (`Drive.hpp:378`) and the amplitude argument holds
+  (`Sine01(phase)` is `sin(2π · (phase - floor(phase)))`, `DspMath.hpp:28-33`, so it is genuinely bounded for
+  any finite argument). "No matter how small the divisor gets" is the problem: the divisor must be floored
+  away from zero, and the entry as written invites the mapping that isn't.** At divisor `0`, `out / 0` is
+  `±inf` (or `NaN` at `out == 0`), and `Sine01`'s own `phase - std::floor(phase)` turns `inf` into `NaN`,
+  which then propagates through the whole chain. This codebase has already been silenced once by exactly
+  that path: `FroggersAppCore.hpp`'s own `scoopNotch` comment records a non-finite filter state reaching
+  `SanitizeOutputSample`, which masked every later sample to `0.0f` — *"permanent silence with no
+  recovery."* **Fold's knob mapping SHALL keep the divisor strictly positive** (an exponential map, the same
+  shape every other range in this bank uses, does this by construction — `ExpMapCompute`'s `min` is never
+  reached from below). T3.3 is updated.
 - **Slot 12 — Tone (`Tone`), composes-existing — session 3.** A post-chain one-pole lowpass, appended
   after `FrogBlock`'s existing stages. Genuinely a new stage in the signal path (not an unlock of an
   existing hardcoded literal), but built entirely from `dsp::OnePoleLowPass` (`DspMath.hpp`), the same
@@ -745,7 +1176,8 @@ the current tree rather than trusting either round's research verbatim.
 
 - **Slot 9 — Feedback Drive (`FbDr`), DECIDED IN.** The loop is `WriteSample(inSignal + fbk *
   PadeSaturator::Saturate(fbL), lineL)` (`app/dsp/Delay.hpp`, confirmed unchanged at §2's session-2
-  addition). **A round-1 headroom flag on this candidate is WITHDRAWN as wrong**, not merely softened:
+  addition). **A round-1 headroom flag on this candidate is WITHDRAWN as wrong**, not merely softened — and
+  session 6 promoted the reasoning below into §7a, because two sibling parameters share this exact construct:
   the same file's own comment states *"Saturate clamps to ±1 unconditionally, so this line can never
   write more than `|inSignal| + fbk` regardless of how many round trips have already run — a per-sample
   bound."* Pre-gain into that saturator cannot raise this bound; `Saturate`'s output is clamped before the
@@ -773,6 +1205,19 @@ the current tree rather than trusting either round's research verbatim.
   `widthSpread` only offsets a `ReadAt` tap position, never adds gain — an interpolated read of two
   buffer samples is bounded by those samples at any offset. Precedent: Bitwig's stereo Delay ships `Width`
   and `Cross Feedback` as two independent controls rather than one fixed-ratio knob.
+  **Session 6 audit — both literals confirmed (`Delay.hpp:316,330`); two bounds this entry states in prose
+  but never made binding, now in the spec.** (a) The convexity of `fbL`/`fbR` is conditional — this entry's
+  own words, *"whenever the balance stays in `[0, 1]`"* — and today it is guaranteed by the code, not by a
+  requirement: `cross = p.dwid * 0.5f` cannot exceed `0.5`. Replace that `0.5f` with a knob-derived weight and
+  the guarantee has to come from the mapping instead, so the spec now requires it. (b) `widthSpread` adds to a
+  read tap that is **already able to run past the buffer**: `timeR = max(0.001, baseSeconds + modSeconds +
+  widthSpread)`, `baseSeconds` reaches `kMaxDelaySeconds = 2.0f`, `widthSpread` adds up to `0.7 s`, and
+  `capacity` is `ceil(kMaxDelaySeconds * sampleRate)` — 2.0 s (`Delay.hpp:276,309,316`), after which `ReadAt`
+  takes the position modulo capacity and reads the wrong repeat. **That wrap is pre-existing, not introduced
+  here** (so it is not this change's bug to fix, per §7's scope), **but a Width Balance that can raise the
+  `0.35` weight makes it reachable at more settings, which this change IS responsible for** — hence the
+  second spec line: the spread must not lengthen a tap past capacity. Per OMNI §16.2 the pre-existing wrap is
+  worth a scoped look while the file is open; T4.2a says so without widening this change to own it.
 - **Slot 13 — Crush (`Crsh`), composes-existing — session 3.** Reuses `dsp::SampleRateReducer` and/or
   `dsp::DigitalReorganizer` (`app/dsp/Drive.hpp`) on the feedback tap's repeats, for lo-fi bitcrushed
   decay. **A round-1 caveat on this candidate is now MOOT, not merely softened:** round 1 flagged the risk
@@ -796,7 +1241,11 @@ further about internal ordering is decided or implied by this document beyond th
   unreachable DSP.
 - **Slot 10 — Tank Drive (`TkDv`), effectively Tier 1.** The predecessor change already installed the
   in-loop saturator: `const float aIn = preOut + fb * PadeSaturator::Saturate(aFb);` (same for `bIn`,
-  `app/dsp/Reverb.hpp`) — only a pre-gain ahead of that existing call is missing.
+  `app/dsp/Reverb.hpp`) — only a pre-gain on that call's argument is missing. **Session 6: this is the third
+  instance of §7a's construct, and this entry previously said nothing at all about its bound — silence that
+  reads as "no concern" and is indistinguishable from an oversight.** It is bounded for the same reason the
+  other two are: `Saturate` clamps to ±1 before the multiply by `fb`, so `|aIn| <= |preOut| + |fb|` at any
+  drive setting. Cited, not re-derived.
 - **Slot 11 — Grit (`Grit`), composes-existing.** Tank feedback routed through `dsp::DigitalReorganizer::
   Process` (`app/dsp/Drive.hpp`), inserted ahead of the existing `PadeSaturator::Saturate` call on
   `aFb`/`bFb`. **This candidate would have been unsafe before the predecessor change's fix made `f(0) =
@@ -839,9 +1288,21 @@ further about internal ordering is decided or implied by this document beyond th
   literal. Headroom: none — multiplying two signals each bounded to `[-1, 1]` (the VCO's own audio output,
   and the internal carrier's own `EvalWaveMorph`-bounded output, per the PM Rate entry's citation below)
   produces a result bounded to `[-1, 1]` by `|a*b| <= |a|*|b| <= 1`, unlike a sum, which can exceed either
-  operand. **One implementation detail remains open, not a blocker** (§8): whether the knob's low end
-  reaches sub-audio (an effectively-clean position, mirroring PM LFO's `kPmLfoMinHz = 0.05f`-`kPmLfoMaxHz
-  = 20.0f` span) or stays audio-rate across the whole sweep — settle by ear at build time.
+  operand. **Session 6 audit: the headroom argument holds and is re-confirmed** (`EvalWaveMorph` is bounded
+  to `[-1, 1]` for any phase, `Vco.hpp:68-84`), **but "one implementation detail remains open, not a
+  blocker" was wrong on both counts — the detail as framed rested on a false premise, and what replaces it
+  IS a blocker (§4.2, new gate T8.0).** A product has no unity position: at every carrier frequency,
+  including sub-audio, the VCO is amplitude-modulated to zero twice per carrier cycle, so the design as
+  specified had **no off position and no depth control**, and every existing patch would be ring-modulated
+  the moment this shipped, with no default able to restore it.
+  **RESOLVED — session 6 operator ruling 9 (§3a), and it costs no slots.** The bottom of the Ring Mod knob's
+  own travel gates the ring-mod amount to exactly zero and ramps smoothly out of it; above that ramp the
+  same knob sweeps the carrier frequency as already specified. This is `Vco::PmDepthScale`'s exact shape, and
+  per the operator's instruction it ships as **one shared function used by both PM and Ring Mod**, not a
+  second copy — mechanism, §8 enumeration, and §6 justification at §4.5; tasks at T8.0/T8.0a. **Default
+  parity follows for free** (ruling 11): a default at or below the gate's floor means an existing patch loads
+  with Ring Mod inert and sounds exactly as it does today. The knob's low frequency end (T8.4) is now a
+  by-ear taste question with nothing riding on it, since "off" no longer depends on it.
 - **Slot 12 — PM Rate (`PMrt`), composes-existing.** §0a's worked example, carried into a decision this
   session: `Vco::StepPmLfo`'s rate (`const float hz = ExpMapCompute(kPmLfoMinHz, kPmLfoMaxHz, pmKnob01);`,
   confirmed live against `Vco.hpp`) and depth (`kPmLfoDepth * PmDepthScale(pmKnob01)`, `Vco.hpp:169`) are
@@ -857,6 +1318,24 @@ further about internal ordering is decided or implied by this document beyond th
   once per VCO, no new struct or state. Headroom: none — phase-domain only, same proof as §3 ruling 8's
   PM Depth Max analysis: `EvalWaveMorph` always evaluates a wrapped phase to `[-1, 1]` regardless of what
   drives the phase offset.
+  **Session 6 audit — ⚠ SPEC COLLISION, real this time, and it is this parameter rather than Ring Mod.**
+  Sessions 3-5 checked Ring Mod against exactly one requirement of `openspec/specs/froggers-vco-topology/
+  spec.md` and never read the rest of the file. Read in full, that spec collides with PM Rate twice:
+  - Its requirement **"Froggers oscillator topology is preserved"** specifies *"per-VCO phase modulation
+    driven by that VCO's **own** dedicated sine LFO whose frequency is an exponential function of the PM
+    knob."* PM Rate's entire purpose is to make that frequency a function of a different knob. As written,
+    the requirement forbids the parameter — this is not a wording quibble, it is the requirement's operative
+    clause.
+  - Its scenario **"Phase modulation is self-contained"** asserts that raising *"any VCO's phase-modulation
+    control"* changes no other VCO's output. PM Rate ships as ONE knob across all three VCOs' `StepPmLfo`
+    calls (this entry's own recorded compromise), so moving it moves all three.
+  **A new spec delta is added for this change: `specs/froggers-vco-topology/spec.md`** — the topology
+  requirement re-worded so the LFO rate comes from a rate control (each VCO keeping its own LFO instance and
+  its own depth), the self-contained scenario re-scoped to depth, and a new scenario stating plainly that the
+  shared rate control is shared by design. **This delta RELAXES an in-force requirement, so it needs the
+  operator's confirmation before an implementer acts on it — new gate T7.0.** The same delta also adds a
+  scenario making Ring Mod's internal carrier a spec-level assertion rather than a proposal-level claim; that
+  half strengthens the spec and needs no ruling.
 - **Slot 13 — VCO Balance (`VBal`), composes-existing. NOT headroom-flagged — session 4 discharges the
   flag by construction.** Confirmed live by reading `dsp::MixOscVoices` (`app/dsp/VoiceEnvelope.hpp`):
   `return (v1 + v2 + v3) * (1.0f / 3.0f);` — a hardcoded, un-parameterized equal-thirds average; **there
@@ -920,12 +1399,45 @@ against each item's own recorded Cost tag above:**
 **The complete set of headroom-flagged items (⚠, this document's own reserved tag for a parameter whose
 own decision text requires a re-derived or newly-measured bound before shipping, not merely the general
 §7 standing rule every new audio-affecting parameter is already subject to) — verified against every
-artifact above, exactly TWO as of session 5, unchanged since session 4, down from three:**
+artifact above, **exactly TWO as of session 6: Bias and Filter Topology. Comb Drive came off (flag wrong,
+§7a), VCO Balance came off in session 4 (discharged by construction), and Topology came on in session 6:****
 
-1. **Comb Drive** (Filter slot 12, §9.1) — pre-existing since session 2, invalidates `rawCombTrim`'s
-   measured bound.
-2. **Bias** (Drive slot 13, §9.2) — new since session 3, unbounded-polynomial peak-swing residual survives
+1. **Bias** (Drive slot 13, §9.2) — new since session 3, unbounded-polynomial peak-swing residual survives
    the `f(0) = 0` fix.
+2. **Filter Topology** (Filter slot 9, §9.1) — **new and now settled as a flag, session 6, operator ruling
+   12.** Not for the reason the audit first raised: the dangerous series branch is deleted, so nothing
+   bypasses `combTrim`/`peakTrim`/`peakLimiter` any more. The residual is narrower and real — at high
+   Topology the peak biquad reads the comb's output instead of the raw input, a new operating point for the
+   stage whose ceiling this codebase has already had to lower twice (T2.1a).
+
+**Comb Drive came OFF this list in session 6 — the third time this list has changed, and the only time it
+changed because a flag was WRONG rather than because a decision discharged it.** Sessions 2-3 flagged it on
+the belief that a pre-gain raises `rawCombTrim`'s worst case; `Saturate`'s unconditional ±1 clamp means it
+does not, which is the same argument this document already used to withdraw the flag on Delay Feedback
+Drive over the identical construct. §7a now states that argument once for all three saturator pre-gains
+(Comb Drive, Feedback Drive, Tank Drive) instead of relitigating it per site — the drift between two
+restatements of one concept is what produced the contradiction. **The list is two items.**
+
+**The other two are re-fittable, not open-ended, and what each re-fit IS is recorded so the flag reads as
+scheduled work rather than unbounded risk:** Topology re-sweeps `peakLimiter`'s threshold and attack/release
+against comb-output input (the `1/height` trim is algebraic and does not move), T2.1a; Bias either takes a
+measured output trim across its sweep, the way the comb branch already has one, or a bounded knob range that
+keeps peak swing inside today's maximum, T3.5.
+
+**Session 6 audit — the count stays at two, but one of the twenty-eight unflagged items was cleared for the
+wrong reason and one clearance was conditional on a bound nobody had written down.** Neither becomes a ⚠
+item; recorded here so the list's own claim ("verified against every artifact above") stays true:
+- **Link** (Drive slot 10) was cleared on "bounded coefficients," an inference this very list's Bias entry
+  rejects for the same function. Re-cleared on a measurement instead: today's worst-case `|Process|` 200.5
+  vs 212.1 with the gain/phase pairing unlocked, +0.5 dB (§9.2, T3.2). Off the list on evidence, not on the
+  argument that was there.
+- **Width Balance** (Delay slot 12) was cleared on a convexity that holds *"whenever the balance stays in
+  `[0, 1]`"* — true, and enforced today only by the `0.5f` literal the parameter replaces. The bound is now
+  a spec requirement rather than a parenthetical (§9.3).
+- **Fold** (Drive slot 11) keeps its clearance for amplitude, which is sound, and gains a
+  strictly-positive-divisor requirement to keep it out of the `NaN` path (§9.2, T3.3).
+- **Ring Mod** (Audio 9-11) is still unconditionally bounded — that check was right. What it lacks is an off
+  position, which is a design gate (T8.0), not a headroom item (§4.2).
 
 **VCO Balance (Audio slot 13, §9.5) came OFF this list in session 4 — recorded here so a later session
 does not wonder why the count dropped from three to two.** It carried the flag in session 3 because
@@ -974,6 +1486,15 @@ over-length, not 4** — `Drive`, `Shape`, `BitDp`, `Blend`, and `Phase` are all
 already compliant.) Audio and Envelope remain confirmed clean (0 of 9 each), matching the brief. Full
 per-bank enumeration is in `tasks.md`.
 
+**Session 6 audit — the count is exact (all 23 re-counted independently from `FroggersBankLayouts()`,
+including the Drive correction), but its scope silently excludes two more violations on the same rendering
+path.** `Crispy` and `Crnchy` are six characters each (`FroggersParameters.hpp`, registered at slots 14 and
+15 — one Crispy per bank plus the shared Crunchy), and they render through the same `UpperShortLabel`
+`maxChars = 4` path every counted label does, so they are truncated today too. They are not among the "54
+page parameters" this count is scoped to, which is why they were not missed by an arithmetic error — but "23
+over-length labels" reads as the total, and the total is 25 label sites (23 page + Crispy + Crunchy). T6 is
+updated to say which of the two it fixes and which it deliberately leaves.
+
 **Acceptance criterion, recorded here because a prior UI change in this project took four attempts by
 asserting a weaker property than "the operator can see it":** this is a VISUAL acceptance criterion, not
 a code-shape one. The operator's own direction: *"they can just be slightly larger colored boxes with
@@ -982,7 +1503,53 @@ indicators) — any resize or font change must be checked against that chip rend
 the label text in isolation, because the two share the same cell. See `tasks.md` for the enumerated task
 and its acceptance criterion.
 
-## 11. Ready for OMNI §14 PREFLIGHT — session 5
+## 11. OMNI §14 PREFLIGHT — RUN, session 6: one question answered, two still out
+
+**Correction, session 6, recorded before the section it corrects: this section briefly said all three audit
+questions were answered. Only one was.** The operator's *"i choose #1"* answered the Ring Mod question
+(ruling 9); the PM Rate and default-parity questions were not seen when they were asked. Reading one answer
+as three is the lead inventing operator intent — the same error §0a's session-5 addendum already names twice
+in this change. Items 10 and 11 in §3a are open questions with an attached recommendation, not rulings, and
+nothing in `tasks.md` may close them by choosing. **They are questions, not standing gates** — the operator
+was explicit about that distinction — so the rest of the change proceeds; these two decide the shape of PM
+Rate's slot and of every unlocked literal's default, not whether the other twenty-eight parameters can be
+built.
+
+### 11a. What the audit found and what the one answer changed
+
+**Session 6 supersedes this section's session-5 verdict: the preflight audit ran (§1a), found five things
+that did not hold, and put the three needing the operator's judgement to the operator. One came back
+answered (ruling 9); two are still out (§3a items 10-11). None is a standing blocker; each was a question
+this document should have asked instead of declaring itself ready.** The audit did not disturb the change's
+decisions — every hardcoded-literal claim held, Ring Mod's non-collision with `froggers-vco-topology`'s
+coupling requirement held, and VCO Balance's convexity held.
+
+What the one answer changed, and what the two open questions still decide:
+
+1. **OPEN — PM Rate's collision with `froggers-vco-topology`** (§3a item 10, §9.5, T7.0). The delta relaxing
+   the two clauses is written to the audit's recommendation and awaits the operator.
+2. **Ring Mod gains a true zero position** at the bottom of its own knob, implemented as ONE function shared
+   with PM per the operator's own instruction — the change's only new named concept, justified against §6's
+   2-of-4 and enumerated against §8 before writing (ruling 9, §4.5, T8.0/T8.0a).
+3. **OPEN — default parity for the twelve unlocked literals** (§3a item 11, §4.1, T9). The spec requirement
+   and T9 are written to the audit's recommendation; if the operator picks the reset instead, both come out.
+
+**One item the audit raised and then withdrew, recorded rather than quietly dropped:** the app open-codes six
+knob-fed `ExpMapCompute` calls in `RouteAudioSample` while `ParameterManager` ships a mapping family it never
+calls (§4.5). Written up as an §8 duplication finding (task block T10), then **checked against §8's own test
+and rejected**: the formula is written ONCE in this app and called six times, which is what §8 asks for; the
+second copy lives in a pinned dependency; and adopting it would put a throwing, out-of-line, id-looking-up
+call into a per-sample audio path to delete a four-line helper. T10 is deleted and the rejection is recorded
+in `tasks.md`'s "Recorded, not scheduled" so it is not re-proposed.
+
+Everything else stands as written and re-verified: every DECIDED slot (§9.1-9.5) carries a symbol-cited trace
+of the code it unlocks or composes, re-read against the tree in session 6 and found accurate; the
+headroom-flagged list is still exactly two items (Comb Drive, Bias), with Link's clearance now resting on a
+measurement instead of an invalid proof and three other clearances tightened (§9.6); and this change remains
+markdown-only end to end (§6), with nothing built or executed. §VERIFY at the end of `tasks.md` records
+session 6's own `openspec validate --all --strict` result.
+
+### 11a. Superseded — session 5's readiness claim, kept for the record
 
 This change is markdown-only end to end (§6); nothing under it has been built or executed. Per the OMNI
 workflow pipeline (`omni-rule.md` §13: structural intent check → OpenSpec → **proposal** → **preflight
