@@ -80,9 +80,11 @@
 
 ## T3 — Delay's three vestigial slots: Detune, Color, Halo (`proposal.md` §6)
 
-**Operator-raised 2026-08-13. Detune is ruled OUT; what replaces it is open.** Color and Halo have no
-destination of their own — each is averaged into a neighbouring knob's value — so three of Delay's nine
-original slots hold one-and-a-half controls between them.
+**Operator-raised and DECIDED 2026-08-13 (T3.1).** Color and Halo had no destination of their own — each was
+averaged into a neighbouring knob's value — and Detune overlapped Stereo width at about a twelfth its
+strength, so three of Delay's nine original slots held one-and-a-half controls between them. All three are
+replaced: **Detune -> Freeze, Color -> Reverse Blend, Halo -> Diffusion.** What remains open below is HOW
+each is built, not whether — and T3.1a is a genuine blocker on Freeze.
 
 - [x] **T3.1 — DECIDED by the operator, 2026-08-13.** All three vestigial slots are replaced:
       **Detune -> Freeze, Color -> Reverse Blend, Halo -> Diffusion** (`proposal.md` §6.4). **Color is NOT
