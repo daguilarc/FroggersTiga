@@ -276,3 +276,49 @@ Whether the tail is strictly bounded by the ~1.05 s Grace-plus-fade window befor
 run indefinitely — e.g. if some path re-seeds the loop independently of the transport gate. **Settling that
 needs a runtime capture, not more reading** (T4.2). Note the upper bound of that window is itself set by
 `kMaxGraceSeconds`, a value this change's predecessor picked with no specification behind it.
+
+### 6.4 Making Color and Halo real — and why that is fewer slots than it looks
+
+**Operator question, 2026-08-13: what would it entail, and isn't one of these just Diffusion? Yes — Halo
+is.** Traced against the code rather than reasoned from the names:
+
+**The delay has two distinct insertion points, and every candidate here is really a choice between them**
+(`app/dsp/Delay.hpp`):
+- **In-loop**, the feedback tap: `fbL`/`fbR` -> crush -> feedback tone -> `Saturate(fbDrive * .)` -> written
+  back. Anything here **compounds once per repeat**.
+- **Wet output**, post-loop: `dL`/`dR` -> `wetLimiterL`/`wetLimiterR` -> `lastWet` -> `ToReverbMono` blends
+  against dry by `dmix`. Anything here applies **once, equally to every repeat**.
+
+**Halo = Diffusion.** The research places Diffusion as "a short allpass chain on the wet tap", which is
+precisely the wet-output point, and the archived design doc records that Halo's name was always meant to
+promise early reflections. An allpass diffuser on the wet tap IS the practical form of that wash. **So this
+is one slot, not two — and it means the Diffusion candidate is SPENT by making Halo real**, which narrows
+what §6.3 leaves for Detune's slot to Reverse Blend, Freeze, or nothing.
+
+**Color is NOT redundant with the shipped Feedback tone**, and the distinction is the insertion point, not
+the filter. Feedback tone sits in the loop and compounds — each repeat darker than the last, the tape-echo
+behaviour. A Color on the wet output colours all repeats identically. Two different instruments from the
+same one-pole.
+
+**What it entails, concretely:**
+1. **Delete the fold.** The two lines `params.ddet = 0.5*(ddet + Color)` and
+   `params.dmod = 0.5*(dmod + Halo)` come out of `MapRowsToDelayParams`. **Note this changes Detune's own
+   reachable range** — today it cannot exceed 0.5 unless Color is also raised — so retiring Detune in the
+   same move is coherent rather than a separate decision.
+2. **Color -> a wet-output tone**, two `dsp::OnePoleLowPass` instances on `dL`/`dR` ahead of the wet
+   limiters. Reuses-existing; the same struct feedback tone, Drive's Tone and Reverb's Tilt already use. If
+   a bipolar bright/dark tilt is wanted rather than a plain lowpass, Reverb's Tilt is the in-tree
+   precedent for exactly that shape. Headroom: none — a lowpass only removes energy, and it sits ahead of
+   the existing limiter either way.
+3. **Halo -> an allpass diffuser** on the wet tap. `dsp::DriveBlendPhase` already carries the one-pole
+   allpass recurrence and its state (`allpassX1`/`allpassY1`, `app/dsp/Drive.hpp`) — **verified by reading,
+   not taken from the research** — along with the `-0.98f` coefficient this codebase already treats as its
+   stability margin. New per-channel state for a short chain; composes-existing, but genuinely new
+   plumbing rather than a drop-in.
+   **Headroom, and this is the one that needs care:** allpass sections are unity-gain by construction ONLY
+   while the coefficient stays strictly inside the unit circle. **That proviso must be enforced by the knob
+   mapping, not asserted in a comment** — §7 records this codebase's one loop-gain-above-unity defect,
+   which came from exactly the pattern of proving a bound and assuming a contraction.
+
+**Net: three vestigial slots become two real controls plus one free slot**, with no change to the
+fourteen-parameter count.

@@ -95,6 +95,10 @@ original slots hold one-and-a-half controls between them.
       comes from the archived design doc rather than the research, and is the deliberate form of §7's
       accidental sustain. A further option needs no new parameter at all: retire Detune and give Color and
       Halo real destinations.
+- [ ] **T3.1a — the shape T3.1 most likely resolves to, costed (`proposal.md` §6.4).** Halo becomes the
+      allpass diffuser (spending the Diffusion candidate), Color becomes a wet-output tone distinct from the
+      in-loop Feedback tone, and Detune's slot falls free for Reverse Blend, Freeze, or nothing. Deleting
+      the fold changes Detune's own reachable range, so retiring it belongs in the same move.
 - [ ] **T3.2** Whatever T3.1 picks, the fold itself comes out: `params.ddet = 0.5*(ddet + Color)` and
       `params.dmod = 0.5*(dmod + Halo)` (`app/dsp/Delay.hpp`'s row-mapping) must stop averaging two knobs
       into one value, so each slot owns exactly one job.
