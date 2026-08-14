@@ -462,8 +462,10 @@ and writes via JUCE. Recording is refused unless audio is already running ("Pres
 - **Capture lives in the core** — accumulating samples into a buffer needs no JUCE and no Sheaf support.
 - **Export lives in `app/FroggersMain.cpp`**, which is the JUCE host and sits OUTSIDE the no-JUCE gate.
   That is the same boundary the app already draws.
-- **Format:** WAV alone is writable by hand with no dependency at all. MP3/FLAC/OGG are not, and would
-  either pull JUCE into the export layer (allowed, in Main) or be dropped. **This is an operator choice,
-  not an implementation detail** — v1 shipped four formats.
-- **Configuration** goes app-side (its own row or page), not into Sheaf's audio page, unless and until an
-  upstream extension point exists.
+- **Format: WAV ONLY — decided by the operator, 2026-08-13.** WAV is writable by hand with no dependency
+  at all, and more importantly **it needs no format choice, so there is nothing to configure and nothing
+  to place.** That dissolves §8.3's placement problem rather than working around it: the export layer
+  needs no JUCE audio-format dependency, and the core/host split reduces to the file dialog alone.
+- **Consequently Sheaf#8 is downgraded to the least important open issue**, and says so upstream. It
+  blocks a design that would have been nicer and blocks nothing being built. It becomes real again only if
+  MP3/FLAC/OGG are added later — v1 shipped all four; this app does not need them.

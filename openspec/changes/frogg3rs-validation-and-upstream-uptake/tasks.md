@@ -192,24 +192,29 @@ user story.** T5.1-T5.2 are buildable now; T5.3 needs an operator answer first.
       inversion is free and needs no upstream change. Latches on one click, releases on the next, driving
       the Delay Freeze parameter to maximum while latched.
 - [ ] **T5.2a** Depends on Freeze existing as a parameter (T3.1 / T3.1a-b). Do not build the button first.
-- [ ] **T5.3 — OPERATOR DECISION before any Record work.** Two things asked for are not available and one
-      is, so the request cannot be built as stated (`proposal.md` §8.3):
-      - **Sheaf provides NO recording capability** — no writer, no output tap, no API.
-      - **The audio config page cannot host the configuration.** It is built by Sheaf's internal
-        `BuildAudioPageTree` from a closed snapshot with no app extension point, and this app never wires
-        the page at all. Checked before being called blocked, per this change's own rule, and the check
-        went past the page itself: `MainPane::Page` is a CLOSED enum, so adding our own sidebar page is not
-        available either. **Filed upstream as jvictor0/Sheaf#8** (app-supplied audio-page section, or an
-        app-supplied page). **Severity, stated accurately after an earlier overcorrection: it BLOCKS the
-        requested design** (configuration beside the device selection). It does not block recording itself
-        only in the degenerate case — WAV-only has nothing to configure. Any format choice needs a home,
-        and the app's own instrument panel is a poor one.
-      - **The app core cannot use JUCE** — `check_no_juce.cpp` compiles the core WITH JUCE on the include
-        path and fails if any header resolves into it. v1's recorder is entirely JUCE.
-      **The decision:** capture in the core and export in `FroggersMain.cpp` (the JUCE host, outside the
-      gate) is the shape that fits the app's existing split — but **which formats** (WAV alone needs no
-      dependency at all; MP3/FLAC/OGG pull JUCE into the export layer, which is allowed there; v1 shipped
-      all four) and **where the configuration lives** are operator choices, not implementation details.
+- [x] **T5.3 — DECIDED, operator 2026-08-13: WAV only, for now.** WAV needs no format choice, so there is
+      **nothing to configure and therefore nothing to place** — which dissolves the whole placement problem
+      rather than working around it. Consequences, each recorded because they change other items:
+      - **Sheaf#8 is downgraded to the least important open issue and says so upstream.** It blocks a
+        design we would have liked and blocks nothing we are building. It only becomes real if MP3/FLAC/OGG
+        are added later (v1 shipped all four; this app does not need them).
+      - **The export layer needs no JUCE audio-format dependency at all.** A WAV file is a 44-byte header
+        plus interleaved PCM — writable by hand. So the core/host split is about the file dialog only, not
+        about encoding.
+      - **Record is unblocked and buildable now** (T5.3a-c below).
+- [ ] **T5.3a — Capture, in the app core.** Accumulate output samples into a bounded buffer. No JUCE, no
+      Sheaf facility — this is a buffer and nothing more, so it sits inside the `check_no_juce` gate
+      cleanly. **Bound the capacity and report truncation** rather than growing without limit; v1 capped at
+      roughly thirty minutes and warned the operator, which is the precedent to follow.
+- [ ] **T5.3b — Refuse to record when audio is not running**, with an explanation rather than a silent
+      no-op. v1's own wording was *"Press Play before recording"*. A silent refusal is the failure mode
+      worth designing against here.
+- [ ] **T5.3c — Export, in `app/FroggersMain.cpp`** (the JUCE host, outside the no-JUCE gate): the save
+      dialog, and a plain WAV writer. **Only the dialog needs the host layer** — the WAV encoding itself
+      could live either side, so put it wherever it reads better and say which was chosen.
+- [ ] **T5.3d — Recorded, not scheduled: adding formats later re-opens Sheaf#8.** If MP3/FLAC/OGG are ever
+      wanted, a format control appears and needs a home, and the only home before #8 lands is the app's own
+      instrument panel. Noted so the connection is not rediscovered.
 - [ ] **T5.4** Rebuild and re-run the full suite; report counts. Baseline 213/0/0.
 
 ## Recorded, not scheduled — no task closes these
