@@ -368,3 +368,85 @@ direction — which is an argument for settling T4.1 and T3.1 together rather th
    forward/reverse texture), but nobody has shipped it this way.
 
 **Net: three vestigial slots become three real controls, parameter count unchanged at fourteen.**
+
+## 8. Four new controls — Record, Freeze, Reset Page, Reset All
+
+**Operator request, 2026-08-13, deliberately kept in this change rather than split out: these controls and
+the Delay slate above are one user story.** Every fact below was read, and three of them change the shape
+of what was asked for.
+
+### 8.1 Reset Page / Reset All — the cheapest of the four, with one trap
+
+Below the existing Randomize row, two buttons of the same size. They set, for the page or for all pages,
+every parameter value to minimum and every modulation depth to off.
+
+- **Placement is exact:** `AppendRandomizeRow()` builds Row 7 of `FroggersCellMap::kRightRows`, two
+  `Button` nodes each at `Extent::Weight(2.0f)` of four weight-units — two equal halves. "Below them, same
+  size" means a new row appended after `Randomize` in `kRightRows` with the same two-halves weighting.
+- **"Minimum" is unambiguous and uniform: 0.0.** `ClampToRange(value, range)` ignores `range` entirely and
+  returns `clamp(value, 0.0f, 1.0f)`; `ParameterConfig` carries no per-parameter min/max. So a reset is
+  "set the normalized commanded value to 0.0" for every parameter, with no per-parameter table.
+- **⚠ THE TRAP, and it would be silent: modulation depth "off" is 0.5, NOT 0.0.** Depth parameters are
+  `RangeKind::Bipolar` and their neutral is `kNeutralModulationDepthCenter = 0.5f`. **Writing literal 0.0
+  to a depth is FULL NEGATIVE depth — the opposite of off.** A Reset that took the request's wording
+  literally would produce a maximally-modulated patch while appearing to do the opposite. The correct
+  target is neutral, and the app already has the helper: `ZeroExistingModulationDepths(Parameter&)` walks
+  the materialized depths and writes the neutral centre to both scene poles.
+- **The enumeration already exists and should be mirrored, not re-derived.** `RandomizePage` acts on
+  `drillIn.BankRef()`; `RandomizeAll` loops `bankIx` over `kFroggersBankCount` via `model.BankAt(bankId)`.
+  Both branch on `drillIn.Level()` for the modulation-grid views, and Reset must mirror that branching or
+  it will mean the wrong thing while drilled in.
+
+### 8.2 Freeze button — and why it should be a Draw node, not a Toggle
+
+Labelled "Freeze", beside Stop. One click latches it on and inverts its colours; clicking again un-latches.
+When on it drives the Delay Freeze parameter (§6.4) to 1.
+
+- **`NodeKind::Toggle` exists in Sheaf and this app uses it nowhere.** The app's only latched visual is
+  `ControlStyle::selected` on `Button` nodes (the bank tabs), which JUCE renders via `StateColourFor` as
+  `brighter(0.14f)` on the background — **a brightness bump, not an inversion.**
+- **Upstream item 3 ("selected buttons invert background, not text") landed only PARTIALLY.** The
+  `selected`/`color`/`textStyle` fields now exist, but the re-check in `UPSTREAM-SHEAF-ASK.md` records that
+  `TextColourForNode` still has no `selected` branch — **text colour never changes on selection.** A
+  genuine inversion (background and text swapping) cannot be had from the library's own state handling.
+- **Therefore: build Freeze as a `Draw` node, like Play and Stop already are** (`AppendTransportRow`, 28 px
+  plates). Draw nodes emit their own commands, so a true colour inversion is free and needs no upstream
+  change — and it makes Freeze consistent with the two controls it sits beside rather than a third visual
+  idiom. This is the §4 rule applied before calling anything blocked.
+- **Interaction with the clamp, from §6.4b-i:** the clamp is continuous, so un-toggling restores sub-unity
+  loop gain and the tail decays. The button is a latch over a continuous parameter, not a mode switch.
+
+### 8.3 Record — what was asked for is not available, and what is
+
+**Three findings, each verified by reading rather than inferred:**
+
+1. **Sheaf provides NO recording capability.** No file writer, no output tap, no API — an exhaustive search
+   of `External/Sheaf/projects/synth/` for `AudioFormatWriter`/`WavAudioFormat`/`createWriterFor` returns
+   nothing. Every "record"/"capture" hit is UI-selection memory or a test rig.
+2. **The audio config page cannot carry the configuration.** `AudioConfigPage` is built by Sheaf's own
+   `BuildAudioPageTree` from a closed `AudioPageSnapshot` (outputs, inputs, selected ids, device/status
+   text). **There is no extension point for an app to add rows**, and this app never wires the page at all
+   — it inherits it from the shared runtime chrome. **So "configuration in the audio config page Sheaf
+   gives us" is not available as stated.** Per §4's rule this was checked before being called blocked:
+   unlike the encoder label, the app composes no part of that page, so there is nothing app-side to
+   compose over. Making it possible is an upstream ask, not an app-side workaround.
+3. **The app core is mechanically barred from JUCE**, and v1's recorder is entirely JUCE.
+   `app/check_no_juce.cpp` compiles `Froggers.hpp` *with JUCE on the include path* and fails the build if
+   `JUCE_MAJOR_VERSION` ends up defined — absence of a link dependency is explicitly not accepted as proof.
+   v1's `AudioRecorder`/`AudioFormatWriter`/`FileChooser` (`desktop/Source/`) therefore **cannot be ported
+   into the core as-is.**
+
+**What v1's button actually is, for reference:** a dark-red circle with a brighter inner accent while
+armed, labelled "Record audio"; click starts a lock-free capture into an in-memory float buffer capped at
+~30 minutes; click again stops, reads a WAV/MP3/FLAC/OGG choice from a radio cluster, opens a save dialog
+and writes via JUCE. Recording is refused unless audio is already running ("Press Play before recording").
+
+**The shape that IS buildable, and it follows the app's existing split:**
+- **Capture lives in the core** — accumulating samples into a buffer needs no JUCE and no Sheaf support.
+- **Export lives in `app/FroggersMain.cpp`**, which is the JUCE host and sits OUTSIDE the no-JUCE gate.
+  That is the same boundary the app already draws.
+- **Format:** WAV alone is writable by hand with no dependency at all. MP3/FLAC/OGG are not, and would
+  either pull JUCE into the export layer (allowed, in Main) or be dropped. **This is an operator choice,
+  not an implementation detail** — v1 shipped four formats.
+- **Configuration** goes app-side (its own row or page), not into Sheaf's audio page, unless and until an
+  upstream extension point exists.

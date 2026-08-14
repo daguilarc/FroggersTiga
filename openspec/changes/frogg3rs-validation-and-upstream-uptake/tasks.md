@@ -161,6 +161,52 @@ reachable during ordinary play, not only after Stop.
       multiplies it by up to four. Confirm by measurement whether the comb reaches a non-decaying state at
       reachable knob positions, with a positive control.
 
+## T5 — Four new controls: Record, Freeze, Reset Page, Reset All (`proposal.md` §8)
+
+**Operator-requested 2026-08-13 and deliberately kept in this change — these and the Delay slate are one
+user story.** T5.1-T5.2 are buildable now; T5.3 needs an operator answer first.
+
+- [ ] **T5.1 — Reset Page / Reset All.** New row appended after `Randomize` in
+      `FroggersCellMap::kRightRows`, two `Button` nodes each `Extent::Weight(2.0f)` — the same two-halves
+      weighting `AppendRandomizeRow` already uses, which is what "same size" means concretely.
+      **Mirror `RandomizePage`/`RandomizeAll`'s own enumeration rather than re-deriving it**:
+      `drillIn.BankRef()` for the page, `for (bankIx...) model.BankAt(bankId)` for all, INCLUDING their
+      `drillIn.Level()` branching — a Reset that ignores drill level means the wrong thing while drilled in.
+      Parameter minimum is uniformly `0.0` (`ClampToRange` ignores `RangeKind` and there are no
+      per-parameter min/max fields), so no per-parameter table is needed.
+- [ ] **T5.1a — ⚠ Depths reset to NEUTRAL (0.5), never to 0.0.** Depth parameters are bipolar and their off
+      position is `kNeutralModulationDepthCenter`. **Writing literal 0.0 is FULL NEGATIVE depth** — a reset
+      that took "set depths to 0" literally would produce a maximally-modulated patch while appearing to
+      clear it, and would look correct in any test that only asserted "the value is 0". Reuse the existing
+      `ZeroExistingModulationDepths(Parameter&)`, which already writes the neutral centre to both scene
+      poles and deliberately skips unmaterialized depths.
+- [ ] **T5.1b — Test that the trap is not re-introduced.** Assert after a reset that each touched depth
+      reads its NEUTRAL value and that the parameter is audibly unmodulated — not merely that some number
+      changed. Per OMNI §9.1, confirm the test FAILS if the reset is changed to write 0.0.
+- [ ] **T5.2 — Freeze button, beside Stop, as a `Draw` node.** Append a third child to
+      `AppendTransportRow`'s row, matching Play/Stop's existing 28 px plate idiom. **It must be a Draw node,
+      not a `Button` with `selected` and not `NodeKind::Toggle`:** the library renders selected state as
+      `brighter(0.14f)` on the background and `TextColourForNode` has no `selected` branch at all, so text
+      colour never changes — a genuine inversion is not available from the library's state handling
+      (`UPSTREAM-SHEAF-ASK.md` item 3, landed only partially). A Draw node emits its own commands, so the
+      inversion is free and needs no upstream change. Latches on one click, releases on the next, driving
+      the Delay Freeze parameter to maximum while latched.
+- [ ] **T5.2a** Depends on Freeze existing as a parameter (T3.1 / T3.1a-b). Do not build the button first.
+- [ ] **T5.3 — OPERATOR DECISION before any Record work.** Two things asked for are not available and one
+      is, so the request cannot be built as stated (`proposal.md` §8.3):
+      - **Sheaf provides NO recording capability** — no writer, no output tap, no API.
+      - **The audio config page cannot host the configuration.** It is built by Sheaf's internal
+        `BuildAudioPageTree` from a closed snapshot with no app extension point, and this app never wires
+        the page at all. Checked before being called blocked, per this change's own rule: unlike the
+        encoder label, there is nothing app-side to compose over. **Making it possible is an upstream ask.**
+      - **The app core cannot use JUCE** — `check_no_juce.cpp` compiles the core WITH JUCE on the include
+        path and fails if any header resolves into it. v1's recorder is entirely JUCE.
+      **The decision:** capture in the core and export in `FroggersMain.cpp` (the JUCE host, outside the
+      gate) is the shape that fits the app's existing split — but **which formats** (WAV alone needs no
+      dependency at all; MP3/FLAC/OGG pull JUCE into the export layer, which is allowed there; v1 shipped
+      all four) and **where the configuration lives** are operator choices, not implementation details.
+- [ ] **T5.4** Rebuild and re-run the full suite; report counts. Baseline 213/0/0.
+
 ## Recorded, not scheduled — no task closes these
 
 - **The design doc's open question 8** — the ASR envelopes cannot modulate anything and the fifteen-source
