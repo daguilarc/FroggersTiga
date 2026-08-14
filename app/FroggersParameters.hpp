@@ -154,14 +154,23 @@ inline const std::array<FroggersBankLayout, kFroggersBankCount>& FroggersBankLay
             // precedent for a nonzero `defaultValue` at this same call site.
             {"VCO1", "VCO1", 0.2468f}, {"VCO2", "VCO2", 0.3471f}, {"VCO3", "VCO3", 0.4058f},
             {"Shape 1", "Shp1"}, {"Shape 2", "Shp2"}, {"Shape 3", "Shp3"},
-            {"Phase mod 1", "PM1"}, {"Phase mod 2", "PM2"}, {"Phase mod 3", "PM3"},
+            // Renamed from "Phase mod N" (strict-executor packet, label
+            // grid task): three whitespace-separated tokens don't compress
+            // to one 14-segment line under the two-line splitter's
+            // trailing-single-digit rule (FroggersUiSurface.hpp's
+            // SplitFourteenSegmentLines) the way "word + index" names do --
+            // see that function's own citation. Long `name` only;
+            // `shortName`/slot/default all unchanged.
+            {"Ph.mod 1", "PM1"}, {"Ph.mod 2", "PM2"}, {"Ph.mod 3", "PM3"},
             // Ring Mod strict-executor packet (task A3): the ordinary
             // unset 0.0f default already sits at/below each Ring Mod knob's
             // own zero floor (dsp::Vco::kRingModFloor, 0.05f) -- a fresh
             // launch's ring-mod amount is exactly 0 (dsp::Vco::
             // RingModDepthScale(0.0f) == 0), so it sounds identical to
             // before Ring Mod existed. No explicit default needed here.
-            {"Ring mod 1", "RM1"}, {"Ring mod 2", "RM2"}, {"Ring mod 3", "RM3"},
+            // Renamed from "Ring mod N" -- same reasoning as "Ph.mod N"
+            // above. Long `name` only; `shortName`/slot/default unchanged.
+            {"Ringmod 1", "RM1"}, {"Ringmod 2", "RM2"}, {"Ringmod 3", "RM3"},
             // Task B: the ordinary unset 0.0f default reproduces today's PM
             // LFO rate exactly -- ExpMapCompute(min, max, 0.0f) == min ==
             // dsp::Vco::kPmLfoMinHz, the SAME rate the old pmKnob01-derived

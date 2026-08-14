@@ -1223,28 +1223,37 @@ TEST_CASE(encoder_cell_never_emits_a_frame_draw_command) {
     REQUIRE_TRUE(!sawFrame);
 }
 
-// --- operator brief: long shortLabels no longer truncate to 4 characters ---
+// --- operator brief: labels no longer truncate/squeeze into a small box ----
 
-// Operator (verbatim): "they can just be slightly larger colored boxes with
-// smaller text." Sheaf's own trailing label block (EncoderDraw.hpp:782-794)
-// hardcodes a 4-character cap, silently clipping any shortLabel longer than
-// that -- 25 sites in FroggersParameters.hpp, e.g. Filter bank slot 0
-// ("Comb offset", shortName "CmbOff", 6 chars) used to render "CMBO".
-// AppendEncoderCell (FroggersUiSurface.hpp) now strips Sheaf's own 4-char
-// block by its exact, deterministic size (60 commands -- see that call
-// site's own comment) and appends its own label block sized from the FULL
-// shortLabel instead. This test proves the full character count actually
-// reaches the rendered draw list, not just that some box is bigger.
+// REWRITTEN (label-grid task, superseding the single-line "strip Sheaf's
+// 4-char block, append a box sized from the full shortLabel" version this
+// test used to pin): the mechanism changed from "size the box to the
+// label" to "always render into a FIXED 10-column x 2-row grid" (operator:
+// "a fixed 10-column x 2-row 14-segment grid, identical in every cell").
+// Truncation is now structurally impossible -- `numChars` passed to
+// `BuildFourteenSegmentCommands` is the constant 10, never a cap derived
+// from label length -- so what this test proves instead is that the FULL
+// long name (source: FroggersParamSpec::name via FroggersBankLayouts(),
+// not shortLabel) genuinely reaches BOTH rows of that grid, not just one.
 //
-// BuildFourteenSegmentCommands emits exactly one small decimal-point
-// FillEllipse per character slot, unconditionally, per character
-// (EncoderDraw.hpp:528-531) -- distinctly small (a few px) vs. the cell's
-// two big body-fill ellipses (EncoderDraw.hpp:678-686, roughly
-// 2*baseRadius wide, tens of px). Counting the small ones is therefore a
-// direct, robust read of how many character slots actually rendered:
-// Sheaf's own default was a hardcoded 4 (truncating "CmbOff" to "CMBO");
-// this app's fix must instead render all 6.
-TEST_CASE(encoder_cell_renders_the_full_short_label_not_truncated_to_four_chars) {
+// Filter bank (index 2, FroggersParameters.hpp's FroggersBankId::Filter)
+// slot 0 is long name "Comb offset" -- two real words, no trailing digit,
+// so SplitFourteenSegmentLines (FroggersUiSurface.hpp) yields two lines,
+// "COMB" and "OFFSET". This is exactly the "CmbOff"/"Comb offset" site the
+// original truncation bug clipped to "CMBO".
+//
+// BuildFourteenSegmentCommands emits exactly one decimal-point FillEllipse
+// per character SLOT, unconditionally (EncoderDraw.hpp:528-531,
+// distinctly small -- a few px -- vs. the cell's big body-fill ellipses,
+// tens of px): with a fixed 10-wide, 2-row grid that is always 20,
+// regardless of label length -- itself the proof that the grid is no
+// longer sized/truncated to the label at all. Content actually reaching
+// row 2 (not just row 1) is checked separately, by recomputing this same
+// cell's row split from its own measured extent (same idiom
+// encoder_cell_never_emits_a_frame_draw_command's header comment already
+// uses) and looking for an "on"-coloured FillPolygon segment -- i.e. a lit
+// glyph stroke, not just an empty/off placeholder -- in each row's y-band.
+TEST_CASE(encoder_cell_renders_the_full_label_not_truncated_to_four_chars) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
         /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("encoder_full_label"));
     rig.RunBlocks(4);
@@ -1252,9 +1261,6 @@ TEST_CASE(encoder_cell_renders_the_full_short_label_not_truncated_to_four_chars)
 
     synth::ui::Surface& surface = rig.Application().PortableSurface();
 
-    // Filter bank (index 2, FroggersParameters.hpp's FroggersBankId::Filter)
-    // slot 0 is "Comb offset" / shortName "CmbOff" -- one of the 25 sites
-    // the truncation bug clipped.
     surface.DispatchAction(synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBankSelect, "2"));
     rig.RunBlocks(4);
     rig.UIState();  // forces a synchronous publish of the newly-selected bank
@@ -1263,28 +1269,158 @@ TEST_CASE(encoder_cell_renders_the_full_short_label_not_truncated_to_four_chars)
     const synth::ui::Node* encoder = FindNodeById(tree, synth_froggers::FroggersNodeIds::Encoder(0));
     REQUIRE_TRUE(encoder != nullptr);
 
+    // Recompute AppendEncoderCell's own row-split geometry
+    // (FroggersUiSurface.hpp) from this cell's own measured extent, rather
+    // than hardcoding a second copy of the pixel constants.
+    constexpr float kInset = 4.0f;
+    const float boundsWidth = std::max(0.0f, encoder->bounds.width - kInset * 2.0f);
+    const float boundsHeight = std::max(0.0f, encoder->bounds.height - kInset * 2.0f);
+    const float displayCenterY = kInset + boundsHeight * 0.5f;
+    const float centerY = displayCenterY - boundsHeight * 0.03f;
+    const float baseRadius = std::min(boundsWidth, boundsHeight) * 0.43f;
+    const float plateTop = centerY + baseRadius * 0.05f;
+    const float plateBottom = (kInset + boundsHeight) - baseRadius * 0.03f;
+    const float row1BandBottom = plateTop + (plateBottom - plateTop) * 0.5f;
+
+    const synth::Color offColor = synth::Color::Rgb(36, 40, 42);
+
     std::size_t dpDotCount = 0;
     bool sawLabelPlate = false;
+    bool sawLitSegmentInRow1 = false;
+    bool sawLitSegmentInRow2 = false;
     for (const synth::ui::DrawCommand& command : encoder->drawCommands) {
         if (command.kind == synth::ui::DrawCommand::Kind::FillEllipse && command.bounds.width < 5.0f) {
             ++dpDotCount;
         }
-        // The app's own label plate (FroggersUiSurface.hpp) is a
-        // FillRoundedRect well larger than either a modulator/gesture
-        // badge chip (badges top out near 28% of the cell's smaller
-        // dimension, ~24px at this cell size -- see
-        // encoder_cell_never_emits_a_frame_draw_command's own header
-        // comment for the traced badge geometry) or Sheaf's own 4-char
-        // box (46.2px wide at this cell's baseRadius).
         if (command.kind == synth::ui::DrawCommand::Kind::FillRoundedRect && command.bounds.width > 50.0f) {
             sawLabelPlate = true;
         }
+        if (command.kind == synth::ui::DrawCommand::Kind::FillPolygon && command.color != offColor &&
+            !command.points.empty()) {
+            float sumY = 0.0f;
+            for (const synth::ui::Point& point : command.points) {
+                sumY += point.y;
+            }
+            const float avgY = sumY / static_cast<float>(command.points.size());
+            if (avgY < row1BandBottom) {
+                sawLitSegmentInRow1 = true;
+            } else {
+                sawLitSegmentInRow2 = true;
+            }
+        }
     }
 
-    // "CmbOff" upper-cased is 6 characters -- proves the truncation is
-    // gone, not just that some larger box exists.
-    REQUIRE_TRUE(dpDotCount == 6);
+    std::cout << "[OBSERVED] Filter slot 0 label grid: dpDotCount=" << dpDotCount
+              << " sawLabelPlate=" << sawLabelPlate << " row1 lit=" << sawLitSegmentInRow1
+              << " row2 lit=" << sawLitSegmentInRow2 << "\n";
+
+    // Fixed 10-column x 2-row grid, always -- 20 decimal-point slots
+    // regardless of label length (proves the grid is never sized to the
+    // label, unlike the old truncating/auto-sizing mechanisms).
+    REQUIRE_TRUE(dpDotCount == 20);
     REQUIRE_TRUE(sawLabelPlate);
+    // "COMB" on row 1 and "OFFSET" on row 2 -- the full two-word name
+    // genuinely reached BOTH rows, not truncated to one line or 4 chars.
+    REQUIRE_TRUE(sawLitSegmentInRow1);
+    REQUIRE_TRUE(sawLitSegmentInRow2);
+}
+
+// --- label-grid task: every parameter's long name fits the fixed 2-line grid --
+
+// Guard against a future rename silently overflowing the fixed 10-column
+// grid: SplitFourteenSegmentLines (FroggersUiSurface.hpp) always returns at
+// MOST 2 lines by construction (its return type is a 2-element array), so
+// what this test actually needs to prove is the thing that ISN'T
+// structurally guaranteed -- that no line is longer than the grid's 10
+// columns -- over every real long name in the tree, not a hand-picked
+// sample. This is the check the task brief calls for explicitly: "after
+// Step 1's rename, NO name produces more than 2 lines, and NO line exceeds
+// 10 characters," verified here rather than assumed.
+TEST_CASE(every_parameter_label_fits_the_two_line_grid) {
+    std::size_t longestLine = 0;
+    std::string longestLineText;
+    std::string longestLineParam;
+
+    for (const synth_froggers::FroggersBankLayout& bank : synth_froggers::FroggersBankLayouts()) {
+        for (const synth_froggers::FroggersParamSpec& spec : bank.params) {
+            const std::array<std::string, 2> lines = synth_froggers::SplitFourteenSegmentLines(spec.name);
+            for (const std::string& line : lines) {
+                REQUIRE_TRUE(line.size() <= 10);
+                if (line.size() > longestLine) {
+                    longestLine = line.size();
+                    longestLineText = line;
+                    longestLineParam = spec.name;
+                }
+            }
+        }
+    }
+
+    std::cout << "[OBSERVED] longest rendered line across every parameter: \"" << longestLineText << "\" ("
+              << longestLine << " chars, from \"" << longestLineParam << "\")\n";
+    // The task brief's own claim, checked rather than assumed: the longest
+    // words in the tree ("Anti-alias", "brightness", "Waveshaper") are
+    // exactly 10 characters.
+    REQUIRE_TRUE(longestLine == 10);
+}
+
+// --- label-grid task: a two-word name uses both rows, a one-word name uses one --
+
+// The other half of Step 6's rendering requirement (the test above proves
+// no line ever overflows; this one proves the ROW COUNT a name actually
+// renders at matches its token count), by inspecting the same emitted
+// FillPolygon commands the test above does. Audio bank slot 0's long name
+// is "VCO1" -- a single token, no trailing-digit merge needed (there's no
+// separating space at all) -- so it must render on row 1 only, leaving row
+// 2 genuinely blank (no lit segment), not vertically re-centered into the
+// middle of the grid.
+TEST_CASE(one_word_label_uses_only_row_one_two_word_label_uses_both_rows) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("encoder_row_count"));
+    rig.RunBlocks(4);
+    rig.UIState();  // forces a synchronous publish
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+
+    // Audio bank (index 0, the default-selected bank) slot 0 is "VCO1" --
+    // one token, one line.
+    const synth::ui::NodeTree tree = surface.BuildTree();
+    const synth::ui::Node* encoder = FindNodeById(tree, synth_froggers::FroggersNodeIds::Encoder(0));
+    REQUIRE_TRUE(encoder != nullptr);
+
+    constexpr float kInset = 4.0f;
+    const float boundsWidth = std::max(0.0f, encoder->bounds.width - kInset * 2.0f);
+    const float boundsHeight = std::max(0.0f, encoder->bounds.height - kInset * 2.0f);
+    const float displayCenterY = kInset + boundsHeight * 0.5f;
+    const float centerY = displayCenterY - boundsHeight * 0.03f;
+    const float baseRadius = std::min(boundsWidth, boundsHeight) * 0.43f;
+    const float plateTop = centerY + baseRadius * 0.05f;
+    const float plateBottom = (kInset + boundsHeight) - baseRadius * 0.03f;
+    const float row1BandBottom = plateTop + (plateBottom - plateTop) * 0.5f;
+
+    const synth::Color offColor = synth::Color::Rgb(36, 40, 42);
+
+    bool sawLitSegmentInRow1 = false;
+    bool sawLitSegmentInRow2 = false;
+    for (const synth::ui::DrawCommand& command : encoder->drawCommands) {
+        if (command.kind == synth::ui::DrawCommand::Kind::FillPolygon && command.color != offColor &&
+            !command.points.empty()) {
+            float sumY = 0.0f;
+            for (const synth::ui::Point& point : command.points) {
+                sumY += point.y;
+            }
+            const float avgY = sumY / static_cast<float>(command.points.size());
+            if (avgY < row1BandBottom) {
+                sawLitSegmentInRow1 = true;
+            } else {
+                sawLitSegmentInRow2 = true;
+            }
+        }
+    }
+
+    std::cout << "[OBSERVED] Audio slot 0 (\"VCO1\") label grid: row1 lit=" << sawLitSegmentInRow1
+              << " row2 lit=" << sawLitSegmentInRow2 << "\n";
+    REQUIRE_TRUE(sawLitSegmentInRow1);
+    REQUIRE_TRUE(!sawLitSegmentInRow2);
 }
 
 // --- 3.5: scene buttons toggle the blend to its extremes --------------------

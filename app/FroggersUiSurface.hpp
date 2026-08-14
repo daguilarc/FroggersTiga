@@ -90,6 +90,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -97,6 +98,7 @@
 #include <limits>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -494,6 +496,61 @@ inline std::string FormatFroggersBpm(double bpm) {
     oss.precision(1);
     oss << std::fixed << bpm;
     return oss.str();
+}
+
+// Encoder-cell label grid (this task, "fixed 10-column x 2-row 14-segment
+// grid, identical in every cell"), step 2's line-splitting rule for a
+// FroggersParamSpec long name, applied verbatim:
+//   1. Split on whitespace into tokens.
+//   2. If the LAST token is exactly one character and a digit, fold it onto
+//      the previous token (rejoined with a single space) -- "a
+//      one-character number is not a word" (operator). So "Shape 1" ->
+//      ["Shape 1"], "Peak Q" stays ["Peak","Q"] (Q is not a digit).
+//   3. 1 remaining token -> line 0 only (line 1 stays empty, meaning
+//      "blank"); 2 tokens -> one per line.
+//   4. Both lines uppercased (the display is uppercase-only).
+// Verified against every name in FroggersBankLayouts() post-rename
+// (FroggersSurfaceTests.cpp's every_parameter_label_fits_the_two_line_grid):
+// no name ever yields more than 2 tokens after the merge, and the longest
+// resulting line is exactly 10 characters ("ANTI-ALIAS"/"BRIGHTNESS"/
+// "WAVESHAPER", Drive bank) -- this is checked by that test, not assumed
+// here.
+inline std::array<std::string, 2> SplitFourteenSegmentLines(std::string_view name) {
+    std::vector<std::string> tokens;
+    std::string current;
+    for (char c : name) {
+        if (std::isspace(static_cast<unsigned char>(c)) != 0) {
+            if (!current.empty()) {
+                tokens.push_back(current);
+                current.clear();
+            }
+        } else {
+            current.push_back(c);
+        }
+    }
+    if (!current.empty()) {
+        tokens.push_back(current);
+    }
+
+    if (tokens.size() >= 2) {
+        const std::string& lastToken = tokens.back();
+        if (lastToken.size() == 1 && std::isdigit(static_cast<unsigned char>(lastToken[0])) != 0) {
+            const std::string merged = tokens[tokens.size() - 2] + " " + lastToken;
+            tokens.pop_back();
+            tokens.back() = merged;
+        }
+    }
+
+    std::array<std::string, 2> lines{};
+    for (std::size_t lineIx = 0; lineIx < tokens.size() && lineIx < 2; ++lineIx) {
+        std::string upper;
+        upper.reserve(tokens[lineIx].size());
+        for (char c : tokens[lineIx]) {
+            upper.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
+        }
+        lines[lineIx] = std::move(upper);
+    }
+    return lines;
 }
 
 class FroggersUiSurface final : public synth::ui::Surface {
@@ -1128,26 +1185,24 @@ private:
             cellStyle.pointerDragAction =
                 synth::ui::Action::WithValue(FroggersActions::kEncoderDrag, FormatFroggersEncoderDrag(ix, 0.0f));
         }
-        // Operator brief (verbatim): "they can just be slightly larger
-        // colored boxes with smaller text." Sheaf's own trailing label
-        // block (EncoderDraw.hpp:782-794) hardcodes BOTH the display box
-        // size (14-24px tall, 3.3x that wide) AND a 4-character cap
-        // (UpperShortLabel's/BuildFourteenSegmentCommands's own default
-        // `maxChars`/`numChars`), silently truncating any shortLabel over
-        // 4 chars -- 25 sites in FroggersParameters.hpp, e.g. "CmbOff" ->
-        // "CMBO", "PkFreq" -> "PKFR", "Crispy"/"Crnchy" -> "CRIS"/"CRNC".
-        // `EncoderDrawState` has no field to change either the cap or the
-        // size, but `BuildEncoderDrawCommands` returns its command vector
-        // BY VALUE with that block appended LAST (EncoderDraw.hpp:793-796),
-        // and both `BuildFourteenSegmentCommands` (numChars<=0 auto-sizes
-        // to the text, EncoderDraw.hpp:544-548) and `UpperShortLabel`
-        // (maxChars is an ordinary parameter) are public/inline -- so this
-        // app strips Sheaf's trailing block by its exact, deterministic
-        // size and appends its own larger one, instead of re-deriving any
-        // of Sheaf's geometry from scratch.
+        // Operator decision (this task, superseding the single-line "a
+        // couple lines up from here" version): a FIXED 10-column x 2-row
+        // 14-segment grid, identical in every cell, with the label centered
+        // inside it. The old code sized its box to the label length --
+        // "A1" got half the plate per glyph (auto-sized to 2 chars) and
+        // rendered flat and stretched, while long labels overflowed. A
+        // fixed grid makes every cell look the same regardless of label
+        // length. `EncoderDrawState` has no field to change Sheaf's own
+        // trailing block, but `BuildEncoderDrawCommands` returns its
+        // command vector BY VALUE with that block appended LAST
+        // (EncoderDraw.hpp:793-796) and both `BuildFourteenSegmentCommands`
+        // and `SplitFourteenSegmentLines` (above) are public/inline -- so
+        // this app strips Sheaf's trailing block by its exact,
+        // deterministic size and appends its own grid instead.
+        const std::size_t bankIx = CurrentBankIndex();
         builder.Draw(
             encoderId,
-            [state, hidden](synth::ui::Bounds extent) {
+            [state, hidden, bankIx, ix, showingModulationView](synth::ui::Bounds extent) {
                 if (hidden) {
                     return std::vector<synth::ui::DrawCommand>{};
                 }
@@ -1169,7 +1224,11 @@ private:
                 // EncoderDraw.hpp:528-531) times kSheafLabelDefaultChars
                 // (4, BuildFourteenSegmentCommands's own numChars default,
                 // EncoderDraw.hpp:540) = 60 commands, always, for a
-                // connected cell.
+                // connected cell. Guarded (size >= that) so a cell that
+                // somehow emitted fewer commands can never underflow --
+                // the `!state.connected` branch above already covers the
+                // one case (a disconnected cell) that legitimately returns
+                // fewer/none.
                 constexpr std::size_t kSheafLabelCommandsPerChar = 15;
                 constexpr std::size_t kSheafLabelDefaultChars = 4;
                 constexpr std::size_t kSheafLabelCommandCount =
@@ -1179,9 +1238,7 @@ private:
                 }
 
                 // Recompute the same cell geometry BuildEncoderDrawCommands
-                // derives internally (EncoderDraw.hpp:658-669) so this
-                // app's label plate lands exactly where Sheaf's did, plus
-                // growth -- not an independent guess.
+                // derives internally (EncoderDraw.hpp:658-669).
                 constexpr float x_Inset = 4.0f;
                 const synth::ui::Bounds bounds{
                     x_Inset,
@@ -1191,64 +1248,122 @@ private:
                 };
                 const float centerX = bounds.x + bounds.width * 0.5f;
                 const float displayCenterY = bounds.y + bounds.height * 0.5f;
+                const float centerY = displayCenterY - bounds.height * 0.03f;
                 const float baseRadius = std::min(bounds.width, bounds.height) * 0.43f;
 
-                const float sheafDisplayHeight = synth::ui::Clamp(baseRadius * 0.34f, 14.0f, 24.0f);
-                const float sheafDisplayWidth = sheafDisplayHeight * 3.3f;
+                // Grid geometry, verified against this app's real measured
+                // cell size (136.333 x 88.333 px --
+                // FroggersSurfaceTests.cpp's own
+                // encoder_cell_never_emits_a_frame_draw_command header
+                // comment) in this task's own report, not assumed:
+                //
+                // Vertical: top edge is a small proportional gap BELOW
+                // centerY (never above it -- see the badge-clearance note
+                // below); bottom edge is a small proportional gap ABOVE
+                // this cell's own inset bottom (bounds.y+bounds.height),
+                // so the plate never runs past it. The two rows split that
+                // band evenly. At the measured cell size this gives a
+                // ~39.8px-tall plate (~19.9px/row), taller than Sheaf's own
+                // single-line floor (14px, EncoderDraw.hpp:782's Clamp).
+                //
+                // Horizontal: 94% of `bounds.width`, centered on centerX,
+                // leaving ~8px symmetric clearance to the RAW cell edge on
+                // each side (bounds is already inset x_Inset=4px from that
+                // edge) -- 10 columns cannot collide with the neighbouring
+                // cell, whose own content is clipped to ITS OWN extent in
+                // any case. ~12px/column at the measured size, comparable
+                // to Sheaf's own ~11.55px/char default.
+                //
+                // Badge clearance (verified, not assumed): drawBadges
+                // (EncoderDraw.hpp:697-724) draws modulator badges with
+                // upper=true and gesture badges with upper=false.
+                // GetBadgePosition (EncoderDraw.hpp:249-275) computes
+                // `badgeY = upper ? centerY - radius*badgeY_norm : centerY
+                // + radius*badgeY_norm - badgeLength_scaled` -- an UPPER
+                // (modulator) badge's bottom edge is at or above centerY by
+                // construction (radius*badgeY_norm >= 0), so it can never
+                // reach this plate, which starts strictly BELOW centerY.
+                // Lower (gesture) badges are structurally absent in this
+                // app: FroggersParameterModel::Init()
+                // (FroggersParameters.hpp) never calls
+                // ParameterGroup::SetGestureCount(), so GestureCount()
+                // stays 0, gesturesAffectingMask is always 0, and
+                // drawBadges' `total` is 0 -- its badge loop never runs
+                // (grep confirms no SetGestureCount call anywhere under
+                // app/).
+                const float plateTop = centerY + baseRadius * 0.05f;
+                const float plateBottom = (bounds.y + bounds.height) - baseRadius * 0.03f;
+                const float plateHeight = std::max(0.0f, plateBottom - plateTop);
+                const float rowHeight = plateHeight * 0.5f;
+                const float plateWidth = bounds.width * 0.94f;
+                const float plateLeft = centerX - plateWidth * 0.5f;
 
-                // "Slightly larger" box: 20% taller, 40% wider than
-                // Sheaf's own 4-char box. At this app's actual encoder
-                // cell size (~136x88px -- FroggersSurfaceTests.cpp's own
-                // measured encoder(0) bounds, see
-                // encoder_cell_never_emits_a_frame_draw_command's header
-                // comment), that puts a 6-character label (the longest
-                // shortLabel in FroggersParameters.hpp -- "Crnchy",
-                // "Crispy", "PreDly", "PkGain", "PkFreq", "Detune",
-                // "CmbOff", "CmbDly", "Cmb/Pk") at a ~0.64:1 glyph
-                // width:height ratio, vs. Sheaf's fixed 0.825:1 four-char
-                // ratio -- narrower ("smaller text") but still comfortably
-                // legible (14-segment displays stay readable well below
-                // that ratio), while a 4-char label (still the common
-                // case) actually gets slightly WIDER glyphs than before
-                // (~0.96:1), since the box no longer shrinks to fit
-                // exactly 4 characters. Width has wide clearance against
-                // the cell (~65px of ~128px available at this cell size,
-                // well short of the neighbouring cell), and height has
-                // ~4.7px of clearance below (~21.5px available at this
-                // cell size) before the cell's own bottom inset.
-                const float labelHeight = sheafDisplayHeight * 1.2f;
-                const float labelWidth = sheafDisplayWidth * 1.4f;
-                // SAME y Sheaf used (EncoderDraw.hpp:786) -- growth goes
-                // only down/outward from that anchor, never up, so this
-                // box's clearance from the gesture badge chips below
-                // centre (AppendBadge/drawBadges, EncoderDraw.hpp:
-                // 697-724) is never worse than Sheaf's own baseline.
-                const synth::ui::Bounds labelBounds{
-                    centerX - labelWidth * 0.5f,
-                    displayCenterY + baseRadius * 0.54f,
-                    labelWidth,
-                    labelHeight,
+                const synth::ui::Bounds plateBounds{plateLeft, plateTop, plateWidth, plateHeight};
+                const synth::ui::Bounds rowBounds[2] = {
+                    {plateLeft, plateTop, plateWidth, rowHeight},
+                    {plateLeft, plateTop + rowHeight, plateWidth, rowHeight},
                 };
 
                 const synth::Color cellColor = state.baseColor;
                 const synth::Color onColor = synth::Brighten(cellColor, 0.45f);
                 const synth::Color offColor = synth::Color::Rgb(36, 40, 42);
                 // Same plate colour AppendBadge already uses for its own
-                // chip background (EncoderDraw.hpp:595) -- "a colour
-                // consistent with the existing cell treatment", not a new
-                // one.
+                // chip background (EncoderDraw.hpp:595) -- one opaque plate
+                // behind BOTH rows, drawn before them.
                 const synth::Color plateColor = synth::Color::Rgb(32, 34, 36);
                 commands.push_back(synth::ui::DrawCommand::FillRoundedRect(
-                    labelBounds, labelHeight * 0.15f, plateColor));
+                    plateBounds, rowHeight * 0.15f, plateColor));
 
-                // Full label, uppercased, no truncation (maxChars ==
-                // shortLabel.size()); numChars=0 below then auto-sizes the
-                // glyph grid to that same full length.
-                const std::string fullLabel =
-                    synth::ui::UpperShortLabel(state.shortLabel, state.shortLabel.size());
-                std::vector<synth::ui::DrawCommand> labelCommands = synth::ui::BuildFourteenSegmentCommands(
-                    fullLabel, labelBounds, onColor, offColor, /*numChars=*/0);
-                commands.insert(commands.end(), labelCommands.begin(), labelCommands.end());
+                // Source text (step 2): FroggersParamSpec::name is the
+                // UNQUALIFIED long name FroggersBankLayouts() carries for a
+                // page parameter (slots 0-13; ParameterManager::Name() is
+                // bank-QUALIFIED, e.g. "Envelope Attack VCO1",
+                // FroggersParameters.hpp:385/404 -- deliberately not used
+                // here). Slot 14 (Crispy)/15 (Crunchy) have no page spec.
+                // A modulation drill-in view ALSO substitutes a DIFFERENT
+                // Parameter into this same physical slot index
+                // (Bank::OpenModulationView, ParameterModulation.cpp:
+                // 2648/2813 -- BankSlot::PopulateUIState's cells[] then
+                // reflects that substituted parameter, not the bank's own
+                // page layout; this is exactly why this file's own
+                // AppendEncoderCell header comment says this loop must NOT
+                // re-derive slot->parameter from FroggersBankLayouts()) --
+                // looking the spec up by (bank,slot) in that case would
+                // silently name the WRONG control. All three cases (Crispy,
+                // Crunchy, and modulation drill-in) fall back to the live
+                // `state.shortLabel`, which EncoderDrawStateFromParameter
+                // already sources from whichever Parameter is actually
+                // bound to this slot right now -- the drill-in fallback is
+                // this app's own addition beyond the task brief's literal
+                // Crispy/Crunchy-only wording, added to avoid that mislabel
+                // (OMNI "if you see something, say something").
+                std::string labelSource;
+                if (!showingModulationView && ix < kFroggersParamsPerBank && bankIx < kFroggersBankCount) {
+                    labelSource = FroggersBankLayouts()[bankIx].params[ix].name;
+                } else {
+                    labelSource = state.shortLabel;
+                }
+                const std::array<std::string, 2> lines = SplitFourteenSegmentLines(labelSource);
+
+                constexpr int kGridColumns = 10;
+                for (int row = 0; row < 2; ++row) {
+                    const std::string& line = lines[static_cast<std::size_t>(row)];
+                    // Center by padding the SHORT side ourselves --
+                    // BuildFourteenSegmentCommands renders left-aligned
+                    // into numChars slots and pads the tail with spaces
+                    // (EncoderDraw.hpp:554-567), so centering means
+                    // prepending (10-len)/2 spaces before handing it in. A
+                    // one-line label occupies row 0 only; row 1 (an empty
+                    // `line`) renders an all-space, all-off row rather than
+                    // being vertically re-centered, so single- and
+                    // double-line cells never disagree on where row 0 sits.
+                    const int len = std::min(kGridColumns, static_cast<int>(line.size()));
+                    const int leadingSpaces = (kGridColumns - len) / 2;
+                    const std::string padded = std::string(static_cast<std::size_t>(leadingSpaces), ' ') + line;
+                    std::vector<synth::ui::DrawCommand> rowCommands = synth::ui::BuildFourteenSegmentCommands(
+                        padded, rowBounds[row], onColor, offColor, /*numChars=*/kGridColumns);
+                    commands.insert(commands.end(), rowCommands.begin(), rowCommands.end());
+                }
 
                 return commands;
             },
@@ -1291,6 +1406,25 @@ private:
             return bankIx == 0;
         }
         return context_->uiState->banks[bankIx].selected.load(std::memory_order_relaxed);
+    }
+
+    // Which bank (index into FroggersBankLayouts(), same order banks are
+    // created in -- FroggersParameters.hpp's Init() loop -- and the same
+    // order `uiState->banks[]` is populated in, ParameterModulation.cpp:
+    // 3403-3406/3716-3727 push_back/populate in lockstep) is currently
+    // selected, for AppendEncoderCell's label-source lookup below. Same
+    // default (0) BankSelected() above already uses when uiState isn't
+    // ready yet.
+    std::size_t CurrentBankIndex() const {
+        if (context_ == nullptr || context_->uiState == nullptr) {
+            return 0;
+        }
+        for (std::size_t bankIx = 0; bankIx < context_->uiState->bankCapacity; ++bankIx) {
+            if (context_->uiState->banks[bankIx].selected.load(std::memory_order_relaxed)) {
+                return bankIx;
+            }
+        }
+        return 0;
     }
 
     void HandleAction(const synth::ui::Action& action) {

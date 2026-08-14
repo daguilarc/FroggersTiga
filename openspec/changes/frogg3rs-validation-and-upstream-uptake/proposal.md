@@ -97,7 +97,9 @@ upstream-gated but re-checkable.
 
 ## 5. Non-goals
 
-- **No new parameters.** All six banks are at fourteen and the slate is closed.
+- **No new SLOTS.** All six banks are at fourteen and the slate is closed. **§6 is not an exception**: it
+  proposes repurposing three of Delay's existing slots that today hold one-and-a-half controls between
+  them, which changes what occupies a slot without changing the count.
 - **No Sheaf fork and no local Sheaf patch.** The pinned-upstream property is worth more than the features
   (`UPSTREAM-SHEAF-ASK.md`), and this constraint is what makes §4's app-side-first check load-bearing
   rather than optional.
@@ -106,3 +108,143 @@ upstream-gated but re-checkable.
   and it may outrank everything here.
 - **Whether `kPmLfoDepth = 0.15` is the right PM depth ceiling** stays an open by-ear tuning item, fixed by
   changing the constant if it proves too shallow, not by adding a knob.
+
+## 6. The Delay bank's three vestigial slots — Detune, Color, Halo
+
+**Raised by the operator, 2026-08-13, and this proposal is where it lands rather than being acted on.**
+The operator's position, recorded verbatim in substance: Detune was only ever tolerable while Width's two
+roles were conflated; now that Width balance separates them, *"we weren't doing detune anymore."*
+
+**Provenance note, stated because it limits what follows.** The round-1/round-2 Delay research files this
+change's predecessor drew on lived outside the repo, in a session scratchpad that no longer exists — they
+are NOT recoverable. What IS recoverable, and what everything below is sourced from, is the archived
+`BANK-EXPANSION-DESIGN.md` (`openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/`),
+which carries the full Delay candidate table with tier and headroom columns.
+
+### 6.1 What the three slots actually do — read, not assumed
+
+- **Detune (slot 4)** is a static, symmetric L/R delay-time skew expressed in cents (`app/dsp/Delay.hpp`):
+  `cents = ddet * kMaxDetuneCents` (50), `timeL /= 2^(+cents/1200)`, `timeR /= 2^(-cents/1200)`. Nothing is
+  pitch-shifted; the two channels simply run at slightly different lengths, +-2.93% at full. The mean delay
+  time is unchanged, which is the only thing distinguishing it from Stereo width.
+- **Color (slot 7)** and **Halo (slot 8)** have **no destination of their own at all**:
+  ```
+  params.ddet = clamp(0.5f * (params.ddet + row7Color));
+  params.dmod = clamp(0.5f * (params.dmod + row8Halo));
+  ```
+  Color exists solely as a co-input averaged into Detune; Halo solely as a co-input averaged into Mod
+  depth. So the Detune knob alone cannot exceed half its range unless Color is also raised, and moving
+  Color silently moves Detune. **The archived design doc already found this** and recorded that Color is
+  *"not an independent tone control"* and Halo *"not early reflections"* — a v2-era compatibility fold, not
+  a design.
+
+### 6.2 Why this is the same defect this change's predecessor fixed three times
+
+One value driven by two knobs, with neither knob owning a job, is precisely the conflation that justified
+splitting Scoop freq / Scoop width / Scoop depth, splitting Width balance out of Stereo width, and
+unlocking Link from Drive's own gain. **Three of Delay's nine original slots are spent on one-and-a-half
+controls.** Detune survives the change's own selection rule on a technicality — no routing can produce a
+static L/R asymmetry, since there is a single Delay-time knob — but it overlaps Stereo width in kind while
+being roughly 12x weaker (`widthSpread` reaches 35% of base time; Detune reaches 2.93%).
+
+### 6.3 Replacement candidates, from the archived table, none chosen here
+
+The design doc's own Delay slate proposed two parameters that were NOT built — the predecessor change
+shipped Width balance and Crush into those slots instead — so both remain available and already carry a
+tier and a headroom verdict:
+
+- **Diffusion** — an allpass smear across the repeats, "discrete clean repeats (today)" to "fully diffused
+  wash". Tier 3, genuinely new: no allpass network exists in `Delay.hpp`. Headroom verdict on record:
+  likely safe as a unity-gain Schroeder chain, **but flagged for verification** because a poorly tuned
+  allpass network can leak gain.
+- **Freeze** — "normal, writes continue (today)" through "partial freeze, new input bleeds in at reduced
+  level while the loop rings on" to a full infinite hold. Structurally new, and note it is the *deliberate*
+  form of the accidental sustain analysed in §7.
+
+Both pass the selection rule: neither is reachable by routing a modulation source onto an existing
+parameter. **A third option exists and is not a parameter:** simply retire Detune and give Color and Halo
+real destinations, which costs no new slots and removes the fold rather than building on top of it.
+
+**Nothing here is decided.** The operator has ruled Detune out; what replaces it, and whether Color and
+Halo are repurposed or retired, is open (T3).
+
+## 7. Stop does not silence the instrument — analysis, not a fix
+
+**Operator-reported 2026-08-13: after pressing Stop, audio keeps sounding, but only once Randomize All has
+been pressed several times and parameters are being modulated at audio rate. The operator likes the sound
+and has explicitly NOT asked for a fix.** This section exists so the mechanism is on record before anyone
+decides. Every claim below was traced by reading.
+
+### 7a. The mechanism, and where it is NOT the problem
+
+On the running→stopped edge (`FroggersAppCore.hpp`) the ASR gate closes and each VCO's Release time is
+force-overridden to a fixed ~50 ms fade regardless of the operator's own Release knob
+(`kStopFadeReleaseKnob`). `modulation_.Step()` then stops being called at all — the modulation slate
+**freezes** at its last values, it does not reset. Once every voice reaches `Stage::Idle`, a single
+unconditional `ForEachStatefulUnit(Reset)` zeroes all fourteen stateful units, including the delay lines,
+the reverb tank, and every sub-unit this change added (`Delay.hpp`'s fbTone and crush, `Reverb.hpp`'s tilt
+filters, damping and wet limiter).
+
+**That reset coverage is complete — the new parameters' state IS reset. Reset coverage is not the gap.**
+
+### 7b. The gap: a bound was mistaken for a decay, and this document is where that happened
+
+`frogg3rs-bank-expansion` §7a stated a rule once for all three in-loop saturator pre-gains and had every
+site cite it: `PadeSaturator::Saturate` hard-clamps to ±1, so a pre-gain on its ARGUMENT cannot raise the
+loop's per-sample bound `|x| + |k|`. **That is true, and it is not the property that matters here.**
+
+`Saturate` is `x*(27+x²)/(27+9x²)`, whose derivative at the origin is exactly 1 (`FilterFx.hpp`). It is a
+hard output CEILING, not a contraction. The loop `y[n+1] = k · Saturate(g · y[n])` decays only while
+`k · g · Saturate'(y) < 1`. Before these knobs existed, the feedback clamp alone guaranteed that
+everywhere. **With a pre-gain of up to 4.0 the origin becomes an UNSTABLE fixed point:** any nonzero seed
+grows until it lands on the saturator's curve and stays there — a persistent limit cycle that is bounded
+and never decays. Bounded and silent are different properties, and §7a only ever established the first
+while the whole change read it as clearing the second.
+
+**All three sites that cite §7a share this, including one the investigation was not scoped to:**
+
+| Site | Pre-gain range | Feedback reaches | Near-origin loop gain |
+|---|---|---|---|
+| Delay feedback (slot 9 `FbDr`) | 0.25 – 4.0 | `fbk` ≤ 0.98 | ~3.92 |
+| Reverb tank (slot 10 `TkDv`) | 0.25 – 4.0 | `fb` ~0.99998 | ~4.0 |
+| **Filter comb (slot 12 `CDrv`)** | 0.25 – 4.0 | `GetFeedback` ±0.95 | **~3.80** |
+
+**Comb Drive is the third instance and arguably the worst**, because the comb sits in the always-on filter
+chain rather than behind a send. `FilterFx.hpp`'s own header already records that a self-oscillating comb
+at ±0.95 "can place this linearised system's loop gain arbitrarily close to" instability — Comb Drive then
+multiplies that by up to four. **Comb Drive is also the flag `frogg3rs-bank-expansion` §9.6 WITHDREW as
+"wrong rather than merely cautious."** The withdrawal was right about the bound and wrong about the
+consequence, and it withdrew the one flag that would have caught this.
+
+**Not implicated, checked rather than assumed:** Grit reuses `DigitalReorganizer`, whose
+`Mangle(in) - Mangle(0)` form keeps zero-in/zero-out at any setting; Crush, Feedback tone and Tilt are
+zero-preserving, and a lowpass in a loop can only reduce loop gain; Width balance and Tuned move read
+indices and add no energy.
+
+### 7c. Why Randomize All is the trigger
+
+Each press draws a fresh, non-additive set of modulation-source depths across all 84 top-level parameters,
+averaging ~2.25 connected sources each (`FroggersModulation.hpp`). Eligible sources include the three raw
+VCO audio outputs — literally audio-rate. Repeated presses are repeated independent draws, so each one
+raises the odds that a drive parameter's depth lands on a live audio-rate source *while* its base knob sits
+above the instability threshold. A static patch rarely gets there; repeated randomisation reliably does.
+
+### 7d. Options, listed and NOT chosen
+
+1. Clamp the product (`fbk · fbDrive`, `fb · tankDrive`, `feedback · combDrive`) below 1 so contraction
+   holds at every knob position.
+2. Force the three drives toward unity on the Stop edge, alongside the existing release override.
+3. Fire the fourteen-unit `Reset()` unconditionally on the Stop edge rather than deferring to `AllIdle()` —
+   this trades away the deliberate "let the release ring through the wet path" behaviour.
+4. Neutralise modulation DEPTH for these parameters on stop, not merely stop advancing the slate.
+5. Extend the existing finite-only recovery watch with a post-Stop non-decaying-magnitude check.
+
+**Option 1 is the only one that fixes the instability rather than the symptom** — the others make Stop
+silent while leaving a non-decaying loop reachable during normal play. Recorded, not chosen.
+
+### 7e. What could not be determined by reading
+
+Whether the tail is strictly bounded by the ~1.05 s Grace-plus-fade window before `Reset()` lands, or can
+run indefinitely — e.g. if some path re-seeds the loop independently of the transport gate. **Settling that
+needs a runtime capture, not more reading** (T4.2). Note the upper bound of that window is itself set by
+`kMaxGraceSeconds`, a value this change's predecessor picked with no specification behind it.

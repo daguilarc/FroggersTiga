@@ -78,6 +78,59 @@
       and closed as not-planned because the premise was wrong. Recorded so it is not re-opened as an
       upstream dependency.
 
+## T3 — Delay's three vestigial slots: Detune, Color, Halo (`proposal.md` §6)
+
+**Operator-raised 2026-08-13. Detune is ruled OUT; what replaces it is open.** Color and Halo have no
+destination of their own — each is averaged into a neighbouring knob's value — so three of Delay's nine
+original slots hold one-and-a-half controls between them.
+
+- [ ] **T3.1 — OPERATOR DECISION, not closable by an implementer.** Decide the fate of each of the three
+      slots. The recoverable candidates, both already tiered in the archived design doc and both left
+      unbuilt when the predecessor shipped Width balance and Crush into their slots: **Diffusion** (Tier 3,
+      allpass smear, genuinely new, flagged for gain leak if the allpass chain is badly tuned) and
+      **Freeze** (structurally new; the deliberate form of the accidental sustain in §7). A third option
+      needs no new parameter at all: retire Detune and give Color and Halo real destinations.
+- [ ] **T3.2** Whatever T3.1 picks, the fold itself comes out: `params.ddet = 0.5*(ddet + Color)` and
+      `params.dmod = 0.5*(dmod + Halo)` (`app/dsp/Delay.hpp`'s row-mapping) must stop averaging two knobs
+      into one value, so each slot owns exactly one job.
+- [ ] **T3.3** Re-check the survivors against the selection rule before building: if the modulation matrix
+      can already reach the effect by routing one of the fifteen sources onto an existing parameter, the
+      parameter is rejected. Diffusion and Freeze both pass today; re-confirm rather than inherit it.
+- [ ] **T3.4** The Delay research files this analysis would ideally cite are GONE — they lived in a session
+      scratchpad outside the repo. If a fresh candidate sweep is wanted, it starts from the archived
+      `BANK-EXPANSION-DESIGN.md` table, not from those files. Recorded so nobody hunts for them.
+
+## T4 — Stop does not silence the instrument (`proposal.md` §7)
+
+**The operator reported this, likes the sound, and has NOT asked for a fix. Nothing here changes DSP
+without an explicit decision.** What is scheduled is the part that is not a matter of taste: three
+parameters can place a feedback loop's near-origin gain near 4, which makes a non-decaying limit cycle
+reachable during ordinary play, not only after Stop.
+
+- [ ] **T4.1 — OPERATOR DECISION.** Whether to keep the behaviour, and if so whether to keep it as an
+      accident or promote it to a real control. **Freeze (`proposal.md` §6.3) is the deliberate form of
+      exactly this effect** and is already a tiered, unbuilt candidate — so "keep it" and "make it a knob"
+      are not opposed. The five options are listed at §7d; option 1 (clamp the loop-gain PRODUCT below 1)
+      is the only one that addresses the instability rather than the symptom.
+- [ ] **T4.2 — Runtime capture, the one thing reading could not settle.** Determine whether the tail is
+      strictly bounded by the ~1.05 s Grace-plus-fade window before `Reset()` lands, or can run
+      indefinitely because something re-seeds the loop independently of the transport gate. Static analysis
+      cannot answer this; capture the output after Stop with the drives high and audio-rate modulation
+      active, and report the decay envelope. Per OMNI §9.1 confirm the capture would SHOW a decaying tail
+      if one existed, before reporting that none does.
+- [ ] **T4.3 — Correct the archived rule where it is cited, whatever T4.1 decides.** `frogg3rs-bank-
+      expansion` §7a established that a pre-gain on an in-loop saturator's argument cannot raise the loop's
+      per-sample BOUND. True, and it was read throughout that change as clearing those parameters
+      generally. It does not: `Saturate` has unit slope at the origin, so it is a ceiling, not a
+      contraction. The rule needs its companion stated wherever it is cited — **a bound is not a decay** —
+      including at the withdrawal of Comb Drive's headroom flag, which was the one flag that would have
+      caught this.
+- [ ] **T4.4 — Comb Drive specifically.** It is the third instance and was outside the investigation's
+      scope; the comb sits in the always-on filter chain rather than behind a send, and `FilterFx.hpp`'s own
+      header already records that a self-oscillating comb at ±0.95 sits near instability before Comb Drive
+      multiplies it by up to four. Confirm by measurement whether the comb reaches a non-decaying state at
+      reachable knob positions, with a positive control.
+
 ## Recorded, not scheduled — no task closes these
 
 - **The design doc's open question 8** — the ASR envelopes cannot modulate anything and the fifteen-source
