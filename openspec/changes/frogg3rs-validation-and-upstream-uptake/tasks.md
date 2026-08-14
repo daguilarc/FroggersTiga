@@ -197,8 +197,11 @@ user story.** T5.1-T5.2 are buildable now; T5.3 needs an operator answer first.
       - **Sheaf provides NO recording capability** — no writer, no output tap, no API.
       - **The audio config page cannot host the configuration.** It is built by Sheaf's internal
         `BuildAudioPageTree` from a closed snapshot with no app extension point, and this app never wires
-        the page at all. Checked before being called blocked, per this change's own rule: unlike the
-        encoder label, there is nothing app-side to compose over. **Making it possible is an upstream ask.**
+        the page at all. Checked before being called blocked, per this change's own rule, and the check
+        went past the page itself: `MainPane::Page` is a CLOSED enum, so adding our own sidebar page is not
+        available either. **Filed upstream as jvictor0/Sheaf#8** (app-supplied audio-page section, or an
+        app-supplied page). **NOT a blocker** — the settings can live on the app's own surface; the ask is
+        that the sidebar is the more natural home.
       - **The app core cannot use JUCE** — `check_no_juce.cpp` compiles the core WITH JUCE on the include
         path and fails if any header resolves into it. v1's recorder is entirely JUCE.
       **The decision:** capture in the core and export in `FroggersMain.cpp` (the JUCE host, outside the

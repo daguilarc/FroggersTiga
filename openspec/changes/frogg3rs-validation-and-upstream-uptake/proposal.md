@@ -427,9 +427,17 @@ When on it drives the Delay Freeze parameter (§6.4) to 1.
    `BuildAudioPageTree` from a closed `AudioPageSnapshot` (outputs, inputs, selected ids, device/status
    text). **There is no extension point for an app to add rows**, and this app never wires the page at all
    — it inherits it from the shared runtime chrome. **So "configuration in the audio config page Sheaf
-   gives us" is not available as stated.** Per §4's rule this was checked before being called blocked:
-   unlike the encoder label, the app composes no part of that page, so there is nothing app-side to
-   compose over. Making it possible is an upstream ask, not an app-side workaround.
+   gives us" is not available as stated.** Per §4's rule this was checked before being called blocked, and
+   the check went further than the page itself: `MainPane::Page` (`runtime/MainPane.hpp`) is a CLOSED enum
+   — `None, Audio, Controllers, Sync, File` — so "add our own sidebar page instead" is not available
+   either, and `ExtraPage`/`RegisterPage`/`AddPage`/`customPage` return nothing across `include/` and
+   `runtime/`. Unlike the encoder label there is no composition seam: the app never calls
+   `BuildAudioPageTree` and never assembles the sidebar, so there is no returned tree to append to.
+   **Filed upstream as [jvictor0/Sheaf#8](https://github.com/jvictor0/Sheaf/issues/8)**, asking for either
+   an optional app-supplied section on the audio page or an app-supplied sidebar page.
+   **It is NOT a blocker and the issue says so plainly:** the app composes its own main surface, so the
+   settings have a home — just a less natural one than beside the device selection. The issue also states
+   explicitly that no recording facility is being requested, since capture is app-side.
 3. **The app core is mechanically barred from JUCE**, and v1's recorder is entirely JUCE.
    `app/check_no_juce.cpp` compiles `Froggers.hpp` *with JUCE on the include path* and fails the build if
    `JUCE_MAJOR_VERSION` ends up defined — absence of a link dependency is explicitly not accepted as proof.
