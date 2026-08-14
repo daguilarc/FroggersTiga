@@ -84,33 +84,42 @@
 destination of their own — each is averaged into a neighbouring knob's value — so three of Delay's nine
 original slots hold one-and-a-half controls between them.
 
-- [ ] **T3.1 — OPERATOR DECISION, not closable by an implementer.** Decide the fate of each of the three
-      slots. Candidates, read from the round-1/round-2 Delay research itself (`proposal.md` §6.3), which
-      ranked six and saw four built: **Diffusion** (rank 4 — allpass smear toward "a reverb built from a
-      delay", reuses `DriveBlendPhase`'s own allpass math, unity-gain ONLY if the coefficient keeps the
-      same `0.98` margin `DriveBlendPhase` and `dsp::Comb` already use); **Reverse Blend** (rank 6 —
-      biggest wow factor, costliest, and the research is explicit that a CONTINUOUS reverse knob is its own
-      extrapolation since every shipped reference makes reverse a discrete mode); **Ducking** (rank 5 —
-      the research recommends it as the first cut, being corrective rather than characterful). **Freeze**
-      comes from the archived design doc rather than the research, and is the deliberate form of §7's
-      accidental sustain. A further option needs no new parameter at all: retire Detune and give Color and
-      Halo real destinations.
-- [ ] **T3.1a — the shape T3.1 most likely resolves to, costed (`proposal.md` §6.4).** Halo becomes the
-      allpass diffuser (spending the Diffusion candidate), Color becomes a wet-output tone distinct from the
-      in-loop Feedback tone, and Detune's slot falls free for Reverse Blend, Freeze, or nothing. Deleting
-      the fold changes Detune's own reachable range, so retiring it belongs in the same move.
-- [ ] **T3.2** Whatever T3.1 picks, the fold itself comes out: `params.ddet = 0.5*(ddet + Color)` and
-      `params.dmod = 0.5*(dmod + Halo)` (`app/dsp/Delay.hpp`'s row-mapping) must stop averaging two knobs
-      into one value, so each slot owns exactly one job.
-- [ ] **T3.3** Re-check the survivors against the selection rule before building: if the modulation matrix
-      can already reach the effect by routing one of the fifteen sources onto an existing parameter, the
-      parameter is rejected. Diffusion and Freeze both pass today; re-confirm rather than inherit it.
-- [x] **T3.4 — DONE: the research is checked in.** All five files now live at
-      `openspec/changes/frogg3rs-validation-and-upstream-uptake/research/` rather than in a temp scratchpad
-      one cleanup away from deletion. **Two earlier versions of this task were wrong in opposite
-      directions** — the first said the files were gone, the second said to copy them only if relied on.
-      The operator's ruling settles it: the artifacts carry their own evidence, so T3.1's candidate
-      reasoning can be checked against its source instead of trusted.
+- [x] **T3.1 — DECIDED by the operator, 2026-08-13.** All three vestigial slots are replaced:
+      **Detune -> Freeze, Color -> Reverse Blend, Halo -> Diffusion** (`proposal.md` §6.4). **Color is NOT
+      made into a real tone control** — the shipped Feedback tone already damps the repeats and a second
+      wet-output tone was judged not to earn a slot. Ducking stays cut, as the research's own first-cut
+      recommendation. Slot assignment is a recommendation only: Halo -> Diffusion is name-adjacent and the
+      same idea, the other two are interchangeable.
+- [ ] **T3.1a — Freeze's `fbDrive` interaction MUST be decided before Freeze is built
+      (`proposal.md` §6.4b).** Freeze at 1.0 is deliberate loop gain = 1; `fbDrive` reaches 4.0, so
+      `fb_eff * fbDrive` reaches ~4 and full Freeze GROWS instead of holding. Either Freeze clamps the
+      product to 1, or `fbDrive` multiplies through it and full Freeze is a runaway. **This is §7d option 1
+      arriving from the other direction — settle T3.1a and T4.1 together, not separately.**
+- [ ] **T3.1b — Freeze SHALL be built as a crossfade, not a write-enable toggle.** `write = inSignal *
+      (1 - freeze)` with `fb_eff = lerp(fbk, 1.0, freeze)`. Built as a toggle it fails the operator's own
+      continuous-range rule — the rule that cut Cycle and Hard Sync — and the whole reason it passes is
+      that its midpoint (new input bleeding in over a slowly-decaying loop) is a real playable state.
+- [ ] **T3.1c — Diffusion's allpass coefficient SHALL be bounded by the knob mapping**, using the same
+      `-0.98f` margin `dsp::DriveBlendPhase` and `dsp::Comb` already carry. Allpass sections are unity-gain
+      by construction only while the coefficient stays strictly inside the unit circle. **Do not assert
+      this in a comment** — §7 records what this codebase's one loop-gain-above-unity defect cost, and it
+      came from proving a bound and assuming a contraction.
+- [ ] **T3.1d — Reverse Blend's continuity is by construction, not by precedent.** Every shipped reference
+      implements reverse as a discrete MODE; the continuous forward/reverse crossfade is the research's own
+      extrapolation. It passes the continuous-range rule (the midpoint is a real mixed texture), but no
+      product ships it this way — so it carries more design risk than the other two, plus a known
+      edge-of-buffer click hazard at the crossfade.
+- [ ] **T3.2** Delete the fold: `params.ddet = 0.5*(ddet + Color)` and `params.dmod = 0.5*(dmod + Halo)`
+      come out of `MapRowsToDelayParams` (`app/dsp/Delay.hpp`), so each slot owns exactly one job. Note it
+      changes Detune's own reachable range, which is moot once Detune is retired but matters if the two
+      land in separate commits.
+- [ ] **T3.3** Re-check each survivor against the selection rule before building: if the modulation matrix
+      can already reach the effect by routing one of the fifteen sources onto an existing parameter, it is
+      rejected. All three pass today; re-confirm rather than inherit it.
+- [x] **T3.4 — DONE: the research is checked in** at `research/`, beside this proposal, rather than in a
+      temp scratchpad one cleanup away from deletion. Two earlier versions of this task were wrong in
+      opposite directions — the first said the files were gone, the second said to copy them only if
+      relied on.
 
 ## T4 — Stop does not silence the instrument (`proposal.md` §7)
 

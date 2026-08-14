@@ -277,48 +277,82 @@ run indefinitely — e.g. if some path re-seeds the loop independently of the tr
 needs a runtime capture, not more reading** (T4.2). Note the upper bound of that window is itself set by
 `kMaxGraceSeconds`, a value this change's predecessor picked with no specification behind it.
 
-### 6.4 Making Color and Halo real — and why that is fewer slots than it looks
+### 6.4 The slate: Diffusion, Freeze and Reverse replace Halo, Color and Detune
 
-**Operator question, 2026-08-13: what would it entail, and isn't one of these just Diffusion? Yes — Halo
-is.** Traced against the code rather than reasoned from the names:
+**Operator ruling, 2026-08-13.** All three vestigial slots are replaced outright. **Color is NOT made into
+a real tone control** — the operator's judgement, and the reasoning that supports it: the shipped Feedback
+tone (slot 10) already damps the repeats, and a second, wet-output tone would have been a nicer-but-not-
+necessary variation on a filter this bank already has. It is dropped, not deferred.
 
-**The delay has two distinct insertion points, and every candidate here is really a choice between them**
+| Slot | Today | Becomes |
+|---|---|---|
+| 4 | Detune — static +-50 cent L/R time skew, overlaps Stereo width at ~1/12 the strength | **Freeze** |
+| 7 | Color — no destination; averaged into Detune | **Reverse Blend** |
+| 8 | Halo — no destination; averaged into Mod depth | **Diffusion** |
+
+**Slot assignment is a recommendation, not a ruling.** Halo -> Diffusion is name-adjacent and the two are
+the same idea (§6.4a). The other two are interchangeable; nothing in the DSP prefers one slot over the
+other, and the encoder grid's row-major mapping means only the on-screen position changes.
+
+### 6.4a Halo IS Diffusion — traced, not reasoned from the names
+
+**The delay has two insertion points, and every candidate here is really a choice between them**
 (`app/dsp/Delay.hpp`):
 - **In-loop**, the feedback tap: `fbL`/`fbR` -> crush -> feedback tone -> `Saturate(fbDrive * .)` -> written
   back. Anything here **compounds once per repeat**.
 - **Wet output**, post-loop: `dL`/`dR` -> `wetLimiterL`/`wetLimiterR` -> `lastWet` -> `ToReverbMono` blends
   against dry by `dmix`. Anything here applies **once, equally to every repeat**.
 
-**Halo = Diffusion.** The research places Diffusion as "a short allpass chain on the wet tap", which is
-precisely the wet-output point, and the archived design doc records that Halo's name was always meant to
-promise early reflections. An allpass diffuser on the wet tap IS the practical form of that wash. **So this
-is one slot, not two — and it means the Diffusion candidate is SPENT by making Halo real**, which narrows
-what §6.3 leaves for Detune's slot to Reverse Blend, Freeze, or nothing.
+The research places Diffusion as "a short allpass chain on the wet tap" — the second point — and the
+archived design doc records that Halo's name always promised early reflections. An allpass diffuser on the
+wet tap IS the practical form of that wash, so **making Halo real and adding Diffusion were never two
+things.**
 
-**Color is NOT redundant with the shipped Feedback tone**, and the distinction is the insertion point, not
-the filter. Feedback tone sits in the loop and compounds — each repeat darker than the last, the tape-echo
-behaviour. A Color on the wet output colours all repeats identically. Two different instruments from the
-same one-pole.
+**Cost.** `dsp::DriveBlendPhase` already carries the one-pole allpass recurrence and its state
+(`allpassX1`/`allpassY1`, `app/dsp/Drive.hpp`) — **verified by reading, not taken from the research** —
+along with the `-0.98f` coefficient this codebase already treats as its stability margin. New per-channel
+state for a short chain; composes-existing, but genuinely new plumbing rather than a drop-in.
+**Headroom:** allpass sections are unity-gain by construction ONLY while the coefficient stays strictly
+inside the unit circle. **That must be enforced by the knob mapping, not asserted in a comment** — §7 is
+this codebase's record of what happens when a bound is proven and a contraction assumed.
 
-**What it entails, concretely:**
-1. **Delete the fold.** The two lines `params.ddet = 0.5*(ddet + Color)` and
-   `params.dmod = 0.5*(dmod + Halo)` come out of `MapRowsToDelayParams`. **Note this changes Detune's own
-   reachable range** — today it cannot exceed 0.5 unless Color is also raised — so retiring Detune in the
-   same move is coherent rather than a separate decision.
-2. **Color -> a wet-output tone**, two `dsp::OnePoleLowPass` instances on `dL`/`dR` ahead of the wet
-   limiters. Reuses-existing; the same struct feedback tone, Drive's Tone and Reverb's Tilt already use. If
-   a bipolar bright/dark tilt is wanted rather than a plain lowpass, Reverb's Tilt is the in-tree
-   precedent for exactly that shape. Headroom: none — a lowpass only removes energy, and it sits ahead of
-   the existing limiter either way.
-3. **Halo -> an allpass diffuser** on the wet tap. `dsp::DriveBlendPhase` already carries the one-pole
-   allpass recurrence and its state (`allpassX1`/`allpassY1`, `app/dsp/Drive.hpp`) — **verified by reading,
-   not taken from the research** — along with the `-0.98f` coefficient this codebase already treats as its
-   stability margin. New per-channel state for a short chain; composes-existing, but genuinely new
-   plumbing rather than a drop-in.
-   **Headroom, and this is the one that needs care:** allpass sections are unity-gain by construction ONLY
-   while the coefficient stays strictly inside the unit circle. **That proviso must be enforced by the knob
-   mapping, not asserted in a comment** — §7 records this codebase's one loop-gain-above-unity defect,
-   which came from exactly the pattern of proving a bound and assuming a contraction.
+### 6.4b Is Freeze continuous? Yes — in one implementation, and it collides with §7
 
-**Net: three vestigial slots become two real controls plus one free slot**, with no change to the
-fourteen-parameter count.
+**The operator asked directly, and the honest answer has a condition attached.** Freeze passes the
+continuous-range rule (§3 ruling 3 of the archived change, the rule that cut Cycle and Hard Sync) **only if
+built as a crossfade, not a switch**:
+
+```
+write  = inSignal * (1 - freeze)
+fb_eff = lerp(fbk, 1.0, freeze)
+```
+
+At 0 it is today's behaviour; at 1 the line recirculates with no new input; in between, new material bleeds
+in at reduced level over a loop that decays more slowly. **The midpoint is a real playable state**, which is
+exactly what Cycle (stepping through integer retrigger counts) and Hard Sync (whose character IS the
+discontinuity) could not offer. Built instead as a write-enable toggle, it fails the rule outright.
+
+**The condition, and it is not a footnote: Freeze at 1.0 is deliberate loop gain = 1 — the precise
+condition §7 documents as an accident.** With `fbDrive` reaching 4.0, `fb_eff * fbDrive` reaches ~4 and the
+loop GROWS rather than holding. **Freeze cannot be specified without deciding how it interacts with
+Feedback drive**: either Freeze clamps the product to 1, or `fbDrive` multiplies through it and full Freeze
+is a runaway rather than a hold. This is the same decision §7d option 1 raises, arriving from the other
+direction — which is an argument for settling T4.1 and T3.1 together rather than separately.
+
+### 6.4c What replacing all three entails
+
+1. **Delete the fold.** `params.ddet = 0.5*(ddet + Color)` and `params.dmod = 0.5*(dmod + Halo)` come out of
+   `MapRowsToDelayParams`. Note this changes Detune's own reachable range — today it cannot exceed 0.5
+   unless Color is raised — which is moot once Detune is retired, but matters if the two land in
+   separate commits.
+2. **Diffusion** — allpass chain on the wet tap, per §6.4a.
+3. **Freeze** — input-write attenuation plus feedback-toward-unity, per §6.4b, with the `fbDrive`
+   interaction decided.
+4. **Reverse Blend** — a second, backward-incrementing read pointer into the existing `lineL`/`lineR` via
+   `ReadAt`, crossfaded against the forward tap. Genuinely-new: needs its own wrap handling and a
+   click-free crossfade. **The research is explicit that a CONTINUOUS reverse control is its own
+   extrapolation** — every shipped reference makes reverse a discrete mode — so unlike Freeze, its
+   continuity is by construction rather than by precedent. It passes the rule (the midpoint is a real mixed
+   forward/reverse texture), but nobody has shipped it this way.
+
+**Net: three vestigial slots become three real controls, parameter count unchanged at fourteen.**
