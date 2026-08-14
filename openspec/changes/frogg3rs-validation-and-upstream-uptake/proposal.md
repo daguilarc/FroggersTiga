@@ -115,13 +115,24 @@ upstream-gated but re-checkable.
 The operator's position, recorded verbatim in substance: Detune was only ever tolerable while Width's two
 roles were conflated; now that Width balance separates them, *"we weren't doing detune anymore."*
 
-**Provenance note, corrected 2026-08-13.** An earlier version of this section stated the round-1/round-2
-Delay research files were unrecoverable. **That was wrong** — all five survive at
-`/private/tmp/claude-501/-Users-diegoaguilar-canabal-Desktop/6299e4a0-9bb0-47a0-b8b4-4ae3508fd32c/
-scratchpad/` (`RESEARCH-drive-delay.md`, `RESEARCH2-drive-delay.md`, `RESEARCH-audio-filter.md`,
-`RESEARCH2-audio-filter.md`, `RESEARCH-reverb.md`). They are read directly below. **They live in a session
-scratchpad outside the repo and could be cleaned up at any time — if their content is to be relied on, copy
-them into the repo rather than citing the path.**
+**Provenance note, corrected twice — the second correction is why the files are now in this directory.**
+An earlier version of this section stated the round-1/round-2 Delay research was unrecoverable. **That was
+wrong** — all five files survived in a session scratchpad outside the repo. Rather than cite a path under
+`/private/tmp` that any cleanup would destroy, **the research is now checked in beside this proposal at
+[`research/`](research/)**:
+
+| File | Covers |
+|---|---|
+| [`research/RESEARCH-drive-delay.md`](research/RESEARCH-drive-delay.md) | Round 1 — Drive slots 10-13, Delay slots 9/10/12/13 |
+| [`research/RESEARCH2-drive-delay.md`](research/RESEARCH2-drive-delay.md) | Round 2 — Drive slots 10-13, Delay slots 10/12/13 |
+| [`research/RESEARCH-audio-filter.md`](research/RESEARCH-audio-filter.md) | Round 1 — Audio slots 12-13, Filter slots 10-13 |
+| [`research/RESEARCH2-audio-filter.md`](research/RESEARCH2-audio-filter.md) | Round 2 — Audio slots 12-13, Filter slot 13 |
+| [`research/RESEARCH-reverb.md`](research/RESEARCH-reverb.md) | Round 1 — Reverb slots 11-12 |
+
+**This reverses the predecessor change's own instruction to keep the research out of the tree and cite it by
+summary only.** That instruction is what allowed a summary to drift from its source and then be declared
+lost; the operator's ruling is that the artifacts carry their own evidence. Everything §6.3 says below is
+read from these files, and any later session can now check it rather than trust it.
 
 ### 6.1 What the three slots actually do — read, not assumed
 

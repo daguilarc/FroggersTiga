@@ -101,13 +101,12 @@ original slots hold one-and-a-half controls between them.
 - [ ] **T3.3** Re-check the survivors against the selection rule before building: if the modulation matrix
       can already reach the effect by routing one of the fifteen sources onto an existing parameter, the
       parameter is rejected. Diffusion and Freeze both pass today; re-confirm rather than inherit it.
-- [ ] **T3.4 — Copy the research into the repo before relying on it further.** All five research files
-      survive (`RESEARCH-drive-delay.md`, `RESEARCH2-drive-delay.md`, `RESEARCH-audio-filter.md`,
-      `RESEARCH2-audio-filter.md`, `RESEARCH-reverb.md`) in a session scratchpad under
-      `/private/tmp/claude-501/...6299e4a0.../scratchpad/`. **An earlier version of this task said they
-      were gone; that was wrong.** They are outside the repo and a temp cleanup would destroy them, so if
-      T3.1 leans on any of their reasoning, copy them in first — the archived `BANK-EXPANSION-DESIGN.md`
-      table is a weaker substitute, not an equivalent one.
+- [x] **T3.4 — DONE: the research is checked in.** All five files now live at
+      `openspec/changes/frogg3rs-validation-and-upstream-uptake/research/` rather than in a temp scratchpad
+      one cleanup away from deletion. **Two earlier versions of this task were wrong in opposite
+      directions** — the first said the files were gone, the second said to copy them only if relied on.
+      The operator's ruling settles it: the artifacts carry their own evidence, so T3.1's candidate
+      reasoning can be checked against its source instead of trusted.
 
 ## T4 — Stop does not silence the instrument (`proposal.md` §7)
 
