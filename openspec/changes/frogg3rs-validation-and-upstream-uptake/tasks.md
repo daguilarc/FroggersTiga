@@ -200,8 +200,10 @@ user story.** T5.1-T5.2 are buildable now; T5.3 needs an operator answer first.
         the page at all. Checked before being called blocked, per this change's own rule, and the check
         went past the page itself: `MainPane::Page` is a CLOSED enum, so adding our own sidebar page is not
         available either. **Filed upstream as jvictor0/Sheaf#8** (app-supplied audio-page section, or an
-        app-supplied page). **NOT a blocker** — the settings can live on the app's own surface; the ask is
-        that the sidebar is the more natural home.
+        app-supplied page). **Severity, stated accurately after an earlier overcorrection: it BLOCKS the
+        requested design** (configuration beside the device selection). It does not block recording itself
+        only in the degenerate case — WAV-only has nothing to configure. Any format choice needs a home,
+        and the app's own instrument panel is a poor one.
       - **The app core cannot use JUCE** — `check_no_juce.cpp` compiles the core WITH JUCE on the include
         path and fails if any header resolves into it. v1's recorder is entirely JUCE.
       **The decision:** capture in the core and export in `FroggersMain.cpp` (the JUCE host, outside the

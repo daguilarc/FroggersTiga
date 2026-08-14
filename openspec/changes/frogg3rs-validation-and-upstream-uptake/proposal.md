@@ -435,9 +435,18 @@ When on it drives the Delay Freeze parameter (§6.4) to 1.
    `BuildAudioPageTree` and never assembles the sidebar, so there is no returned tree to append to.
    **Filed upstream as [jvictor0/Sheaf#8](https://github.com/jvictor0/Sheaf/issues/8)**, asking for either
    an optional app-supplied section on the audio page or an app-supplied sidebar page.
-   **It is NOT a blocker and the issue says so plainly:** the app composes its own main surface, so the
-   settings have a home — just a less natural one than beside the device selection. The issue also states
-   explicitly that no recording facility is being requested, since capture is app-side.
+   **Severity, corrected — an earlier version of this section called it "not a blocker" and that was an
+   overcorrection** after overstating a different upstream gap days earlier. Accurately:
+   - **It DOES block the design as requested.** The operator asked for the configuration to sit with the
+     audio device selection. That is not possible, so that requirement is blocked outright.
+   - **It does NOT block recording from existing — but only in the degenerate case.** WAV-only needs no
+     configuration at all, so a WAV recorder ships with nothing to place. The moment a format choice
+     exists (v1 shipped four), the setting needs a home.
+   - **The "the app has its own surface" answer is weak and was presented as though it settled the
+     question.** That surface is a dense instrument panel on a fixed row map; a rarely-touched export
+     setting there is somewhere to dump it, not a natural home.
+   The issue also states explicitly that no recording facility is being requested, since capture is
+   app-side.
 3. **The app core is mechanically barred from JUCE**, and v1's recorder is entirely JUCE.
    `app/check_no_juce.cpp` compiles `Froggers.hpp` *with JUCE on the include path* and fails the build if
    `JUCE_MAJOR_VERSION` ends up defined — absence of a link dependency is explicitly not accepted as proof.
