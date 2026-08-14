@@ -51,6 +51,20 @@ Web publication gate only. Fails deploy if the live sim would show wrong labels 
 | `sim/check_host_display_projections.sh` | Desktop catalog + web WASM pool projections |
 | `sim/check_mod_source_labels.sh` | Mod source labels match `ParamDisplayNames` |
 
+## Local git hooks
+
+`scripts/hooks/pre-commit` re-syncs the operator-doc mirrors and re-stages them, so a `SIM_MANUAL.md` or
+`QUICK_DICT.md` edit cannot reach a push with `docs/` and `web/public/` still stale. Install (or refresh)
+with:
+
+```bash
+scripts/hooks/install.sh
+```
+
+`.git/hooks` is untracked, so this is per-clone — re-run it after cloning. Without the hook the only
+enforcement is `sim/check_operator_docs_sync.sh` in `pages.yml`, which fails *after* the push; that is how
+`docs/sim-manual.md` sat drifted at HEAD until 2026-08-13.
+
 Run locally:
 
 ```bash
