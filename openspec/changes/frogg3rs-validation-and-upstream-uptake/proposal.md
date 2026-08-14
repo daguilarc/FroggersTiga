@@ -115,11 +115,13 @@ upstream-gated but re-checkable.
 The operator's position, recorded verbatim in substance: Detune was only ever tolerable while Width's two
 roles were conflated; now that Width balance separates them, *"we weren't doing detune anymore."*
 
-**Provenance note, stated because it limits what follows.** The round-1/round-2 Delay research files this
-change's predecessor drew on lived outside the repo, in a session scratchpad that no longer exists — they
-are NOT recoverable. What IS recoverable, and what everything below is sourced from, is the archived
-`BANK-EXPANSION-DESIGN.md` (`openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/`),
-which carries the full Delay candidate table with tier and headroom columns.
+**Provenance note, corrected 2026-08-13.** An earlier version of this section stated the round-1/round-2
+Delay research files were unrecoverable. **That was wrong** — all five survive at
+`/private/tmp/claude-501/-Users-diegoaguilar-canabal-Desktop/6299e4a0-9bb0-47a0-b8b4-4ae3508fd32c/
+scratchpad/` (`RESEARCH-drive-delay.md`, `RESEARCH2-drive-delay.md`, `RESEARCH-audio-filter.md`,
+`RESEARCH2-audio-filter.md`, `RESEARCH-reverb.md`). They are read directly below. **They live in a session
+scratchpad outside the repo and could be cleaned up at any time — if their content is to be relied on, copy
+them into the repo rather than citing the path.**
 
 ### 6.1 What the three slots actually do — read, not assumed
 
@@ -149,21 +151,36 @@ being roughly 12x weaker (`widthSpread` reaches 35% of base time; Detune reaches
 
 ### 6.3 Replacement candidates, from the archived table, none chosen here
 
-The design doc's own Delay slate proposed two parameters that were NOT built — the predecessor change
-shipped Width balance and Crush into those slots instead — so both remain available and already carry a
-tier and a headroom verdict:
+Read from the round-1/round-2 Delay research directly. Of its six ranked candidates, three were built by
+the predecessor (Feedback Drive rank 1, Feedback Tone rank 2, Crush rank 3, plus round 2's Width Balance).
+**Three were never built and are available now**, each with the research's own precedent, reuse and
+headroom verdict:
 
-- **Diffusion** — an allpass smear across the repeats, "discrete clean repeats (today)" to "fully diffused
-  wash". Tier 3, genuinely new: no allpass network exists in `Delay.hpp`. Headroom verdict on record:
-  likely safe as a unity-gain Schroeder chain, **but flagged for verification** because a poorly tuned
-  allpass network can leak gain.
-- **Freeze** — "normal, writes continue (today)" through "partial freeze, new input bleeds in at reduced
-  level while the loop rings on" to a full infinite hold. Structurally new, and note it is the *deliberate*
-  form of the accidental sustain analysed in §7.
+- **Diffusion (`Diff`, round-1 rank 4)** — sharp discrete repeats at 0.0, edges blurring at 0.5, smeared
+  into "a reverb built from a delay" at 1.0. Precedent: Valhalla Delay's Diffusion section, Chase Bliss
+  Mood's `Modify`. **Reuses in-tree allpass math** — `dsp::DriveBlendPhase`'s own
+  `phased = -a*wet + x1 + a*y1` is the identical building block. Headroom: none, allpass sections being
+  unity-gain by construction — **but only if the coefficient stays strictly inside the unit circle, using
+  the same `0.98` margin `DriveBlendPhase` and `dsp::Comb` already use.** That caveat is now much more
+  interesting than when it was written: §7 shows this codebase has exactly one loop-gain-above-unity
+  defect already, and it came from a stage whose bound was proven and whose contraction was not.
+- **Reverse Blend (`Rev`, round-1 rank 6)** — forward repeats at 0.0 through a mixed forward/reverse
+  hybrid to fully backwards repeats at 1.0. Reuses `StereoDelay`'s existing `lineL`/`lineR` and `ReadAt`
+  via a second, backward-incrementing read pointer. Strongest "wow factor" of any Delay candidate, ranked
+  last on cost: genuinely-new, needs its own wrap handling and a click-free crossfade. **The research is
+  honest that the continuous framing is its own extrapolation** — every shipped reference implements
+  reverse as a discrete MODE, not a continuous knob.
+- **Ducking (`Duck`, round-1 rank 5)** — repeats duck under new input. The research flags it itself as the
+  weakest fit: explicitly corrective rather than characterful, working against the brief's stated bias, and
+  with the weakest DSP reuse of the set. **Its own recommendation is to treat it as the first cut.**
 
-Both pass the selection rule: neither is reachable by routing a modulation source onto an existing
-parameter. **A third option exists and is not a parameter:** simply retire Detune and give Color and Halo
-real destinations, which costs no new slots and removes the fold rather than building on top of it.
+**Freeze** also appears, from the archived `BANK-EXPANSION-DESIGN.md` rather than the research rounds —
+normal writes at 0.0 through partial bleed to an infinite hold at 1.0. Note it is the deliberate form of
+the accidental sustain analysed in §7.
+
+Every one passes the selection rule: none is reachable by routing a modulation source onto an existing
+parameter. **A further option needs no new parameter at all:** retire Detune and give Color and Halo real
+destinations, which costs no slots and removes the fold rather than building on top of it.
 
 **Nothing here is decided.** The operator has ruled Detune out; what replaces it, and whether Color and
 Halo are repurposed or retired, is open (T3).

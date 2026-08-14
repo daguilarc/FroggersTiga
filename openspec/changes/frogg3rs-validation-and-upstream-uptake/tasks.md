@@ -85,20 +85,29 @@ destination of their own — each is averaged into a neighbouring knob's value �
 original slots hold one-and-a-half controls between them.
 
 - [ ] **T3.1 — OPERATOR DECISION, not closable by an implementer.** Decide the fate of each of the three
-      slots. The recoverable candidates, both already tiered in the archived design doc and both left
-      unbuilt when the predecessor shipped Width balance and Crush into their slots: **Diffusion** (Tier 3,
-      allpass smear, genuinely new, flagged for gain leak if the allpass chain is badly tuned) and
-      **Freeze** (structurally new; the deliberate form of the accidental sustain in §7). A third option
-      needs no new parameter at all: retire Detune and give Color and Halo real destinations.
+      slots. Candidates, read from the round-1/round-2 Delay research itself (`proposal.md` §6.3), which
+      ranked six and saw four built: **Diffusion** (rank 4 — allpass smear toward "a reverb built from a
+      delay", reuses `DriveBlendPhase`'s own allpass math, unity-gain ONLY if the coefficient keeps the
+      same `0.98` margin `DriveBlendPhase` and `dsp::Comb` already use); **Reverse Blend** (rank 6 —
+      biggest wow factor, costliest, and the research is explicit that a CONTINUOUS reverse knob is its own
+      extrapolation since every shipped reference makes reverse a discrete mode); **Ducking** (rank 5 —
+      the research recommends it as the first cut, being corrective rather than characterful). **Freeze**
+      comes from the archived design doc rather than the research, and is the deliberate form of §7's
+      accidental sustain. A further option needs no new parameter at all: retire Detune and give Color and
+      Halo real destinations.
 - [ ] **T3.2** Whatever T3.1 picks, the fold itself comes out: `params.ddet = 0.5*(ddet + Color)` and
       `params.dmod = 0.5*(dmod + Halo)` (`app/dsp/Delay.hpp`'s row-mapping) must stop averaging two knobs
       into one value, so each slot owns exactly one job.
 - [ ] **T3.3** Re-check the survivors against the selection rule before building: if the modulation matrix
       can already reach the effect by routing one of the fifteen sources onto an existing parameter, the
       parameter is rejected. Diffusion and Freeze both pass today; re-confirm rather than inherit it.
-- [ ] **T3.4** The Delay research files this analysis would ideally cite are GONE — they lived in a session
-      scratchpad outside the repo. If a fresh candidate sweep is wanted, it starts from the archived
-      `BANK-EXPANSION-DESIGN.md` table, not from those files. Recorded so nobody hunts for them.
+- [ ] **T3.4 — Copy the research into the repo before relying on it further.** All five research files
+      survive (`RESEARCH-drive-delay.md`, `RESEARCH2-drive-delay.md`, `RESEARCH-audio-filter.md`,
+      `RESEARCH2-audio-filter.md`, `RESEARCH-reverb.md`) in a session scratchpad under
+      `/private/tmp/claude-501/...6299e4a0.../scratchpad/`. **An earlier version of this task said they
+      were gone; that was wrong.** They are outside the repo and a temp cleanup would destroy them, so if
+      T3.1 leans on any of their reasoning, copy them in first — the archived `BANK-EXPANSION-DESIGN.md`
+      table is a weaker substitute, not an equivalent one.
 
 ## T4 — Stop does not silence the instrument (`proposal.md` §7)
 
