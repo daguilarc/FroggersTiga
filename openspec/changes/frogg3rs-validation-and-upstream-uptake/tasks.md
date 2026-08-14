@@ -92,11 +92,16 @@ each is built, not whether — and T3.1a is a genuine blocker on Freeze.
       wet-output tone was judged not to earn a slot. Ducking stays cut, as the research's own first-cut
       recommendation. Slot assignment is a recommendation only: Halo -> Diffusion is name-adjacent and the
       same idea, the other two are interchangeable.
-- [ ] **T3.1a — Freeze's `fbDrive` interaction MUST be decided before Freeze is built
-      (`proposal.md` §6.4b).** Freeze at 1.0 is deliberate loop gain = 1; `fbDrive` reaches 4.0, so
-      `fb_eff * fbDrive` reaches ~4 and full Freeze GROWS instead of holding. Either Freeze clamps the
-      product to 1, or `fbDrive` multiplies through it and full Freeze is a runaway. **This is §7d option 1
-      arriving from the other direction — settle T3.1a and T4.1 together, not separately.**
+- [x] **T3.1a — DECIDED, operator 2026-08-13: Freeze clamps.** Full Freeze is deliberate loop gain = 1
+      while `fbDrive` reaches 4.0, so the product would reach ~4 and full Freeze would GROW instead of hold.
+      **Freeze clamps the loop-gain product to 1.** Two consequences the implementer must not miss:
+      - **The clamp is CONTINUOUS, not applied once at freeze-on** (operator, same ruling). Un-toggling
+        Freeze restores sub-unity loop gain and the tail decays normally — the control can never leave a
+        runaway loop behind it. Implement it as a property of the freeze mapping evaluated every sample,
+        not as a latched state change.
+      - This is the same clamp `proposal.md` §7d option 1 proposes for the accidental case. **Building
+        Freeze therefore fixes, or half-fixes, the Stop-sustain bug as a side effect** — T4.1 must be
+        settled knowing that, since the operator likes the accidental sound.
 - [ ] **T3.1b — Freeze SHALL be built as a crossfade, not a write-enable toggle.** `write = inSignal *
       (1 - freeze)` with `fb_eff = lerp(fbk, 1.0, freeze)`. Built as a toggle it fails the operator's own
       continuous-range rule — the rule that cut Cycle and Hard Sync — and the whole reason it passes is
@@ -106,11 +111,13 @@ each is built, not whether — and T3.1a is a genuine blocker on Freeze.
       by construction only while the coefficient stays strictly inside the unit circle. **Do not assert
       this in a comment** — §7 records what this codebase's one loop-gain-above-unity defect cost, and it
       came from proving a bound and assuming a contraction.
-- [ ] **T3.1d — Reverse Blend's continuity is by construction, not by precedent.** Every shipped reference
-      implements reverse as a discrete MODE; the continuous forward/reverse crossfade is the research's own
-      extrapolation. It passes the continuous-range rule (the midpoint is a real mixed texture), but no
-      product ships it this way — so it carries more design risk than the other two, plus a known
-      edge-of-buffer click hazard at the crossfade.
+- [x] **T3.1d — Reverse Blend: continuity accepted, buffer smoothing DECIDED, operator 2026-08-13.**
+      Its continuity is by construction rather than by precedent — every shipped reference makes reverse a
+      discrete MODE, and the continuous forward/reverse crossfade is the research's own extrapolation. It
+      passes the continuous-range rule (the midpoint is a real mixed texture). **The known edge-of-buffer
+      click hazard at the crossfade is answered by buffer smoothing**, which the operator has accepted as
+      part of the cost. The smoothing is not optional garnish: it is what makes the control shippable, so
+      it is specified with the parameter rather than left to implementation taste.
 - [ ] **T3.2** Delete the fold: `params.ddet = 0.5*(ddet + Color)` and `params.dmod = 0.5*(dmod + Halo)`
       come out of `MapRowsToDelayParams` (`app/dsp/Delay.hpp`), so each slot owns exactly one job. Note it
       changes Detune's own reachable range, which is moot once Detune is retired but matters if the two

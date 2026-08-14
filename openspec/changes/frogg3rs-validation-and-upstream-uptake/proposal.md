@@ -339,6 +339,18 @@ Feedback drive**: either Freeze clamps the product to 1, or `fbDrive` multiplies
 is a runaway rather than a hold. This is the same decision §7d option 1 raises, arriving from the other
 direction — which is an argument for settling T4.1 and T3.1 together rather than separately.
 
+### 6.4b-i Both open Freeze/Reverse questions are now ruled on (operator, 2026-08-13)
+
+- **Freeze clamps.** The loop-gain product is clamped to 1, so full Freeze holds rather than grows.
+  **The clamp is continuous, not a latched state change applied at freeze-on** — un-toggling Freeze
+  restores sub-unity loop gain and the tail decays normally, so the control cannot leave a runaway loop
+  behind it. **Note the consequence for §7:** this is the same clamp §7d option 1 proposes for the
+  accidental case, so building Freeze fixes or half-fixes the Stop-sustain behaviour as a side effect —
+  which the operator likes and has not asked to lose. T4.1 has to be settled knowing that.
+- **Reverse Blend gets buffer smoothing.** The edge-of-buffer click hazard at the forward/reverse crossfade
+  is answered by smoothing rather than by narrowing the control. It is specified with the parameter, not
+  left to implementation taste, because it is what makes the control shippable at all.
+
 ### 6.4c What replacing all three entails
 
 1. **Delete the fold.** `params.ddet = 0.5*(ddet + Color)` and `params.dmod = 0.5*(dmod + Halo)` come out of
