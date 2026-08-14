@@ -1,10 +1,14 @@
-# Tasks — `frogg3rs-validation-and-upstream-uptake`
+# Tasks — `frogg3rs-post-expansion-consolidation`
 
 > **Read `proposal.md` first.** It carries the scope and why each item is here rather than in the archived
 > `frogg3rs-bank-expansion`.
 
-**Inherited state, VERIFIED not assumed** (archived change's `§EXECUTION`, re-run at the end of session 8):
-10 binaries, **211 tests, 0 failures, 0 warnings**. `External/Sheaf` pinned at `77a3019e`.
+**Current state, VERIFIED not assumed:** 10 binaries, **213 tests, 0 failures, 0 warnings** — the archived
+change's `§EXECUTION` recorded 211, and the two-line encoder-label rework added two more. `External/Sheaf`
+pinned at `77a3019e`.
+
+**Read the blocks in dependency order, not numeric order.** T3 (Delay slate) gates T5.2 (the Freeze button),
+and T3.1a's clamp decision is coupled to T4.1's — see `proposal.md` §6.4b-i.
 
 ## §0 Standing constraints
 
@@ -16,7 +20,8 @@
 - **No AI attribution on commits.**
 - **Code changes sequential. Parallel dispatch only for read-only analysis.**
 - **An implementer may not close a task whose resolution requires the operator's ears or eyes.** T1.1 and
-  T1.2 are exactly that, and they are the reason this change exists.
+  T1.2 are exactly that. They were this change's original reason for existing; it has since grown four
+  more blocks, so they are no longer the whole of it.
 
 ---
 
@@ -51,9 +56,10 @@
 - [ ] **T1.7 — By-ear tuning item, carried forward and still not a parameter.** Is `kPmLfoDepth = 0.15` the
       right maximum PM depth? If too shallow, change the constant — do NOT add a knob to rescale it. This
       was rejected once already as a meta-control.
-- [ ] **T1.8** Re-run the full suite and report counts; any red is a regression against 211/0/0.
+- [ ] **T1.8** Re-run the full suite and report counts; any red is a regression against **213/0/0** (the
+      archived change ended at 211; the encoder-label rework added two).
 
-## T2 — Upstream Sheaf uptake (issues 1-6), currently blocked
+## T2 — Upstream Sheaf uptake (issues 1-6 and 8), currently blocked
 
 - [ ] **T2.0 — GATE ON EVERY ITEM BELOW, and it is not a formality.** Before treating any item as
       upstream-blocked, prove no app-side route exists by reading the WHOLE relevant surface — the public
@@ -74,6 +80,12 @@
 - [ ] **T2.3 — BLOCKED, not schedulable.** For each item that is genuinely upstream-only: when the pin
       moves and the fix is present, take it up app-side and REMOVE the corresponding app-side workaround if
       one exists. Nothing here is actionable until `External/Sheaf`'s pin changes.
+- [x] **T2.5 — Issue 8 is OURS, filed and then downgraded, and carries no work here.** *"Out-of-tree apps
+      can't add settings to the audio page, or add a sidebar page of their own"* — filed 2026-08-13 after
+      confirming both the audio page's closed snapshot AND that `MainPane::Page` is a closed enum, so there
+      is no app-side seam. **WAV-only recording (T5.3) means nothing needs configuring, so it blocks
+      nothing being built**, and it is recorded upstream as the least important of our open issues. It
+      becomes real again only if MP3/FLAC/OGG are added (T5.3d).
 - [ ] **T2.4 — Issue 7 carries NO work and is recorded closed.** It was this project's own filing, withdrawn
       and closed as not-planned because the premise was wrong. Recorded so it is not re-opened as an
       upstream dependency.

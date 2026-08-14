@@ -1,48 +1,55 @@
-# Proposal — `frogg3rs-validation-and-upstream-uptake`
+# Proposal — `frogg3rs-post-expansion-consolidation`
 
-**Created 2026-08-12.** Supersedes the outstanding work of `frogg3rs-bank-expansion`, which is built and
-archived. That change grew every bank from nine parameters to fourteen — thirty new parameters — and left
-exactly two things no implementer could close, plus a standing dependency on upstream Sheaf. This change
-carries both, and nothing else.
-
-**This change is scoped to what a machine cannot finish.** Everything in `frogg3rs-bank-expansion` that
-could be verified by a test IS verified by a test: 211 tests, 0 failures, 0 warnings, with a positive
-control run against every measurement. What remains needs either a human's ears and eyes, or a dependency
-this project does not control.
+**Created 2026-08-12 as `frogg3rs-validation-and-upstream-uptake`; renamed 2026-08-13 when that name stopped
+describing it.** It began as two things the archived `frogg3rs-bank-expansion` could not close. It has since
+absorbed a rework of the Delay bank's vestigial slots, an analysis of a real Stop-sustain defect, and four
+new operator-requested controls — kept together deliberately, because they are one user story rather than
+five errands.
 
 ---
 
 ## Why
 
-`frogg3rs-bank-expansion` is built, green and archived — but "green" covers only what a test can see. Two of
-its tasks were written from the start as un-closable by an implementer because they need a human's eyes and
-ears, four shipped ranges were chosen by an implementer against no specified value, two of its measurements
-were reported but never pinned as regression tests, and six upstream Sheaf gaps remain outstanding against a
-pinned dependency this project deliberately never forks. Leaving those inside an archived change would
-record them as done. They are not.
+`frogg3rs-bank-expansion` is built, green and archived — but "green" covers only what a test can see, and
+using the instrument surfaced things no test was ever going to raise. Five threads, each with a reason it
+cannot live in an archived change:
+
+1. **Two of its tasks were un-closable by an implementer from the start** — they need a human's eyes and
+   ears — and four shipped ranges were chosen against no specified value.
+2. **Six upstream Sheaf gaps** remain outstanding against a pinned dependency this project never forks.
+3. **Three of Delay's nine original slots hold one-and-a-half controls between them.** Detune, Color and
+   Halo were vestigial before the expansion and the expansion did not touch them.
+4. **Stop does not silence the instrument** once Randomize All puts audio-rate modulation on the drive
+   parameters — traced to a rule this project wrote and then over-read.
+5. **Four new controls** the operator asked for, two of which depend on thread 3's DSP.
 
 ## What Changes
 
-- Adds a requirement that a bank parameter be **audibly effective** across its range and in the direction its
-  name implies — a property registration, bounding and default-parity tests do not reach.
-- Adds a requirement that a **measured bound be pinned by a regression test**, not left as prose.
-- Adds a new capability, `froggers-upstream-uptake`, requiring that an upstream gap be **proven
-  app-unreachable before it is treated as blocking**, and that the pinned dependency is never forked or
-  locally patched.
-- Schedules the by-ear and visual validation the predecessor could not close, and parks the six upstream
-  items behind an explicit re-check gate.
+- **Delay's Detune, Color and Halo become Freeze, Reverse Blend and Diffusion** (§6). Parameter count
+  unchanged at fourteen; Freeze clamps its loop gain continuously, Reverse Blend gets buffer smoothing.
+- **The Stop-sustain defect is analysed and NOT fixed** (§7), at the operator's request — including the
+  finding that all three in-loop saturator pre-gains share it, one of which had its headroom flag withdrawn
+  during the expansion on exactly the reasoning that turns out to be incomplete.
+- **Record, Freeze, Reset Page and Reset All** are specified (§8), with recording settled as WAV-only.
+- Adds requirements that a bank parameter be **audibly effective** across its range, that a **measured bound
+  be pinned by a regression test**, that a **reset returns depths to neutral rather than zero** — the
+  obvious reading of which is full negative modulation — and that a control needing genuine colour
+  inversion **draws itself** rather than relying on the library's selected state.
+- Adds the `froggers-upstream-uptake` capability: an upstream gap must be **proven app-unreachable before
+  it is treated as blocking**, and the pinned dependency is never forked or locally patched. **This rule
+  exists because this project broke it**, filed an issue on a false premise and withdrew it.
 
 ## 1. Objective
 
-Two capabilities, deliberately kept separate because one is reachable now and the other is not:
+Close out everything the bank expansion left behind or caused, and the operator-requested work that hangs
+off it, in one change rather than five. The threads are not independent — Freeze's clamp is the same clamp
+the Stop-sustain fix would need (§6.4b-i), the Freeze button cannot exist before the Freeze parameter
+(T5.2a), and recording's format choice is what decides whether an upstream gap matters at all (§8.3).
+Splitting them would have hidden those couplings.
 
-1. **Hands-on validation of the thirty new parameters.** Automated tests prove each knob is wired, bounded
-   and default-neutral. They do NOT prove any of it sounds like the thing its name promises, and two tasks
-   were explicitly written as un-closable by an implementer for that reason.
-2. **Uptake of upstream Sheaf fixes**, when and if they land. `External/Sheaf` is pinned at `77a3019e` and
-   is deliberately not forked — a fork was tried on 2026-07-27 and reverted the same day because the
-   gitlink was unresolvable from any other checkout (`UPSTREAM-SHEAF-ASK.md`). So every upstream gap is an
-   ask, and this change is where the app-side uptake work lives once an ask is answered.
+**What is buildable now:** the Delay slate, Reset Page/Reset All, Record, and — after the Delay work — the
+Freeze button. **What is not:** the by-ear and visual validation, which needs the operator, and the six
+upstream items, which need a dependency this project does not control.
 
 ## 2. What `frogg3rs-bank-expansion` actually left open
 
@@ -81,7 +88,9 @@ standalone harnesses. They are correct today and nothing guards them tomorrow.
 ## 4. Upstream: what is actually blocked, and what is not
 
 **Corrected relative to a claim made and withdrawn during the predecessor change, because getting this
-wrong once is the reason it is stated carefully here.** Sheaf issues 1-6 are open upstream. Issue 7 —
+wrong once is the reason it is stated carefully here.** Sheaf issues 1-6 are open upstream, as is issue 8,
+filed by this project on 2026-08-13 and then downgraded to the least important of them once WAV-only
+recording removed anything to configure (§8.3). Issue 7 —
 `EncoderDraw`'s 4-character label cap — **was filed by this project and then withdrawn and closed by this
 project as not-planned**, because the premise was wrong: `BuildFourteenSegmentCommands` is public with
 `numChars` as an ordinary parameter, and the app owns the `std::vector<DrawCommand>` that
