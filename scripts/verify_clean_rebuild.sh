@@ -128,19 +128,10 @@ if ! npm --prefix web run verify:host-display; then
   note_fail "web verify:host-display failed"
 fi
 
-echo "== desktop cmake build (BUILD_VST=ON) =="
-cmake -S desktop -B desktop/build -DBUILD_VST=ON
+echo "== desktop cmake build =="
+cmake -S desktop -B desktop/build
 if ! cmake --build desktop/build --config Release; then
   note_fail "desktop build failed"
-fi
-if [[ -f desktop/build/HostParameterProcessor_test ]]; then
-  if ! ctest --test-dir desktop/build --output-on-failure -R 'HostParameter'; then
-    note_fail "desktop HostParameter tests failed"
-  fi
-elif [[ -f desktop/build/Release/HostParameterProcessor_test.exe ]]; then
-  if ! ctest --test-dir desktop/build --output-on-failure -C Release -R 'HostParameter'; then
-    note_fail "desktop HostParameter tests failed"
-  fi
 fi
 
 if [[ "${VERIFY_V2:-}" == "1" ]]; then

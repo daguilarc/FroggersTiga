@@ -345,8 +345,6 @@ cmake -B build -DFROGGERS_JUCE_SOURCE_DIR=/path/to/JUCE
 
 This uses CMake `FetchContent`'s local source override and avoids silently depending on a live network fetch during configure.
 
-**VST3 / AU (local-only, pre-launch):** `cmake -B build -DBUILD_VST=ON` after restoring plugin sources. This surface remains under local validation and is intentionally absent from the public SIM manual until launch.
-
 **VCV Rack (local-only, pre-launch):** `vcv/` is local-only and not built on CI. This surface remains under local validation and is intentionally absent from the public SIM manual until launch.
 
 Links `src/core/` + `DesktopHostIO` only (no libDaisy). Transport bar: **Play/Stop**, format toggles (**WAV/MP3/FLAC/OGG**), **Record** (stereo export), **MIDI**, **Audio**. **WAV** and **OGG** export work in default JUCE builds; **MP3** needs `JUCE_USE_MP3AUDIOFORMAT` + LAME at compile time; **FLAC** needs `JUCE_USE_FLAC`. macOS menu **FroggersTiga → Manual / Quick Dict / License** (embedded docs).

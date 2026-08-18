@@ -86,7 +86,7 @@ sim/check_mod_source_labels.sh
 - public repo source: reviewed project code, scripts, docs, and intentional Pages output
 - generated publication output: `docs/` and `web/public/` mirrors/assets
 - local cache/build output: build directories, downloaded Node runtimes, Emscripten SDK, Rack SDK, JUCE/CMake caches
-- local-only product surfaces: VCV and VST/AU development paths that are not public release surfaces yet
+- local-only product surfaces: VCV development paths that are not public release surfaces yet
 - local-only planning state: `openspec/`
 - firmware exclusions: Daisy firmware/source surfaces that are outside host cleanup
 

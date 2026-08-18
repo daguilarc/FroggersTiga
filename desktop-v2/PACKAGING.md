@@ -65,17 +65,6 @@ The app bundles canonical operator docs from the repo root:
 
 Update root `SIM_MANUAL.md` first; mirrors under `docs/` and `web/public/` must stay in sync (`sim/check_operator_docs_sync.sh`).
 
-## VST v2 (not packaged yet)
-
-`FroggersTigaPluginV2` (VST3/AU) is tracked in OpenSpec §6 and is **not** buildable from public tree until plugin sources land. When available:
-
-```sh
-cmake -S desktop -B desktop/build-v2-vst -DBUILD_VST_V2=ON
-cmake --build desktop/build-v2-vst --config Release
-```
-
-`BUILD_VST_V2` defaults **OFF**; public CI never enables it.
-
 ## Unsigned builds
 
 Like v1 desktop packages, local v2 builds are **not** code-signed. macOS Gatekeeper or Windows SmartScreen may block first launch — use right-click **Open** or local dev workarounds.
@@ -94,7 +83,7 @@ Optional v2 sweep after local changes:
 VERIFY_V2=1 scripts/verify_clean_rebuild.sh
 ```
 
-This adds `desktop-v2` Release build + `ControlCoreBridge_test`, and attempts `BUILD_VST_V2=ON` when the CMake option and plugin sources exist.
+This adds `desktop-v2` Release build + `ControlCoreBridge_test`.
 
 ## Release policy
 

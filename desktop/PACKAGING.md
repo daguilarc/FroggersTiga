@@ -112,16 +112,7 @@ Public GitHub releases ship **desktop standalone** and **web sim** only.
 | Target | Policy |
 |--------|--------|
 | **VCV Rack plugin** (`vcv/`) | Local-only; directory in `.gitignore`. CV-only — no MIDI widgets or CC mod sources; per-parameter CV jacks combine with internal routes. |
-| **VST3 / AU** (`PluginEditor`, `PluginProcessor`) | Local-only; sources in `.gitignore`; `BUILD_VST=OFF` by default. **107** DAW-automatable host parameters; no hosted CC ingest or MIDI Settings — map MIDI in the DAW. Mod rack: VCO Envelope + Random 1/2 only. |
 
-To build VST locally (after restoring plugin sources on your machine):
+Public CI (`desktop-release.yml`, `pages.yml`) never builds `vcv/`. See `docs/CI.md`. The untested `BUILD_VST`/`PluginEditor`/`PluginProcessor` wrappers described here previously were removed (never built by CI, never exercised at the `AudioProcessor` layer); a VST/AU host is being rebuilt from scratch under `app/vst/` (see `openspec/changes/frogg3rs-browser-and-vst-hosts/`).
 
-```sh
-cd desktop
-cmake -B build -DBUILD_VST=ON
-cmake --build build --config Release
-```
-
-Hosted parameter inventory is validated by `HostParameterProcessor_test` (expects exactly 107 parameters). Public CI (`desktop-release.yml`, `pages.yml`) never sets `BUILD_VST=ON` and never builds `vcv/`. See `docs/CI.md`.
-
-**Worktree hygiene:** `scripts/verify_clean_rebuild.sh` rebuilds sim, web, and desktop/VST from clean output trees and fails if tracked source drifts or generated host-display files are stale.
+**Worktree hygiene:** `scripts/verify_clean_rebuild.sh` rebuilds sim, web, and desktop from clean output trees and fails if tracked source drifts or generated host-display files are stale.
