@@ -280,6 +280,90 @@ TEST_CASE(randomize_all_with_ample_capacity_reports_not_partial) {
     REQUIRE_TRUE(!rig.Application().LastRandomizePartial());
 }
 
+// T1.3(b) (openspec/changes/frogg3rs-stop-isolation-and-legible-labels/
+// tasks.md): the pass-F minimal repro (proposal.md SS1, "Pass F" --
+// FroggersStopSustainRepro.cpp's RunCurveArm, NOT part of the regular
+// suite per the *Repro.cpp convention), promoted into a REAL suite test so
+// the regression it guards against cannot silently come back. Curve
+// (Envelope slot 12) at exactly 1.0, Grace (slot 13) active, VCO1's own
+// Decay/Sustain set so the ease-in Decay's slow start lingers near peak
+// (the loud-stuck regime) -- everything else default. PRE-FIX (T1.1's
+// ComputeRampStep progress floor absent), measured 2026-08-17 by that
+// repro: curve=1.0 held output flat at 0.939 at t+10s post-Stop,
+// AllIdle()==0 at every checkpoint through t+5s -- the voice never reached
+// Idle, so FroggersAppCore's delay/reverb clear (gated on AllIdle()) never
+// fired, and the instrument never actually stopped after Stop. This test
+// pins the fix: AllIdle() within 2.0s of Stop, and output peak below 1e-4
+// within 2.5s of Stop.
+TEST_CASE(stop_silences_curve_one_grace_active_voice_within_bound_pass_f_repro_as_suite_test) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64,
+        UseScratchRuntimeDataPaths("stop_silences_curve_one_grace_active"));
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+    using synth_froggers::FroggersBankId;
+
+    model.PageParameter(FroggersBankId::Audio, 0).SceneCenter(0) = 0.5f;   // VCO1 pitch.
+    model.PageParameter(FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;   // Drive gain.
+    // Same recipe as pass F's RunCurveArm (FroggersStopSustainRepro.cpp):
+    // mid Decay + audible Sustain on VCO1 (ease-in Decay's slow start keeps
+    // level lingering near peak -- default fast Decay or silent Sustain
+    // would fail to reproduce the bug for the WRONG reason), Curve at
+    // exactly 1.0 (the value that made ComputeRampStep's per-sample
+    // progress unbounded pre-T1.1), Grace active (a pending release defers
+    // through Attack/Decay instead of forcing Release immediately -- the
+    // condition Pass F needed to expose the stuck-mid-Decay regime).
+    // Attack/Release/VCO2/VCO3 stay at their registered defaults, exactly
+    // as the repro leaves them.
+    model.PageParameter(FroggersBankId::Envelope, 1).SceneCenter(0) = 0.5f;   // Decay VCO1: mid.
+    model.PageParameter(FroggersBankId::Envelope, 2).SceneCenter(0) = 0.7f;   // Sustain VCO1: audible.
+    model.PageParameter(FroggersBankId::Envelope, 12).SceneCenter(0) = 1.0f;  // Curve: exactly 1.0.
+    model.PageParameter(FroggersBankId::Envelope, 13).SceneCenter(0) = 0.5f;  // Grace: active.
+    rig.Application().TestParameterManager().ComputeAllParameters();
+
+    rig.StartAt(0);
+    std::uint64_t timestamp = 0;
+    const std::size_t blockSize = 256;
+    constexpr double kSampleRateHz = 48000.0;
+    const auto secondsToBlocks = [&](double seconds) -> std::size_t {
+        return static_cast<std::size_t>(std::ceil((seconds * kSampleRateHz) / static_cast<double>(blockSize)));
+    };
+
+    rig.RunBlocks(secondsToBlocks(2.0));
+    timestamp += secondsToBlocks(2.0);
+
+    rig.ClearOutput();
+    rig.RunBlocks(secondsToBlocks(0.1));
+    timestamp += secondsToBlocks(0.1);
+    float prestopPeak = 0.0f;
+    for (const auto& frame : rig.Output()) {
+        for (float sample : frame.channels) prestopPeak = std::max(prestopPeak, std::fabs(sample));
+    }
+    // Liveness gate (OMNI SS9.1's positive control): the arm must actually
+    // be audible before Stop, or a silent-by-accident run would make the
+    // post-Stop assertions below vacuous.
+    REQUIRE_TRUE(prestopPeak > 0.05f);
+
+    rig.StopAt(timestamp);
+
+    // AllIdle() within 2.0s of Stop -- the ADSR side of the fix: every
+    // voice actually reaches Stage::Idle (was: stuck mid-Decay forever,
+    // AllIdle()==0 through t+5s pre-fix).
+    rig.RunBlocks(secondsToBlocks(2.0));
+    REQUIRE_TRUE(rig.Application().TestAudioAdsr().AllIdle());
+
+    // Silence within 2.5s of Stop -- the audible consequence: once AllIdle()
+    // fires, FroggersAppCore's delay/reverb clear can run and the wet tail
+    // finishes decaying (was: output held flat at 0.939 at t+10s pre-fix).
+    rig.ClearOutput();
+    rig.RunBlocks(secondsToBlocks(0.5));
+    float postStopPeak = 0.0f;
+    for (const auto& frame : rig.Output()) {
+        for (float sample : frame.channels) postStopPeak = std::max(postStopPeak, std::fabs(sample));
+    }
+    REQUIRE_TRUE(!rig.SawNaN());
+    REQUIRE_TRUE(postStopPeak < 1.0e-4f);
+}
+
 }  // namespace
 
 int main() {

@@ -23,9 +23,16 @@
 //     dmod/dmix <- rows 0-6) and the Color/Halo folding at :187-193
 //     (`params.ddet = clamp(0.5*(ddet+color))`,
 //     `params.dmod = clamp(0.5*(dmod+halo))`, folded under
-//     `m_useV2Layout` -- this app IS the V2 layout, so the fold always
-//     applies), plus the final `delay.process(bumpIn, params)` /
+//     `m_useV2Layout` -- this app WAS the V2 layout, so the fold applied
+//     unconditionally at the time of this port), plus the final
+//     `delay.process(bumpIn, params)` /
 //     `delay.toReverbMono(bumpIn, wet, params.dmix)` call shape at :196-198.
+//     REMOVED since (openspec/changes/frogg3rs-post-expansion-consolidation,
+//     T3.1/T3.2, packet P1): the fold no longer exists anywhere in this
+//     file -- Detune/Color/Halo (rows 4/7/8) are retired/renamed to
+//     Freeze/Reverse blend/Diffusion (FroggersParameters.hpp) and every row
+//     maps to its own DelayParams field. See MapRowsToDelayParams below for
+//     the current, fold-free mapping.
 //
 // NOT ported (deliberately, per this task's explicit instruction): the rest
 // of DelayState -- knob smoothing (RuntimeParam `smoothed[]`), mod-source /
@@ -36,7 +43,9 @@
 // machinery (`randomizeKnobs`, `randomizeMod`, `clearModRoutesForIndex`,
 // `sanitizeModSources`). Sheaf's parameter model and packet 5's fuego seam
 // already own all of that -- this port is the AUDIO path only: the row ->
-// DelayParams mapping, the Color/Halo fold, and StereoDelay itself.
+// DelayParams mapping and StereoDelay itself (the Color/Halo fold this
+// paragraph originally described was removed by packet P1 -- see the
+// "REMOVED since" note above).
 
 #include "DspMath.hpp"
 #include "Drive.hpp"    // D10: reuse dsp::SampleRateReducer AS-IS for the Crush knob (see StereoDelay::SetCrush below).
@@ -44,6 +53,7 @@
 #include "Limiter.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <vector>
@@ -120,16 +130,27 @@ static_assert(kDelayWetLimiterThreshold < kDelayWetLimiterCeiling,
 inline constexpr float kDelayWetLimiterAttackSeconds = 2.0e-6f;   // 2 microseconds -- see comment above.
 inline constexpr float kDelayWetLimiterReleaseSeconds = kSharedReleaseSeconds;  // shared; see Limiter.hpp.
 
-// sim/StereoDelay.hpp:10-19.
+// sim/StereoDelay.hpp:10-19, plus three fields added by packet P1
+// (openspec/changes/frogg3rs-post-expansion-consolidation, T3.1/T3.2) that
+// are not present in that frozen source -- see each field's own comment.
 struct DelayParams
 {
     float dtim = 0.0f;
     float dsnd = 0.0f;
     float dfbk = 0.0f;
     float dwid = 0.0f;
-    float ddet = 0.0f;
+    float dfrz = 0.0f;  // Freeze (slot 4, was Detune/ddet). T3.1a/T3.1b (strict-executor packet P4): crossfades
+                        // new input and feedback loop gain toward a hold -- see StereoDelay::Process() below.
+    bool dfrzLatched = false;  // Freeze override (T3.1b), meant to be set by the transport-button latch --
+                                // NOT part of the row -> DelayParams mapping below. Inert as a SOURCE in this
+                                // packet (nothing sets it yet; packet P5 wires the transport button to it), but
+                                // honoured as a SINK the moment it is true -- see StereoDelay::Process() below.
     float dmod = 0.0f;
     float dmix = 0.0f;
+    float drev = 0.0f;  // Reverse blend (slot 7, was Color). T3.1d (strict-executor packet P3): drives
+                        // StereoDelay's per-channel DelayReverser on the wet tap -- see StereoDelay::Process() below.
+    float ddif = 0.0f;  // Diffusion (slot 8, was Halo). T3.1c (strict-executor packet P2): drives StereoDelay's
+                        // per-channel DelayDiffuser on the wet tap -- see StereoDelay::Process() below.
 };
 
 // sim/StereoDelay.hpp:21-25 (WetPair).
@@ -139,12 +160,253 @@ struct DelayWetPair
     float r = 0.0f;
 };
 
+// T3.1c (Diffusion, Delay slot 8, strict-executor packet P2, this file's
+// DelayParams::ddif comment): one Schroeder allpass section with an
+// M-sample delay, M configured at runtime (up to `Capacity` samples, fixed
+// at compile time so the audio path never allocates -- this packet's own
+// binding requirement).
+//
+// Recurrence and coefficient-sign convention are the SAME as
+// DriveBlendPhase's one-sample allpass (Drive.hpp:693-695:
+// `phased = -a*wet + allpassX1 + a*allpassY1; allpassX1 = wet;
+// allpassY1 = phased;`), generalized from one-sample registers
+// (allpassX1/allpassY1) to M-sample circular buffers (xHistory/yHistory
+// below) -- reuse the RECURRENCE FORM, not the one-sample STATE, per this
+// packet's own design note: a straight copy of DriveBlendPhase's one-
+// sample memory produces frequency-dependent phase rotation (a phaser),
+// not time smearing, so diffusion needs real per-section delay instead.
+template <std::size_t Capacity>
+struct SchroederAllpassSection
+{
+    // xHistory[pos]/yHistory[pos] hold x[n-M]/y[n-M] the instant Process()
+    // reads them (read-before-write, the same ring-buffer idiom
+    // StereoDelay's own ReadAt/WriteSample pair uses on lineL/lineR below,
+    // just backed by a fixed-capacity array instead of a heap vector).
+    std::array<float, Capacity> xHistory{};
+    std::array<float, Capacity> yHistory{};
+    std::size_t pos = 0;
+    std::size_t m = 1;  // current delay length in samples; set by Configure(), clamped to [1, Capacity].
+
+    // Recomputes M from a base delay time (seconds) and a sample rate --
+    // called only from DelayDiffuser::SetSampleRate (never per-sample), so
+    // the rounding/clamp here are not audio-path cost. Also clears this
+    // section's history: a rate change invalidates old buffer alignment
+    // either way, matching StereoDelay::SetSampleRate's own lineL/lineR
+    // re-assignment just below.
+    void Configure(float sampleRateHz, float baseSeconds)
+    {
+        long long rounded = std::lround(static_cast<double>(baseSeconds) * static_cast<double>(sampleRateHz));
+        if (rounded < 1)
+        {
+            rounded = 1;
+        }
+        if (rounded > static_cast<long long>(Capacity))
+        {
+            // Defensive only -- this unit is sized for sample rates up to
+            // 192kHz (see DelayDiffuser's own capacity comments below);
+            // clamping here keeps every buffer access in-bounds even if a
+            // caller supplies more, rather than relying on that ceiling
+            // never being crossed.
+            rounded = static_cast<long long>(Capacity);
+        }
+        m = static_cast<std::size_t>(rounded);
+        Reset();
+    }
+
+    // y[n] = -a*x[n] + x[n-M] + a*y[n-M] -- Drive.hpp:693's recurrence,
+    // M-sample memory instead of one-sample (class header comment above).
+    float Process(float x, float a)
+    {
+        const float xDelayed = xHistory[pos];
+        const float yDelayed = yHistory[pos];
+        const float y = -a * x + xDelayed + a * yDelayed;
+        xHistory[pos] = x;
+        yHistory[pos] = y;
+        pos = (pos + 1 >= m) ? 0 : pos + 1;
+        return y;
+    }
+
+    void Reset()
+    {
+        std::fill(xHistory.begin(), xHistory.end(), 0.0f);
+        std::fill(yHistory.begin(), yHistory.end(), 0.0f);
+        pos = 0;
+    }
+
+    bool StateFinite() const
+    {
+        for (const float v : xHistory)
+        {
+            if (!std::isfinite(v))
+            {
+                return false;
+            }
+        }
+        for (const float v : yHistory)
+        {
+            if (!std::isfinite(v))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    float StateMagnitude() const
+    {
+        float magnitude = 0.0f;
+        for (const float v : xHistory)
+        {
+            magnitude = std::max(magnitude, std::fabs(v));
+        }
+        for (const float v : yHistory)
+        {
+            magnitude = std::max(magnitude, std::fabs(v));
+        }
+        return magnitude;
+    }
+};
+
+// T3.1c: one channel's diffuser -- three SchroederAllpassSection cascades
+// at non-harmonic base times (4.7ms/12.3ms/21.1ms) so the sections do not
+// reinforce one another (this packet's own design note). One instance per
+// channel (StereoDelay::diffuserL/diffuserR below), matching this file's
+// existing per-channel-instance idiom (wetLimiterL/R, fbToneL/R, crushL/R)
+// rather than one shared instance driven by e.g. max(|L|,|R|).
+struct DelayDiffuser
+{
+    static constexpr float kSection1BaseSeconds = 0.0047f;  // 4.7 ms.
+    static constexpr float kSection2BaseSeconds = 0.0123f;  // 12.3 ms.
+    static constexpr float kSection3BaseSeconds = 0.0211f;  // 21.1 ms.
+
+    // Capacities sized to each section's OWN 192kHz maximum, not all to the
+    // longest section's -- this packet's own binding requirement.
+    static constexpr std::size_t kSection1Capacity = 1024;  // 4.7ms@192kHz = 902.4 samples; headroom to a round cap.
+    static constexpr std::size_t kSection2Capacity = 2560;  // 12.3ms@192kHz = 2361.6 samples; own maximum, not 4096.
+    static constexpr std::size_t kSection3Capacity =
+        4096;  // 21.1ms@192kHz ~= 4051.2 samples; this packet's own cited safe cap for the longest section.
+
+    SchroederAllpassSection<kSection1Capacity> section1;
+    SchroederAllpassSection<kSection2Capacity> section2;
+    SchroederAllpassSection<kSection3Capacity> section3;
+
+    void SetSampleRate(float sampleRateHz)
+    {
+        section1.Configure(sampleRateHz, kSection1BaseSeconds);
+        section2.Configure(sampleRateHz, kSection2BaseSeconds);
+        section3.Configure(sampleRateHz, kSection3BaseSeconds);
+    }
+
+    // Cascaded: section1's output feeds section2's input feeds section3's
+    // input, all three driven by the SAME coefficient `a` (StereoDelay's
+    // own ddif*kDiffusionCoeffScale mapping computes `a` once per sample --
+    // see StereoDelay::ApplyDiffusion below).
+    float Process(float x, float a)
+    {
+        return section3.Process(section2.Process(section1.Process(x, a), a), a);
+    }
+
+    void Reset()
+    {
+        section1.Reset();
+        section2.Reset();
+        section3.Reset();
+    }
+
+    bool StateFinite() const
+    {
+        return section1.StateFinite() && section2.StateFinite() && section3.StateFinite();
+    }
+
+    float StateMagnitude() const
+    {
+        return std::max(section1.StateMagnitude(), std::max(section2.StateMagnitude(), section3.StateMagnitude()));
+    }
+};
+
+// T3.1d (Reverse Blend, Delay slot 7, strict-executor packet P3, this
+// file's DelayParams::drev comment): per-channel backward-travelling read
+// pointer into the SAME delay line the forward tap reads, plus the
+// crossfade state that declicks its wrap. Shape follows DelayDiffuser
+// above (P2's own precedent for a per-channel helper struct) --
+// Reset()/StateFinite()/StateMagnitude(), one instance per channel
+// (StereoDelay::reverserL/reverserR below) -- rather than inventing a
+// different shape for the same kind of per-channel unit.
+//
+// UNLIKE DelayDiffuser, this struct's own state is buffer POSITIONS, not
+// retained audio samples -- there is no separate history array to scan,
+// because the reverse tap reads straight out of StereoDelay's existing
+// lineL/lineR (already covered by StereoDelay::StateFinite()'s/
+// StateMagnitude()'s own lineL/lineR scans). StateMagnitude() below is
+// therefore a liveness signal for this struct's OWN direct use by tests
+// (mirrors how the T3.1c diffusion test calls diffuserL.StateMagnitude()
+// directly, not through StereoDelay::StateMagnitude()'s aggregate) --
+// see StereoDelay::StateMagnitude()'s own comment for why it is
+// deliberately NOT folded into that aggregate.
+struct DelayReverser
+{
+    // Absolute buffer position (SAME coordinate space as StereoDelay's own
+    // `writePos`), decremented by exactly one sample every call
+    // (StereoDelay::ApplyReverse) -- this is what makes the read travel
+    // BACKWARD through the buffer, rather than track `writePos` the way
+    // the forward tap's fixed-seconds ReadAt call does (that tap's read
+    // position also moves forward, but only as a SIDE EFFECT of writePos
+    // itself advancing under a roughly-constant delay time -- nothing
+    // decrements it directly). Fed to ReadAt as a `seconds`-behind-the-
+    // CURRENT-writePos value recomputed fresh every call
+    // (`(writePos - pos) / sampleRate`); the algebra of that
+    // recomputation cancels writePos's own value out exactly, so ReadAt
+    // always ends up reading at buffer position `pos` (mod capacity)
+    // regardless of where writePos currently sits, including across
+    // writePos's own circular wraparound -- see ApplyReverse's own
+    // comment for the full derivation.
+    float pos = 0.0f;
+    // Plain elapsed-sample counter since `pos` was last anchored to "now"
+    // (i.e. since the current backward sweep started), incremented by
+    // exactly one every call. Kept as its OWN counter rather than derived
+    // from `pos` and the current `writePos` so it stays correct across
+    // writePos's circular wraparound without a second modulo -- it exists
+    // purely to time the wrap crossfade below (item 2/3 of this packet:
+    // the sweep covers one delay-time of history, then wraps).
+    float elapsed = 0.0f;
+    // Wrap-declick crossfade state (item 3, operator-decided,
+    // tasks.md T3.1d: "not optional garnish... what makes the control
+    // shippable"). `fading` is true only while a freshly-armed sweep
+    // (fadePos) is being blended in against the outgoing one (pos); both
+    // `pos` and `fadePos` advance every call while fading -- same
+    // unconditional-advance rule as `pos`/`elapsed` above (item 5).
+    float fadePos = 0.0f;
+    float fadeGain = 0.0f;
+    bool fading = false;
+
+    void Reset()
+    {
+        pos = 0.0f;
+        elapsed = 0.0f;
+        fadePos = 0.0f;
+        fadeGain = 0.0f;
+        fading = false;
+    }
+
+    bool StateFinite() const
+    {
+        return std::isfinite(pos) && std::isfinite(elapsed) && std::isfinite(fadePos) && std::isfinite(fadeGain);
+    }
+
+    // Liveness signal for this struct's own direct use by tests (see this
+    // struct's header comment) -- `elapsed` is the simplest field
+    // guaranteed to grow away from Reset()'s 0.0f the moment ApplyReverse
+    // is called at all, so it alone is sufficient to prove the pointer is
+    // being advanced (the P3 analogue of P2's
+    // stereo_delay_diffusion_state_tracks_the_signal_while_ddif_is_zero).
+    float StateMagnitude() const { return std::fabs(elapsed); }
+};
+
 // sim/StereoDelay.hpp:27-157 (StereoDelay), verbatim.
 struct StereoDelay
 {
     static constexpr float kMaxDelaySeconds = 2.0f;
     static constexpr size_t kMaxDelaySamples = 96000;
-    static constexpr float kMaxDetuneCents = 50.0f;
 
     // B6a: per-channel wet-output limiters (see this file's header comment,
     // above the struct, for the tuning derivation). Per-channel, not one
@@ -194,6 +456,74 @@ struct StereoDelay
     SampleRateReducer crushL{/*freq=*/1.0f};
     SampleRateReducer crushR{/*freq=*/1.0f};
 
+    // T3.1c (Delay slot 8, "Diffusion", strict-executor packet P2):
+    // per-channel three-section Schroeder allpass cascade applied to the
+    // wet tap (see Process() below, applied to dL/dR strictly BEFORE
+    // wetLimiterL/R -- once per repeat, not once per round trip; NOT
+    // inside the feedback loop, a deliberate placement choice -- see
+    // Process()'s own comment at that call site).
+    DelayDiffuser diffuserL;
+    DelayDiffuser diffuserR;
+
+    // T3.1c's binding coefficient requirement: a = ddif * kDiffusionCoeffScale.
+    // The bound is enforced BY THIS MAPPING -- 0.7 sits comfortably inside
+    // DriveBlendPhase's own 0.98 margin (Drive.hpp:689,
+    // `0.98f * (2.0f*phaseKnob01 - 1.0f)` -> the open interval (-0.98,
+    // 0.98), this codebase's established allpass stability margin), so for
+    // any ddif in the knob's own [0,1] range, |a| <= 0.7 stays strictly
+    // inside the unit circle by construction, not by an unenforced comment.
+    static constexpr float kDiffusionCoeffScale = 0.7f;
+
+    // T3.1d (Delay slot 7, "Reverse blend", strict-executor packet P3):
+    // per-channel backward read pointer applied to the forward taps dL/dR
+    // (see Process() below, applied immediately after the forward reads
+    // and BEFORE the feedback cross-mix/write -- a deliberate placement
+    // choice, see that call site's own comment).
+    DelayReverser reverserL;
+    DelayReverser reverserR;
+
+    // T3.1d, operator-decided (tasks.md T3.1d): the wrap-declick crossfade
+    // duration. "A few ms, sample-rate scaled" per this packet's own
+    // binding requirement -- 5ms sits in that range and is clamped to at
+    // most half the current reverse window in ApplyReverse below, so it
+    // never exceeds the sweep it is meant to smooth even at the shortest
+    // reachable delay time (baseSeconds floors at 0.001s, i.e. 48 samples
+    // at 48kHz -- shorter than one un-clamped 5ms fade). See the packet
+    // report for the measured un-smoothed-vs-smoothed click numbers this
+    // value produces.
+    static constexpr float kReverseWrapCrossfadeSeconds = 0.005f;
+
+    // T3.1e: the feedback the Freeze transport LATCH applies, overriding the
+    // Freeze encoder's own unity ceiling so the latch reaches a state the
+    // knob cannot (proposal.md §6.4b-ii/§6.4b-iii). Strictly above 1.0, so
+    // the loop amplifies rather than merely recirculating losslessly.
+    //
+    // BY-EAR CONSTANT, NOT DERIVED. Nothing measures or justifies 1.05 --
+    // it is a starting value for the operator to tune, recorded as such so
+    // no later reader mistakes it for a computed bound the way this file's
+    // own history warns about. Its only hard requirement is `> 1.0f`.
+    static constexpr float kFreezeLatchOverdrive = 1.05f;
+
+    // T3.1e: Freeze's whole mapping, in one place, so Process() below and
+    // the regression tests exercise the SAME arithmetic rather than a test
+    // re-deriving it (which would assert the formula against itself and
+    // prove nothing). Static and pure -- it reads no member state, and
+    // deliberately takes no fbDrive: see Process()'s own comment for why
+    // Feedback Drive must not appear in this mapping.
+    //
+    // Properties this function is required to have, each pinned by a test:
+    //   - monotonically non-decreasing in `freeze` over [0,1], at any `fbk`
+    //   - `FreezeFeedback(fbk, 0.0f, false) == fbk` bit-exactly
+    //   - ceiling of exactly 1.0f at freeze==1 (lossless, no self-gain)
+    //   - latched value strictly greater than any unlatched value
+    static float FreezeFeedback(float fbk, float freeze, bool latched)
+    {
+        if (latched) {
+            return kFreezeLatchOverdrive;
+        }
+        return fbk + (1.0f - fbk) * freeze;
+    }
+
     // :33-40 (clearBuffers).
     void ClearBuffers()
     {
@@ -220,6 +550,19 @@ struct StereoDelay
         fbToneR.output = 0.0f;
         crushL.Reset();
         crushR.Reset();
+        // T3.1c: same "must reset them too" rule this function's own
+        // header comment states -- the diffuser's three sections per
+        // channel are new recursive state (each section's M-sample
+        // xHistory/yHistory) sitting on the wet tap this clear is meant to
+        // silence.
+        diffuserL.Reset();
+        diffuserR.Reset();
+        // T3.1d: same "must reset them too" rule this function's own
+        // header comment states -- the reverse pointer's position, elapsed
+        // counter and wrap-crossfade state are new recursive state sitting
+        // on the wet tap this clear is meant to silence.
+        reverserL.Reset();
+        reverserR.Reset();
     }
 
     // Task 2.3 (Tier 1 recovery, app/FroggersAppCore.hpp): a thin name
@@ -247,6 +590,20 @@ struct StereoDelay
         // unit, so a poisoned limiter envelope must be visible here rather
         // than needing its own separate top-level recovery call.
         if (!wetLimiterL.StateFinite() || !wetLimiterR.StateFinite())
+        {
+            return false;
+        }
+        // T3.1c: same "aggregate finiteness" rule the wetLimiter check
+        // above already follows -- the diffuser's own history buffers must
+        // be visible here too.
+        if (!diffuserL.StateFinite() || !diffuserR.StateFinite())
+        {
+            return false;
+        }
+        // T3.1d: same "aggregate finiteness" rule the diffuser check just
+        // above already follows -- the reverse pointer's own position/
+        // elapsed/crossfade state must be visible here too.
+        if (!reverserL.StateFinite() || !reverserR.StateFinite())
         {
             return false;
         }
@@ -288,6 +645,23 @@ struct StereoDelay
         {
             magnitude = std::max(magnitude, std::fabs(sample));
         }
+        // T3.1c: fold the diffuser's own history into this unit's
+        // aggregate magnitude, same idiom as lineL/lineR just above.
+        magnitude = std::max(magnitude, std::max(diffuserL.StateMagnitude(), diffuserR.StateMagnitude()));
+        // T3.1d: reverserL/R's own StateMagnitude() is DELIBERATELY NOT
+        // folded in here, unlike the diffuser just above -- the diffuser's
+        // StateMagnitude() scans retained AUDIO SAMPLES (same scale as
+        // lineL/lineR, so std::max-ing them together is meaningful), while
+        // DelayReverser::StateMagnitude() reports an elapsed BUFFER-POSITION
+        // counter that grows into the hundreds or thousands of samples
+        // during ordinary play and only resets at ClearBuffers() -- folding
+        // it into a std::max() with actual sample magnitudes would make
+        // this function report a large "magnitude" from a properly-silent
+        // unit any time Reverse Blend had run since the last clear, which
+        // would break the Stop-flush harness's own "cleared once and
+        // stayed clear" use of this function (this struct's own header
+        // comment, F3.1). See DelayReverser's header comment for where its
+        // StateMagnitude() IS used instead (directly, by tests).
         return magnitude;
     }
 
@@ -330,6 +704,22 @@ struct StereoDelay
                                kDelayWetLimiterAttackSeconds, kDelayWetLimiterReleaseSeconds);
         wetLimiterR.Configure(sampleRate, kDelayWetLimiterThreshold, kDelayWetLimiterCeiling,
                                kDelayWetLimiterAttackSeconds, kDelayWetLimiterReleaseSeconds);
+        // T3.1c: section delay lengths (4.7ms/12.3ms/21.1ms) are converted
+        // to samples here, the one place a real sample rate is known --
+        // same rationale as the wetLimiter Configure calls just above.
+        diffuserL.SetSampleRate(sampleRate);
+        diffuserR.SetSampleRate(sampleRate);
+        // T3.1d: DelayReverser carries no sample-rate-dependent
+        // configuration of its own (its window length is derived fresh
+        // from timeL/timeR every Process() call, the same way the forward
+        // tap's own delay time already is) -- but `writePos` is reset to 0
+        // immediately above, and reverserL/R's `pos`/`elapsed` are only
+        // ever meaningful relative to the CURRENT writePos, so they must
+        // be reset here too or the first read after a rate change would
+        // measure position against a writePos that no longer matches what
+        // they were last anchored to.
+        reverserL.Reset();
+        reverserR.Reset();
     }
 
     // D6: ExpMapCompute range [0.25, 4.0] -- the SAME idiom already
@@ -423,15 +813,37 @@ struct StereoDelay
         float timeL = std::max(0.001f, baseSeconds + modSeconds);
         float timeR = std::max(0.001f, baseSeconds + modSeconds + widthSpread);
 
-        const float detune = std::min(std::max(p.ddet, 0.0f), 1.0f);
-        const float cents = detune * kMaxDetuneCents;
-        const float ratioL = std::pow(2.0f, cents / 1200.0f);
-        const float ratioR = std::pow(2.0f, -cents / 1200.0f);
-        timeL /= ratioL;
-        timeR /= ratioR;
+        float dL = ReadAt(timeL, lineL);
+        float dR = ReadAt(timeR, lineR);
 
-        const float dL = ReadAt(timeL, lineL);
-        const float dR = ReadAt(timeR, lineR);
+        // T3.1d (Reverse Blend, Delay slot 7): a second, backward-
+        // travelling read pointer per channel (reverserL/reverserR,
+        // ApplyReverse below), blended against the forward tap read just
+        // above. Placement is deliberate -- immediately after the forward
+        // reads and BEFORE the feedback cross-mix/write below (this
+        // packet's own binding placement requirement), so both the
+        // feedback path and the wet output see the SAME blended dL/dR from
+        // here on; Diffusion (T3.1c, further below) therefore diffuses
+        // whatever Reverse Blend already produced, not the raw forward tap.
+        //
+        // THE REVERSE TAP RUNS UNCONDITIONALLY, and only its OUTPUT is
+        // branched -- the same P2 postflight shape this file already
+        // carries for Diffusion (see that comment further below).
+        // ApplyReverse both advances the backward pointer/wrap-crossfade
+        // and returns this sample's reverse-tap value, so neither ever
+        // goes stale while drev sits at its 0.0f default (the P2 defect,
+        // guarded here the same way it is guarded for Diffusion).
+        //
+        // Exactness at the default is preserved by the output branch
+        // below, not by relying on `dL*(1-0)+reverse*0` to happen to be
+        // exact -- "guaranteed rather than argued," the same rule
+        // Diffusion's own call site states for the identical reason.
+        const float reverseTapL = ApplyReverse(reverserL, timeL, lineL);
+        const float reverseTapR = ApplyReverse(reverserR, timeR, lineR);
+        const float revBlendedL = dL * (1.0f - p.drev) + reverseTapL * p.drev;
+        const float revBlendedR = dR * (1.0f - p.drev) + reverseTapR * p.drev;
+        dL = (p.drev == 0.0f) ? dL : revBlendedL;
+        dR = (p.drev == 0.0f) ? dR : revBlendedR;
 
         // D9: 0.5f now scaled by widthBalance -- see SetWidthBalance's own
         // comment for how bound (a) (cross-feed stays in [0,1]) holds by
@@ -473,8 +885,55 @@ struct StereoDelay
         // own +-1 clamp still bounds this line to `|inSignal| + fbk`
         // regardless of fbDrive (writing `fbDrive * fbk * Saturate(...)`
         // instead would raise that bound; deliberately not done).
-        WriteSample(inSignal + fbk * PadeSaturator::Saturate(fbDrive * fbL), lineL);
-        WriteSample(inSignal + fbk * PadeSaturator::Saturate(fbDrive * fbR), lineR);
+        //
+        // T3.1a/T3.1b (Freeze, Delay slot 4, strict-executor packet P4): a
+        // crossfade, not a write-enable toggle. Two quantities change at
+        // the write below -- inSignal's own attenuation and fbk's own
+        // effective value -- computed here because both are consumed ONLY
+        // at this write.
+        //
+        // freezeEff attenuates new input (`inSignal * (1 - freezeEff)`):
+        // at freeze==0 that is a multiply by an exact 1.0f, so the write
+        // stays bit-identical to the pre-packet line -- guaranteed by the
+        // arithmetic, the same "branch keeps equality guaranteed rather
+        // than argued" convention ddif/drev's own call sites use above.
+        //
+        // T3.1e (operator 2026-08-14, supersedes T3.1a's product clamp --
+        // openspec .../frogg3rs-post-expansion-consolidation, proposal.md
+        // §6.4b-iii): Freeze is specified in Freeze's OWN terms and this
+        // mapping deliberately does not mention `fbDrive`.
+        //
+        // The knob runs fbk -> 1.0 monotonically UPWARD, so turning Freeze
+        // up always increases feedback at every Feedback Drive setting. It
+        // tops out at unity: lossless recirculation, no self-amplification.
+        // That ceiling IS the clamp -- expressed as a property of the
+        // mapping rather than a min() applied afterward.
+        //
+        // The PRIOR mapping was `fbk + (1/fbDrive - fbk) * freeze`, which
+        // clamped the fbEff*fbDrive PRODUCT to unity. That form is
+        // NON-MONOTONIC: at fbDrive 4.0 it runs 0.98 -> 0.25, so raising
+        // Freeze LOWERED loop gain (3.92 -> 1.00). A knob that goes down as
+        // it turns up violates this change's own requirement that a control
+        // move "in the direction its name implies"
+        // (specs/froggers-sheaf-parameter-model). What `fbDrive` multiplies
+        // afterward is Feedback Drive's business, exactly as it is for every
+        // other value in this loop.
+        //
+        // At freeze==0, `fbk + (1.0f - fbk) * 0.0f` is bit-exact `fbk` (the
+        // zero multiply is what makes it exact), so today's fbk*fbDrive
+        // product -- up to ~3.92 at max Feedback Drive -- is left completely
+        // untouched, and the accidental Stop-sustain behaviour proposal.md
+        // §7 documents survives unchanged.
+        //
+        // dfrzLatched overrides the ceiling outright with an above-unity
+        // value, so the loop amplifies and the latch reaches a state the
+        // encoder cannot -- the override is reachable only through
+        // dfrzLatched, never through dfrz.
+        const float freeze = std::min(std::max(p.dfrz, 0.0f), 1.0f);
+        const float freezeEff = p.dfrzLatched ? 1.0f : freeze;
+        const float fbEff = FreezeFeedback(fbk, freeze, p.dfrzLatched);
+        WriteSample(inSignal * (1.0f - freezeEff) + fbEff * PadeSaturator::Saturate(fbDrive * fbL), lineL);
+        WriteSample(inSignal * (1.0f - freezeEff) + fbEff * PadeSaturator::Saturate(fbDrive * fbR), lineR);
         AdvanceWrite();
 
         // B6a (tasks.md CONSOLIDATED PUSH table; "Group B outcomes" /
@@ -488,8 +947,43 @@ struct StereoDelay
         // longer forces the downstream chain (Reverb, then the master) to
         // duck around it. See this file's header comment (above the struct)
         // for the tuning and its measurement.
-        lastWet.l = wetLimiterL.Process(dL);
-        lastWet.r = wetLimiterR.Process(dR);
+        // T3.1c (Diffusion, Delay slot 8): applied to dL/dR here -- AFTER
+        // the feedback loop's WriteSample/AdvanceWrite calls above (which
+        // already committed using the unlimited taps, B2/B6a's own
+        // established split) and BEFORE wetLimiterL/R just below. Applying
+        // it at this exact point means diffusion smears the wet tap ONCE
+        // per repeat, equally for every repeat, rather than compounding
+        // once per round trip the way an in-loop placement would (a
+        // different, rejected control -- see the SchroederAllpassSection/
+        // DelayDiffuser header comments above for the full rationale); the
+        // existing wet limiters still bound whatever escapes afterward,
+        // unchanged.
+        //
+        // THE DIFFUSER RUNS UNCONDITIONALLY, and only its OUTPUT is branched
+        // (packet P2 postflight fix -- the original wrote
+        // `(p.ddif == 0.0f) ? dL : ApplyDiffusion(...)`, which skipped the
+        // CALL and therefore never advanced the sections' xHistory/yHistory
+        // while Diffusion sat at its default). Frozen history is stale
+        // history: each section holds up to kSection3BaseSeconds (21.1 ms)
+        // of it, so re-engaging Diffusion replayed audio captured at
+        // whenever the knob was last nonzero. `ddif` is an ordinary bank
+        // parameter and therefore a modulation TARGET like the other 83, so
+        // a source sweeping it across zero would have frozen and thawed that
+        // stale content at audio rate -- not merely a knob-turn click.
+        //
+        // Exactness at the default is preserved by the output branch below
+        // rather than by skipping the work: at ddif==0 the coefficient `a`
+        // is 0, so each section degenerates to a pure M-sample delay whose
+        // history tracks the real signal, and `dry*(1-0) + diffused*0`
+        // compares equal to `dry` regardless. The branch keeps that equality
+        // guaranteed rather than argued.
+        const float diffusedWetL = ApplyDiffusion(diffuserL, dL, p.ddif);
+        const float diffusedWetR = ApplyDiffusion(diffuserR, dR, p.ddif);
+        const float diffusedL = (p.ddif == 0.0f) ? dL : diffusedWetL;
+        const float diffusedR = (p.ddif == 0.0f) ? dR : diffusedWetR;
+
+        lastWet.l = wetLimiterL.Process(diffusedL);
+        lastWet.r = wetLimiterR.Process(diffusedR);
         return lastWet;
     }
 
@@ -569,6 +1063,101 @@ private:
         }
     }
 
+    // T3.1c: applies one channel's wet-tap diffuser and returns the
+    // blended result -- `dry*(1-ddif) + diffused*ddif`. Called only when
+    // Called for EVERY sample, including ddif==0, so the sections' history
+    // stays current -- see Process()'s own call site for why skipping the
+    // call at zero was a defect. The caller branches only the OUTPUT, which
+    // is what makes the ddif==0 result exactly `dry`.
+    float ApplyDiffusion(DelayDiffuser& diffuser, float dry, float ddif)
+    {
+        const float a = ddif * kDiffusionCoeffScale;
+        const float diffused = diffuser.Process(dry, a);
+        return dry * (1.0f - ddif) + diffused * ddif;
+    }
+
+    // T3.1d: advances one channel's backward read pointer by exactly one
+    // sample and returns its (possibly wrap-crossfaded) output. Called for
+    // EVERY sample, including drev==0, so the pointer and its crossfade
+    // never go stale -- see Process()'s own call site for why skipping the
+    // call at zero was P2's defect for Diffusion, guarded here the same
+    // way. `timeSeconds` is the SAME per-channel forward delay time
+    // (timeL/timeR) Process() already computed for the forward tap just
+    // above -- the reverse window is "one delay-time long" (this packet's
+    // own binding requirement), not an independently-configured length.
+    //
+    // Reuses ReadAt/WrapIndex for the actual interpolated read (this
+    // packet's own binding requirement not to duplicate that maths) by
+    // expressing the backward pointer's absolute buffer position as a
+    // `seconds`-behind-the-CURRENT-writePos value, recomputed fresh every
+    // call: `seconds = (writePos - rev.pos) / sampleRate`. Substituting
+    // into ReadAt's own `readPos = writePos - seconds*sampleRate` cancels
+    // the current `writePos` out exactly -- `readPos == rev.pos` (mod
+    // capacity) always, regardless of what writePos currently is,
+    // INCLUDING across writePos's own circular wraparound (WrapIndex's
+    // modulo absorbs any multiple of `capacity` in the intermediate
+    // `seconds` value the same way it already does for any other read).
+    // `rev.pos` itself is the only piece of state that free-runs,
+    // decremented by exactly one sample every call -- that decrement, not
+    // the seconds/writePos arithmetic around it, is what makes this read
+    // travel backward through history instead of tracking writePos the way
+    // the forward tap's roughly-constant-seconds ReadAt call does.
+    float ApplyReverse(DelayReverser& rev, float timeSeconds, const std::vector<float>& line)
+    {
+        const float delaySamplesWindow = timeSeconds * sampleRate;
+        const float fadeSamples = std::min(kReverseWrapCrossfadeSeconds * sampleRate, delaySamplesWindow * 0.5f);
+        const float writePosF = static_cast<float>(writePos);
+
+        // Unconditional advance (this packet's own binding requirement,
+        // item 5) -- both the primary pointer and the plain elapsed-time
+        // counter that times the wrap crossfade move every call,
+        // regardless of drev.
+        rev.pos -= 1.0f;
+        rev.elapsed += 1.0f;
+
+        float out = ReadAt((writePosF - rev.pos) / sampleRate, line);
+
+        if (rev.fading)
+        {
+            // Second pointer, armed below, sweeping its own fresh lap in
+            // parallel with the outgoing one -- also advanced
+            // unconditionally while armed, same rule as `pos` above.
+            rev.fadePos -= 1.0f;
+            const float incoming = ReadAt((writePosF - rev.fadePos) / sampleRate, line);
+            rev.fadeGain = std::min(1.0f, rev.fadeGain + 1.0f / fadeSamples);
+            out = out * (1.0f - rev.fadeGain) + incoming * rev.fadeGain;
+
+            if (rev.fadeGain >= 1.0f)
+            {
+                // Crossfade complete: the incoming lap becomes primary.
+                // `elapsed` carries forward at `fadeSamples` (how long the
+                // incoming lap has already been running), not 0, so the
+                // NEXT wrap's own timing is measured correctly rather than
+                // restarting the count from scratch.
+                rev.pos = rev.fadePos;
+                rev.elapsed = fadeSamples;
+                rev.fading = false;
+                rev.fadeGain = 0.0f;
+            }
+        }
+        else if (rev.elapsed >= delaySamplesWindow - fadeSamples)
+        {
+            // Enter the wrap crossfade (item 2/3: the sweep covers one
+            // delay-time of history, then wraps, and the wrap must be
+            // declicked): arm a second pointer starting a fresh lap at
+            // "now" -- one sample behind the write head, the freshest
+            // already-committed sample (writePos itself still holds THIS
+            // call's about-to-be-overwritten slot until WriteSample runs
+            // later in Process(), so age 0 would read stale,
+            // capacity-samples-old content instead of the newest one).
+            rev.fading = true;
+            rev.fadePos = writePosF - 1.0f;
+            rev.fadeGain = 0.0f;
+        }
+
+        return out;
+    }
+
     float sampleRate = 44100.0f;
     size_t capacity = 0;
     size_t writePos = 0;
@@ -579,34 +1168,36 @@ private:
     float lfoInc = 0.0f;
 };
 
-// sim/DelayState.hpp:165-198 (processInsert), the row -> DelayParams mapping
-// (:180-186) and the Color/Halo fold (:187-193) only. Callers supply the
-// nine already-fuegoized/modulated 0..1 row values (rows 0-8); this
+// sim/DelayState.hpp:165-198 (processInsert): originally the row ->
+// DelayParams mapping (:180-186) and the Color/Halo fold (:187-193).
+// REMOVED (openspec/changes/frogg3rs-post-expansion-consolidation, T3.2,
+// packet P1): the fold is gone -- every one of the nine rows below now maps
+// to exactly one DelayParams field, no two rows are combined, and row4/
+// row7/row8 carry the retired Detune/Color/Halo slots' new identities
+// (Freeze/Reverse blend/Diffusion, FroggersParameters.hpp). Callers supply
+// the nine already-fuegoized/modulated 0..1 row values (rows 0-8); this
 // function owns none of the smoothing/mod/fuego machinery that produces
 // them (see file header "NOT ported").
 inline DelayParams MapRowsToDelayParams(float row0Time,
                                         float row1Send,
                                         float row2Feedback,
                                         float row3Width,
-                                        float row4Detune,
+                                        float row4Freeze,
                                         float row5Mod,
                                         float row6Mix,
-                                        float row7Color,
-                                        float row8Halo)
+                                        float row7Reverse,
+                                        float row8Diffusion)
 {
     DelayParams params;
     params.dtim = row0Time;   // :180
     params.dsnd = row1Send;   // :181
     params.dfbk = row2Feedback;  // :182
     params.dwid = row3Width;  // :183
-    params.ddet = row4Detune;  // :184
+    params.dfrz = row4Freeze;  // was :184 (Detune/ddet) -- slot 4 is now Freeze; see DelayParams::dfrz.
     params.dmod = row5Mod;    // :185
     params.dmix = row6Mix;    // :186
-
-    // :187-193 -- Color/Halo bias ddet/dmod, folded under m_useV2Layout
-    // (this app is exactly that layout, so the fold always applies here).
-    params.ddet = std::min(std::max(0.5f * (params.ddet + row7Color), 0.0f), 1.0f);
-    params.dmod = std::min(std::max(0.5f * (params.dmod + row8Halo), 0.0f), 1.0f);
+    params.drev = row7Reverse;    // slot 7 is now Reverse blend (was Color, previously folded into ddet).
+    params.ddif = row8Diffusion;  // slot 8 is now Diffusion (was Halo, previously folded into dmod).
     return params;
 }
 

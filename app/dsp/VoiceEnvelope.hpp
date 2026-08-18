@@ -60,7 +60,13 @@ struct VcoAdsrState
     // parity divergence, same treatment as Fuegoize.hpp's own D6 note):
     // lowered from 2.5s to 1.0s. 1.0s still comfortably covers a slow pad
     // swell; 2.5s was judged unnecessarily long.
-    static constexpr float kMaxAttackSeconds = 1.0f;
+    // W5 (proposal frogg3rs-stop-isolation-and-legible-labels SS2, operator
+    // ruling 2026-08-17, verbatim: "that max attack is also way too long.
+    // half a second at most"): lowered again, 1.0s -> 0.5f. Scope is ATTACK
+    // ONLY -- the operator named attack alone; see kMaxDecaySeconds's own
+    // comment below for why its former "mirrors kMaxAttackSeconds" rationale
+    // no longer holds and has been rewritten as decay's own judgment.
+    static constexpr float kMaxAttackSeconds = 0.5f;
     // Operator decision 2026-07-29, same deliberate parity divergence: lowered
     // from the frozen firmware's 10.0s to 5.0s. Note this does NOT by itself
     // make Stop responsive -- 5s of release after pressing Stop still reads as
@@ -84,18 +90,50 @@ struct VcoAdsrState
     // value exists for Decay's own time ceiling (tasks.md T1.1 only
     // specifies the peak/numerator fix, not a Decay time range) -- this is
     // an implementer judgment call, reported as such rather than silently
-    // asserted. Mirrors kMaxAttackSeconds (1.0f) rather than
-    // kMaxReleaseSeconds: Decay, like Attack, is a per-note transient stage
-    // that normally completes WHILE the gate is still held, so
-    // kMaxReleaseSeconds's own halving rationale ("note keeps ringing after
-    // I let go") does not apply here.
+    // asserted. Originally set to mirror kMaxAttackSeconds's then-value
+    // (1.0f); W5 (proposal frogg3rs-stop-isolation-and-legible-labels SS2,
+    // operator ruling 2026-08-17) halved kMaxAttackSeconds to 0.5f for
+    // Attack ALONE -- the operator named attack specifically, not decay --
+    // so that mirror is now deliberately broken and this value stands on its
+    // own judgment: 1.0f, unchanged, kept generous because Decay (like the
+    // old mirrored rationale for Attack) is a per-note transient stage that
+    // normally completes WHILE the gate is still held, so kMaxReleaseSeconds's
+    // own halving rationale ("note keeps ringing after I let go") still does
+    // not apply here. If Decay's own ceiling ever needs revisiting, it now
+    // needs its own operator ruling -- it no longer inherits Attack's.
     static constexpr float kMaxDecaySeconds = 1.0f;
     // Strict-executor packet (Envelope slot 13, Grace). Another
     // implementer judgment call (tasks.md T1.4: "needs its own design pass
     // at implementation time -- this proposal does not fully specify it").
-    // 1.0f matches kMaxAttackSeconds/kMaxDecaySeconds's own scale (a
-    // generous but bounded per-note floor, not an open-ended hang).
+    // 1.0f matches kMaxDecaySeconds's own scale (a generous but bounded
+    // per-note floor, not an open-ended hang). T1.6 (2026-08-17): this used
+    // to also claim a match with kMaxAttackSeconds, which W5 broke by
+    // halving attack to 0.5f -- Grace's own ceiling was not part of that
+    // ruling, so it stays 1.0f on its own judgment, matching decay alone.
     static constexpr float kMaxGraceSeconds = 1.0f;
+
+    // Grace (Envelope slot 13) countdown sentinel (audit-fix F1, 2026-08-17,
+    // omni-rule §8/§10: this was a bare -1.0f literal written/compared at 5
+    // sites -- T1.6's own comment below explains why the 5th site, the
+    // Hold-branch guard in stepVoice(), must match this value by EXACT
+    // identity (`==`), not by sign or by any arithmetic-derived value).
+    // Named once here, reused at every write and the one read, so a stray
+    // -1.f/-1.0/an arithmetic near-miss at any site can no longer silently
+    // break the countdown.
+    //
+    // This is an IDENTITY sentinel, not a magnitude -- "not started" is
+    // whatever value this constant holds, not "any negative number". Exact
+    // equality is safe (never loosen the `==` below to `<` or `<=`) because
+    // of two invariants this file maintains together:
+    //   1. Every WRITE that means "not started" -- init(), setGate(true),
+    //      ForceReleaseAll() -- assigns this exact named constant; no code
+    //      path ever derives "not started" any other way.
+    //   2. The decrement path (`m_graceRemaining[i] -= 1.0f` in stepVoice())
+    //      is reachable only while the countdown is strictly > 0.0f (guarded
+    //      by the `<= 0.0f` expiry check immediately above it), so a live,
+    //      decrementing countdown can never arithmetic its way back to
+    //      exactly this value -- only a fresh write can produce it.
+    static constexpr float kGraceNotStarted = -1.0f;
 
     enum class Stage : uint8_t
     {
@@ -115,7 +153,7 @@ struct VcoAdsrState
             m_stage[i] = Stage::Idle;
             m_level[i] = 0.0f;
             m_releasePending[i] = false;
-            m_graceRemaining[i] = -1.0f;  // sentinel: grace countdown not started
+            m_graceRemaining[i] = kGraceNotStarted;  // grace countdown not started
         }
     }
 
@@ -155,7 +193,7 @@ struct VcoAdsrState
                 // unrelated, unexpected cutoff mid-way through the new note.
                 m_stage[i] = Stage::Attack;
                 m_releasePending[i] = false;
-                m_graceRemaining[i] = -1.0f;
+                m_graceRemaining[i] = kGraceNotStarted;
             }
             else
             {
@@ -211,6 +249,49 @@ struct VcoAdsrState
             }
         }
         return true;
+    }
+
+    // T2.1 (proposal.md SS2 W2, AUDIT-ADDED 2026-08-17): forced release for
+    // the transport running->stopped edge, called from
+    // FroggersAppCore.hpp beside the delayReverbClearPending_ logic. Every
+    // non-idle voice enters Stage::Release IMMEDIATELY, bypassing the Grace
+    // minimum-hold (setGate()'s own comment: a play-time gate-false edge
+    // only marks m_releasePending[i] and defers the actual transition to
+    // stepVoice(), specifically so Grace's Hold-stage countdown can run) and
+    // any in-progress Attack/Decay -- this restores the pre-Grace-packet
+    // `setGate(false)` synchronous-force semantic for Stop ONLY. Play-time
+    // gating (setGate()) is completely untouched by this method; it is not
+    // called from there, and it does not read or write m_gateHigh.
+    //
+    // m_level is left alone: Stage::Release's own ComputeRampStep call
+    // (stepVoice(), below) ramps down from wherever the voice currently
+    // sits, exactly like the old unconditional force did and exactly like
+    // an ordinary Release entered via the Grace ladder does today -- this
+    // method only short-circuits WHICH stage a voice is in, not the level
+    // it ramps from. Idle voices are left at Idle (the `if` guard): forcing
+    // Idle->Release here would fabricate a release tail out of nothing and
+    // would also flip FroggersAppCore's `AllIdle()`-at-edge check (this
+    // method's own caller) from "nothing to wait for, clear now" to
+    // "something to wait for", which is backwards for a voice that was
+    // already silent.
+    //
+    // m_releasePending/m_graceRemaining are unconditionally reset (even for
+    // an already-idle voice, harmlessly) so no stale deferred-release state
+    // from before this edge can act once play resumes and setGate() starts
+    // issuing fresh edges -- m_graceRemaining's own kGraceNotStarted "not
+    // started" sentinel is restored exactly as init()/setGate(true) already
+    // do.
+    void ForceReleaseAll()
+    {
+        for (size_t i = 0; i < kNumVoices; ++i)
+        {
+            if (m_stage[i] != Stage::Idle)
+            {
+                m_stage[i] = Stage::Release;
+            }
+            m_releasePending[i] = false;
+            m_graceRemaining[i] = kGraceNotStarted;
+        }
     }
 
     // The third of the three ASR range maps, and the one that was missing.
@@ -298,7 +379,49 @@ private:
         const float linearNext = from + std::copysign(stepMagnitude, remaining);
         const float curvedNext = from + std::copysign(stepMagnitude * onePoleCoefficient, remaining);
         const float blended = linearNext + curveAmount * (curvedNext - linearNext);
-        return (remaining >= 0.0f) ? std::min(target, blended) : std::max(target, blended);
+
+        // T1.1 (proposal SS2 W1, root cause 1a): at curveAmount==1.0 the
+        // linear term above vanishes entirely and per-sample progress
+        // toward target degenerates to stepMagnitude*onePoleCoefficient ==
+        // stepMagnitude^2/absRemaining -- proportional to how FAR from
+        // target the ramp still is, so a ramp that starts far away crawls,
+        // and integrating gives a duration that scales with
+        // 1/(1-curveAmount): UNBOUNDED as curveAmount approaches 1.0 (a
+        // "1-second" attack at 48kHz measured ~6.7 hours at curve==1.0).
+        // Floor the per-sample progress MAGNITUDE (toward target, whichever
+        // direction -- this covers descending Decay/Release ramps the same
+        // as ascending Attack) at a fixed fraction of the linear step, so
+        // every ramp is bounded at every curveAmount in [0,1]. BY-EAR-
+        // TUNABLE: this is a floor picked to keep the ease-in shape audibly
+        // present while bounding worst-case duration to roughly
+        // 1/kCurveMinProgress the knob's mapped linear time; retune by ear
+        // if the curve's FEEL needs it -- the bound itself is the
+        // requirement (proposal SS2 W1), not this particular number or
+        // shape.
+        //
+        // 0.4f, not the design doc's illustrative "~0.25" example: measured
+        // against T1.3(b)'s pass-F regression scenario (Decay knob 0.5 /
+        // mid, Grace knob 0.5 / mid, Curve == 1.0 exactly, the transport-
+        // stop path's own forced ~50ms release mapping) -- which this
+        // packet's own tests pin to a hard Stop-to-AllIdle bound of 2.0s --
+        // 0.25f measured ~2.65s serial worst case (Decay ~2.0s + Grace 0.5s
+        // + Release ~0.2s), over budget. 0.4f measures ~1.84s, comfortably
+        // under, while still leaving a real ease-in dynamic range (the floor
+        // only clamps progress once the unfloored one-pole step would fall
+        // below 40% of the linear step, i.e. once the ramp is more than
+        // 2.5x its own step-size away from target -- most of a typical
+        // ramp's approach to target still runs the unfloored, audibly
+        // slow-start shape). If this value is ever retuned by ear, re-check
+        // it against T1.3(b)'s hard-coded 2.0s/2.5s bounds -- they are NOT
+        // independent of this constant.
+        constexpr float kCurveMinProgress = 0.4f;
+        const float minProgressMagnitude = stepMagnitude * kCurveMinProgress;
+        const float progress = blended - from;
+        const float boundedProgress = (std::fabs(progress) < minProgressMagnitude)
+                                           ? std::copysign(minProgressMagnitude, remaining)
+                                           : progress;
+        const float bounded = from + boundedProgress;
+        return (remaining >= 0.0f) ? std::min(target, bounded) : std::max(target, bounded);
     }
 
     void stepVoice(size_t voiceIndex,
@@ -347,7 +470,20 @@ private:
                 // reached with a release still pending (Attack/Decay are
                 // left alone above, so they always run to completion first
                 // -- "at minimum Attack (and Decay) has completed").
-                if (m_graceRemaining[voiceIndex] < 0.0f)
+                // T1.6 (2026-08-17, sentinel-conflation bug): this guard
+                // used to be `< 0.0f`, which treats ANY negative value as
+                // "not started" -- but a countdown initialized to a
+                // non-float-exact `graceSeconds * m_sampleRate` (most grace
+                // knobs; only ones landing on an exact integer sample count
+                // are immune) decrements past zero to a small negative,
+                // non-sentinel value without ever landing exactly on 0.0f,
+                // and `< 0.0f` mistook that pending-expiry value for
+                // "not started", re-arming it to the full grace forever.
+                // Matching the exact kGraceNotStarted sentinel instead means
+                // only a genuinely fresh countdown re-initializes; a
+                // decremented-negative value falls through untouched to the
+                // `<= 0.0f` expiry check immediately below.
+                if (m_graceRemaining[voiceIndex] == kGraceNotStarted)
                 {
                     m_graceRemaining[voiceIndex] = graceSeconds * m_sampleRate;
                 }
@@ -355,7 +491,7 @@ private:
                 {
                     m_stage[voiceIndex] = Stage::Release;
                     m_releasePending[voiceIndex] = false;
-                    m_graceRemaining[voiceIndex] = -1.0f;
+                    m_graceRemaining[voiceIndex] = kGraceNotStarted;
                 }
                 else
                 {
@@ -412,10 +548,48 @@ private:
     // setGate()/stepVoice()'s own comments -- this is the only new
     // information setGate() itself records, since it lacks the knob values
     // needed to decide). m_graceRemaining: minimum-hold countdown in
-    // samples, -1.0f sentinel meaning "not started yet"; only used while a
-    // release is pending AND the voice is in Hold.
+    // samples, kGraceNotStarted sentinel meaning "not started yet"; only
+    // used while a release is pending AND the voice is in Hold.
     std::array<bool, kNumVoices> m_releasePending{};
-    std::array<float, kNumVoices> m_graceRemaining{};
+    // Audit-fix F1 lead finding (2026-08-17, verified before acting per
+    // OMNI §12): a bare `{}` here value-initializes every element to 0.0f,
+    // NOT kGraceNotStarted -- traced whether that is a live bug (the
+    // Hold-branch exact-equality guard in stepVoice() above would misread a
+    // never-init()'d 0.0f as "expire now" instead of "not started").
+    //
+    // Verdict: NOT reachable, independent of init()-vs-stepVoice() ordering.
+    // The `== kGraceNotStarted` guard is only evaluated inside `if
+    // (m_releasePending[voiceIndex])` (stepVoice() above), and
+    // m_releasePending can only become true via setGate(false) -- which
+    // itself no-ops unless m_gateHigh was already true (`if (high ==
+    // m_gateHigh) return;`, setGate() above), i.e. only after a PRIOR
+    // setGate(true) call. setGate(true)'s own "high" branch unconditionally
+    // writes `m_graceRemaining[i] = kGraceNotStarted` for every voice
+    // (setGate(), above) before m_releasePending can ever flip true. So by
+    // the time the Hold+pending branch can execute at all, this member has
+    // already been overwritten with the real sentinel by setGate(true) --
+    // regardless of whether init() ever ran. (Separately, init() IS in fact
+    // guaranteed to run first in production: FroggersAppCore::PrepareToPlay
+    // calls audioAdsr_.init(sampleRate_) [FroggersAppCore.hpp:322], and
+    // Sheaf's synth::Engine::Prepare -> app_.PrepareToPlay
+    // [External/Sheaf/projects/synth/include/synth/Engine.hpp:299-300] runs
+    // from Runtime::audioDeviceAboutToStart
+    // [External/Sheaf/projects/synth/runtime/Runtime.hpp:502-511], which the
+    // host is contractually required to call before the first
+    // audioDeviceIOCallback/ProcessBlock -- but that ordering is not what
+    // makes this safe; the setGate(true) argument above holds even if it
+    // were violated.)
+    //
+    // The default initializer is changed to kGraceNotStarted anyway, purely
+    // so the type's own default-constructed state is self-consistent with
+    // what every other "not started" write in this file uses -- not because
+    // a live bug was found.
+    std::array<float, kNumVoices> m_graceRemaining = []
+    {
+        std::array<float, kNumVoices> result{};
+        result.fill(kGraceNotStarted);
+        return result;
+    }();
 };
 
 // UI-rework ITEM 3 (design.md A3d, tasks.md B.3, 2026-07-29): the three

@@ -138,8 +138,8 @@ struct FroggersBankLayout {
 //               Comb feedback, Comb LP, Comb/Peak, Scoop
 //   Drive    -- Drive, Shape, SRR 1, SRR 2, XOR, Bit depth, Fuzz, Blend,
 //               Phase
-//   Delay    -- Delay time, Send, Feedback, Stereo width, Detune, Mod
-//               depth, Wet mix, Color, Halo
+//   Delay    -- Delay time, Send, Feedback, Stereo width, Freeze, Mod
+//               depth, Wet mix, Reverse blend, Diffusion
 //   Reverb   -- Wet/dry, Room size, Decay, Pre-delay, Damping, Stereo width,
 //               Diffusion, Mod depth, Hold
 inline const std::array<FroggersBankLayout, kFroggersBankCount>& FroggersBankLayouts() {
@@ -228,8 +228,8 @@ inline const std::array<FroggersBankLayout, kFroggersBankCount>& FroggersBankLay
         }}},
         {FroggersBankId::Delay, "Delay", synth::Color::Indigo, {{
             {"Delay time", "DlyTm"}, {"Send", "Send"}, {"Feedback", "Fb"},
-            {"Stereo width", "Width"}, {"Detune", "Detune"}, {"Mod depth", "ModDp"},
-            {"Wet mix", "WetMx"}, {"Color", "Color"}, {"Halo", "Halo"},
+            {"Stereo width", "Width"}, {"Freeze", "Frze"}, {"Mod depth", "ModDp"},
+            {"Wet mix", "WetMx"}, {"Reverse blend", "Rev"}, {"Diffusion", "Diff"},
             // D6/D8 (strict-executor packet): default knob 0.5f -- FbDr's
             // ExpMapCompute(0.25,4,·) reproduces unity (1.0f) exactly at
             // 0.5f, MdRt's ExpMapCompute(0.05,1.25,·) reproduces 0.25Hz

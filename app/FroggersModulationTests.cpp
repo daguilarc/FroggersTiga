@@ -1185,6 +1185,432 @@ TEST_CASE(default_patch_touches_no_parameter_outside_the_enumerated_set) {
     });
 }
 
+// ============================================================================
+// Packet P6a -- ResetPage/ResetAll (model layer)
+// ============================================================================
+
+// Snapshot of one top-level parameter's own value (both scene poles) plus,
+// for every modulator slot, whether a depth is materialized there and if so
+// its own value (both poles) -- shared by the "only the intended set
+// changed" tests below, so the before/after comparison logic is written
+// exactly once.
+struct ParamSnapshot {
+    float v0 = 0.0f;
+    float v1 = 0.0f;
+    std::array<std::optional<std::pair<float, float>>, FroggersParameterModel::kNumModulators> depths{};
+};
+
+ParamSnapshot SnapshotParameter(synth::Parameter& parameter) {
+    ParamSnapshot snap;
+    snap.v0 = parameter.SceneCenter(0);
+    snap.v1 = parameter.SceneCenter(1);
+    for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+        synth::Parameter* depth = parameter.ModulationDepthParameter(modIx);
+        if (depth != nullptr) {
+            snap.depths[modIx] = std::make_pair(depth->SceneCenter(0), depth->SceneCenter(1));
+        }
+    }
+    return snap;
+}
+
+std::vector<std::pair<synth::Parameter*, ParamSnapshot>> SnapshotAllTopLevelParameters(FroggersParameterModel& model) {
+    std::vector<std::pair<synth::Parameter*, ParamSnapshot>> snapshots;
+    ForEachTopLevelParameter(model, [&](synth::Parameter& parameter) {
+        snapshots.push_back({&parameter, SnapshotParameter(parameter)});
+    });
+    return snapshots;
+}
+
+void RequireParameterUnchanged(synth::Parameter& parameter, const ParamSnapshot& before) {
+    REQUIRE_NEAR(parameter.SceneCenter(0), before.v0, 1e-9f);
+    REQUIRE_NEAR(parameter.SceneCenter(1), before.v1, 1e-9f);
+    for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+        synth::Parameter* depth = parameter.ModulationDepthParameter(modIx);
+        if (!before.depths[modIx].has_value()) {
+            REQUIRE_TRUE(depth == nullptr);
+            continue;
+        }
+        REQUIRE_TRUE(depth != nullptr);
+        REQUIRE_NEAR(depth->SceneCenter(0), before.depths[modIx]->first, 1e-9f);
+        REQUIRE_NEAR(depth->SceneCenter(1), before.depths[modIx]->second, 1e-9f);
+    }
+}
+
+bool IsOnBankPage(synth::Parameter* candidate, FroggersParameterModel& model, FroggersBankId bankId) {
+    if (candidate == &model.Crispy(bankId)) {
+        return true;
+    }
+    for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
+        if (candidate == &model.PageParameter(bankId, paramIx)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// ----------------------------------------------------------------------------
+// "ResetPage clears only the current bank" / "ResetAll clears every bank"
+// ----------------------------------------------------------------------------
+
+TEST_CASE(reset_page_clears_only_current_bank_values_and_depths) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/true);
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+
+    // Give every bank non-neutral page-parameter values, non-neutral Crispy
+    // values, and materialized, non-neutral depths, so ResetPage has
+    // something real to clear on Reverb and something real to prove
+    // untouched everywhere else.
+    RandomizeAll(fx.manager, drillIn, fx.model);
+    for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+        FroggersModulationDrillIn pageDrill(fx.model.BankAt(static_cast<FroggersBankId>(bankIx)));
+        RandomizePage(fx.manager, pageDrill);
+    }
+
+    const auto before = SnapshotAllTopLevelParameters(fx.model);
+
+    // Positive control (OMNI Sec 9.1): confirm the setup above actually
+    // materialized at least one non-neutral depth on Reverb's own page
+    // before trusting "reads neutral after" as meaningful.
+    bool reverbHadNonNeutralDepthBefore = false;
+    for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
+        synth::Parameter& p = fx.model.PageParameter(FroggersBankId::Reverb, paramIx);
+        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+            synth::Parameter* depth = p.ModulationDepthParameter(modIx);
+            if (depth != nullptr && detail::DepthIsModulating(*depth)) {
+                reverbHadNonNeutralDepthBefore = true;
+            }
+        }
+    }
+    REQUIRE_TRUE(reverbHadNonNeutralDepthBefore);
+
+    ResetPage(fx.manager, drillIn);  // drillIn is still Level()==0, on Reverb
+
+    constexpr float kTol = 1e-6f;
+    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;
+    bool anyReverbDepthCheckedAfter = false;
+    for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
+        synth::Parameter& p = fx.model.PageParameter(FroggersBankId::Reverb, paramIx);
+        REQUIRE_NEAR(p.SceneCenter(0), 0.0f, kTol);
+        REQUIRE_NEAR(p.SceneCenter(1), 0.0f, kTol);
+        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+            synth::Parameter* depth = p.ModulationDepthParameter(modIx);
+            if (depth == nullptr) {
+                continue;
+            }
+            anyReverbDepthCheckedAfter = true;
+            REQUIRE_NEAR(depth->SceneCenter(0), kNeutral, kTol);
+            REQUIRE_NEAR(depth->SceneCenter(1), kNeutral, kTol);
+        }
+    }
+    synth::Parameter& reverbCrispy = fx.model.Crispy(FroggersBankId::Reverb);
+    REQUIRE_NEAR(reverbCrispy.SceneCenter(0), 0.0f, kTol);
+    REQUIRE_NEAR(reverbCrispy.SceneCenter(1), 0.0f, kTol);
+    REQUIRE_TRUE(anyReverbDepthCheckedAfter);
+
+    // Every OTHER top-level parameter (five other banks' page params +
+    // Crispy, and Crunchy) is completely untouched -- own value AND every
+    // materialized depth, both poles.
+    for (const auto& [paramPtr, snap] : before) {
+        if (IsOnBankPage(paramPtr, fx.model, FroggersBankId::Reverb)) {
+            continue;  // checked above.
+        }
+        RequireParameterUnchanged(*paramPtr, snap);
+    }
+}
+
+TEST_CASE(reset_all_clears_every_bank) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/true);
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+
+    RandomizeAll(fx.manager, drillIn, fx.model);  // values+depths on all 6 banks' page params
+
+    // Positive control: confirm at least one bank has a non-neutral
+    // materialized depth before reset.
+    bool anyNonNeutralBefore = false;
+    ForEachTopLevelParameter(fx.model, [&](synth::Parameter& p) {
+        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+            synth::Parameter* depth = p.ModulationDepthParameter(modIx);
+            if (depth != nullptr && detail::DepthIsModulating(*depth)) {
+                anyNonNeutralBefore = true;
+            }
+        }
+    });
+    REQUIRE_TRUE(anyNonNeutralBefore);
+
+    ResetAll(fx.manager, drillIn, fx.model);  // Level()==0
+
+    constexpr float kTol = 1e-6f;
+    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;
+    for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+        const auto bankId = static_cast<FroggersBankId>(bankIx);
+        for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
+            synth::Parameter& p = fx.model.PageParameter(bankId, paramIx);
+            REQUIRE_NEAR(p.SceneCenter(0), 0.0f, kTol);
+            REQUIRE_NEAR(p.SceneCenter(1), 0.0f, kTol);
+            for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+                synth::Parameter* depth = p.ModulationDepthParameter(modIx);
+                if (depth == nullptr) {
+                    continue;
+                }
+                REQUIRE_NEAR(depth->SceneCenter(0), kNeutral, kTol);
+                REQUIRE_NEAR(depth->SceneCenter(1), kNeutral, kTol);
+            }
+        }
+    }
+}
+
+TEST_CASE(reset_never_touches_crunchy_in_any_view) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/true);
+    synth::Parameter& crunchy = fx.model.Crunchy();
+    // Deliberately non-zero, non-neutral, non-default: Crunchy's own
+    // ParameterConfig default is already 0.0f, so checking against that
+    // default alone would not distinguish "never touched" from "touched and
+    // (incorrectly) reset to 0.0" -- this perturbation makes the check real.
+    constexpr float kPerturbed = 0.73f;
+    crunchy.SceneCenter(0) = kPerturbed;
+    crunchy.SceneCenter(1) = kPerturbed;
+
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+    ResetAll(fx.manager, drillIn, fx.model);
+    REQUIRE_TRUE(crunchy.SceneCenter(0) == kPerturbed);
+    REQUIRE_TRUE(crunchy.SceneCenter(1) == kPerturbed);
+    REQUIRE_TRUE(crunchy.ModulationDepthParameter(0) == nullptr);
+
+    ResetPage(fx.manager, drillIn);
+    REQUIRE_TRUE(crunchy.SceneCenter(0) == kPerturbed);
+    REQUIRE_TRUE(crunchy.SceneCenter(1) == kPerturbed);
+}
+
+// ----------------------------------------------------------------------------
+// The trap: a depth's "off" is NEUTRAL (0.5), never 0.0.
+// ----------------------------------------------------------------------------
+
+TEST_CASE(reset_depths_read_neutral_not_zero_the_trap_is_not_reintroduced) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/true);
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+    drillIn.PressEncoder(0);  // -> level 1: materializes all 15 depth cells on Reverb param 0
+    REQUIRE_TRUE(drillIn.Level() == 1);
+    synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
+
+    RandomizePage(fx.manager, drillIn);  // give the depths real, non-neutral values first
+
+    // Positive control (OMNI Sec 9.1): confirm at least one depth is
+    // genuinely non-neutral before reset.
+    bool anyNonNeutralBefore = false;
+    for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+        synth::Parameter* depth = focused.ModulationDepthParameter(modIx);
+        if (depth != nullptr && detail::DepthIsModulating(*depth)) {
+            anyNonNeutralBefore = true;
+        }
+    }
+    REQUIRE_TRUE(anyNonNeutralBefore);
+
+    ResetPage(fx.manager, drillIn);  // Level()==1: resets focused's own depths
+
+    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;  // 0.5f
+    constexpr float kTol = 1e-6f;
+    bool anyDepthChecked = false;
+    for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+        synth::Parameter* depth = focused.ModulationDepthParameter(modIx);
+        if (depth == nullptr) {
+            continue;
+        }
+        anyDepthChecked = true;
+        // The trap, pinned directly: NEUTRAL (0.5), not zero. This tight a
+        // tolerance against 0.5 would catch a reset that wrote literal 0.0
+        // (full negative depth, the opposite of off) -- 0.5 and 0.0 differ
+        // by 0.5, five orders of magnitude past kTol.
+        REQUIRE_NEAR(depth->SceneCenter(0), kNeutral, kTol);
+        REQUIRE_NEAR(depth->SceneCenter(1), kNeutral, kTol);
+        REQUIRE_TRUE(depth->SceneCenter(0) != 0.0f);
+        REQUIRE_TRUE(depth->SceneCenter(1) != 0.0f);
+    }
+    REQUIRE_TRUE(anyDepthChecked);
+}
+
+// ----------------------------------------------------------------------------
+// Reset mirrors Randomize's own scope at the same drill level.
+// ----------------------------------------------------------------------------
+
+TEST_CASE(reset_page_drilled_in_acts_on_only_the_selected_parameters_own_depths) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/true);
+    synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
+    synth::Parameter& sibling = fx.model.PageParameter(FroggersBankId::Reverb, 1);
+
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+
+    // Give `focused` real, materialized, non-neutral depths.
+    drillIn.PressEncoder(0);  // -> level 1 on `focused`
+    RandomizePage(fx.manager, drillIn);
+    drillIn.Back();
+    REQUIRE_TRUE(drillIn.Level() == 0);
+
+    // Give `sibling` its OWN real, materialized, non-neutral depths, via the
+    // SAME drillIn (never two concurrent drill-ins on one Bank -- Bank's
+    // selection state is shared, app-side level tracking is not).
+    drillIn.PressEncoder(1);  // -> level 1 on `sibling`
+    RandomizePage(fx.manager, drillIn);
+    drillIn.Back();
+    REQUIRE_TRUE(drillIn.Level() == 0);
+
+    // Re-open `focused` (its own non-neutral depths from above survive --
+    // Deselect()'s CollectNeutralLocalParameters() only reclaims depths
+    // still at their neutral default, not ones actually written).
+    drillIn.PressEncoder(0);  // -> level 1 on `focused` again
+    REQUIRE_TRUE(drillIn.Level() == 1);
+    REQUIRE_TRUE(drillIn.BankRef().SelectedParameter() == &focused);
+
+    // Perturb `focused`'s own value to something distinctive and non-default
+    // so "Reset leaves it alone at this drill level" is a real check, not a
+    // 0.0-before/0.0-after tautology.
+    constexpr float kPerturbedValue = 0.37f;
+    focused.SceneCenter(0) = kPerturbedValue;
+    focused.SceneCenter(1) = kPerturbedValue;
+
+    const auto siblingBefore = SnapshotParameter(sibling);
+
+    ResetPage(fx.manager, drillIn);  // drillIn still at Level()==1 on `focused`
+
+    // `focused`'s own depths -- RandomizeParameterModulationDepths's exact
+    // target set at this drill level -- are all neutral now.
+    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;
+    constexpr float kTol = 1e-6f;
+    bool anyFocusedDepthChecked = false;
+    for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+        synth::Parameter* depth = focused.ModulationDepthParameter(modIx);
+        if (depth == nullptr) {
+            continue;
+        }
+        anyFocusedDepthChecked = true;
+        REQUIRE_NEAR(depth->SceneCenter(0), kNeutral, kTol);
+        REQUIRE_NEAR(depth->SceneCenter(1), kNeutral, kTol);
+    }
+    REQUIRE_TRUE(anyFocusedDepthChecked);
+
+    // `focused`'s OWN value is untouched -- Randomize never writes to it at
+    // this level either (only to its depth children), so Reset matching
+    // Randomize's scope must leave it alone too.
+    REQUIRE_NEAR(focused.SceneCenter(0), kPerturbedValue, kTol);
+    REQUIRE_NEAR(focused.SceneCenter(1), kPerturbedValue, kTol);
+
+    // `sibling` -- a different top-level parameter's own depths, never the
+    // selected one -- is completely untouched.
+    RequireParameterUnchanged(sibling, siblingBefore);
+}
+
+// ============================================================================
+// T3.1/T3.2 (frogg3rs-stop-isolation-and-legible-labels, packet 3) --
+// randomize lands the drawn value even under live modulation
+// ============================================================================
+// PRE-FIX MEASUREMENT (proposal §1b, before this packet's fix): Sheaf's own
+// `Parameter::RandomizeVisibleValue` (External/Sheaf/projects/synth/src/
+// ParameterModulation.cpp:1723-1731) computes `delta = target -
+// TargetValue(0)` -- a delta against the MODULATION-RESOLVED value -- so
+// under live audio-rate modulation each press's delta is measured against a
+// modulated snapshot; repeated presses ratchet the commanded value into the
+// [0,1] clamp. Measured on the running instrument: the commanded value
+// landed at EXACTLY 1.0000 in 20/20 independent trials after 5 presses
+// each. T3.1's fix (FroggersModulation.hpp's `PressBankWithRandomValue`) no
+// longer routes the VALUE write through that function at all: it draws its
+// own uniform value and commits it directly via `HandleSetAbsolute`
+// (`sceneCenters_`, no dependency on resolved/modulated state), to both
+// scene poles. Filed upstream as `UPSTREAM-SHEAF-ASK.md` ask #16; Sheaf is
+// pinned and untouched, so this app-side fix does not wait on it.
+//
+// §9.1 (verified, not asserted here -- see this packet's own report):
+// temporarily restoring the OLD press-with-RandomHeld body in
+// `PressBankWithRandomValue` and rebuilding this exact binary reproduces the
+// ratchet against the harness below and fails the assertions that follow;
+// restoring the fix and rebuilding turns it green again. That swap is not
+// left in this file (Sheaf-adjacent app code stays on the real fix at rest);
+// the red/green transcript lives in the packet report instead.
+
+// Attaches a FULL-POSITIVE (SceneCenter == 1.0 -> ModulationDepthTargetFromKnob
+// == +1.0 bipolar) modulation route from VCO1 Audio to `parameter`, so
+// `TargetValue(0)` is driven by the live, audio-rate-oscillating source
+// signal instead of `parameter`'s own commanded value. At depth == +1.0 the
+// route's |depth| weight sum is exactly 1.0, which zeroes
+// `targetCenterScales_` (ParameterModulation.cpp:2257-2268's weightSum>=1.0
+// branch) -- i.e. the commanded center contributes NOTHING to
+// `TargetValue(0)`; it is driven entirely by the oscillating source. VCO1's
+// pitch is pinned near the top of its 20 Hz-20 kHz exponential map
+// (dsp/Vco.hpp's `PitchToPhaseIncrement`): at 48 kHz and pitch==1.0 that is
+// 20000/48000 ~= 0.417 cycles/sample, so a handful of `Step()` calls sweeps
+// the source's full excursion -- the same live-modulation shape the
+// proposal's own repro used, built here from public API instead of the
+// whole running instrument. `fx.manager.ComputeAllParameters()` is the
+// immediate (non-smoothed) resync -- see that method's own comment -- so
+// the depth's commanded value is fully converged into `GetRaw()` before the
+// caller reads anything.
+void AttachFullPositiveAudioRateModulation(Fixture& fx, synth::Parameter& parameter) {
+    synth::Parameter* depth = parameter.EnsureModulationDepth(kModSlotVco1Audio);
+    REQUIRE_TRUE(depth != nullptr);
+    for (const synth::SceneState& pole : detail::kScenePoles) {
+        depth->SceneCenter(pole.leftScene) = 1.0f;  // max normalized -> +1 bipolar (full positive)
+    }
+    fx.manager.ComputeAllParameters();
+}
+
+TEST_CASE(randomize_lands_the_drawn_value_under_full_positive_audio_rate_modulation_across_50_presses) {
+    Fixture fx;
+    synth::Bank& bank = fx.model.BankAt(FroggersBankId::Reverb);
+    synth::Parameter& parameter = fx.model.PageParameter(FroggersBankId::Reverb, 0);
+    AttachFullPositiveAudioRateModulation(fx, parameter);
+
+    // pitch=1.0 (near 20 kHz -- see the helper's own comment): audio-rate,
+    // fast enough to sweep the source's full excursion between presses.
+    const FroggersModulationSlate::VcoDrive fastVco{1.0f, 0.5f, 0.0f};
+
+    constexpr int kPresses = 50;
+    std::array<float, kPresses> commanded{};
+    int atClamp = 0;
+    double sum = 0.0;
+    for (int i = 0; i < kPresses; ++i) {
+        fx.slate.Step(fastVco, fastVco, fastVco, std::nullopt);
+        fx.model.Group().UpdateModValues();  // refresh the live-modulation snapshot before the press
+        detail::PressBankWithRandomValue(fx.manager, bank, 0);  // encoder 0 -> `parameter`
+        const float value = parameter.SceneCenter(0);
+        commanded[static_cast<std::size_t>(i)] = value;
+        sum += static_cast<double>(value);
+        if (std::fabs(value - 1.0f) < 1e-6f) {
+            ++atClamp;
+        }
+    }
+
+    const double mean = sum / kPresses;
+    // T3.2's own pass bar: a draw lands the drawn value, so the resulting
+    // sequence is an i.i.d. sample of NextRandomValue()'s uniform draw, not
+    // a biased walk toward the clamp.
+    REQUIRE_TRUE(mean >= 0.35 && mean <= 0.65);
+    REQUIRE_TRUE(atClamp < static_cast<int>(kPresses * 0.05));  // <5% at the exact 1.0 clamp
+
+    // No monotone drift: a ratchet toward the clamp pushes the second half's
+    // mean well above the first half's; an unbiased uniform draw keeps the
+    // two close regardless of press order.
+    double firstHalfSum = 0.0;
+    double secondHalfSum = 0.0;
+    for (int i = 0; i < kPresses / 2; ++i) {
+        firstHalfSum += static_cast<double>(commanded[static_cast<std::size_t>(i)]);
+    }
+    for (int i = kPresses / 2; i < kPresses; ++i) {
+        secondHalfSum += static_cast<double>(commanded[static_cast<std::size_t>(i)]);
+    }
+    const double firstHalfMean = firstHalfSum / (kPresses / 2);
+    const double secondHalfMean = secondHalfSum / (kPresses / 2);
+    REQUIRE_TRUE(std::fabs(secondHalfMean - firstHalfMean) < 0.3);
+
+    // [OBSERVED] -- this file's own convention for recording the sampled
+    // shape alongside its pass condition.
+    std::cout << "[OBSERVED] randomize-under-modulation commanded-value distribution over " << kPresses
+              << " presses: mean=" << mean << " atClampFraction=" << (100.0 * atClamp / kPresses) << "%"
+              << " firstHalfMean=" << firstHalfMean << " secondHalfMean=" << secondHalfMean << "\n";
+}
+
 }  // namespace
 
 int main() {

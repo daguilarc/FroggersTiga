@@ -35,6 +35,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <functional>
@@ -478,9 +479,15 @@ TEST_CASE(every_encoder_cell_lies_fully_inside_the_grid_region) {
 // report any overflow, at the three sizes task F.3's preflight gate pinned
 // (900x632 default, 640x480 small, 1440x900 large) -- not an invented check.
 
+// T4.2 (operator ruling 2026-08-17): the default size literal here tracks
+// `FroggersPageLayout::kDefaultHeight`/`FroggersAppCore::Config().uiHeight`
+// BY HAND (a plain literal, same convention those two use with each other --
+// see their own comments for why no cross-check test exists for that pair).
+// 632 -> 712 with this task's window growth; the small/large cases below are
+// deliberately untouched (arbitrary probe sizes, not tied to the default).
 TEST_CASE(surface_resolves_without_overflow_at_the_default_window_size) {
     const std::string diagnostic = FroggersResolutionDiagnostic([] {
-        BuildFroggersTreeAt(900.0f, 632.0f);
+        BuildFroggersTreeAt(900.0f, 712.0f);
     });
     REQUIRE_TRUE(diagnostic.empty());
 }
@@ -1223,204 +1230,374 @@ TEST_CASE(encoder_cell_never_emits_a_frame_draw_command) {
     REQUIRE_TRUE(!sawFrame);
 }
 
-// --- operator brief: labels no longer truncate/squeeze into a small box ----
+// --- T4 (labels.md, operator-approved 2026-08-17): single-row labels, ------
+// --- never over the ring -----------------------------------------------
 
-// REWRITTEN (label-grid task, superseding the single-line "strip Sheaf's
-// 4-char block, append a box sized from the full shortLabel" version this
-// test used to pin): the mechanism changed from "size the box to the
-// label" to "always render into a FIXED 10-column x 2-row grid" (operator:
-// "a fixed 10-column x 2-row 14-segment grid, identical in every cell").
-// Truncation is now structurally impossible -- `numChars` passed to
-// `BuildFourteenSegmentCommands` is the constant 10, never a cap derived
-// from label length -- so what this test proves instead is that the FULL
-// long name (source: FroggersParamSpec::name via FroggersBankLayouts(),
-// not shortLabel) genuinely reaches BOTH rows of that grid, not just one.
-//
-// Filter bank (index 2, FroggersParameters.hpp's FroggersBankId::Filter)
-// slot 0 is long name "Comb offset" -- two real words, no trailing digit,
-// so SplitFourteenSegmentLines (FroggersUiSurface.hpp) yields two lines,
-// "COMB" and "OFFSET". This is exactly the "CmbOff"/"Comb offset" site the
-// original truncation bug clipped to "CMBO".
-//
-// BuildFourteenSegmentCommands emits exactly one decimal-point FillEllipse
-// per character SLOT, unconditionally (EncoderDraw.hpp:528-531,
-// distinctly small -- a few px -- vs. the cell's big body-fill ellipses,
-// tens of px): with a fixed 10-wide, 2-row grid that is always 20,
-// regardless of label length -- itself the proof that the grid is no
-// longer sized/truncated to the label at all. Content actually reaching
-// row 2 (not just row 1) is checked separately, by recomputing this same
-// cell's row split from its own measured extent (same idiom
-// encoder_cell_never_emits_a_frame_draw_command's header comment already
-// uses) and looking for an "on"-coloured FillPolygon segment -- i.e. a lit
-// glyph stroke, not just an empty/off placeholder -- in each row's y-band.
-TEST_CASE(encoder_cell_renders_the_full_label_not_truncated_to_four_chars) {
+// Recomputes AppendEncoderCell's own label-band geometry
+// (FroggersUiSurface.hpp) from a cell's own measured LOCAL extent (draw
+// commands are node-local, PortableUI.hpp's own coordinate contract --
+// `encoder->bounds.width/height` is this node's resolved size, the same
+// convention every pre-existing geometry test in this file already uses),
+// then builds the EXACT commands production would emit for a given
+// approved label by calling the SAME public helper
+// (`BuildEncoderLabelRowCommands`) production calls -- so what follows is a
+// comparison against production's own code path, not a second
+// hand-written copy of its arithmetic (OMNI §8).
+std::vector<synth::ui::DrawCommand> ExpectedEncoderLabelBandCommands(synth::Color bankBaseColor,
+                                                                     const std::string& approvedLabel,
+                                                                     float cellWidth, float cellHeight) {
+    const float ringHeight =
+        std::max(0.0f, cellHeight - synth_froggers::FroggersEncoderGridLayout::kLabelBandHeight);
+    const float bandTop = ringHeight;
+    const float bandHeight = std::max(0.0f, cellHeight - bandTop);
+    const float plateWidth = cellWidth * 0.94f;
+    const float plateLeft = (cellWidth - plateWidth) * 0.5f;
+    const synth::ui::Bounds rowBounds{plateLeft, bandTop, plateWidth, bandHeight};
+
+    const synth::Color onColor = synth::Brighten(bankBaseColor, 0.45f);
+    const synth::Color offColor = synth::Color::Rgb(36, 40, 42);
+
+    std::vector<synth::ui::DrawCommand> expected;
+    expected.push_back(
+        synth::ui::DrawCommand::FillRoundedRect(rowBounds, bandHeight * 0.15f, synth::Color::Rgb(32, 34, 36)));
+    const std::vector<synth::ui::DrawCommand> row = synth_froggers::BuildEncoderLabelRowCommands(
+        approvedLabel, rowBounds, onColor, offColor, synth_froggers::kApprovedLabelGridColumns);
+    expected.insert(expected.end(), row.begin(), row.end());
+    return expected;
+}
+
+bool BoundsClose(synth::ui::Bounds a, synth::ui::Bounds b, float eps = 0.02f) {
+    return std::fabs(a.x - b.x) < eps && std::fabs(a.y - b.y) < eps && std::fabs(a.width - b.width) < eps &&
+           std::fabs(a.height - b.height) < eps;
+}
+
+bool PointsClose(const std::vector<synth::ui::Point>& a, const std::vector<synth::ui::Point>& b,
+                 float eps = 0.02f) {
+    if (a.size() != b.size()) {
+        return false;
+    }
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        if (std::fabs(a[i].x - b[i].x) >= eps || std::fabs(a[i].y - b[i].y) >= eps) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool DrawCommandsMatch(const synth::ui::DrawCommand& a, const synth::ui::DrawCommand& b) {
+    return a.kind == b.kind && a.color == b.color && BoundsClose(a.bounds, b.bounds) &&
+           std::fabs(a.cornerRadius - b.cornerRadius) < 0.02f && PointsClose(a.points, b.points);
+}
+
+// This app always appends its label-band commands LAST (after
+// BuildEncoderDrawCommands' own, trailing-block-stripped output) -- see
+// AppendEncoderCell's own comment -- so the deterministic slice to compare
+// is the trailing `expected.size()` commands, not a guess.
+bool TrailingCommandsMatch(const std::vector<synth::ui::DrawCommand>& actual,
+                           const std::vector<synth::ui::DrawCommand>& expected) {
+    if (actual.size() < expected.size()) {
+        return false;
+    }
+    const std::size_t offset = actual.size() - expected.size();
+    for (std::size_t i = 0; i < expected.size(); ++i) {
+        if (!DrawCommandsMatch(actual[offset + i], expected[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// T4.3(a): Envelope-bank cells emit exactly the single-row short-name
+// block; a truncation-class cell (Filter slot 0, "Comb offset") emits its
+// approved long label in full -- both checked by command count/geometry
+// (dpDotCount, and a full trailing-command match against
+// `ExpectedEncoderLabelBandCommands`) against the approved list, never by
+// inspecting pixels.
+TEST_CASE(envelope_short_forms_and_filter_slot0_long_label_render_single_row_verbatim) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
-        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("encoder_full_label"));
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("label_row_content"));
     rig.RunBlocks(4);
     rig.UIState();  // forces a synchronous publish
 
     synth::ui::Surface& surface = rig.Application().PortableSurface();
 
-    surface.DispatchAction(synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBankSelect, "2"));
-    rig.RunBlocks(4);
-    rig.UIState();  // forces a synchronous publish of the newly-selected bank
+    const auto checkCell = [&](std::size_t bankIx, std::size_t slot, const char* approvedLabel) {
+        surface.DispatchAction(
+            synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBankSelect, std::to_string(bankIx)));
+        rig.RunBlocks(4);
+        rig.UIState();
 
-    const synth::ui::NodeTree tree = surface.BuildTree();
-    const synth::ui::Node* encoder = FindNodeById(tree, synth_froggers::FroggersNodeIds::Encoder(0));
-    REQUIRE_TRUE(encoder != nullptr);
+        const synth::ui::NodeTree tree = surface.BuildTree();
+        const synth::ui::Node* encoder = FindNodeById(tree, synth_froggers::FroggersNodeIds::Encoder(slot));
+        REQUIRE_TRUE(encoder != nullptr);
 
-    // Recompute AppendEncoderCell's own row-split geometry
-    // (FroggersUiSurface.hpp) from this cell's own measured extent, rather
-    // than hardcoding a second copy of the pixel constants.
-    constexpr float kInset = 4.0f;
-    const float boundsWidth = std::max(0.0f, encoder->bounds.width - kInset * 2.0f);
-    const float boundsHeight = std::max(0.0f, encoder->bounds.height - kInset * 2.0f);
-    const float displayCenterY = kInset + boundsHeight * 0.5f;
-    const float centerY = displayCenterY - boundsHeight * 0.03f;
-    const float baseRadius = std::min(boundsWidth, boundsHeight) * 0.43f;
-    const float plateTop = centerY + baseRadius * 0.05f;
-    const float plateBottom = (kInset + boundsHeight) - baseRadius * 0.03f;
-    const float row1BandBottom = plateTop + (plateBottom - plateTop) * 0.5f;
-
-    const synth::Color offColor = synth::Color::Rgb(36, 40, 42);
-
-    std::size_t dpDotCount = 0;
-    bool sawLabelPlate = false;
-    bool sawLitSegmentInRow1 = false;
-    bool sawLitSegmentInRow2 = false;
-    for (const synth::ui::DrawCommand& command : encoder->drawCommands) {
-        if (command.kind == synth::ui::DrawCommand::Kind::FillEllipse && command.bounds.width < 5.0f) {
-            ++dpDotCount;
-        }
-        if (command.kind == synth::ui::DrawCommand::Kind::FillRoundedRect && command.bounds.width > 50.0f) {
-            sawLabelPlate = true;
-        }
-        if (command.kind == synth::ui::DrawCommand::Kind::FillPolygon && command.color != offColor &&
-            !command.points.empty()) {
-            float sumY = 0.0f;
-            for (const synth::ui::Point& point : command.points) {
-                sumY += point.y;
-            }
-            const float avgY = sumY / static_cast<float>(command.points.size());
-            if (avgY < row1BandBottom) {
-                sawLitSegmentInRow1 = true;
-            } else {
-                sawLitSegmentInRow2 = true;
+        std::size_t dpDotCount = 0;
+        for (const synth::ui::DrawCommand& command : encoder->drawCommands) {
+            if (command.kind == synth::ui::DrawCommand::Kind::FillEllipse && command.bounds.width < 5.0f) {
+                ++dpDotCount;
             }
         }
-    }
+        // Single row, kApprovedLabelGridColumns dots -- NOT the rejected
+        // 2-row grid's 2x that count, regardless of label length.
+        REQUIRE_TRUE(dpDotCount == static_cast<std::size_t>(synth_froggers::kApprovedLabelGridColumns));
 
-    std::cout << "[OBSERVED] Filter slot 0 label grid: dpDotCount=" << dpDotCount
-              << " sawLabelPlate=" << sawLabelPlate << " row1 lit=" << sawLitSegmentInRow1
-              << " row2 lit=" << sawLitSegmentInRow2 << "\n";
+        const synth::Color bankColor = synth_froggers::FroggersBankLayouts()[bankIx].color;
+        const std::vector<synth::ui::DrawCommand> expected = ExpectedEncoderLabelBandCommands(
+            bankColor, approvedLabel, encoder->bounds.width, encoder->bounds.height);
+        REQUIRE_TRUE(TrailingCommandsMatch(encoder->drawCommands, expected));
+        std::cout << "[OBSERVED] bank " << bankIx << " slot " << slot << " (\"" << approvedLabel
+                  << "\"): dpDotCount=" << dpDotCount << ", trailing commands match expected\n";
+    };
 
-    // Fixed 10-column x 2-row grid, always -- 20 decimal-point slots
-    // regardless of label length (proves the grid is never sized to the
-    // label, unlike the old truncating/auto-sizing mechanisms).
-    REQUIRE_TRUE(dpDotCount == 20);
-    REQUIRE_TRUE(sawLabelPlate);
-    // "COMB" on row 1 and "OFFSET" on row 2 -- the full two-word name
-    // genuinely reached BOTH rows, not truncated to one line or 4 chars.
-    REQUIRE_TRUE(sawLitSegmentInRow1);
-    REQUIRE_TRUE(sawLitSegmentInRow2);
+    // Envelope (bank 1) slot 0 -- canonical short form "A1" (operator
+    // ruling: the short form IS the name here).
+    checkCell(1, 0, "A1");
+    // Filter (bank 2) slot 0 -- the truncation-class long name "Comb
+    // offset" (the exact site the predecessor's rejected work clipped to
+    // "CMBO"), now required to render in full.
+    checkCell(2, 0, "Comb offset");
 }
 
-// --- label-grid task: every parameter's long name fits the fixed 2-line grid --
+// T4.3(b): no label draw command's bounds intersect the ring's drawn arc,
+// in ANY cell of ALL SIX banks -- computable from the command list. This is
+// the property the predecessor's rejected work violated (measured: ~95% of
+// the lower semicircle covered).
+//
+// Distinguishes a cell's RING-kind commands (everything
+// `BuildEncoderDrawCommands` itself can emit into the ring's own
+// sub-extent: body/highlight ellipses, the outline stroke, modulation/
+// switch arcs, and modulator badge chip outlines) from this app's own
+// LABEL-band commands (the plate `FillRoundedRect` and the single-row
+// 14-segment glyphs/decimal-dots `BuildEncoderLabelRowCommands` appends --
+// kinds `BuildEncoderDrawCommands` never emits itself: it has no
+// `FillPolygon` call site of its own outside the trailing label block
+// this app strips; `AppendBadge` DOES emit `FillRoundedRect` -- see the
+// NOTE below, which is the accurate account and governs the classifier
+// (corrected 2026-08-17: this sentence previously claimed `AppendBadge`
+// used `StrokeRoundedRect`, contradicting that NOTE three lines down).
+// A small
+// dot-sized `FillEllipse` (width < 5px) is a decimal point (this app's
+// addition); a big one is the ring's own body/highlight fill.
+// NOTE: `AppendBadge` (EncoderDraw.hpp) emits its OWN `FillRoundedRect`
+// pair (chip background + chip foreground), so `FillRoundedRect` alone
+// does not distinguish a ring-area badge chip from this app's own label
+// plate -- both need the same size split `encoder_cell_never_emits_a_frame_
+// draw_command`'s own header comment already establishes for
+// StrokeRoundedRect (badges top out near 28% of the cell's smaller
+// dimension; this app's label plate is 94% of the FULL cell width, ~128px
+// at the measured cell size -- wide margin on both sides of 50px).
+bool IsRingKindCommand(const synth::ui::DrawCommand& command) {
+    switch (command.kind) {
+        case synth::ui::DrawCommand::Kind::Arc:
+        case synth::ui::DrawCommand::Kind::StrokeEllipse:
+        case synth::ui::DrawCommand::Kind::StrokeRoundedRect:
+            return true;
+        case synth::ui::DrawCommand::Kind::FillEllipse:
+            return command.bounds.width >= 5.0f;
+        case synth::ui::DrawCommand::Kind::FillRoundedRect:
+            return command.bounds.width < 50.0f;  // a badge chip, not this app's own label plate.
+        default:
+            return false;
+    }
+}
 
-// Guard against a future rename silently overflowing the fixed 10-column
-// grid: SplitFourteenSegmentLines (FroggersUiSurface.hpp) always returns at
-// MOST 2 lines by construction (its return type is a 2-element array), so
-// what this test actually needs to prove is the thing that ISN'T
-// structurally guaranteed -- that no line is longer than the grid's 10
-// columns -- over every real long name in the tree, not a hand-picked
-// sample. This is the check the task brief calls for explicitly: "after
-// Step 1's rename, NO name produces more than 2 lines, and NO line exceeds
-// 10 characters," verified here rather than assumed.
-TEST_CASE(every_parameter_label_fits_the_two_line_grid) {
-    std::size_t longestLine = 0;
-    std::string longestLineText;
-    std::string longestLineParam;
+bool IsLabelBandCommand(const synth::ui::DrawCommand& command) {
+    switch (command.kind) {
+        case synth::ui::DrawCommand::Kind::FillPolygon:
+            return true;
+        case synth::ui::DrawCommand::Kind::FillEllipse:
+            return command.bounds.width < 5.0f;
+        case synth::ui::DrawCommand::Kind::FillRoundedRect:
+            return command.bounds.width >= 50.0f;  // this app's own label plate.
+        default:
+            return false;
+    }
+}
 
-    for (const synth_froggers::FroggersBankLayout& bank : synth_froggers::FroggersBankLayouts()) {
-        for (const synth_froggers::FroggersParamSpec& spec : bank.params) {
-            const std::array<std::string, 2> lines = synth_froggers::SplitFourteenSegmentLines(spec.name);
-            for (const std::string& line : lines) {
-                REQUIRE_TRUE(line.size() <= 10);
-                if (line.size() > longestLine) {
-                    longestLine = line.size();
-                    longestLineText = line;
-                    longestLineParam = spec.name;
+// `DrawCommand::FillPolygon`'s static factory (PortableUI.hpp) never
+// populates `.bounds` -- only `.points` -- so a command's Y-extent has to
+// come from whichever field the command's own KIND actually sets.
+float CommandMinY(const synth::ui::DrawCommand& command) {
+    if (command.kind == synth::ui::DrawCommand::Kind::FillPolygon) {
+        float minY = std::numeric_limits<float>::infinity();
+        for (const synth::ui::Point& point : command.points) {
+            minY = std::min(minY, point.y);
+        }
+        return minY;
+    }
+    return command.bounds.y;
+}
+
+float CommandMaxY(const synth::ui::DrawCommand& command) {
+    if (command.kind == synth::ui::DrawCommand::Kind::FillPolygon) {
+        float maxY = -std::numeric_limits<float>::infinity();
+        for (const synth::ui::Point& point : command.points) {
+            maxY = std::max(maxY, point.y);
+        }
+        return maxY;
+    }
+    return command.bounds.y + command.bounds.height;
+}
+
+TEST_CASE(no_label_command_intersects_the_ring_in_any_cell_of_any_bank) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("label_never_over_ring"));
+    rig.RunBlocks(4);
+    rig.UIState();
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+
+    std::size_t cellsChecked = 0;
+    std::size_t ringCommandsSeen = 0;
+    std::size_t labelCommandsSeen = 0;
+
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+        surface.DispatchAction(
+            synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBankSelect, std::to_string(bankIx)));
+        rig.RunBlocks(4);
+        rig.UIState();
+
+        const synth::ui::NodeTree tree = surface.BuildTree();
+        for (std::size_t ix = 0; ix < synth_froggers::FroggersEncoderGridLayout::kEncoderCount; ++ix) {
+            const synth::ui::Node* encoder = FindNodeById(tree, synth_froggers::FroggersNodeIds::Encoder(ix));
+            REQUIRE_TRUE(encoder != nullptr);
+
+            float ringMaxY = -std::numeric_limits<float>::infinity();
+            float labelMinY = std::numeric_limits<float>::infinity();
+            for (const synth::ui::DrawCommand& command : encoder->drawCommands) {
+                if (IsRingKindCommand(command)) {
+                    ringMaxY = std::max(ringMaxY, CommandMaxY(command));
+                    ++ringCommandsSeen;
+                } else if (IsLabelBandCommand(command)) {
+                    labelMinY = std::min(labelMinY, CommandMinY(command));
+                    ++labelCommandsSeen;
                 }
             }
+
+            // Positive control: every one of the 96 (6 banks x 16 slots)
+            // cells swept here is a real, connected, always-visible
+            // page/global parameter (never the modulation-view's hidden
+            // case), so both counts must be real numbers or the check
+            // below would pass vacuously against an empty command list.
+            REQUIRE_TRUE(std::isfinite(ringMaxY));
+            REQUIRE_TRUE(std::isfinite(labelMinY));
+            REQUIRE_TRUE(labelMinY >= ringMaxY - 0.01f);
+            ++cellsChecked;
         }
     }
 
-    std::cout << "[OBSERVED] longest rendered line across every parameter: \"" << longestLineText << "\" ("
-              << longestLine << " chars, from \"" << longestLineParam << "\")\n";
-    // The task brief's own claim, checked rather than assumed: the longest
-    // words in the tree ("Anti-alias", "brightness", "Waveshaper") are
-    // exactly 10 characters.
-    REQUIRE_TRUE(longestLine == 10);
+    std::cout << "[OBSERVED] label-vs-ring sweep: " << cellsChecked << " cells, " << ringCommandsSeen
+              << " ring commands, " << labelCommandsSeen << " label commands, all clear\n";
+    REQUIRE_TRUE(cellsChecked ==
+                 synth_froggers::kFroggersBankCount * synth_froggers::FroggersEncoderGridLayout::kEncoderCount);
 }
 
-// --- label-grid task: a two-word name uses both rows, a one-word name uses one --
+// T4.3(c): every rendered label matches labels.md VERBATIM, so a later
+// rename cannot silently reintroduce a truncation. Covers all 86 entries.
+// Deliberately an INDEPENDENT copy of labels.md's table (not a read of
+// `FroggersApprovedLabels()`, production's own copy) -- comparing
+// production's rendering against production's own table would not catch
+// production reading the WRONG source (e.g. reverting to
+// `FroggersParamSpec::name`, which is exactly what the predecessor did)
+// or a typo in that table; this is the independent oracle labels.md itself
+// is.
+TEST_CASE(every_rendered_label_matches_the_approved_list_verbatim) {
+    static const std::array<std::array<const char*, synth_froggers::kFroggersParamsPerBank>,
+                            synth_froggers::kFroggersBankCount>
+        kExpectedApprovedLabels{{
+            {{"VCO1", "VCO2", "VCO3", "Shape 1", "Shape 2", "Shape 3", "Ph.mod 1", "Ph.mod 2", "Ph.mod 3",
+              "Ringmod 1", "Ringmod 2", "Ringmod 3", "PM rate", "VCO balance"}},
+            {{"A1", "D1", "S1", "R1", "A2", "D2", "S2", "R2", "A3", "D3", "S3", "R3", "Curve", "Grace"}},
+            {{"Comb offset", "Peak freq", "Peak gain", "Peak Q", "Comb delay", "Comb FB", "Comb LP",
+              "Comb/Peak", "Scoop", "Topology", "Scoop freq", "Scoop width", "Comb drive", "Scoop depth"}},
+            {{"Drive", "Shape", "SRR 1", "SRR 2", "XOR", "Bit depth", "Fuzz", "Blend", "Phase", "Anti-alias",
+              "Link", "Fold", "Tone", "Bias"}},
+            {{"Delay time", "Send", "Feedback", "Stereo width", "Freeze", "Mod depth", "Wet mix", "Reverse",
+              "Diffusion", "FB drive", "FB tone", "Mod rate", "Width bal", "Crush"}},
+            {{"Wet/dry", "Room size", "Decay", "Pre-delay", "Damping", "Stereo width", "Diffusion",
+              "Mod depth", "Hold", "Mod rate", "Tank drive", "Grit", "Tilt", "Tuned"}},
+        }};
+    constexpr const char* kExpectedCrispy = "Crispy";
+    constexpr const char* kExpectedCrunchy = "Crunchy";
 
-// The other half of Step 6's rendering requirement (the test above proves
-// no line ever overflows; this one proves the ROW COUNT a name actually
-// renders at matches its token count), by inspecting the same emitted
-// FillPolygon commands the test above does. Audio bank slot 0's long name
-// is "VCO1" -- a single token, no trailing-digit merge needed (there's no
-// separating space at all) -- so it must render on row 1 only, leaving row
-// 2 genuinely blank (no lit segment), not vertically re-centered into the
-// middle of the grid.
-TEST_CASE(one_word_label_uses_only_row_one_two_word_label_uses_both_rows) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
-        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("encoder_row_count"));
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("label_verbatim_sweep"));
     rig.RunBlocks(4);
-    rig.UIState();  // forces a synchronous publish
+    rig.UIState();
 
     synth::ui::Surface& surface = rig.Application().PortableSurface();
 
-    // Audio bank (index 0, the default-selected bank) slot 0 is "VCO1" --
-    // one token, one line.
-    const synth::ui::NodeTree tree = surface.BuildTree();
-    const synth::ui::Node* encoder = FindNodeById(tree, synth_froggers::FroggersNodeIds::Encoder(0));
-    REQUIRE_TRUE(encoder != nullptr);
+    std::size_t entriesChecked = 0;
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+        surface.DispatchAction(
+            synth::ui::Action::WithValue(synth_froggers::FroggersActions::kBankSelect, std::to_string(bankIx)));
+        rig.RunBlocks(4);
+        rig.UIState();
 
-    constexpr float kInset = 4.0f;
-    const float boundsWidth = std::max(0.0f, encoder->bounds.width - kInset * 2.0f);
-    const float boundsHeight = std::max(0.0f, encoder->bounds.height - kInset * 2.0f);
-    const float displayCenterY = kInset + boundsHeight * 0.5f;
-    const float centerY = displayCenterY - boundsHeight * 0.03f;
-    const float baseRadius = std::min(boundsWidth, boundsHeight) * 0.43f;
-    const float plateTop = centerY + baseRadius * 0.05f;
-    const float plateBottom = (kInset + boundsHeight) - baseRadius * 0.03f;
-    const float row1BandBottom = plateTop + (plateBottom - plateTop) * 0.5f;
+        const synth::ui::NodeTree tree = surface.BuildTree();
+        const synth::Color bankColor = synth_froggers::FroggersBankLayouts()[bankIx].color;
 
-    const synth::Color offColor = synth::Color::Rgb(36, 40, 42);
+        for (std::size_t slot = 0; slot < synth_froggers::kFroggersSlotsPerBank; ++slot) {
+            const synth::ui::Node* encoder = FindNodeById(tree, synth_froggers::FroggersNodeIds::Encoder(slot));
+            REQUIRE_TRUE(encoder != nullptr);
 
-    bool sawLitSegmentInRow1 = false;
-    bool sawLitSegmentInRow2 = false;
-    for (const synth::ui::DrawCommand& command : encoder->drawCommands) {
-        if (command.kind == synth::ui::DrawCommand::Kind::FillPolygon && command.color != offColor &&
-            !command.points.empty()) {
-            float sumY = 0.0f;
-            for (const synth::ui::Point& point : command.points) {
-                sumY += point.y;
-            }
-            const float avgY = sumY / static_cast<float>(command.points.size());
-            if (avgY < row1BandBottom) {
-                sawLitSegmentInRow1 = true;
-            } else {
-                sawLitSegmentInRow2 = true;
-            }
+            const char* expectedLabel = slot < synth_froggers::kFroggersParamsPerBank
+                                             ? kExpectedApprovedLabels[bankIx][slot]
+                                             : (slot == synth_froggers::kFroggersCrispySlot ? kExpectedCrispy
+                                                                                             : kExpectedCrunchy);
+            // Crunchy (slot 15) is ONE shared Parameter with its OWN fixed
+            // colour (`FroggersCrunchyColor()`, Yellow -- FroggersParameters.hpp),
+            // distinct from every bank's own colour; Crispy (slot 14) and
+            // every page parameter (slots 0-13) DO take the bank's colour
+            // (FroggersParameters.hpp's own registration, `.baseColor =
+            // layout.color`).
+            const synth::Color slotColor =
+                slot == synth_froggers::kFroggersCrunchySlot ? synth_froggers::FroggersCrunchyColor() : bankColor;
+            const std::vector<synth::ui::DrawCommand> expected = ExpectedEncoderLabelBandCommands(
+                slotColor, expectedLabel, encoder->bounds.width, encoder->bounds.height);
+            REQUIRE_TRUE(TrailingCommandsMatch(encoder->drawCommands, expected));
+            ++entriesChecked;
         }
     }
 
-    std::cout << "[OBSERVED] Audio slot 0 (\"VCO1\") label grid: row1 lit=" << sawLitSegmentInRow1
-              << " row2 lit=" << sawLitSegmentInRow2 << "\n";
-    REQUIRE_TRUE(sawLitSegmentInRow1);
-    REQUIRE_TRUE(!sawLitSegmentInRow2);
+    std::cout << "[OBSERVED] verbatim sweep: " << entriesChecked << " (bank,slot) entries matched (6 banks x 16 slots, "
+              << "covering all 86 distinct approved labels)\n";
+    REQUIRE_TRUE(entriesChecked ==
+                 synth_froggers::kFroggersBankCount * synth_froggers::kFroggersSlotsPerBank);
+}
+
+// Structural guard against a future labels.md edit silently overflowing the
+// single-row grid: proves the thing that isn't structurally guaranteed --
+// that no approved label is longer than `kApprovedLabelGridColumns` -- over
+// every one of the 86 entries, not a hand-picked sample. Supersedes
+// `every_parameter_label_fits_the_two_line_grid` (the old 2-row/10-column
+// grid this task retires along with `SplitFourteenSegmentLines`).
+TEST_CASE(every_approved_label_fits_the_single_row_grid) {
+    std::size_t longest = 0;
+    std::string longestText;
+
+    const auto checkOne = [&](const char* label) {
+        const std::size_t len = std::string_view(label).size();
+        REQUIRE_TRUE(static_cast<int>(len) <= synth_froggers::kApprovedLabelGridColumns);
+        if (len > longest) {
+            longest = len;
+            longestText = label;
+        }
+    };
+
+    for (const auto& bankRow : synth_froggers::FroggersApprovedLabels()) {
+        for (const char* label : bankRow) {
+            checkOne(label);
+        }
+    }
+    checkOne(synth_froggers::FroggersApprovedGlobalLabel(synth_froggers::kFroggersCrispySlot));
+    checkOne(synth_froggers::FroggersApprovedGlobalLabel(synth_froggers::kFroggersCrunchySlot));
+
+    std::cout << "[OBSERVED] longest approved label: \"" << longestText << "\" (" << longest << " chars)\n";
+    // The task brief's own claim, checked rather than assumed: the longest
+    // of all 86 approved entries ("Stereo width", Delay/Reverb) is exactly
+    // kApprovedLabelGridColumns characters.
+    REQUIRE_TRUE(longest == static_cast<std::size_t>(synth_froggers::kApprovedLabelGridColumns));
 }
 
 // --- 3.5: scene buttons toggle the blend to its extremes --------------------
@@ -1524,6 +1701,71 @@ TEST_CASE(scene_blend_slider_has_an_adjacent_label_node_carrying_its_text) {
     // always led. Row 6 asserts the identical relationship; the two rows are
     // deliberately the same shape now.
     REQUIRE_TRUE(*labelIx == *sliderIx + 1);
+}
+
+// Operator follow-up (2026-08-17): the scene-blend slider must PRESENT
+// 1.0-2.0 to match the "Scene 1"/"Scene 2" buttons (design E3d, unchanged),
+// while Sheaf's own `SceneState.blend` stays 0..1 -- see
+// FroggersUiSurface.hpp's `kSceneBlendDisplayOffset` for the full trace.
+// This asserts the slider node's declared bounds and presented value are
+// offset from the underlying blend, at both extremes.
+TEST_CASE(scene_blend_slider_presents_1_to_2_while_the_underlying_blend_stays_0_to_1) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("scene_blend_display_range"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+
+    // Model default is blend=0.0 -- the slider must declare 1.0/2.0 bounds
+    // and present 1.0 (blend + offset), not the raw 0.0 blend.
+    const synth::ui::NodeTree treeAtDefault = surface.BuildTree();
+    const synth::ui::Node* blendNodeAtDefault =
+        FindNodeById(treeAtDefault, synth_froggers::FroggersNodeIds::kSceneBlend);
+    REQUIRE_TRUE(blendNodeAtDefault != nullptr);
+    REQUIRE_TRUE(blendNodeAtDefault->minValue == 1.0f);
+    REQUIRE_TRUE(blendNodeAtDefault->maxValue == 2.0f);
+    REQUIRE_TRUE(std::fabs(blendNodeAtDefault->value - 1.0f) < 0.001f);
+
+    // Push the underlying blend to its other extreme via the Scene 2
+    // button (design E3d, unaffected by this change) and confirm the
+    // presented value follows with the same +1 offset -- 1.0 blend presents
+    // as 2.0.
+    surface.DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kSceneSelect, "1"));
+    rig.RunBlocks(4);
+    const synth::ui::NodeTree treeAtOtherExtreme = surface.BuildTree();
+    const synth::ui::Node* blendNodeAtOtherExtreme =
+        FindNodeById(treeAtOtherExtreme, synth_froggers::FroggersNodeIds::kSceneBlend);
+    REQUIRE_TRUE(blendNodeAtOtherExtreme != nullptr);
+    REQUIRE_TRUE(std::fabs(blendNodeAtOtherExtreme->value - 2.0f) < 0.001f);
+}
+
+// A `kSceneBlend` action's value is now the DISPLAYED 1.0-2.0 reading;
+// HandleAction() must subtract the same offset back out (and clamp) so the
+// message it pushes still carries Sheaf's own 0..1 blend. Round-trips
+// through the real HandleAction() path (DispatchAction -> message bus ->
+// UIState), not by calling the offset arithmetic directly.
+TEST_CASE(scene_blend_slider_action_subtracts_the_display_offset_and_clamps) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("scene_blend_action_offset"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+
+    // A displayed "1.5" must land at blend 0.5 (1.5 - kSceneBlendDisplayOffset).
+    surface.DispatchAction(synth::ui::Action::WithValue(synth_froggers::FroggersActions::kSceneBlend, "1.5"));
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(std::fabs(rig.UIState().sceneBlend.load() - 0.5f) < 0.001f);
+
+    // The two displayed extremes must land exactly on Sheaf's own blend
+    // extremes: 1.0 -> 0.0, 2.0 -> 1.0.
+    surface.DispatchAction(synth::ui::Action::WithValue(synth_froggers::FroggersActions::kSceneBlend, "1.0"));
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(std::fabs(rig.UIState().sceneBlend.load() - 0.0f) < 0.001f);
+
+    surface.DispatchAction(synth::ui::Action::WithValue(synth_froggers::FroggersActions::kSceneBlend, "2.0"));
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(std::fabs(rig.UIState().sceneBlend.load() - 1.0f) < 0.001f);
 }
 
 // --- 10.6: BPM slider normal vs external-clock-slaved states ----------------
@@ -1723,6 +1965,85 @@ TEST_CASE(bpm_slider_has_an_adjacent_label_node_with_the_constant_bpm_text) {
 
 // --- 10.7/D14: exactly two randomize controls; neither retired control ------
 
+// ---------------------------------------------------------------------
+// T5.1 -- Reset Page / Reset All (packet P6b).
+// ---------------------------------------------------------------------
+
+TEST_CASE(reset_row_sits_below_randomize_with_two_equal_halves) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("reset_row_layout"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+    const synth::ui::NodeTree tree = surface.BuildTree();
+
+    REQUIRE_TRUE(HasButtonLabeled(tree, "Reset Page"));
+    REQUIRE_TRUE(HasButtonLabeled(tree, "Reset All"));
+
+    // "Below them, same size" (operator) is defined BY the Randomize row,
+    // not re-derived: the Reset row must carry the same two-halves
+    // weighting. Assert the row exists and that Reset's own buttons come
+    // after Randomize's in the tree's emission order, which is the row
+    // order kRightRows declares.
+    std::size_t randomizeAllIx = tree.nodes.size();
+    std::size_t resetPageIx = tree.nodes.size();
+    std::size_t resetAllIx = tree.nodes.size();
+    for (std::size_t i = 0; i < tree.nodes.size(); ++i) {
+        const synth::ui::Node& node = tree.nodes[i];
+        if (node.kind != synth::ui::NodeKind::Button) {
+            continue;
+        }
+        if (node.label == "Randomize All") { randomizeAllIx = i; }
+        if (node.label == "Reset Page") { resetPageIx = i; }
+        if (node.label == "Reset All") { resetAllIx = i; }
+    }
+    REQUIRE_TRUE(randomizeAllIx < tree.nodes.size());
+    REQUIRE_TRUE(resetPageIx < tree.nodes.size());
+    REQUIRE_TRUE(resetAllIx < tree.nodes.size());
+    REQUIRE_TRUE(resetPageIx > randomizeAllIx);  // below, not above.
+    REQUIRE_TRUE(resetAllIx > resetPageIx);      // Page then All, matching Randomize's own order.
+
+    std::cout << "  [T5.1 row order] RandomizeAll@" << randomizeAllIx << " ResetPage@" << resetPageIx
+              << " ResetAll@" << resetAllIx << "\n";
+}
+
+TEST_CASE(reset_all_clears_values_and_neutralises_depths_end_to_end) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("reset_all_end_to_end"));
+    rig.RunBlocks(4);
+
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+
+    // Randomize first, so there is genuinely something to clear -- a reset
+    // measured against an already-zero patch would prove nothing (OMNI
+    // 9.1: the instrument has to be live for the null to mean anything).
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
+    rig.RunBlocks(8);
+
+    float maxBefore = 0.0f;
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+        for (std::size_t slot = 0; slot < synth_froggers::kFroggersParamsPerBank; ++slot) {
+            maxBefore = std::max(maxBefore, std::fabs(model.PageParameter(bankIx, slot).SceneCenter(0)));
+        }
+    }
+
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kResetAll));
+    rig.RunBlocks(8);
+
+    float maxAfter = 0.0f;
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+        for (std::size_t slot = 0; slot < synth_froggers::kFroggersParamsPerBank; ++slot) {
+            maxAfter = std::max(maxAfter, std::fabs(model.PageParameter(bankIx, slot).SceneCenter(0)));
+        }
+    }
+
+    std::cout << "  [T5.1 end-to-end] max |value| across all 6 banks x 14 slots: before reset=" << maxBefore
+              << "  after reset=" << maxAfter << "\n";
+    REQUIRE_TRUE(maxBefore > 0.05f);        // the randomize actually moved something...
+    REQUIRE_TRUE(maxAfter < 1.0e-6f);       // ...and the reset cleared all of it, through the real UI path.
+}
+
 TEST_CASE(exactly_two_randomize_controls_and_no_retired_controls_anywhere) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
         /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("randomize_inventory"));
@@ -1835,6 +2156,233 @@ TEST_CASE(play_and_stop_controls_exist_and_gate_the_transport) {
     rig.RunBlocks(4);
 }
 
+// --- T5.2: Freeze button (proposal.md §6.4b-ii/§8.2, tasks.md T5.2) --------
+//
+// A third Draw node beside Stop. Latching it OVERRIDES the Freeze encoder's
+// own clamp (T3.1a) rather than merely shortcutting the encoder to its
+// clamped maximum -- see dsp/Delay.hpp's DelayParams::dfrzLatched comment
+// and FroggersAppCore.hpp's own T5.2 wiring comment for the full mapping.
+
+TEST_CASE(transport_row_has_freeze_as_third_child_beside_play_and_stop) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("freeze_row_children"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+    const synth::ui::NodeTree tree = surface.BuildTree();
+
+    const synth::ui::Node* rowNode = FindNodeById(tree, synth_froggers::FroggersNodeIds::kTransportRow);
+    REQUIRE_TRUE(rowNode != nullptr);
+    // P7b: now 4 (Play, Stop, Freeze, Record) -- see
+    // transport_row_has_record_as_fourth_child_beside_play_stop_and_freeze
+    // below for the dedicated Record-child assertion; this test still only
+    // re-checks the three buttons it originally covered.
+    REQUIRE_TRUE(rowNode->children.size() == 4);
+    REQUIRE_TRUE(rowNode->children[0].value == synth_froggers::FroggersNodeIds::kPlay);
+    REQUIRE_TRUE(rowNode->children[1].value == synth_froggers::FroggersNodeIds::kStop);
+    REQUIRE_TRUE(rowNode->children[2].value == synth_froggers::FroggersNodeIds::kFreeze);
+
+    const char* transportIds[3] = {synth_froggers::FroggersNodeIds::kPlay, synth_froggers::FroggersNodeIds::kStop,
+                                    synth_froggers::FroggersNodeIds::kFreeze};
+    for (const char* id : transportIds) {
+        const synth::ui::Node* node = FindNodeById(tree, id);
+        REQUIRE_TRUE(node != nullptr);
+        REQUIRE_TRUE(node->kind == synth::ui::NodeKind::Draw);
+        REQUIRE_TRUE(node->bounds.width == synth_froggers::kTransportPlateSize);
+        REQUIRE_TRUE(node->bounds.height == synth_froggers::kTransportPlateSize);
+    }
+
+    const synth::ui::Node* freezeNode = FindNodeById(tree, synth_froggers::FroggersNodeIds::kFreeze);
+    REQUIRE_TRUE(freezeNode->action.has_value() &&
+                 freezeNode->action->name == synth_froggers::FroggersActions::kFreeze);
+    REQUIRE_TRUE(!freezeNode->doubleClickAction.has_value());
+}
+
+TEST_CASE(freeze_action_toggles_the_latch_and_a_second_click_releases_it) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("freeze_toggle_latch"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+    REQUIRE_TRUE(!rig.Application().FreezeLatched());  // default: unlatched.
+
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kFreeze));
+    REQUIRE_TRUE(rig.Application().FreezeLatched());  // one click latches.
+
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kFreeze));
+    REQUIRE_TRUE(!rig.Application().FreezeLatched());  // a second click releases.
+}
+
+// A pure function of (bounds, latched) -- no rig needed. Asserts the
+// EXCHANGE, not merely that the two command lists differ (a brightness
+// tweak would also satisfy "differ", which is exactly the thing this
+// control exists to avoid -- proposal.md §8.2).
+TEST_CASE(freeze_draw_commands_genuinely_invert_plate_and_glyph_colours) {
+    const synth::ui::Bounds bounds{0.0f, 0.0f, synth_froggers::kTransportPlateSize,
+                                    synth_froggers::kTransportPlateSize};
+    const std::vector<synth::ui::DrawCommand> unlatched = synth_froggers::BuildFreezeDrawCommands(bounds, false);
+    const std::vector<synth::ui::DrawCommand> latched = synth_froggers::BuildFreezeDrawCommands(bounds, true);
+
+    REQUIRE_TRUE(unlatched.size() == 2);
+    REQUIRE_TRUE(latched.size() == 2);
+    REQUIRE_TRUE(unlatched[0].kind == synth::ui::DrawCommand::Kind::FillRoundedRect);
+    REQUIRE_TRUE(unlatched[1].kind == synth::ui::DrawCommand::Kind::FillPolygon);
+    REQUIRE_TRUE(latched[0].kind == synth::ui::DrawCommand::Kind::FillRoundedRect);
+    REQUIRE_TRUE(latched[1].kind == synth::ui::DrawCommand::Kind::FillPolygon);
+
+    REQUIRE_TRUE(unlatched[0].color == synth_froggers::kTransportPlateColor);
+    REQUIRE_TRUE(unlatched[1].color == synth::Color::Cyan);
+    REQUIRE_TRUE(latched[0].color == synth::Color::Cyan);
+    REQUIRE_TRUE(latched[1].color == synth_froggers::kTransportPlateColor);
+    // The exchange itself, asserted directly: latched's plate is unlatched's
+    // glyph colour and vice versa.
+    REQUIRE_TRUE(latched[0].color == unlatched[1].color);
+    REQUIRE_TRUE(latched[1].color == unlatched[0].color);
+    REQUIRE_TRUE(unlatched[0].color != unlatched[1].color);  // the two colours are genuinely distinct to begin with.
+}
+
+// Reused by freeze_latched_grows_the_recirculating_level_beyond_unlatched_end_to_end
+// below at every measurement point (OMNI §6 helper rule: called repeatedly,
+// isolates a distinct transformation stage, prevents repeating the same
+// per-block sampling loop). Deliberately NOT dsp::StereoDelay::StateMagnitude()
+// (used elsewhere in this file): that scans the WHOLE lineL/lineR buffers
+// (96000 samples at 48kHz -- StereoDelay::kMaxDelaySamples, dsp/Delay.hpp),
+// but at dtim==0 the ACTIVE round trip only touches the ~48 samples right
+// behind the write head each cycle, so a measurement window far shorter
+// than the full 96000-sample capacity leaves the rest of the buffer
+// (including loud content from priming, long before divergence) unrevisited
+// and StateMagnitude() keeps reporting that stale max regardless of what
+// the active loop is currently doing -- confirmed empirically: an earlier
+// version of this test measured StateMagnitude() and read the SAME primed
+// value back for the unlatched rig no matter how it should have decayed.
+// GetLastWet() is the delay's own most-recently-computed wet output --
+// exactly "the recirculating level" this test needs, immune to stale
+// history elsewhere in the buffer. Sampled once per block across `blocks`
+// blocks (not one `RunBlocks(blocks)` call) so a single unlucky
+// near-zero-crossing sample cannot be mistaken for the level.
+float PeakDelayWetMagnitude(synth_rig::SynthRig<synth_froggers::FroggersApp>& rig, std::size_t blocks) {
+    float peak = 0.0f;
+    for (std::size_t i = 0; i < blocks; ++i) {
+        rig.RunBlocks(1);
+        const auto wet = rig.Application().TestDelay().GetLastWet();
+        peak = std::max(peak, std::max(std::fabs(wet.l), std::fabs(wet.r)));
+    }
+    return peak;
+}
+
+// Reused by freeze_latched_grows_the_recirculating_level_beyond_unlatched_end_to_end
+// below for BOTH its rigs (OMNI §6 helper rule: 2 uses, isolates the "apply
+// a real patch and build up real recirculating energy" transformation stage)
+// -- so the only thing that can differ between the two rigs afterward is
+// whether SetFreezeLatched(true) was ever called on one of them. Returns
+// the peak wet level reached during priming (OMNI §9.1 positive control for
+// the caller: proof the instrument was actually live before divergence).
+float ApplyFreezeEndToEndPatchAndPrime(synth_rig::SynthRig<synth_froggers::FroggersApp>& rig) {
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+
+    // A real, moderate input signal -- same idiom as
+    // FroggersAudioRoutingTests.cpp's own
+    // stopping_transport_silences_self_sustaining_delay_and_reverb ("nonzero
+    // VCO level, so there's signal to excite the tanks").
+    model.PageParameter(synth_froggers::FroggersBankId::Audio, 0).SceneCenter(0) = 0.5f;  // VCO1 level.
+    model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;  // Drive.
+
+    // Delay bank, rows per dsp::MapRowsToDelayParams's own comment
+    // (dsp/Delay.hpp): 0=Time, 1=Send, 2=Feedback, 3=Width, 4=Freeze,
+    // 5=Mod, 9=Feedback Drive. Feedback Drive stays at its own neutral
+    // (knob 0.5 -> fbDrive==1.0, dsp::StereoDelay::SetFeedbackDrive's own
+    // comment) during priming -- only raised to "above centre" at the
+    // moment of divergence, alongside the Freeze encoder, matching this
+    // test's own header comment.
+    model.PageParameter(synth_froggers::FroggersBankId::Delay, 0).SceneCenter(0) = 0.0f;  // Time -> shortest round trip.
+    model.PageParameter(synth_froggers::FroggersBankId::Delay, 1).SceneCenter(0) = 1.0f;  // Send.
+    model.PageParameter(synth_froggers::FroggersBankId::Delay, 2).SceneCenter(0) = 0.6f;  // Feedback.
+    model.PageParameter(synth_froggers::FroggersBankId::Delay, 3).SceneCenter(0) = 0.0f;  // Width -> no cross-feed smear.
+    model.PageParameter(synth_froggers::FroggersBankId::Delay, 5).SceneCenter(0) = 0.0f;  // Mod -> no LFO smear.
+    model.PageParameter(synth_froggers::FroggersBankId::Delay, 9).SceneCenter(0) = 0.5f;  // Feedback Drive, neutral for now.
+
+    rig.StartAt(0);
+    // Freeze encoder stays at its own default (0) throughout priming:
+    // T3.1a/T3.1b's freezeEff==1 blocks ALL new input the instant dfrz
+    // reaches 1, latched or not (dsp/Delay.hpp) -- priming needs real
+    // signal actually entering the line.
+    constexpr std::size_t kPrimeBlocks = 40;
+    return PeakDelayWetMagnitude(rig, kPrimeBlocks);
+}
+
+// "This is the test that proves the override reached the DSP through the
+// real path rather than the DSP behaving correctly in isolation" (packet
+// brief, verbatim) -- unlike FroggersDspParityTests.cpp's own T3.1b tests
+// (e.g. stereo_delay_freeze_latched_grows_the_loop_measurably_beyond_unlatched_full_freeze,
+// which drives a bare dsp::StereoDelay/DelayParams by hand), this drives
+// audio through the real FroggersAppCore::ProcessBlock/RouteAudioSample
+// path via two independent, identically-primed rigs that diverge only in
+// whether SetFreezeLatched(true) was called.
+TEST_CASE(freeze_latched_grows_the_recirculating_level_beyond_unlatched_end_to_end) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> latchedRig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("freeze_e2e_latched"));
+    synth_rig::SynthRig<synth_froggers::FroggersApp> unlatchedRig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("freeze_e2e_unlatched"));
+
+    // OMNI §9.1 positive control: confirm priming actually put a real,
+    // non-negligible level into both delay lines before trusting anything
+    // measured after divergence -- a null result out of a dead instrument
+    // would be void, not negative.
+    const float primedLatched = ApplyFreezeEndToEndPatchAndPrime(latchedRig);
+    const float primedUnlatched = ApplyFreezeEndToEndPatchAndPrime(unlatchedRig);
+    REQUIRE_TRUE(primedLatched > 1.0e-4f);
+    REQUIRE_TRUE(primedUnlatched > 1.0e-4f);
+
+    // Divergence: BOTH rigs get the SAME driving quantities -- Feedback
+    // Drive above centre and the Freeze encoder at maximum (this test's own
+    // required setting, packet brief verbatim) -- applied identically to
+    // both. Only the BUTTON differs: latchedRig's is pressed, unlatchedRig's
+    // never is (stays false, the default).
+    synth_froggers::FroggersParameterModel& latchedModel = latchedRig.Application().Parameters();
+    latchedModel.PageParameter(synth_froggers::FroggersBankId::Delay, 9).SceneCenter(0) =
+        1.0f;  // Feedback Drive -> 4.0, above centre.
+    latchedModel.PageParameter(synth_froggers::FroggersBankId::Delay, 4).SceneCenter(0) = 1.0f;  // Freeze encoder, max.
+    latchedRig.Application().SetFreezeLatched(true);  // the override under test.
+
+    synth_froggers::FroggersParameterModel& unlatchedModel = unlatchedRig.Application().Parameters();
+    unlatchedModel.PageParameter(synth_froggers::FroggersBankId::Delay, 9).SceneCenter(0) =
+        1.0f;  // SAME Feedback Drive.
+    unlatchedModel.PageParameter(synth_froggers::FroggersBankId::Delay, 4).SceneCenter(0) =
+        1.0f;  // SAME Freeze encoder.
+    // unlatchedRig.Application().SetFreezeLatched(...) is never called --
+    // T3.1a's clamped encoder value prevails instead.
+
+    constexpr std::size_t kMeasureBlocks = 16;
+    const float latchedLevel = PeakDelayWetMagnitude(latchedRig, kMeasureBlocks);
+    const float unlatchedLevel = PeakDelayWetMagnitude(unlatchedRig, kMeasureBlocks);
+
+    REQUIRE_TRUE(!latchedRig.SawNaN());
+    REQUIRE_TRUE(!unlatchedRig.SawNaN());
+    REQUIRE_TRUE(std::isfinite(latchedLevel) && std::isfinite(unlatchedLevel));
+
+    std::cout << "  [T5.2 end-to-end] Feedback Drive knob=1.0 (fbDrive=4.0), Freeze encoder=1.0 (max) in both "
+                 "rigs; primed recirculating level latched-rig="
+              << primedLatched << " unlatched-rig=" << primedUnlatched << "; swept to, after " << kMeasureBlocks
+              << " post-divergence blocks: latched=" << latchedLevel << " unlatched=" << unlatchedLevel << "\n";
+
+    // T3.1e retune. This asserted `> 2x`, a threshold that only made sense
+    // under the retired product-clamp mapping (latched 4.0 vs unlatched
+    // 1.0). Freeze's mapping no longer mentions fbDrive
+    // (dsp::StereoDelay::FreezeFeedback), so both branches are multiplied by
+    // the SAME fbDrive afterward and the ratio between them is
+    // kFreezeLatchOverdrive / 1.0 -- 1.05 -- at every Drive setting.
+    // Keeping `> 2x` would assert the old coupling back into existence.
+    //
+    // What this test is FOR is the end-to-end wire: that the transport
+    // latch reaches the DSP through the real path at all. That is a
+    // strictly-greater relation, and the level difference compounds over
+    // the measured blocks, so the margin is comfortably above float noise
+    // without pinning a ratio the operator may retune by ear.
+    REQUIRE_TRUE(latchedLevel > unlatchedLevel);
+    std::cout << "  [T5.2 end-to-end] latched/unlatched level ratio="
+              << (latchedLevel / unlatchedLevel) << "\n";
+}
+
 // -----------------------------------------------------------------------
 // Regression test for the real-Runtime "Play produces no audio" bug
 // (diagnosed while investigating a report that the app was silent in the
@@ -1937,6 +2485,281 @@ TEST_CASE(transport_survives_audio_device_reprepare_after_play) {
     rig.RunBlocks(4);
     rig.Engine().Prepare(realDeviceSettings.sampleRate, realDeviceSettings.blockSize);
     REQUIRE_TRUE(rig.Engine().Clock().TransportState() == synth::ClockTransportState::Stopped);
+}
+
+// --- T5.3a/T5.3b: record capture, app core only (packet P7a) --------------
+//
+// FroggersAppCore's own bounded mono capture buffer -- arm/stop API, refusal
+// with a reason while the transport is stopped, truncation at capacity. No
+// UI/JUCE/file-writing involved (that is packet P7b); these tests drive the
+// core's public API directly through rig.Application(), same convention as
+// the other runtime tests in this file.
+
+TEST_CASE(record_arm_refuses_when_transport_stopped) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("record_refusal"));
+    rig.RunBlocks(4);
+
+    synth_froggers::FroggersApp& app = rig.Application();
+    // Rig's own default state: transport stopped, never Played.
+    REQUIRE_TRUE(!app.ArmRecording());
+    REQUIRE_TRUE(app.RecordRefusalReason() != nullptr);
+    REQUIRE_TRUE(std::string(app.RecordRefusalReason()) == "Press Play before recording.");
+
+    rig.RunBlocks(8);
+    REQUIRE_TRUE(app.RecordedFrameCount() == 0);
+}
+
+TEST_CASE(record_captures_audio_while_playing) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("record_capture"));
+    rig.RunBlocks(4);
+
+    // Same real Play path as play_and_stop_controls_exist_and_gate_the_transport above.
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kPlay));
+    rig.RunBlocks(8);
+
+    synth_froggers::FroggersApp& app = rig.Application();
+    // Generous override (well above anything this test could run past) so
+    // the capture-while-playing measurement below cannot itself truncate --
+    // truncation is a separate, dedicated test below.
+    REQUIRE_TRUE(app.ArmRecording(/*capacityFramesOverride=*/200000));
+    REQUIRE_TRUE(app.RecordRefusalReason() == nullptr);
+
+    rig.ClearOutput();
+    rig.RunBlocks(8);
+    const std::uint64_t framesTransportRan = static_cast<std::uint64_t>(rig.Output().size());
+
+    REQUIRE_TRUE(app.RecordedFrameCount() > 0);
+    REQUIRE_TRUE(app.RecordedFrameCount() == framesTransportRan);
+    REQUIRE_TRUE(!app.RecordingTruncated());
+
+    // OMNI 9.1: a silent capture proves nothing -- report the max |sample|
+    // actually observed, not just that the count moved.
+    float maxSample = 0.0f;
+    for (float s : app.RecordedAudio()) {
+        maxSample = std::max(maxSample, std::fabs(s));
+    }
+    std::cout << "  [T5.3a capture] frames captured=" << app.RecordedFrameCount()
+              << "  max|sample|=" << maxSample << "\n";
+    REQUIRE_TRUE(maxSample > 0.0f);
+
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kStop));
+    rig.RunBlocks(4);
+}
+
+TEST_CASE(record_truncates_at_capacity_and_stops_growing) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("record_truncation"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kPlay));
+    rig.RunBlocks(8);
+
+    synth_froggers::FroggersApp& app = rig.Application();
+    constexpr std::uint64_t kCapacityFrames = 256;
+    REQUIRE_TRUE(app.ArmRecording(/*capacityFramesOverride=*/static_cast<std::size_t>(kCapacityFrames)));
+
+    // Run well past the tiny capacity (FroggersAppCore::Config()'s
+    // preferredBlockSize is 256, so a single block already fills it exactly
+    // without yet flagging truncation -- the flag only sets on the first
+    // frame that finds the buffer already full, i.e. early in the next
+    // block; 16 blocks is a wide margin past that).
+    rig.RunBlocks(16);
+    REQUIRE_TRUE(app.RecordedFrameCount() == kCapacityFrames);
+    REQUIRE_TRUE(app.RecordingTruncated());
+
+    // Further blocks must not grow the count -- capture has stopped.
+    rig.RunBlocks(8);
+    REQUIRE_TRUE(app.RecordedFrameCount() == kCapacityFrames);
+
+    std::cout << "  [T5.3b truncation] capacity=" << kCapacityFrames
+              << "  recordedFrameCount=" << app.RecordedFrameCount()
+              << "  truncated=" << (app.RecordingTruncated() ? "true" : "false") << "\n";
+
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kStop));
+    rig.RunBlocks(4);
+}
+
+// --- T5.3b/T5.3c: Record button + WAV export (packet P7b) -----------------
+//
+// The transport-row Record button (fourth Draw child beside Play/Stop/
+// Freeze), its HandleAction wiring to ArmRecording()/StopRecording() plus
+// the two host-facing callbacks (SetOnRecordRefused/SetOnRecordingFinished,
+// FroggersAppCore.hpp), and the pure std:: WAV encoder (EncodeWavPcm16Mono)
+// T5.3c moved into the core specifically so it is testable headlessly here
+// -- no binary this Makefile builds compiles FroggersMain.cpp (verified by
+// reading app/Makefile: every target's source list stops at Main.cpp/
+// FroggersHeadlessTests.cpp/.../FroggersSurfaceTests.cpp -- FroggersMain.cpp
+// appears nowhere in it; it is only ever compiled by app/build-launcher.sh's
+// separate `make -C .../sheaf-patch APP_SOURCES=.../FroggersMain.cpp` call).
+
+TEST_CASE(transport_row_has_record_as_fourth_child_beside_play_stop_and_freeze) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("record_row_children"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+    const synth::ui::NodeTree tree = surface.BuildTree();
+
+    const synth::ui::Node* rowNode = FindNodeById(tree, synth_froggers::FroggersNodeIds::kTransportRow);
+    REQUIRE_TRUE(rowNode != nullptr);
+    REQUIRE_TRUE(rowNode->children.size() == 4);
+    REQUIRE_TRUE(rowNode->children[0].value == synth_froggers::FroggersNodeIds::kPlay);
+    REQUIRE_TRUE(rowNode->children[1].value == synth_froggers::FroggersNodeIds::kStop);
+    REQUIRE_TRUE(rowNode->children[2].value == synth_froggers::FroggersNodeIds::kFreeze);
+    REQUIRE_TRUE(rowNode->children[3].value == synth_froggers::FroggersNodeIds::kRecord);
+
+    const synth::ui::Node* recordNode = FindNodeById(tree, synth_froggers::FroggersNodeIds::kRecord);
+    REQUIRE_TRUE(recordNode != nullptr);
+    REQUIRE_TRUE(recordNode->kind == synth::ui::NodeKind::Draw);
+    REQUIRE_TRUE(recordNode->bounds.width == synth_froggers::kTransportPlateSize);
+    REQUIRE_TRUE(recordNode->bounds.height == synth_froggers::kTransportPlateSize);
+    REQUIRE_TRUE(recordNode->action.has_value() &&
+                 recordNode->action->name == synth_froggers::FroggersActions::kRecord);
+    REQUIRE_TRUE(!recordNode->doubleClickAction.has_value());
+}
+
+TEST_CASE(record_action_arms_while_playing_and_stops_with_captured_frames) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("record_action_toggle"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+    synth_froggers::FroggersApp& app = rig.Application();
+
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kPlay));
+    rig.RunBlocks(8);
+
+    REQUIRE_TRUE(!app.RecordArmed());  // default: not armed.
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRecord));
+    REQUIRE_TRUE(app.RecordArmed());  // one dispatch arms it.
+
+    rig.RunBlocks(8);
+    REQUIRE_TRUE(app.RecordedFrameCount() > 0);
+
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRecord));
+    REQUIRE_TRUE(!app.RecordArmed());            // a second dispatch stops it.
+    REQUIRE_TRUE(app.RecordedFrameCount() > 0);  // captured data survives the stop.
+
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kStop));
+    rig.RunBlocks(4);
+}
+
+TEST_CASE(record_action_refused_while_stopped_fires_the_refusal_callback) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("record_refusal_callback"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+    synth_froggers::FroggersApp& app = rig.Application();
+
+    std::vector<std::string> refusalReasons;
+    app.SetOnRecordRefused([&refusalReasons](const char* reason) { refusalReasons.push_back(reason); });
+
+    // Rig's own default state: transport stopped, never Played.
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRecord));
+
+    REQUIRE_TRUE(refusalReasons.size() == 1);
+    REQUIRE_TRUE(refusalReasons[0] == "Press Play before recording.");
+    REQUIRE_TRUE(!app.RecordArmed());
+}
+
+TEST_CASE(record_action_stop_with_data_fires_the_finished_callback_exactly_once) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("record_finished_callback"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+    synth_froggers::FroggersApp& app = rig.Application();
+
+    int finishedCount = 0;
+    app.SetOnRecordingFinished([&finishedCount] { ++finishedCount; });
+
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kPlay));
+    rig.RunBlocks(8);
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRecord));
+    rig.RunBlocks(8);
+    REQUIRE_TRUE(app.RecordedFrameCount() > 0);
+
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRecord));
+    REQUIRE_TRUE(finishedCount == 1);
+
+    surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kStop));
+    rig.RunBlocks(4);
+}
+
+// A pure function of (bounds, armed) -- no rig needed. Asserts the EXCHANGE,
+// not merely that the two command lists differ, same reasoning as
+// freeze_draw_commands_genuinely_invert_plate_and_glyph_colours above.
+TEST_CASE(record_draw_commands_genuinely_invert_plate_and_glyph_colours) {
+    const synth::ui::Bounds bounds{0.0f, 0.0f, synth_froggers::kTransportPlateSize,
+                                    synth_froggers::kTransportPlateSize};
+    const std::vector<synth::ui::DrawCommand> unarmed = synth_froggers::BuildRecordDrawCommands(bounds, false);
+    const std::vector<synth::ui::DrawCommand> armed = synth_froggers::BuildRecordDrawCommands(bounds, true);
+
+    REQUIRE_TRUE(unarmed.size() == 2);
+    REQUIRE_TRUE(armed.size() == 2);
+    REQUIRE_TRUE(unarmed[0].kind == synth::ui::DrawCommand::Kind::FillRoundedRect);
+    REQUIRE_TRUE(unarmed[1].kind == synth::ui::DrawCommand::Kind::FillEllipse);
+    REQUIRE_TRUE(armed[0].kind == synth::ui::DrawCommand::Kind::FillRoundedRect);
+    REQUIRE_TRUE(armed[1].kind == synth::ui::DrawCommand::Kind::FillEllipse);
+
+    REQUIRE_TRUE(unarmed[0].color == synth_froggers::kTransportPlateColor);
+    REQUIRE_TRUE(unarmed[1].color == synth_froggers::kRecordColor);
+    REQUIRE_TRUE(armed[0].color == synth_froggers::kRecordColor);
+    REQUIRE_TRUE(armed[1].color == synth_froggers::kTransportPlateColor);
+    // The exchange itself, asserted directly: armed's plate is unarmed's
+    // glyph colour and vice versa.
+    REQUIRE_TRUE(armed[0].color == unarmed[1].color);
+    REQUIRE_TRUE(armed[1].color == unarmed[0].color);
+    REQUIRE_TRUE(unarmed[0].color != unarmed[1].color);  // the two colours are genuinely distinct to begin with.
+}
+
+// Pure function of (samples, sampleRate) -- no rig needed. A known 64-sample
+// ramp across [-0.5, +0.5] at 48000 Hz, decoded back by hand (not via any
+// WAV-reading library this app has) to check the header fields land at their
+// canonical byte offsets and sample 0 round-trips within one 16-bit LSB.
+TEST_CASE(wav_encoding_produces_a_correct_pcm16_header_and_round_trips_sample_zero) {
+    constexpr std::size_t kNumSamples = 64;
+    constexpr float kSampleRate = 48000.0f;
+    std::vector<float> ramp(kNumSamples);
+    for (std::size_t ix = 0; ix < kNumSamples; ++ix) {
+        ramp[ix] = -0.5f + (static_cast<float>(ix) / static_cast<float>(kNumSamples - 1)) * 1.0f;
+    }
+
+    const std::vector<std::uint8_t> wav = synth_froggers::EncodeWavPcm16Mono(ramp, kSampleRate);
+
+    REQUIRE_TRUE(wav.size() == 44 + 2 * kNumSamples);
+    REQUIRE_TRUE(wav[0] == 'R' && wav[1] == 'I' && wav[2] == 'F' && wav[3] == 'F');
+    REQUIRE_TRUE(wav[8] == 'W' && wav[9] == 'A' && wav[10] == 'V' && wav[11] == 'E');
+    REQUIRE_TRUE(wav[12] == 'f' && wav[13] == 'm' && wav[14] == 't' && wav[15] == ' ');
+    REQUIRE_TRUE(wav[36] == 'd' && wav[37] == 'a' && wav[38] == 't' && wav[39] == 'a');
+
+    const auto readU32 = [&wav](std::size_t offset) {
+        return static_cast<std::uint32_t>(wav[offset]) | (static_cast<std::uint32_t>(wav[offset + 1]) << 8) |
+               (static_cast<std::uint32_t>(wav[offset + 2]) << 16) |
+               (static_cast<std::uint32_t>(wav[offset + 3]) << 24);
+    };
+    const auto readU16 = [&wav](std::size_t offset) {
+        return static_cast<std::uint16_t>(static_cast<std::uint16_t>(wav[offset]) |
+                                          static_cast<std::uint16_t>(wav[offset + 1] << 8));
+    };
+
+    REQUIRE_TRUE(readU32(24) == 48000);            // fmt chunk sample rate field, little-endian read.
+    REQUIRE_TRUE(readU16(22) == 1);                // channels.
+    REQUIRE_TRUE(readU16(34) == 16);                // bits per sample.
+    REQUIRE_TRUE(readU32(40) == 2 * kNumSamples);  // data chunk size.
+
+    const std::int16_t sample0 = static_cast<std::int16_t>(readU16(44));
+    const float decoded0 = static_cast<float>(sample0) / 32767.0f;
+    // OMNI 9.1: report the actual read-back values, not just that the
+    // assertions passed.
+    std::cout << "  [T5.3c WAV header] sampleRateField=" << readU32(24) << "  dataChunkSize=" << readU32(40)
+              << "  sample0 input=" << ramp[0] << "  sample0 decoded=" << decoded0 << "\n";
+    REQUIRE_TRUE(std::fabs(decoded0 - ramp[0]) <= (1.0f / 32767.0f) + 1.0e-6f);
 }
 
 }  // namespace

@@ -24,6 +24,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -245,19 +246,26 @@ TEST_CASE(vco_adsr_state_attacks_holds_and_releases) {
 // -----------------------------------------------------------------------
 // ITEM 4 failing-test-first (design.md A2): kMaxAttackSeconds lowered from
 // 2.5s to 1.0s (VoiceEnvelope.hpp -- private, so this drives the same
-// observable surface the test above does). stepVoice()'s attack ramp is
-// LINEAR (`attackStep = sustainLevel / (mapAttack(knob)*sampleRate)`), and
+// observable surface the test above does). W5 (proposal
+// frogg3rs-stop-isolation-and-legible-labels SS2, operator ruling
+// 2026-08-17, verbatim: "that max attack is also way too long. half a
+// second at most") lowered it again, 1.0s -> 0.5f -- the citations below are
+// updated to that current value; the assertion itself was already keyed to
+// the constant via `dsp::VcoAdsrState::MapSustain` and needed no code
+// change, only this prose. stepVoice()'s attack ramp is LINEAR
+// (`attackStep = sustainLevel / (mapAttack(knob)*sampleRate)`), and
 // `mapAttack(1.0) == kMinTimeSeconds + 1.0*(kMaxAttackSeconds -
 // kMinTimeSeconds) == kMaxAttackSeconds` exactly (the kMinTimeSeconds terms
 // cancel at knob==1.0) -- so at the maximum attack knob, the ramp completes
 // in EXACTLY kMaxAttackSeconds worth of samples, no time-constant fuzz to
-// account for. At 2.0s of held-gate samples: under the OLD 2.5s ceiling the
-// level would still be mid-ramp (2.0/2.5 == 80% of the way there, NOT at
-// sustain -- this is what makes the test fail against the pre-item-4 code);
-// under the NEW 1.0s ceiling the ramp finished at 1.0s and Hold has been
-// clamping the level at sustain for the second full second since.
+// account for. At 2.0s of held-gate samples: under the ORIGINAL 2.5s
+// ceiling the level would still be mid-ramp (2.0/2.5 == 80% of the way
+// there, NOT at sustain -- this is what made the test fail against the
+// pre-item-4 code); under the CURRENT 0.5f ceiling the ramp finished at
+// 0.5s and Hold has been clamping the level at sustain for a further 1.5s
+// since.
 // -----------------------------------------------------------------------
-TEST_CASE(max_attack_knob_reaches_sustain_within_the_new_one_second_ceiling) {
+TEST_CASE(max_attack_knob_reaches_sustain_within_the_current_half_second_ceiling) {
     constexpr float kSampleRate = 48000.0f;
     constexpr float kSustain = 0.8f;
     dsp::VcoAdsrState adsr;
@@ -302,6 +310,573 @@ TEST_CASE(mix_osc_voices_applies_asr_per_voice_then_averages) {
         const float e3 = adsrReference.apply(2, v3, 0.05f, 0.35f, 0.5f, 0.1f);
         const float expected = (e1 + e2 + e3) * (1.0f / 3.0f);
         REQUIRE_NEAR(mixed, expected, 1e-6);
+    }
+}
+
+// =========================================================================
+// T1 (openspec/changes/frogg3rs-stop-isolation-and-legible-labels/tasks.md
+// T1.1-T1.3) -- ComputeRampStep's progress floor (root cause SS1a: at
+// curveAmount==1.0 the pre-fix ramp's per-sample progress was
+// stepMagnitude^2/absRemaining, unbounded -- a "1-second" attack at 48kHz
+// measured ~6.7 hours) and its interaction with the Grace ladder
+// (VoiceEnvelope.hpp:332-370, UNCHANGED by this packet -- T1.2 is
+// TEST-ONLY, see that task's own tasks.md note).
+// =========================================================================
+
+namespace {
+
+// Sample count plus the level `apply()` returned on that sample -- the
+// level half lets a caller read a stage-boundary value straight off the
+// real object (ground truth) instead of recomputing it independently (see
+// RuntimeFloat's own comment for why an independent recomputation is not
+// automatically trustworthy).
+struct StageResult {
+    long samples;
+    float level;
+};
+
+// Steps `adsr` voice 0 forward sample by sample (curveKnob applied every
+// call) until `level` first crosses `target` (>= for ascending stages, <=
+// for descending), returning the 1-based sample count and the level
+// reached. VcoAdsrState exposes no per-voice stage getter, so every T1 test
+// below infers stage completion purely from the level trajectory -- exact,
+// because ComputeRampStep's finishing-step early return (`absRemaining <=
+// stepMagnitude -> return target`, untouched by T1.1) always snaps exactly
+// to target regardless of curve. `capSamples` turns an UNBOUNDED pre-T1.1
+// ramp into a clean test FAILURE instead of a multi-hour hang (OMNI SS9.1's
+// RED pass, per this packet's report, relies on this).
+// `graceKnob` defaults to 0.0f (inactive, apply()'s own default) so callers
+// that don't care about Grace -- most of this helper's call sites -- don't
+// have to name it; T1.2(a) passes it explicitly because that test's whole
+// point is measuring behaviour WHILE grace is active.
+StageResult StepUntilLevelCrosses(dsp::VcoAdsrState& adsr, float attackKnob, float decayKnob, float sustainKnob,
+                                   float releaseKnob, float curveKnob, bool ascending, float target, long capSamples,
+                                   float graceKnob = 0.0f) {
+    for (long sample = 1; sample <= capSamples; ++sample) {
+        const float level =
+            adsr.apply(0, 1.0f, attackKnob, decayKnob, sustainKnob, releaseKnob, curveKnob, graceKnob);
+        const bool reached = ascending ? (level >= target) : (level <= target);
+        if (reached) {
+            return {sample, level};
+        }
+    }
+    std::ostringstream oss;
+    oss << "level did not reach target=" << target << " within capSamples=" << capSamples
+        << " (curveKnob=" << curveKnob << ") -- ComputeRampStep's progress floor appears absent or broken.";
+    throw std::runtime_error(oss.str());
+}
+
+// Steps `adsr` voice 0 forward until the level reads BIT-IDENTICAL on two
+// consecutive samples, returning that sample count and the stabilized
+// level -- the signature of Hold being reached (stepVoice()'s
+// `case Stage::Hold: m_level = sustainLevel;`, a constant re-assignment,
+// versus Decay's ComputeRampStep call, which changes the value every
+// sample until its own finishing-step snap lands exactly on target,
+// immediately followed by Hold repeating that SAME value). Used instead of
+// comparing against an independently-recomputed `MapSustain(sustainKnob)`
+// specifically so the caller gets the REAL object's own ground-truth
+// sustain level, sidestepping RuntimeFloat's whole class of divergence
+// risk entirely rather than merely working around it. Assumes the caller's
+// knob/curve choice does not produce a degenerate zero-length Decay step
+// that could plateau before Hold -- true for every T1 test that uses this.
+StageResult StepUntilLevelStabilizes(dsp::VcoAdsrState& adsr, float attackKnob, float decayKnob, float sustainKnob,
+                                      float releaseKnob, float curveKnob, long capSamples,
+                                      float graceKnob = 0.0f) {
+    float previous = adsr.apply(0, 1.0f, attackKnob, decayKnob, sustainKnob, releaseKnob, curveKnob, graceKnob);
+    for (long sample = 2; sample <= capSamples; ++sample) {
+        const float level =
+            adsr.apply(0, 1.0f, attackKnob, decayKnob, sustainKnob, releaseKnob, curveKnob, graceKnob);
+        if (level == previous) {
+            return {sample, level};
+        }
+        previous = level;
+    }
+    std::ostringstream oss;
+    oss << "level never stabilized (Hold never reached) within capSamples=" << capSamples
+        << " (curveKnob=" << curveKnob << ").";
+    throw std::runtime_error(oss.str());
+}
+
+// Round-trips `value` through a volatile read, defeating compile-time
+// constant folding. Measured on this toolchain: a `dsp::VcoAdsrState::
+// MapSustain`/similar formula call whose argument the compiler can prove
+// constant (a `constexpr`/`const` local initialized from a literal is
+// enough) is sometimes evaluated by the compiler's OWN constant-expression
+// interpreter instead of being code-generated as ordinary runtime IEEE-754
+// float32 arithmetic -- and that interpreter does not always round the same
+// way stepVoice()'s genuine runtime evaluation of the identical formula
+// does (VcoAdsrState::MapSustain(0.6f) folds to 0.640000045f at compile
+// time but evaluates to 0.639999986f at runtime on this build; 0.5f
+// happened not to diverge, which is exactly what makes trusting this
+// silently is dangerous). Every T1 test below that needs its own
+// independently-recomputed value to bit-match (or near-match within much
+// less than one ramp step) VcoAdsrState's internal computation routes its
+// inputs through this first.
+float RuntimeFloat(float value) {
+    volatile float v = value;
+    return v;
+}
+
+// Same formula ComputeRampStep's private mapAttack/mapDecay/mapRelease use
+// (VoiceEnvelope.hpp), recomputed independently here from the PUBLIC
+// kMinTimeSeconds/kMax*Seconds constants -- never read from the private
+// helpers themselves, so a test using this can never silently pass against
+// a moved constant it re-typed a stale copy of (dsp::VcoAdsrState::
+// MapSustain's own header comment records this project already shipping
+// exactly that bug once). Both inputs are routed through RuntimeFloat (see
+// that function's own comment) so this always matches genuine runtime
+// evaluation, never the compiler's constant-expression interpreter.
+float MapKnobToSeconds(float knob, float maxSeconds) {
+    const float k = RuntimeFloat(knob);
+    const float m = RuntimeFloat(maxSeconds);
+    const float clamped = std::min(std::max(k, 0.0f), 1.0f);
+    return dsp::VcoAdsrState::kMinTimeSeconds + clamped * (m - dsp::VcoAdsrState::kMinTimeSeconds);
+}
+
+// dsp::VcoAdsrState::MapSustain, called through RuntimeFloat (see that
+// function's own comment) so this test file's independent recomputation of
+// the sustain-level map always matches genuine runtime evaluation.
+float MapSustainRuntime(float knob) {
+    return dsp::VcoAdsrState::MapSustain(RuntimeFloat(knob));
+}
+
+// A deliberately CONSERVATIVE stand-in for ComputeRampStep's private
+// kCurveMinProgress (VoiceEnvelope.hpp, currently 0.4f) -- assumed much
+// smaller (0.1f) than the real floor so this cap stays valid (generous, not
+// tight) even if kCurveMinProgress is retuned by ear later, without this
+// test file needing to track that private value. T1.3(a)'s own sweep below
+// is the one that measures and reports the ACTUAL worst multiple observed;
+// this helper only needs to be loose enough to fail fast on a genuinely
+// unbounded ramp, not tight enough to pin the real bound.
+constexpr float kConservativeMinProgressAssumption = 0.1f;
+
+long ConservativeStageCap(float distance, float stepMagnitude) {
+    const double linearSamples = static_cast<double>(distance) / static_cast<double>(stepMagnitude);
+    return static_cast<long>(linearSamples / static_cast<double>(kConservativeMinProgressAssumption)) + 64;
+}
+
+}  // namespace
+
+// -----------------------------------------------------------------------
+// T1.3(c) -- bit-identity at curve == 0. ComputeRampStep's `curveAmount <=
+// 0.0f` branch is the ORIGINAL linear early-return, untouched by T1.1's
+// progress floor (which lives entirely past that branch's own `return`).
+// Proven here not by code inspection alone but by an independent,
+// hand-rolled per-sample replica of stepVoice()'s own stage arithmetic
+// (same min/max-step formula, same stage-transition thresholds), run in
+// lockstep against the real ADSR across a full Attack -> Decay -> Hold ->
+// (gate low, grace inactive) -> Release -> Idle arc, asserting EXACT
+// (bit-for-bit, not epsilon) equality every single sample -- the same
+// exact-equality idiom this file already uses elsewhere for formula-parity
+// claims (e.g. StereoDelay::FreezeFeedback's "bit-exact" tests below).
+// -----------------------------------------------------------------------
+TEST_CASE(compute_ramp_step_curve_zero_is_bit_identical_to_the_untouched_linear_path) {
+    constexpr float kSampleRate = 48000.0f;
+    constexpr float attackKnob = 0.2f;
+    constexpr float decayKnob = 0.3f;
+    constexpr float sustainKnob = 0.5f;
+    constexpr float releaseKnob = 0.4f;
+
+    dsp::VcoAdsrState adsr;
+    adsr.init(kSampleRate);
+    adsr.setGate(true);
+
+    const float sustainLevel = MapSustainRuntime(sustainKnob);
+    const float attackStep =
+        1.0f / std::max(MapKnobToSeconds(attackKnob, dsp::VcoAdsrState::kMaxAttackSeconds) * kSampleRate, 1.0f);
+    const float decayStep = (1.0f - sustainLevel) /
+                             std::max(MapKnobToSeconds(decayKnob, dsp::VcoAdsrState::kMaxDecaySeconds) * kSampleRate,
+                                       1.0f);
+    const float releaseStep =
+        1.0f / std::max(MapKnobToSeconds(releaseKnob, dsp::VcoAdsrState::kMaxReleaseSeconds) * kSampleRate, 1.0f);
+
+    enum class RefStage { Attack, Decay, Hold, Release, Idle };
+    RefStage refStage = RefStage::Attack;
+    float refLevel = 0.0f;
+    bool gateOpen = true;
+
+    const int totalSamples = static_cast<int>(0.3f * kSampleRate);  // well past every stage's completion here.
+    const int gateLowAtSample = totalSamples / 2;
+
+    for (int i = 0; i < totalSamples; ++i) {
+        if (i == gateLowAtSample) {
+            adsr.setGate(false);
+            gateOpen = false;
+        }
+        const float actual =
+            adsr.apply(0, 1.0f, attackKnob, decayKnob, sustainKnob, releaseKnob, /*curveKnob=*/0.0f);
+
+        // Replica of stepVoice()'s pending-release resolution at
+        // graceKnob==0.0f (default, inactive): a gate-false edge forces
+        // Release immediately from Attack/Decay/Hold -- the pre-Grace
+        // `setGate(false)` synchronous-force semantic (VoiceEnvelope.hpp's
+        // own setGate()/stepVoice() comments).
+        if (!gateOpen && refStage != RefStage::Release && refStage != RefStage::Idle) {
+            refStage = RefStage::Release;
+        }
+
+        switch (refStage) {
+            case RefStage::Attack:
+                refLevel = std::min(1.0f, refLevel + attackStep);
+                if (refLevel >= 1.0f) refStage = RefStage::Decay;
+                break;
+            case RefStage::Decay:
+                refLevel = std::max(sustainLevel, refLevel - decayStep);
+                if (refLevel <= sustainLevel) refStage = RefStage::Hold;
+                break;
+            case RefStage::Hold:
+                refLevel = sustainLevel;
+                break;
+            case RefStage::Release:
+                refLevel = std::max(0.0f, refLevel - releaseStep);
+                if (refLevel <= 0.0f) refStage = RefStage::Idle;
+                break;
+            case RefStage::Idle:
+                refLevel = 0.0f;
+                break;
+        }
+
+        REQUIRE_TRUE(actual == refLevel);
+    }
+}
+
+// -----------------------------------------------------------------------
+// T1.3(a) -- duration-bound sweep. T1.1's floor guarantees per-sample
+// progress magnitude >= kCurveMinProgress (VoiceEnvelope.hpp) of the linear
+// step at every curveAmount, so every stage's worst-case duration is
+// bounded at roughly 1/kCurveMinProgress times its plain-linear (curve==0)
+// duration -- this sweep proves that bound holds across a curve x knob grid
+// INCLUDING curve == 1.0 exactly (the value that made the pre-fix ramp
+// unbounded), at both 48k and 96k, and reports the worst multiple actually
+// observed (see this packet's own report for that number -- not asserted
+// here as a literal value, since it is a measured OUTCOME of the fix, not a
+// separate spec).
+// -----------------------------------------------------------------------
+TEST_CASE(compute_ramp_step_bounds_every_stage_duration_across_curve_and_knob_grid_at_multiple_sample_rates) {
+    const float curves[] = {0.0f, 0.5f, 0.9f, 0.999f, 1.0f};
+    const float knobs[] = {0.0f, 0.5f, 1.0f};
+    const float sampleRates[] = {48000.0f, 96000.0f};
+    constexpr float kSustainKnob = 0.5f;
+
+    double worstMultipleObserved = 0.0;
+    const char* worstLabel = "";
+
+    for (float sampleRate : sampleRates) {
+        for (float curve : curves) {
+            for (float knob : knobs) {
+                const float sustainLevel = MapSustainRuntime(kSustainKnob);
+
+                // -- Attack: 0 -> 1.0, isolated (fresh ADSR). ---------------
+                {
+                    dsp::VcoAdsrState adsr;
+                    adsr.init(sampleRate);
+                    adsr.setGate(true);
+                    const float step =
+                        1.0f / std::max(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMaxAttackSeconds) * sampleRate,
+                                        1.0f);
+                    const long cap = ConservativeStageCap(1.0f, step);
+                    const long samples =
+                        StepUntilLevelCrosses(adsr, knob, 0.0f, kSustainKnob, 0.0f, curve, true, 1.0f, cap).samples;
+                    const double linearSamples =
+                        std::max(static_cast<double>(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMaxAttackSeconds)) *
+                                     sampleRate,
+                                 1.0);
+                    const double multiple = static_cast<double>(samples) / linearSamples;
+                    if (multiple > worstMultipleObserved) {
+                        worstMultipleObserved = multiple;
+                        worstLabel = "Attack";
+                    }
+                }
+
+                // -- Decay: 1.0 -> sustainLevel, isolated (warm up Attack
+                // with attackKnob=0/curve=0 first -- fast and not what this
+                // pass measures). ---------------------------------------
+                {
+                    dsp::VcoAdsrState adsr;
+                    adsr.init(sampleRate);
+                    adsr.setGate(true);
+                    StepUntilLevelCrosses(adsr, /*attackKnob=*/0.0f, 0.0f, kSustainKnob, 0.0f, /*curveKnob=*/0.0f,
+                                           true, 1.0f, static_cast<long>(sampleRate));  // warm-up, ample cap.
+                    const float step = (1.0f - sustainLevel) /
+                                        std::max(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMaxDecaySeconds) *
+                                                      sampleRate,
+                                                  1.0f);
+                    const long cap = ConservativeStageCap(1.0f - sustainLevel, step);
+                    const long samples = StepUntilLevelCrosses(adsr, 0.0f, knob, kSustainKnob, 0.0f, curve, false,
+                                                                sustainLevel, cap)
+                                             .samples;
+                    const double linearSamples =
+                        std::max(static_cast<double>(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMaxDecaySeconds)) *
+                                     sampleRate,
+                                 1.0);
+                    const double multiple = static_cast<double>(samples) / linearSamples;
+                    if (multiple > worstMultipleObserved) {
+                        worstMultipleObserved = multiple;
+                        worstLabel = "Decay";
+                    }
+                }
+
+                // -- Release: sustainLevel -> 0.0, isolated (warm up Attack
+                // then Decay to Hold with attackKnob=decayKnob=0/curve=0,
+                // then force Release via gate-low with grace inactive). --
+                {
+                    dsp::VcoAdsrState adsr;
+                    adsr.init(sampleRate);
+                    adsr.setGate(true);
+                    StepUntilLevelCrosses(adsr, 0.0f, 0.0f, kSustainKnob, 0.0f, 0.0f, true, 1.0f,
+                                           static_cast<long>(sampleRate));
+                    StepUntilLevelCrosses(adsr, 0.0f, 0.0f, kSustainKnob, 0.0f, 0.0f, false, sustainLevel,
+                                           static_cast<long>(sampleRate));
+                    adsr.setGate(false);  // graceKnob defaults to 0.0f below -> inactive -> immediate Release.
+                    const float step =
+                        1.0f / std::max(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMaxReleaseSeconds) * sampleRate,
+                                        1.0f);
+                    const long cap = ConservativeStageCap(sustainLevel, step);
+                    const long samples =
+                        StepUntilLevelCrosses(adsr, 0.0f, 0.0f, kSustainKnob, knob, curve, false, 0.0f, cap).samples;
+                    const double linearSamples =
+                        std::max(sustainLevel * static_cast<double>(MapKnobToSeconds(
+                                                     knob, dsp::VcoAdsrState::kMaxReleaseSeconds)) *
+                                     sampleRate,
+                                 1.0);
+                    const double multiple = static_cast<double>(samples) / linearSamples;
+                    if (multiple > worstMultipleObserved) {
+                        worstMultipleObserved = multiple;
+                        worstLabel = "Release";
+                    }
+                }
+            }
+        }
+    }
+
+    std::cout << "T1.3(a) duration-bound sweep: worst multiple observed = " << worstMultipleObserved << " ("
+              << worstLabel << ")\n";
+    // The bound itself: a small multiple of the plain-linear duration, at
+    // EVERY grid point (including curve==1.0, every knob, both rates) --
+    // this is the actual pass/fail assertion. 10x is a generous test-side
+    // ceiling (kCurveMinProgress's own analytic bound is ~1/0.4 == 2.5x;
+    // this leaves ample room for retuning kCurveMinProgress lower without
+    // this sweep needing to change) while still catching a regression back
+    // toward unbounded.
+    REQUIRE_TRUE(worstMultipleObserved < 10.0);
+}
+
+// -----------------------------------------------------------------------
+// T1.2 -- Grace semantics preserved and bounded (TEST-ONLY; the ladder
+// itself, VoiceEnvelope.hpp:332-370, is UNCHANGED by this packet).
+// -----------------------------------------------------------------------
+
+// (a) With T1.1's floor in, a pending release under active Grace reaches
+// Release within (bounded stage completion + grace) at every curve
+// including 1.0 exactly. "Reaches Release" is read from the level
+// trajectory: Hold keeps level pinned exactly at sustainLevel every sample
+// (stepVoice()'s own `case Stage::Hold: m_level = sustainLevel;`), so the
+// first sample where level drops BELOW sustainLevel is the same sample
+// Release's own ComputeRampStep call first ran (stage resolution happens
+// before the stage switch in the SAME stepVoice() call, VoiceEnvelope.hpp's
+// own stepVoice() comment) -- an exact, not approximate, marker.
+//
+// Originally exercised ONLY graceKnob==1.0f: measured while writing this
+// test, the grace countdown (VoiceEnvelope.hpp's own `m_graceRemaining`)
+// only ever reached its `<= 0.0f` force-Release check on the SAME call its
+// `-1.0f` "not started" sentinel got re-armed, for almost any grace knob
+// whose mapped countdown (`graceSeconds * m_sampleRate`) was not an EXACT
+// integer -- the countdown decremented by exactly 1.0f/sample and
+// generically crossed from a small positive value straight to a small
+// negative one without ever landing on 0.0f, and the OLD `< 0.0f` init
+// guard mistook that pending-expiry value for "not started", re-arming it
+// to the full grace forever. 1.0f*48000.0f == exactly 48000.0f (no
+// rounding at all) was the one value immune to this, which is why only it
+// was used here.
+//
+// Fixed by T1.6 (VoiceEnvelope.hpp's Hold-stage grace block, 2026-08-17):
+// the init guard now matches the exact -1.0f sentinel instead of any
+// negative value, so a decremented-negative, non-sentinel value falls
+// through to the `<= 0.0f` expiry check on the very next call instead of
+// re-arming. The grid below now covers grace knobs beyond the one value
+// that used to dodge the bug, including float-inexact ones.
+TEST_CASE(grace_active_pending_release_reaches_release_within_bounded_completion_plus_grace_at_every_curve) {
+    constexpr float kSampleRate = 48000.0f;
+    constexpr float attackKnob = 0.3f;
+    constexpr float decayKnob = 0.3f;
+    constexpr float sustainKnob = 0.6f;
+    constexpr float releaseKnob = 0.3f;
+
+    // mapGrace's own formula (VoiceEnvelope.hpp): plain clamp*kMaxGraceSeconds.
+    const float graceKnobs[] = {0.3f, 0.5f, 0.7f, 1.0f};
+    const float curves[] = {0.0f, 0.5f, 0.9f, 1.0f};
+    for (float graceKnob : graceKnobs) {
+        const float graceSeconds = std::min(std::max(graceKnob, 0.0f), 1.0f) * dsp::VcoAdsrState::kMaxGraceSeconds;
+        const double graceSamples = static_cast<double>(graceSeconds) * kSampleRate;
+
+        for (float curve : curves) {
+            dsp::VcoAdsrState adsr;
+            adsr.init(kSampleRate);
+            adsr.setGate(true);
+
+            // Reach Hold (bounded stage completion) before marking a release
+            // pending -- ample cap, this is not what's under test here. The
+            // sustain level used as the boundary marker below is read straight
+            // off THIS real object (StepUntilLevelStabilizes's own ground-truth
+            // level), not recomputed independently -- see RuntimeFloat's own
+            // comment for why an independent MapSustain recomputation is not
+            // automatically trustworthy bit-for-bit.
+            StepUntilLevelCrosses(adsr, attackKnob, decayKnob, sustainKnob, releaseKnob, curve, true, 1.0f,
+                                   static_cast<long>(10.0f * kSampleRate));
+            const StageResult holdReached = StepUntilLevelStabilizes(adsr, attackKnob, decayKnob, sustainKnob,
+                                                                       releaseKnob, curve,
+                                                                       static_cast<long>(10.0f * kSampleRate));
+            const float sustainLevel = holdReached.level;
+
+            adsr.setGate(false);  // marks pending; grace is ACTIVE (graceKnob > 0) and stage is Hold.
+
+            // Ample cap: grace (graceSamples) plus a generous bounded-release
+            // allowance -- if this test ever times out against a REGRESSED
+            // ramp, that regression is the finding, not test flakiness.
+            const long cap = static_cast<long>(graceSamples) + static_cast<long>(10.0f * kSampleRate);
+            const long samplesUntilReleaseStarts =
+                StepUntilLevelCrosses(adsr, attackKnob, decayKnob, sustainKnob, releaseKnob, curve, false,
+                                       std::nextafter(sustainLevel, 0.0f), cap, graceKnob)
+                    .samples;
+
+            // Bounded: Release starts within grace plus a small slack (a few
+            // samples for the countdown's own ceil/floor rounding -- NOT a
+            // separate multi-second allowance, because Attack/Decay already
+            // finished before setGate(false) was called above).
+            REQUIRE_TRUE(static_cast<double>(samplesUntilReleaseStarts) <= graceSamples + 8.0);
+            // Preserved (not cut short): Release does NOT start meaningfully
+            // before grace's own countdown elapses -- the minimum-hold
+            // guarantee this task exists to pin, from the Hold side.
+            REQUIRE_TRUE(static_cast<double>(samplesUntilReleaseStarts) >= graceSamples - 8.0);
+        }
+    }
+}
+
+// -----------------------------------------------------------------------
+// T1.6 -- Grace countdown sentinel-conflation bug (found during P1,
+// VoiceEnvelope.hpp's stepVoice() Hold-stage grace block). The init guard
+// used to fire on `m_graceRemaining < 0.0f` -- ANY negative value, not just
+// the exact -1.0f "not started" sentinel. A countdown initialized to a
+// non-float-exact `graceSeconds * m_sampleRate` (most grace knobs; the
+// widened test above's 1.0f was the one exception, landing on exactly
+// 48000.0f at 48kHz) decrements past zero to a small negative, non-sentinel
+// value without ever landing exactly on 0.0f, and the old guard mistook
+// that pending-expiry value for "not started", re-arming it to the full
+// grace -- forever, confirmed by direct measurement: a 0.3 grace knob at
+// 48kHz never released within 494,400+ samples (over 10s). Fixed by
+// narrowing the guard to an exact `== -1.0f` sentinel match, so a
+// decremented-negative value falls straight through to the `<= 0.0f`
+// expiry check on the very next call instead of being mistaken for
+// "not started".
+// -----------------------------------------------------------------------
+TEST_CASE(grace_countdown_with_float_inexact_values_expires_within_grace_plus_a_few_samples) {
+    constexpr float kSampleRate = 48000.0f;
+    constexpr float attackKnob = 0.3f;
+    constexpr float decayKnob = 0.3f;
+    constexpr float sustainKnob = 0.6f;
+    constexpr float releaseKnob = 0.3f;
+
+    // Both deliberately float-inexact: neither 0.3f nor 0.7f, multiplied by
+    // kMaxGraceSeconds and m_sampleRate, lands on an exact integer sample
+    // count -- exactly the class of knob the pre-fix guard hung forever on.
+    const float graceKnobs[] = {0.3f, 0.7f};
+    for (float graceKnob : graceKnobs) {
+        const float graceSeconds = std::min(std::max(graceKnob, 0.0f), 1.0f) * dsp::VcoAdsrState::kMaxGraceSeconds;
+        const double graceSamples = static_cast<double>(graceSeconds) * kSampleRate;
+
+        dsp::VcoAdsrState adsr;
+        adsr.init(kSampleRate);
+        adsr.setGate(true);
+
+        StepUntilLevelCrosses(adsr, attackKnob, decayKnob, sustainKnob, releaseKnob, 0.0f, true, 1.0f,
+                               static_cast<long>(10.0f * kSampleRate));
+        const StageResult holdReached = StepUntilLevelStabilizes(adsr, attackKnob, decayKnob, sustainKnob,
+                                                                   releaseKnob, 0.0f,
+                                                                   static_cast<long>(10.0f * kSampleRate));
+        const float sustainLevel = holdReached.level;
+
+        adsr.setGate(false);  // marks pending; grace active (graceKnob > 0), stage is Hold.
+
+        // Tight cap, deliberately: pre-fix, this bug never released at all
+        // (re-armed to the full grace forever), so a small cap turns that
+        // into a clean test FAILURE (StepUntilLevelCrosses's own throw)
+        // instead of masking the bug behind a merely-generous allowance.
+        const long cap = static_cast<long>(graceSamples) + 64;
+        const long samplesUntilReleaseStarts =
+            StepUntilLevelCrosses(adsr, attackKnob, decayKnob, sustainKnob, releaseKnob, 0.0f, false,
+                                   std::nextafter(sustainLevel, 0.0f), cap, graceKnob)
+                .samples;
+
+        // T1.6 asks for expiry "within grace + 1 sample"; the enforced
+        // tolerance is +/-2 samples (corrected 2026-08-17 -- the comment
+        // previously quoted the task's "+1" while the assertion below has
+        // always allowed 2). Two samples is the honest bound: the countdown
+        // decrements by exactly 1.0f/sample from a non-integer start, so
+        // ceil-style rounding can land either side by one. Still a
+        // sample-scale window, not a multi-second allowance -- the pre-fix
+        // bug never expired at all.
+        REQUIRE_TRUE(static_cast<double>(samplesUntilReleaseStarts) <= graceSamples + 2.0);
+        REQUIRE_TRUE(static_cast<double>(samplesUntilReleaseStarts) >= graceSamples - 2.0);
+    }
+}
+
+// (b) The minimum-hold guarantee holds: a short gate with a long attack and
+// active grace still completes Attack and Decay before Release begins --
+// the approved main-spec Grace behaviour ("a short gate cannot clip a note
+// before its envelope completes Attack and Decay"), unaffected by T1.1's
+// floor. Attack knob near-max (kMaxAttackSeconds, W5's new 0.5f ceiling) so
+// a naive "gate released mid-attack forces Release" bug would be obvious:
+// the gate here closes after 1ms, far short of any mapped attack time.
+TEST_CASE(short_gate_with_long_attack_and_active_grace_completes_attack_and_decay_before_release) {
+    constexpr float kSampleRate = 48000.0f;
+    constexpr float attackKnob = 1.0f;   // mapped to kMaxAttackSeconds == 0.5f exactly.
+    constexpr float decayKnob = 0.5f;
+    constexpr float sustainKnob = 0.6f;
+    constexpr float releaseKnob = 0.3f;
+    constexpr float graceKnob = 0.2f;  // active.
+
+    const float curves[] = {0.0f, 1.0f};  // the two extremes: plain linear and the fixed-unbounded value.
+    for (float curve : curves) {
+        dsp::VcoAdsrState adsr;
+        adsr.init(kSampleRate);
+        adsr.setGate(true);
+
+        // Short gate: closed after 1ms (48 samples), a tiny fraction of any
+        // mapped attack time at attackKnob==1.0. At this point the level is
+        // still deep in Attack (near 0), nowhere near sustainLevel yet --
+        // Attack rising THROUGH sustainLevel en route to its own 1.0 peak is
+        // normal and must not be mistaken for a premature Release, which is
+        // exactly why this test tracks Attack's actual peak and Decay's
+        // actual settle rather than a level-vs-sustainLevel threshold.
+        for (int i = 0; i < 48; ++i) {
+            adsr.apply(0, 1.0f, attackKnob, decayKnob, sustainKnob, releaseKnob, curve, graceKnob);
+        }
+        adsr.setGate(false);  // marks pending; grace is active, stage is still Attack -- must NOT force Release.
+
+        // If grace is honoured, Attack (bounded by T1.1) still reaches its
+        // own peak (1.0) despite the short gate -- a naive "gate released
+        // mid-attack forces Release" bug would instead see the level keep
+        // heading toward 0 from here and never reach 1.0 within this
+        // generous, T1.1-bounded cap.
+        const StageResult peakReached =
+            StepUntilLevelCrosses(adsr, attackKnob, decayKnob, sustainKnob, releaseKnob, curve, /*ascending=*/true,
+                                   1.0f, static_cast<long>(10.0f * kSampleRate), graceKnob);
+        REQUIRE_TRUE(peakReached.level >= 1.0f - 1e-6f);
+
+        // ...and Decay then runs on to settle at Hold (two consecutive
+        // identical readings -- see StepUntilLevelStabilizes's own comment)
+        // rather than being pre-empted by Release -- the "and Decay" half
+        // of this task's name. Read off the real object, not an
+        // independently-recomputed sustainLevel (RuntimeFloat's own
+        // comment). Settling strictly below the Attack peak and strictly
+        // above 0 rules out both failure shapes: still-finishing Attack
+        // (would settle AT 1.0) and a forced Release that ran all the way
+        // to Idle (would settle at exactly 0.0).
+        const StageResult holdReached = StepUntilLevelStabilizes(
+            adsr, attackKnob, decayKnob, sustainKnob, releaseKnob, curve, static_cast<long>(10.0f * kSampleRate),
+            graceKnob);
+        REQUIRE_TRUE(holdReached.level < 1.0f - 1e-6f);
+        REQUIRE_TRUE(holdReached.level > 0.0f);
     }
 }
 
@@ -1540,6 +2115,102 @@ TEST_CASE(reverb_wet_output_stays_at_or_below_limiter_ceiling_with_hold_at_max) 
 }
 
 // =========================================================================
+// T1.6 (openspec/changes/frogg3rs-post-expansion-consolidation) -- pin the
+// two measurements the predecessor change performed in STANDALONE harnesses
+// and never guarded. The archived numbers (its tasks.md §EXECUTION): Tilt
+// post-limiter peak 0.8000 at centre vs 0.7973 at brightest; Tuned peak
+// exactly 0.8000 across every sweep rate and room size. Both are really the
+// same property -- neither control can push the wet path past the stage
+// ceiling (dsp::kStageCeiling, 0.80) -- and that ceiling, not the exact
+// third decimal of an unpinned measurement, is what a later change must not
+// silently invalidate. The spec delta this closes:
+// "A measurement performed in a standalone harness and reported only in a
+// document does not satisfy this requirement."
+// =========================================================================
+
+TEST_CASE(reverb_tilt_never_raises_the_post_limiter_peak_above_the_stage_ceiling) {
+    const float sr = 48000.0f;
+    constexpr int kSamples = 20000;
+
+    // Same hot-input, wet-only, max-decay/hold rig the neighbouring ceiling
+    // test uses, per tilt position. Tilt swept across its whole range,
+    // including the archived measurement's two named points (centre 0.5,
+    // brightest 1.0).
+    float peakAtCentre = 0.0f;
+    float worstPeak = 0.0f;
+    float worstTilt = -1.0f;
+    for (int t = 0; t <= 10; ++t) {
+        const float tilt = static_cast<float>(t) / 10.0f;
+        dsp::Reverb rv;
+        float maxAbs = 0.0f;
+        for (int i = 0; i < kSamples; ++i) {
+            const float out = rv.Process(1.0f, /*mix=*/1.0f, /*size=*/0.0f, /*decay=*/1.0f, /*pre=*/0.1f,
+                                          /*damp=*/0.5f, /*width=*/0.5f, /*diffusion=*/0.4f, sr,
+                                          /*modDepth=*/0.0f, /*hold=*/1.0f,
+                                          /*modRate=*/0.5f, /*tankDrive=*/0.5f, /*grit=*/0.0f,
+                                          /*tilt=*/tilt, /*tuned=*/0.5f);
+            REQUIRE_TRUE(std::isfinite(out));
+            maxAbs = std::max(maxAbs, std::fabs(out));
+        }
+        if (t == 5) { peakAtCentre = maxAbs; }
+        if (maxAbs > worstPeak) { worstPeak = maxAbs; worstTilt = tilt; }
+    }
+
+    // OMNI 9.1 positive control: the rig must actually drive the limiter to
+    // its ceiling, or "never exceeds it" is vacuously true of silence. The
+    // archived centre measurement WAS 0.8000, i.e. pinned at the ceiling.
+    std::cout << "  [T1.6 tilt-pin] peak at tilt centre=" << peakAtCentre
+              << "  worst peak=" << worstPeak << " at tilt=" << worstTilt
+              << "  ceiling=" << dsp::kStageCeiling << "\n";
+    // P8v (§9.1) found the ceiling comparison alone is SELF-REFERENTIAL:
+    // raising kStageCeiling moves measured peak and asserted bound together
+    // (0.9 vs 0.9, still green), so only a decoupled break -- loosening the
+    // wet limiter's own ceiling -- failed it (1.19562 vs 0.8001). Pinning
+    // the literal 0.80 (the archived measurement's own value) closes that
+    // hole: a silently moved stage ceiling now fails here too.
+    REQUIRE_NEAR(dsp::kStageCeiling, 0.8, 1.0e-6);
+    REQUIRE_TRUE(peakAtCentre > dsp::kStageCeiling - 0.01f);            // the instrument was at the ceiling...
+    REQUIRE_TRUE(worstPeak <= dsp::kStageCeiling + 1.0e-4f);            // ...and NO tilt position exceeds it.
+}
+
+TEST_CASE(reverb_tuned_sweeps_never_raise_the_peak_above_the_stage_ceiling) {
+    const float sr = 48000.0f;
+
+    // The archived measurement swept Tuned 0<->1 at step periods of 1, 4 and
+    // 32 samples across four room sizes: peak exactly 0.8000 in every
+    // configuration. Same grid here, pinned against the same ceiling.
+    float worstPeak = 0.0f;
+    float worstSize = -1.0f;
+    int worstPeriod = -1;
+    float minPeak = 1.0e9f;
+    for (const float size : {0.0f, 0.33f, 0.66f, 1.0f}) {
+        for (const int period : {1, 4, 32}) {
+            dsp::Reverb rv;
+            float maxAbs = 0.0f;
+            for (int i = 0; i < 20000; ++i) {
+                const float tuned = ((i / period) % 2 == 0) ? 0.0f : 1.0f;  // hard 0<->1 square sweep.
+                const float out = rv.Process(1.0f, /*mix=*/1.0f, size, /*decay=*/1.0f, /*pre=*/0.1f,
+                                              /*damp=*/0.5f, /*width=*/0.5f, /*diffusion=*/0.4f, sr,
+                                              /*modDepth=*/0.0f, /*hold=*/1.0f,
+                                              /*modRate=*/0.5f, /*tankDrive=*/0.5f, /*grit=*/0.0f,
+                                              /*tilt=*/0.5f, tuned);
+                REQUIRE_TRUE(std::isfinite(out));
+                maxAbs = std::max(maxAbs, std::fabs(out));
+            }
+            if (maxAbs > worstPeak) { worstPeak = maxAbs; worstSize = size; worstPeriod = period; }
+            minPeak = std::min(minPeak, maxAbs);
+        }
+    }
+
+    std::cout << "  [T1.6 tuned-pin] peak range across 4 sizes x 3 step periods: [" << minPeak << ", "
+              << worstPeak << "] worst at size=" << worstSize << " period=" << worstPeriod
+              << "  ceiling=" << dsp::kStageCeiling << "\n";
+    REQUIRE_NEAR(dsp::kStageCeiling, 0.8, 1.0e-6);            // literal pin -- see the tilt test's P8v comment.
+    REQUIRE_TRUE(minPeak > dsp::kStageCeiling - 0.01f);       // every configuration drove the ceiling...
+    REQUIRE_TRUE(worstPeak <= dsp::kStageCeiling + 1.0e-4f);  // ...and none broke through it.
+}
+
+// =========================================================================
 // S2a.1 (openspec/changes/archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/
 // tasks.md) -- reverb tank in-loop saturator. `dsp::Reverb::Process` now
 // writes `preOut + fb * PadeSaturator::Saturate(aFb)` (dsp/Reverb.hpp:
@@ -1964,6 +2635,91 @@ TEST_CASE(reverb_hold_at_max_tail_stays_audible_and_decays_gradually_not_pinned)
     // OMNI §9.1 positive control for (3): the pre-fix reconstruction must
     // actually exhibit the pinned regime, or (3) never tested anything.
     REQUIRE_TRUE(beforeLongSilence > beforeRightAfterBurst * 0.9f);
+}
+
+// =========================================================================
+// T2.5(b) (frogg3rs-stop-isolation-and-legible-labels tasks.md; proposal.md
+// SS2 W2b; MEASURED third mechanism, packet 2b/2c 2026-08-17): pins the
+// app-free claim the T2.5 fix rests on -- that Grit (Reverb slot 11) is the
+// load-bearing variable for the tank's self-sustain after Stop, isolated
+// from the App, the voice engine, the delay line, and the randomized
+// trigger entirely (dsp::Reverb::Process + StateMagnitude() only). Chosen
+// for THIS file over FroggersAudioRoutingTests.cpp because it needs none of
+// the App/Rig/parameter-model machinery that file's tests reuse -- matches
+// this file's own header framing ("DSP port... dependency-free") and its
+// established idiom of instantiating dsp::Reverb directly (see
+// reverb_tilt_never_raises_the_post_limiter_peak_above_the_stage_ceiling
+// and neighbours, above). FroggersAudioRoutingTests.cpp's extended T2.3(a)
+// covers the separate claim that FroggersAppCore's stoppedKnob plumbing
+// actually resolves Grit to 0.0f while stopped.
+//
+// Knobs held fixed at the EXACT state packet 2b measured off
+// FroggersReverbTankMechanismRepro.cpp's PASS P2B-REPRO trial 0
+// (p2b-stderr3.log's "P2B REVERB-KNOBS" line immediately following the
+// "STOP ISSUED (repro trial 0)" marker -- that tag appears twice in the
+// log, at an earlier unrelated all-zero default-state line and at this
+// one; only the line after "STOP ISSUED (repro trial 0)" matches the
+// constants below), with Tank drive forced to
+// kStopUnityDriveKnob (0.5, unity) exactly as FroggersAppCore.hpp's
+// stoppedKnob override already does while stopped -- reproduced from
+// .../scratchpad/p2b_isolated_reverb_test.cpp, the app-free positive
+// control packet 2b/2c's investigation ran directly against dsp::Reverb.
+// A single small seed sample (0.01), then nothing but exact zero for
+// 300000 samples (6.25s at 48kHz):
+//   - at the DRAWN Grit knob (0.8094f, the pre-fix state): the tank's own
+//     state LOCKS at a nonzero magnitude and never decays -- measured
+//     0.306814, constant from ~n=72000 (1.5s) through the full window.
+//   - at Grit forced to 0.0f (T2.5's fix -- its own exact bit-identical
+//     bypass by construction, Mangle(x,0,0) - Mangle(0,0,0) == x,
+//     dsp/Reverb.hpp:534-538): the SAME seed decays to 1.98e-7 by the same
+//     checkpoint.
+// =========================================================================
+TEST_CASE(reverb_tank_grit_zero_lets_the_measured_pass_d_seed_decay_where_grit_0p8094_locked_forever) {
+    // Measured knobs (packet 2b, p2b-stderr3.log's "P2B REVERB-KNOBS" line
+    // immediately following the "STOP ISSUED (repro trial 0)" marker -- see
+    // this test's own header comment above for why that anchor, not the
+    // bare tag, is needed) -- everything held fixed except Grit, which this
+    // test sweeps between the two measured arms.
+    constexpr float mixKnob = 0.4301f, sizeKnob = 0.7342f, decayKnob = 0.8151f, preKnob = 0.3110f,
+                     dampKnob = 0.3885f, widthKnob = 0.7300f, diffusionKnob = 0.0084f, modDepthKnob = 0.0499f,
+                     holdKnob = 0.5241f, modRateKnob = 0.1358f, tiltKnob = 0.8414f, tunedKnob = 0.7377f;
+    // FroggersAppCore.hpp's own stoppedKnob override forces Tank drive to
+    // this value (unity post-map) while stopped -- reused here rather than
+    // re-derived, matching this file's own "reused, not rederived"
+    // convention for shared formulas/constants (e.g.
+    // dsp::Reverb::TankDriveFromKnob reuse elsewhere in this suite).
+    constexpr float kStopUnityDriveKnob = 0.5f;
+    constexpr float sr = 48000.0f;
+    constexpr long kSamples = 300000;  // 6.25s at 48kHz -- packet 2b's own measurement window.
+    constexpr float kSeed = 0.01f;
+
+    auto runArm = [&](float gritKnob) -> float {
+        dsp::Reverb rv;
+        float out = rv.Process(kSeed, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr,
+                                modDepthKnob, holdKnob, modRateKnob, kStopUnityDriveKnob, gritKnob, tiltKnob,
+                                tunedKnob);
+        REQUIRE_TRUE(std::isfinite(out));
+        for (long n = 1; n < kSamples; ++n) {
+            out = rv.Process(0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr,
+                              modDepthKnob, holdKnob, modRateKnob, kStopUnityDriveKnob, gritKnob, tiltKnob, tunedKnob);
+        }
+        REQUIRE_TRUE(std::isfinite(out));
+        return rv.StateMagnitude();
+    };
+
+    // OMNI §9.1 positive control: the pre-fix state (Grit at the drawn
+    // 0.8094) really does lock nonzero, or the Grit==0 assertion below
+    // never tested anything against a genuine counter-example.
+    const float lockedMagnitude = runArm(0.8094f);
+    std::cout << "  [T2.5b] Grit=0.8094 (pre-fix state): FINAL mag=" << lockedMagnitude
+              << " (measured packet 2b: 0.306814, locked)\n";
+    REQUIRE_TRUE(lockedMagnitude > 0.1f);  // genuinely locked, not a fluke near-zero run.
+
+    const float decayedMagnitude = runArm(0.0f);
+    std::cout << "  [T2.5b] Grit=0.0 (T2.5's stopped-state override): FINAL mag=" << decayedMagnitude
+              << " (measured packet 2b: 1.98e-7, decayed)\n";
+    // Task's own bound: decays below 1e-4 within the window.
+    REQUIRE_TRUE(decayedMagnitude < 1.0e-4f);
 }
 
 // =========================================================================
@@ -2399,31 +3155,27 @@ TEST_CASE(drive_blend_phase_static_phase_output_unchanged_by_smoothing_and_limit
 // Froggers original exists for all nine params -- nothing here is authored.
 // =========================================================================
 
-TEST_CASE(map_rows_to_delay_params_passes_through_rows_0_to_6_directly) {
+// Packet P1 (openspec/changes/frogg3rs-post-expansion-consolidation, T3.2):
+// replaces both map_rows_to_delay_params_passes_through_rows_0_to_6_directly
+// (rows 0-6 only, rows 7/8 folded) and
+// map_rows_to_delay_params_color_halo_fold_matches_formula_and_clamps (the
+// fold's own formula/clamp) -- the fold is deleted, so there is no fold
+// formula left to pin, and every row (0-8) now passes straight through to
+// its own field, not just 0-6. Distinct values per argument so a field
+// reading the wrong row would be caught, not masked by a repeated 0.5f.
+TEST_CASE(map_rows_to_delay_params_passes_through_all_rows_0_to_8_directly) {
     const dsp::DelayParams params = dsp::MapRowsToDelayParams(
         /*time=*/0.11f, /*send=*/0.22f, /*feedback=*/0.33f, /*width=*/0.44f,
-        /*detune=*/0.5f, /*mod=*/0.5f, /*mix=*/0.66f, /*color=*/0.5f, /*halo=*/0.5f);
+        /*freeze=*/0.55f, /*mod=*/0.5f, /*mix=*/0.66f, /*reverse=*/0.77f, /*diffusion=*/0.88f);
     REQUIRE_NEAR(params.dtim, 0.11f, 1e-6);
     REQUIRE_NEAR(params.dsnd, 0.22f, 1e-6);
     REQUIRE_NEAR(params.dfbk, 0.33f, 1e-6);
     REQUIRE_NEAR(params.dwid, 0.44f, 1e-6);
-    // detune/mod folded with color/halo == 0.5 -> unchanged (0.5*(0.5+0.5)=0.5).
-    REQUIRE_NEAR(params.ddet, 0.5f, 1e-6);
+    REQUIRE_NEAR(params.dfrz, 0.55f, 1e-6);
     REQUIRE_NEAR(params.dmod, 0.5f, 1e-6);
     REQUIRE_NEAR(params.dmix, 0.66f, 1e-6);
-}
-
-TEST_CASE(map_rows_to_delay_params_color_halo_fold_matches_formula_and_clamps) {
-    // DelayState.hpp:187-193: ddet = clamp(0.5*(ddet+color)), dmod = clamp(0.5*(dmod+halo)).
-    const dsp::DelayParams p1 = dsp::MapRowsToDelayParams(0, 0, 0, 0, /*detune=*/0.2f, /*mod=*/0.8f, 0,
-                                                            /*color=*/0.9f, /*halo=*/0.1f);
-    REQUIRE_NEAR(p1.ddet, 0.5f * (0.2f + 0.9f), 1e-6);
-    REQUIRE_NEAR(p1.dmod, 0.5f * (0.8f + 0.1f), 1e-6);
-
-    // Clamp: detune=1, color=1 -> 0.5*(1+1)=1.0 exactly (upper edge, not over).
-    const dsp::DelayParams p2 = dsp::MapRowsToDelayParams(0, 0, 0, 0, 1.0f, 0.0f, 0, 1.0f, 0.0f);
-    REQUIRE_TRUE(p2.ddet <= 1.0f);
-    REQUIRE_NEAR(p2.ddet, 1.0f, 1e-6);
+    REQUIRE_NEAR(params.drev, 0.77f, 1e-6);
+    REQUIRE_NEAR(params.ddif, 0.88f, 1e-6);
 }
 
 TEST_CASE(stereo_delay_send_at_or_below_threshold_returns_silence_and_freezes_state) {
@@ -2473,7 +3225,7 @@ TEST_CASE(stereo_delay_time_maps_via_expmap_0p001_to_2s) {
     p.dsnd = 1.0f;
     p.dfbk = 0.0f;
     p.dwid = 0.0f;
-    p.ddet = 0.0f;
+    p.dfrz = 0.0f;
     p.dmod = 0.0f;
 
     const float expectedSeconds = dsp::ExpMapCompute(0.001f, 2.0f, 0.0f);
@@ -2488,50 +3240,6 @@ TEST_CASE(stereo_delay_time_maps_via_expmap_0p001_to_2s) {
             REQUIRE_TRUE(wet.l > 0.5f);  // impulse should be arriving here
         }
     }
-}
-
-TEST_CASE(stereo_delay_detune_widens_left_right_read_positions) {
-    // StereoDelay.hpp:77-82: ddet maps to +-cents via 2^(cents/1200), pulling
-    // timeL and timeR apart. With ddet=0 both stay equal; with ddet=1 (max
-    // 50 cents) they must differ.
-    //
-    // dtim kept small (0.0 -> ~48 samples at sr=48000, well under the
-    // 200-sample loop below) rather than the 0.5 (~2147 samples) this test
-    // used before Fix 1b: at dtim=0.5 the whole 200-sample loop fell
-    // entirely inside the "before the buffer has filled" warm-up window
-    // (task Fix 1's StereoDelay::ReadAt fix), where the read position is
-    // still behind everything ever written and both channels correctly
-    // read back silence -- this test was inadvertently exercising (and
-    // passing only because of) the exact UB Fix 1b removes, not the
-    // detune behavior it names. With dtim small enough to clear warm-up
-    // inside the loop, the read reaches real written history and the
-    // detune difference this test is actually about becomes observable.
-    const float sr = 48000.0f;
-    dsp::StereoDelay noDetune;
-    dsp::StereoDelay withDetune;
-    noDetune.SetSampleRate(sr);
-    withDetune.SetSampleRate(sr);
-
-    dsp::DelayParams pNo;
-    pNo.dtim = 0.0f;
-    pNo.dsnd = 1.0f;
-    pNo.dfbk = 0.0f;
-    pNo.dwid = 0.0f;
-    pNo.ddet = 0.0f;
-    dsp::DelayParams pDetuned = pNo;
-    pDetuned.ddet = 1.0f;
-
-    bool sawDifference = false;
-    for (int i = 0; i < 200; ++i) {
-        const float input = (i == 0) ? 1.0f : 0.0f;
-        const dsp::DelayWetPair wetNo = noDetune.Process(input, pNo);
-        const dsp::DelayWetPair wetDetuned = withDetune.Process(input, pDetuned);
-        REQUIRE_NEAR(wetNo.l, wetNo.r, 1e-6);  // no detune -> L and R identical
-        if (std::fabs(wetDetuned.l - wetDetuned.r) > 1e-5f) {
-            sawDifference = true;
-        }
-    }
-    REQUIRE_TRUE(sawDifference);
 }
 
 TEST_CASE(stereo_delay_to_reverb_mono_matches_mix_formula) {
@@ -2594,7 +3302,7 @@ TEST_CASE(delay_feedback_loop_stays_bounded_at_max_feedback) {
     p.dsnd = 1.0f;   // inSignal == bumpIn exactly.
     p.dfbk = 1.0f;   // -> fbk clamps to 0.98 (StereoDelay::Process's own clamp).
     p.dwid = 0.3f;   // nonzero cross-feed -- exercises both lineL and lineR through the blend.
-    p.ddet = 0.0f;
+    p.dfrz = 0.0f;
     p.dmod = 0.0f;
 
     const float inputAmplitude = 1.0f;
@@ -2657,7 +3365,7 @@ TEST_CASE(delay_wet_output_stays_at_or_below_limiter_ceiling_at_max_feedback) {
     p.dsnd = 1.0f;
     p.dfbk = 1.0f;   // -> fbk clamps to 0.98.
     p.dwid = 0.3f;
-    p.ddet = 0.0f;
+    p.dfrz = 0.0f;
     p.dmod = 0.0f;
 
     const float ceiling = dsp::OutputLimiter::kDefaultCeiling;  // 1.0 -- shared by wetLimiterL/R and the master.
@@ -2693,7 +3401,7 @@ TEST_CASE(stereo_delay_read_before_buffer_has_filled_is_defined_and_silent) {
     p.dsnd = 1.0f;
     p.dfbk = 0.0f;
     p.dwid = 0.0f;
-    p.ddet = 0.0f;
+    p.dfrz = 0.0f;
     p.dmod = 0.0f;
 
     dsp::StereoDelay delayA;
@@ -2981,7 +3689,7 @@ TEST_CASE(stereo_delay_feedback_drive_at_maximum_does_not_raise_the_per_sample_b
     p.dsnd = 1.0f;
     p.dfbk = 1.0f;  // -> fbk clamps to 0.98.
     p.dwid = 0.3f;
-    p.ddet = 0.0f;
+    p.dfrz = 0.0f;
     p.dmod = 0.0f;
 
     const float inputAmplitude = 1.0f;
@@ -3020,7 +3728,7 @@ TEST_CASE(stereo_delay_default_knob_values_reproduce_pre_packet_output_exactly) 
     p.dsnd = 1.0f;
     p.dfbk = 0.6f;
     p.dwid = 0.4f;
-    p.ddet = 0.1f;
+    p.dfrz = 0.1f;
     p.dmod = 0.5f;  // nonzero -- exercises the mod-rate LFO path D8's SetModRate touches.
 
     for (int i = 0; i < 4000; ++i) {
@@ -3030,6 +3738,1088 @@ TEST_CASE(stereo_delay_default_knob_values_reproduce_pre_packet_output_exactly) 
         REQUIRE_NEAR(wetOld.l, wetNew.l, 1e-4);
         REQUIRE_NEAR(wetOld.r, wetNew.r, 1e-4);
     }
+}
+
+// =========================================================================
+// T3.1c (Diffusion, Delay slot 8, strict-executor packet P2): per-channel
+// three-section Schroeder allpass cascade on the wet tap
+// (dsp/Delay.hpp SchroederAllpassSection/DelayDiffuser/
+// StereoDelay::ApplyDiffusion). dfrz/drev (slots 4/7) stay inert -- not
+// touched by this packet.
+// =========================================================================
+
+TEST_CASE(stereo_delay_diffusion_at_default_zero_is_bit_identical_to_no_diffusion) {
+    // T3.1c binding requirement: ddif==0.0f (the Diffusion knob's own
+    // default, FroggersParameters.hpp; dsp::DelayParams::ddif's own
+    // in-class default) must leave the wet tap EXACTLY -- bit-for-bit, not
+    // merely close -- what it would be with no diffuser at all.
+    //
+    // Proven in the strongest form this black-box API allows: one
+    // instance's diffuser history is poked directly to a dirty,
+    // non-quiescent state (diffuserL/diffuserR are public members, same
+    // per-channel-instance idiom as wetLimiterL/R/fbToneL/R/crushL/R) with
+    // NO Process() calls in between -- so neither instance's lineL/lineR/
+    // lfoPhase/wetLimiter envelope differs AT ALL going in; the diffuser's
+    // own history is the ONLY difference between the two instances. Both
+    // then process identical input, built through the real production
+    // entry point (dsp::MapRowsToDelayParams, the same call
+    // FroggersAppCore.hpp makes) with row8Diffusion explicitly 0.0f. If
+    // ddif==0 truly bypasses the diffuser (this packet's binding
+    // placement, dsp/Delay.hpp Process()), the dirtied history is never
+    // read and outputs must match exactly; if a future change drops the
+    // bypass (e.g. always blends `diffused*ddif` in regardless, or drops
+    // the `(1-ddif)` dry term / the `*ddif` scale on `diffused`), this is
+    // the test that catches it -- see the packet report for the actual
+    // broken/restored numbers this test produced.
+    const float sr = 48000.0f;
+    dsp::StereoDelay delayDirty;
+    delayDirty.SetSampleRate(sr);
+    dsp::StereoDelay delayClean;
+    delayClean.SetSampleRate(sr);
+
+    delayDirty.diffuserL.section1.xHistory[0] = 0.73f;
+    delayDirty.diffuserL.section1.yHistory[0] = -0.41f;
+    delayDirty.diffuserL.section2.xHistory[5] = 0.29f;
+    delayDirty.diffuserL.section3.yHistory[10] = -0.55f;
+    delayDirty.diffuserR.section1.xHistory[0] = -0.62f;
+    delayDirty.diffuserR.section2.yHistory[3] = 0.18f;
+    delayDirty.diffuserR.section3.xHistory[7] = 0.37f;
+
+    const dsp::DelayParams p = dsp::MapRowsToDelayParams(
+        /*time=*/0.35f, /*send=*/0.9f, /*feedback=*/0.4f, /*width=*/0.25f,
+        /*freeze=*/0.0f, /*mod=*/0.2f, /*mix=*/0.6f, /*reverse=*/0.0f, /*diffusion=*/0.0f);
+
+    float maxAbsDiffL = 0.0f;
+    float maxAbsDiffR = 0.0f;
+    for (int i = 0; i < 2000; ++i) {
+        const float input = 0.6f * std::sin(0.041f * static_cast<float>(i));
+        const dsp::DelayWetPair wetDirty = delayDirty.Process(input, p);
+        const dsp::DelayWetPair wetClean = delayClean.Process(input, p);
+        maxAbsDiffL = std::max(maxAbsDiffL, std::fabs(wetDirty.l - wetClean.l));
+        maxAbsDiffR = std::max(maxAbsDiffR, std::fabs(wetDirty.r - wetClean.r));
+    }
+    REQUIRE_NEAR(maxAbsDiffL, 0.0, 0.0);  // exact equality (eps=0) -- this packet's own binding requirement.
+    REQUIRE_NEAR(maxAbsDiffR, 0.0, 0.0);
+}
+
+TEST_CASE(stereo_delay_diffusion_at_maximum_differs_measurably_from_no_diffusion) {
+    // "Audible across the range" requirement: ddif==1.0f must differ
+    // measurably from ddif==0.0f for the same input -- not a rounding-level
+    // difference.
+    const float sr = 48000.0f;
+    dsp::StereoDelay delayOff;
+    delayOff.SetSampleRate(sr);
+    dsp::StereoDelay delayOn;
+    delayOn.SetSampleRate(sr);
+
+    dsp::DelayParams pOff;
+    pOff.dtim = 0.35f;
+    pOff.dsnd = 0.9f;
+    pOff.dfbk = 0.4f;
+    pOff.dwid = 0.25f;
+    pOff.dmod = 0.2f;
+    pOff.dmix = 0.6f;
+    pOff.ddif = 0.0f;
+
+    dsp::DelayParams pOn = pOff;
+    pOn.ddif = 1.0f;
+
+    float maxAbsDiff = 0.0f;
+    for (int i = 0; i < 4000; ++i) {
+        const float input = 0.6f * std::sin(0.037f * static_cast<float>(i));
+        const dsp::DelayWetPair wetOff = delayOff.Process(input, pOff);
+        const dsp::DelayWetPair wetOn = delayOn.Process(input, pOn);
+        REQUIRE_TRUE(std::isfinite(wetOn.l) && std::isfinite(wetOn.r));
+        maxAbsDiff = std::max(maxAbsDiff, std::fabs(wetOn.l - wetOff.l));
+        maxAbsDiff = std::max(maxAbsDiff, std::fabs(wetOn.r - wetOff.r));
+    }
+    REQUIRE_TRUE(maxAbsDiff > 1.0e-3f);  // measurable, not a rounding-level difference.
+}
+
+TEST_CASE(stereo_delay_diffusion_state_tracks_the_signal_while_ddif_is_zero) {
+    // Packet P2 postflight regression guard. The original P2 call site read
+    // `(p.ddif == 0.0f) ? dL : ApplyDiffusion(...)`, which skipped the CALL
+    // at zero and so never advanced the sections' history. Every other
+    // diffusion test holds ddif fixed for its whole run, so none of them can
+    // observe that -- the state has to be inspected directly.
+    //
+    // Method, and why NOT convergence-between-instances: an earlier version
+    // of this test ran one delay at ddif>0 throughout against one that
+    // crossed 0 -> ddif>0, and asserted the two converged. They do, but only
+    // after roughly 15x the longest section's memory -- the allpass
+    // homogeneous term decays as a^(n/M), so at a=0.525 and M~1013 samples a
+    // 4000-sample settle still leaves 0.525^4 ~ 0.076, which is exactly the
+    // 0.0699 that version measured. It was timing the transient, not the
+    // defect. The defect has a direct signature instead: a diffuser that is
+    // never called keeps the all-zero state Reset() left it in, so its own
+    // StateMagnitude() stays at exactly 0 no matter how loud the input.
+    dsp::StereoDelay delay;
+    const float sr = 48000.0f;
+    delay.SetSampleRate(sr);
+
+    dsp::DelayParams pZero;
+    pZero.dtim = 0.35f;
+    pZero.dsnd = 0.9f;
+    pZero.dfbk = 0.4f;
+    pZero.dwid = 0.25f;
+    pZero.dmod = 0.2f;
+    pZero.dmix = 0.6f;
+    pZero.ddif = 0.0f;  // the whole point: diffusion OFF for this entire run.
+
+    // Long enough to more than fill the longest section (21.1 ms at 48kHz is
+    // ~1013 samples), so a tracking diffuser has unambiguously taken signal.
+    float maxAbsWet = 0.0f;
+    for (int i = 0; i < 4000; ++i) {
+        const float input = 0.6f * std::sin(0.037f * static_cast<float>(i));
+        const dsp::DelayWetPair wet = delay.Process(input, pZero);
+        REQUIRE_TRUE(std::isfinite(wet.l) && std::isfinite(wet.r));
+        maxAbsWet = std::max(maxAbsWet, std::max(std::fabs(wet.l), std::fabs(wet.r)));
+    }
+
+    const float stateL = delay.diffuserL.StateMagnitude();
+    const float stateR = delay.diffuserR.StateMagnitude();
+
+    // OMNI 9.1 positive control: "the state is non-zero" means nothing unless
+    // a signal actually reached the unit. Report the driving quantity's own
+    // range beside the result, so a run that proved something true and
+    // irrelevant is visible as such rather than reading as a pass.
+    std::cout << "  [P2 postflight] ddif==0 state tracking: wet max|signal|=" << maxAbsWet
+              << "  diffuser state L=" << stateL << " R=" << stateR << "\n";
+    REQUIRE_TRUE(maxAbsWet > 0.05f);   // the delay was audibly live for the whole run...
+    REQUIRE_TRUE(stateL > 1.0e-4f);    // ...so a tracking diffuser holds signal, and a
+    REQUIRE_TRUE(stateR > 1.0e-4f);    // skipped one holds exactly Reset()'s zeros.
+}
+TEST_CASE(stereo_delay_diffusion_midpoint_differs_from_both_endpoints) {
+    // "Midpoint is a real state" requirement (spec requirement, not just a
+    // nice-to-have): ddif==0.5 must differ from BOTH ddif==0.0 and
+    // ddif==1.0 -- proving the control is continuous, not a switch.
+    const float sr = 48000.0f;
+    dsp::StereoDelay delay0;
+    delay0.SetSampleRate(sr);
+    dsp::StereoDelay delayHalf;
+    delayHalf.SetSampleRate(sr);
+    dsp::StereoDelay delay1;
+    delay1.SetSampleRate(sr);
+
+    dsp::DelayParams p0;
+    p0.dtim = 0.35f;
+    p0.dsnd = 0.9f;
+    p0.dfbk = 0.4f;
+    p0.dwid = 0.25f;
+    p0.dmod = 0.2f;
+    p0.dmix = 0.6f;
+    p0.ddif = 0.0f;
+
+    dsp::DelayParams pHalf = p0;
+    pHalf.ddif = 0.5f;
+    dsp::DelayParams p1 = p0;
+    p1.ddif = 1.0f;
+
+    float maxAbsDiffFrom0 = 0.0f;
+    float maxAbsDiffFrom1 = 0.0f;
+    for (int i = 0; i < 4000; ++i) {
+        const float input = 0.6f * std::sin(0.037f * static_cast<float>(i));
+        const dsp::DelayWetPair wet0 = delay0.Process(input, p0);
+        const dsp::DelayWetPair wetHalf = delayHalf.Process(input, pHalf);
+        const dsp::DelayWetPair wet1 = delay1.Process(input, p1);
+        maxAbsDiffFrom0 = std::max(maxAbsDiffFrom0, std::fabs(wetHalf.l - wet0.l));
+        maxAbsDiffFrom0 = std::max(maxAbsDiffFrom0, std::fabs(wetHalf.r - wet0.r));
+        maxAbsDiffFrom1 = std::max(maxAbsDiffFrom1, std::fabs(wetHalf.l - wet1.l));
+        maxAbsDiffFrom1 = std::max(maxAbsDiffFrom1, std::fabs(wetHalf.r - wet1.r));
+    }
+    REQUIRE_TRUE(maxAbsDiffFrom0 > 1.0e-3f);  // differs from the ddif==0 endpoint.
+    REQUIRE_TRUE(maxAbsDiffFrom1 > 1.0e-3f);  // differs from the ddif==1 endpoint.
+}
+
+TEST_CASE(stereo_delay_diffusion_coefficient_stays_strictly_inside_unit_circle_across_full_sweep) {
+    // T3.1c's binding requirement: a = ddif * 0.7f (kDiffusionCoeffScale)
+    // must stay strictly inside the unit circle (|a| < 1) at every ddif in
+    // the knob's own [0,1] range. Swept range: ddif in [0.0, 1.0], 101
+    // points. 0.7f is asserted here as a literal (not merely re-read from
+    // the constant it pins) so a future change to the constant's own value
+    // -- not just to how it is used -- is still caught.
+    REQUIRE_NEAR(dsp::StereoDelay::kDiffusionCoeffScale, 0.7, 1e-6);
+
+    float maxAbsA = 0.0f;
+    for (int i = 0; i <= 100; ++i) {
+        const float ddif = static_cast<float>(i) / 100.0f;  // sweep [0.0, 1.0].
+        const float a = ddif * dsp::StereoDelay::kDiffusionCoeffScale;
+        REQUIRE_TRUE(std::isfinite(a));
+        REQUIRE_TRUE(a > -1.0f && a < 1.0f);  // strictly inside the unit circle -- the bound itself.
+        maxAbsA = std::max(maxAbsA, std::fabs(a));
+    }
+    REQUIRE_NEAR(maxAbsA, 0.7, 1e-6);  // reached exactly at ddif==1.0 -- the sweep's own observed extreme.
+}
+
+TEST_CASE(stereo_delay_diffusion_does_not_raise_wet_output_beyond_limiter_ceiling) {
+    // "Bounded output" requirement: the diffuser cannot raise the wet
+    // tap's peak beyond what wetLimiterL/R already guarantee -- same
+    // scenario/ceiling as delay_wet_output_stays_at_or_below_limiter_
+    // ceiling_at_max_feedback above (shortest reachable delay time, max
+    // feedback, hot input), with ddif at its maximum (1.0) so the diffuser
+    // is maximally engaged while the escaping signal is measured.
+    dsp::StereoDelay delay;
+    const float sr = 48000.0f;
+    delay.SetSampleRate(sr);
+
+    dsp::DelayParams p;
+    p.dtim = 0.0f;  // shortest reachable round trip -- same worst case as the pre-existing ceiling test.
+    p.dsnd = 1.0f;
+    p.dfbk = 1.0f;  // -> fbk clamps to 0.98.
+    p.dwid = 0.3f;
+    p.dmod = 0.0f;
+    p.ddif = 1.0f;  // diffuser maximally engaged.
+
+    const float ceiling = dsp::OutputLimiter::kDefaultCeiling;  // 1.0 -- shared by wetLimiterL/R and the master.
+
+    constexpr int kSamples = 5000;
+    float maxAbs = 0.0f;
+    for (int i = 0; i < kSamples; ++i) {
+        const dsp::DelayWetPair wet = delay.Process(1.0f, p);
+        REQUIRE_TRUE(std::isfinite(wet.l) && std::isfinite(wet.r));
+        maxAbs = std::max(maxAbs, std::max(std::fabs(wet.l), std::fabs(wet.r)));
+    }
+    REQUIRE_TRUE(maxAbs <= ceiling + 1.0e-4f);
+}
+
+// =========================================================================
+// T3.1d (Reverse Blend, Delay slot 7, strict-executor packet P3): per-
+// channel backward-travelling read pointer blended against the forward tap
+// on the wet tap (dsp/Delay.hpp DelayReverser/StereoDelay::ApplyReverse/
+// StereoDelay::Process). dfrz (slot 4) stays inert -- not touched by this
+// packet.
+// =========================================================================
+
+TEST_CASE(stereo_delay_reverse_blend_at_default_zero_is_bit_identical_to_no_reverse_blend) {
+    // T3.1d binding requirement (item 4): drev==0.0f (the Reverse blend
+    // knob's own default, FroggersParameters.hpp; DelayParams::drev's own
+    // in-class default) must leave the wet tap EXACTLY -- bit-for-bit, not
+    // merely close -- what it would be with no reverse tap at all.
+    //
+    // Proven the same way T3.1c's own analogous test proves it for
+    // Diffusion: one instance's reverse-tap state is poked directly to a
+    // dirty, non-quiescent value (reverserL/reverserR are public members,
+    // same per-channel-instance idiom the diffuser already established)
+    // with NO Process() calls in between -- so neither instance's
+    // lineL/lineR/lfoPhase/wetLimiter envelope differs AT ALL going in; the
+    // reverse tap's own state is the ONLY difference between the two
+    // instances. Both then process identical input, built through the real
+    // production entry point (dsp::MapRowsToDelayParams) with row7Reverse
+    // explicitly 0.0f. If drev==0 truly bypasses the reverse tap's
+    // contribution (this packet's binding placement, dsp/Delay.hpp
+    // Process()), the dirtied state is never read into the output and
+    // outputs must match exactly.
+    const float sr = 48000.0f;
+    dsp::StereoDelay delayDirty;
+    delayDirty.SetSampleRate(sr);
+    dsp::StereoDelay delayClean;
+    delayClean.SetSampleRate(sr);
+
+    delayDirty.reverserL.pos = -12345.5f;
+    delayDirty.reverserL.elapsed = 789.0f;
+    delayDirty.reverserL.fadePos = -54.25f;
+    delayDirty.reverserL.fadeGain = 0.37f;
+    delayDirty.reverserL.fading = true;
+    delayDirty.reverserR.pos = -999.75f;
+    delayDirty.reverserR.elapsed = 42.0f;
+    delayDirty.reverserR.fadePos = -1.5f;
+    delayDirty.reverserR.fadeGain = 0.81f;
+    delayDirty.reverserR.fading = true;
+
+    const dsp::DelayParams p = dsp::MapRowsToDelayParams(
+        /*time=*/0.35f, /*send=*/0.9f, /*feedback=*/0.4f, /*width=*/0.25f,
+        /*freeze=*/0.0f, /*mod=*/0.2f, /*mix=*/0.6f, /*reverse=*/0.0f, /*diffusion=*/0.0f);
+
+    float maxAbsDiffL = 0.0f;
+    float maxAbsDiffR = 0.0f;
+    for (int i = 0; i < 2000; ++i) {
+        const float input = 0.6f * std::sin(0.041f * static_cast<float>(i));
+        const dsp::DelayWetPair wetDirty = delayDirty.Process(input, p);
+        const dsp::DelayWetPair wetClean = delayClean.Process(input, p);
+        maxAbsDiffL = std::max(maxAbsDiffL, std::fabs(wetDirty.l - wetClean.l));
+        maxAbsDiffR = std::max(maxAbsDiffR, std::fabs(wetDirty.r - wetClean.r));
+    }
+    REQUIRE_NEAR(maxAbsDiffL, 0.0, 0.0);  // exact equality (eps=0) -- this packet's own binding requirement.
+    REQUIRE_NEAR(maxAbsDiffR, 0.0, 0.0);
+}
+
+TEST_CASE(stereo_delay_reverse_blend_at_maximum_time_reverses_a_sharp_attack_slow_decay_transient) {
+    // "Reverse actually reverses" requirement: feed a distinctive
+    // asymmetric transient (sharp attack, slow decay) and confirm that at
+    // drev==1 the tap's envelope is time-reversed relative to drev==0 --
+    // the slow ramp precedes the sharp edge (tasks.md T3.1d's own framing).
+    //
+    // Method: dfbk=0 keeps the delay LINE itself an exact scaled copy of
+    // the input stream (no feedback repeats to complicate it), so the
+    // forward tap (drev=0) is a simple delayed echo of the transient, and
+    // the reverse tap (drev=1) reads the SAME line content, just backward.
+    // Both instances see identical writes throughout -- drev only selects
+    // which tap is READ, applied before the feedback write, and with
+    // dfbk=0 the write is `inSignal` regardless of dL/dR's value (B2/D9) --
+    // so the two instances' delay lines stay identical and only the OUTPUT
+    // differs.
+    //
+    // The reverse tap can only play the transient back once real time has
+    // advanced PAST it (it sweeps BACKWARD from "now", so it cannot reach
+    // content that has not been written yet) -- the observation window
+    // below runs several full reverse laps past the injection point so at
+    // least one complete backward sweep is guaranteed to pass over the
+    // transient's footprint, regardless of exactly where in its own lap
+    // cycle the injection happened to land.
+    const float sr = 48000.0f;
+    dsp::StereoDelay delayFwd;
+    delayFwd.SetSampleRate(sr);
+    dsp::StereoDelay delayRev;
+    delayRev.SetSampleRate(sr);
+
+    dsp::DelayParams pFwd;
+    pFwd.dtim = 0.6f;
+    pFwd.dsnd = 1.0f;
+    pFwd.dfbk = 0.0f;
+    pFwd.dwid = 0.0f;
+    pFwd.dmod = 0.0f;
+    pFwd.dmix = 1.0f;
+    pFwd.drev = 0.0f;
+
+    dsp::DelayParams pRev = pFwd;
+    pRev.drev = 1.0f;
+
+    // Same formula Process() itself uses for baseSeconds (DspMath.hpp's
+    // ExpMapCompute, reused rather than re-derived by hand), so the
+    // observation window below is sized from the ACTUAL delaySamplesWindow
+    // ApplyReverse will use, not a hand-estimated guess.
+    const float baseSeconds = dsp::ExpMapCompute(0.001f, dsp::StereoDelay::kMaxDelaySeconds, pFwd.dtim);
+    const float delaySamplesWindow = baseSeconds * sr;
+
+    const int kTransientSamples = 400;
+    const float kDecay = 0.985f;
+    const int kObserveSamples = kTransientSamples + static_cast<int>(6.0f * delaySamplesWindow);
+
+    std::vector<float> fwdOut;
+    std::vector<float> revOut;
+    fwdOut.reserve(static_cast<size_t>(kObserveSamples));
+    revOut.reserve(static_cast<size_t>(kObserveSamples));
+    for (int i = 0; i < kObserveSamples; ++i) {
+        const float input = (i < kTransientSamples) ? std::pow(kDecay, static_cast<float>(i)) : 0.0f;
+        const dsp::DelayWetPair wf = delayFwd.Process(input, pFwd);
+        const dsp::DelayWetPair wr = delayRev.Process(input, pRev);
+        REQUIRE_TRUE(std::isfinite(wf.l) && std::isfinite(wr.l));
+        fwdOut.push_back(wf.l);
+        revOut.push_back(wr.l);
+    }
+
+    auto findPeak = [](const std::vector<float>& v) {
+        size_t peak = 0;
+        float peakAbs = 0.0f;
+        for (size_t i = 0; i < v.size(); ++i) {
+            if (std::fabs(v[i]) > peakAbs) {
+                peakAbs = std::fabs(v[i]);
+                peak = i;
+            }
+        }
+        return peak;
+    };
+
+    const size_t peakFwd = findPeak(fwdOut);
+    const size_t peakRev = findPeak(revOut);
+
+    const int kWindow = 100;
+    REQUIRE_TRUE(peakFwd >= static_cast<size_t>(kWindow) && peakFwd + static_cast<size_t>(kWindow) < fwdOut.size());
+    REQUIRE_TRUE(peakRev >= static_cast<size_t>(kWindow) && peakRev + static_cast<size_t>(kWindow) < revOut.size());
+    // Sanity thresholds are 0.5f, not closer to the input's own 1.0 peak,
+    // because wetLimiterL/R (kDelayWetLimiterThreshold=0.72f/
+    // kDelayWetLimiterCeiling=kStageCeiling=0.80f, dsp/Limiter.hpp) compress
+    // this transient's sharp attack toward ~0.80 before it ever reaches
+    // lastWet -- 0.5f still safely distinguishes "found the real echo" from
+    // near-zero silence/interpolation noise.
+    REQUIRE_TRUE(std::fabs(fwdOut[peakFwd]) > 0.5f);  // sanity: this really is the transient's echo, not noise.
+    REQUIRE_TRUE(std::fabs(revOut[peakRev]) > 0.5f);
+
+    auto windowAvgAbs = [](const std::vector<float>& v, size_t center, int window, bool before) {
+        float sum = 0.0f;
+        for (int k = 1; k <= window; ++k) {
+            const size_t idx = before ? (center - static_cast<size_t>(k)) : (center + static_cast<size_t>(k));
+            sum += std::fabs(v[idx]);
+        }
+        return sum / static_cast<float>(window);
+    };
+
+    const float fwdBefore = windowAvgAbs(fwdOut, peakFwd, kWindow, /*before=*/true);
+    const float fwdAfter = windowAvgAbs(fwdOut, peakFwd, kWindow, /*before=*/false);
+    const float revBefore = windowAvgAbs(revOut, peakRev, kWindow, /*before=*/true);
+    const float revAfter = windowAvgAbs(revOut, peakRev, kWindow, /*before=*/false);
+
+    std::cout << "  [T3.1d] forward: before=" << fwdBefore << " after=" << fwdAfter << "  reverse: before="
+              << revBefore << " after=" << revAfter << "\n";
+
+    // Forward (drev=0): sharp attack THEN slow decay -- the tail comes
+    // AFTER the peak, so "after" clearly exceeds "before" (near-silence).
+    REQUIRE_TRUE(fwdAfter > fwdBefore + 0.05f);
+    // Reverse (drev=1): the SAME transient played backward -- slow ramp
+    // THEN sharp edge, so "before" clearly exceeds "after" -- the opposite
+    // asymmetry from the forward tap above, on the same-shaped transient.
+    REQUIRE_TRUE(revBefore > revAfter + 0.05f);
+}
+
+TEST_CASE(stereo_delay_reverse_blend_midpoint_differs_from_both_endpoints) {
+    // "Midpoint is a real state" requirement (spec requirement, not just a
+    // nice-to-have -- tasks.md T3.1d: "It passes the continuous-range rule
+    // (the midpoint is a real mixed texture)."): drev==0.5 must differ from
+    // BOTH drev==0.0 and drev==1.0 -- proving the control is continuous,
+    // not a switch.
+    const float sr = 48000.0f;
+    dsp::StereoDelay delay0;
+    delay0.SetSampleRate(sr);
+    dsp::StereoDelay delayHalf;
+    delayHalf.SetSampleRate(sr);
+    dsp::StereoDelay delay1;
+    delay1.SetSampleRate(sr);
+
+    dsp::DelayParams p0;
+    p0.dtim = 0.35f;
+    p0.dsnd = 0.9f;
+    p0.dfbk = 0.4f;
+    p0.dwid = 0.25f;
+    p0.dmod = 0.2f;
+    p0.dmix = 0.6f;
+    p0.drev = 0.0f;
+
+    dsp::DelayParams pHalf = p0;
+    pHalf.drev = 0.5f;
+    dsp::DelayParams p1 = p0;
+    p1.drev = 1.0f;
+
+    float maxAbsDiffFrom0 = 0.0f;
+    float maxAbsDiffFrom1 = 0.0f;
+    for (int i = 0; i < 4000; ++i) {
+        const float input = 0.6f * std::sin(0.037f * static_cast<float>(i));
+        const dsp::DelayWetPair wet0 = delay0.Process(input, p0);
+        const dsp::DelayWetPair wetHalf = delayHalf.Process(input, pHalf);
+        const dsp::DelayWetPair wet1 = delay1.Process(input, p1);
+        maxAbsDiffFrom0 = std::max(maxAbsDiffFrom0, std::fabs(wetHalf.l - wet0.l));
+        maxAbsDiffFrom0 = std::max(maxAbsDiffFrom0, std::fabs(wetHalf.r - wet0.r));
+        maxAbsDiffFrom1 = std::max(maxAbsDiffFrom1, std::fabs(wetHalf.l - wet1.l));
+        maxAbsDiffFrom1 = std::max(maxAbsDiffFrom1, std::fabs(wetHalf.r - wet1.r));
+    }
+    REQUIRE_TRUE(maxAbsDiffFrom0 > 1.0e-3f);  // differs from the drev==0 endpoint.
+    REQUIRE_TRUE(maxAbsDiffFrom1 > 1.0e-3f);  // differs from the drev==1 endpoint.
+}
+
+TEST_CASE(stereo_delay_reverse_blend_wrap_crossfade_bounds_the_sample_to_sample_delta) {
+    // "No click at the wrap" requirement (tasks.md T3.1d, operator-decided:
+    // buffer smoothing at the reverse tap's wrap is REQUIRED, not optional
+    // -- "what makes the control shippable at all"). Threshold calibrated
+    // by measurement, not guessed (OMNI's own "a click test whose threshold
+    // was guessed proves nothing"): with kReverseWrapCrossfadeSeconds
+    // forced to 1.0e-9f (collapsing the crossfade to a single sample --
+    // this exact scenario, same params, same sample count) the measured
+    // max delta was 0.512177; shipped (kReverseWrapCrossfadeSeconds =
+    // 0.005f) it measures 0.0246075 -- a ~20.8x reduction. 0.1f sits
+    // roughly 4x above the smoothed number and ~5x below the unsmoothed
+    // one, comfortably separated from both.
+    const float sr = 48000.0f;
+    dsp::StereoDelay delay;
+    delay.SetSampleRate(sr);
+
+    dsp::DelayParams p;
+    p.dtim = 0.3f;
+    p.dsnd = 1.0f;
+    p.dfbk = 0.0f;
+    p.dwid = 0.0f;
+    p.dmod = 0.0f;
+    p.dmix = 1.0f;
+    p.drev = 1.0f;  // pure reverse tap -- isolates the wrap's own click, undiluted by any forward-tap contribution.
+
+    float maxDelta = 0.0f;
+    float prev = 0.0f;
+    const int kSamples = 50000;  // many multiples of the reverse window at dtim=0.3/48kHz -- guarantees dozens of wraps.
+    for (int i = 0; i < kSamples; ++i) {
+        // Sustained, nontrivial content so every buffer position being
+        // crossfaded at a wrap holds real signal, not silence -- a click
+        // hiding in a run of near-zero samples would understate the risk.
+        const float input = 0.6f * std::sin(0.041f * static_cast<float>(i));
+        const dsp::DelayWetPair wet = delay.Process(input, p);
+        REQUIRE_TRUE(std::isfinite(wet.l));
+        if (i > 0) {
+            maxDelta = std::max(maxDelta, std::fabs(wet.l - prev));
+        }
+        prev = wet.l;
+    }
+    std::cout << "  [T3.1d] reverse wrap max sample-to-sample delta (smoothed) = " << maxDelta << "\n";
+    REQUIRE_TRUE(maxDelta < 0.1f);
+}
+
+TEST_CASE(stereo_delay_reverse_state_tracks_the_signal_while_drev_is_zero) {
+    // Guards the P2-class defect directly (P2 postflight note, tasks.md
+    // T3.1c): a reverse tap that is never advanced while drev sits at its
+    // 0.0f default would replay stale content -- or in this struct's case,
+    // never move its read pointer at all -- the first time the control was
+    // turned up. Every other reverse-blend test above holds drev fixed for
+    // its whole run, so none of them can observe that; the state has to be
+    // inspected directly. Modeled on
+    // stereo_delay_diffusion_state_tracks_the_signal_while_ddif_is_zero,
+    // which exists for the identical reason.
+    dsp::StereoDelay delay;
+    const float sr = 48000.0f;
+    delay.SetSampleRate(sr);
+
+    dsp::DelayParams pZero;
+    pZero.dtim = 0.35f;
+    pZero.dsnd = 0.9f;
+    pZero.dfbk = 0.4f;
+    pZero.dwid = 0.25f;
+    pZero.dmod = 0.2f;
+    pZero.dmix = 0.6f;
+    pZero.drev = 0.0f;  // the whole point: reverse blend OFF for this entire run.
+
+    float maxAbsWet = 0.0f;
+    for (int i = 0; i < 4000; ++i) {
+        const float input = 0.6f * std::sin(0.037f * static_cast<float>(i));
+        const dsp::DelayWetPair wet = delay.Process(input, pZero);
+        REQUIRE_TRUE(std::isfinite(wet.l) && std::isfinite(wet.r));
+        maxAbsWet = std::max(maxAbsWet, std::max(std::fabs(wet.l), std::fabs(wet.r)));
+    }
+
+    const float stateL = delay.reverserL.StateMagnitude();
+    const float stateR = delay.reverserR.StateMagnitude();
+
+    // OMNI 9.1 positive control: "the state is non-zero" means nothing
+    // unless a signal actually reached the unit. Report the driving
+    // quantity's own range beside the result.
+    std::cout << "  [P3] drev==0 state tracking: wet max|signal|=" << maxAbsWet << "  reverser elapsed L=" << stateL
+              << " R=" << stateR << "\n";
+    REQUIRE_TRUE(maxAbsWet > 0.05f);   // the delay was audibly live for the whole run...
+    REQUIRE_TRUE(stateL > 1.0e-4f);    // ...so a tracking reverse pointer has moved, and a
+    REQUIRE_TRUE(stateR > 1.0e-4f);    // frozen one would hold exactly Reset()'s 0.0f.
+}
+
+TEST_CASE(stereo_delay_reverse_blend_does_not_raise_wet_output_beyond_limiter_ceiling) {
+    // "Bounded output" requirement: the reverse tap only ever reads values
+    // already present in the delay line, and the existing wetLimiterL/R
+    // bound the FINAL output regardless of which tap (forward, reverse, or
+    // a blend of both) produced it -- same scenario/ceiling as
+    // stereo_delay_diffusion_does_not_raise_wet_output_beyond_limiter_ceiling
+    // above (shortest reachable delay time, max feedback, hot input), with
+    // drev at its maximum (1.0) so the reverse tap is maximally engaged
+    // while the escaping signal is measured.
+    dsp::StereoDelay delay;
+    const float sr = 48000.0f;
+    delay.SetSampleRate(sr);
+
+    dsp::DelayParams p;
+    p.dtim = 0.0f;  // shortest reachable round trip -- same worst case as the pre-existing ceiling test.
+    p.dsnd = 1.0f;
+    p.dfbk = 1.0f;  // -> fbk clamps to 0.98.
+    p.dwid = 0.3f;
+    p.dmod = 0.0f;
+    p.drev = 1.0f;  // reverse tap maximally engaged.
+
+    const float ceiling = dsp::OutputLimiter::kDefaultCeiling;  // 1.0 -- shared by wetLimiterL/R and the master.
+
+    constexpr int kSamples = 5000;
+    float maxAbs = 0.0f;
+    for (int i = 0; i < kSamples; ++i) {
+        const dsp::DelayWetPair wet = delay.Process(1.0f, p);
+        REQUIRE_TRUE(std::isfinite(wet.l) && std::isfinite(wet.r));
+        maxAbs = std::max(maxAbs, std::max(std::fabs(wet.l), std::fabs(wet.r)));
+    }
+    REQUIRE_TRUE(maxAbs <= ceiling + 1.0e-4f);
+}
+
+// =========================================================================
+// T3.1a/T3.1b (Freeze, Delay slot 4, strict-executor packet P4): a
+// crossfade on BOTH new-input write and feedback loop gain (dsp/Delay.hpp
+// DelayParams::dfrz/dfrzLatched, StereoDelay::Process). drev/ddif (slots
+// 7/8) stay untouched by this packet.
+//
+// Two matched claims from this packet's own brief: the clamp (freeze==1,
+// unlatched) HOLDS the loop-gain product at unity, and dfrzLatched (T3.1b's
+// override hook, wired by a later packet) can EXCEED that hold. Verified
+// two ways below: a pure-formula sweep of the freezeEff/fbEff mapping
+// itself (bit-exact claims, no simulation needed -- but also NOT sensitive
+// to a bug in the real Process(), since it never calls it; see the very
+// next TEST_CASE for the production-sensitive companion), then live
+// dsp::StereoDelay::Process() simulations measuring the actual
+// recirculating LOOP GAIN -- feed one small burst into an otherwise-silent,
+// single-round-trip-length delay (dtim==0 -> ExpMapCompute(0.001,
+// kMaxDelaySeconds,0)==0.001s exactly, independent of kMaxDelaySeconds
+// since any base^0==1 -- this file's own established "shortest reachable
+// round trip" probe, ~48 samples at 48kHz; dwid==0/dmod==0 keep that round
+// trip an EXACT, CONSTANT sample count with no cross-feed or LFO smear),
+// then read back the RECIRCULATING PEAK once per round trip: Process()
+// returns a pure READ of history (the write a given sample commits is not
+// itself audible until one round trip later), so the peak in round-trip
+// block k (0-indexed, k>=1) is the loop's own gain raised to the (k-1)th
+// power times the originally-injected amplitude, in the small-signal
+// (near-linear) region of PadeSaturator::Saturate (exact at 0, slope 1 at
+// 0 -- FilterFx.hpp).
+// =========================================================================
+
+// Reused by 5 TEST_CASEs below (freeze==0 at max drive, freeze==1 swept,
+// latched above centre, latched below centre, release-after-latch) -- OMNI
+// §6 helper rule, isolates the one "inject, then measure round-trip
+// growth/decay" transformation stage every one of them needs.
+//
+// Two phases, in this order, both required: (1) SEED exactly one round
+// trip with dfrz/dfrzLatched FORCED to 0.0f/false regardless of what `p`
+// asks for, injecting `burstAmplitude` as that phase's own first sample
+// only. This is not optional bookkeeping -- freezeEff==1.0f (whenever
+// dfrz==1 OR dfrzLatched, T3.1a/T3.1b's own unconditional "new input never
+// enters while frozen" contract) zeroes the new-input term at the write,
+// so a caller whose OWN `p` already asks for freeze==1/latched could never
+// get its probe signal into the line at all if injected under those same
+// params -- exactly the failure this two-phase split exists to avoid.
+// (2) MEASURE `numRoundTrips` further round trips under the CALLER's own
+// `p` (bumpIn==0.0f throughout -- the seeded content is the only thing
+// recirculating), returning one peak magnitude per round trip.
+//
+// peaks[k] (k==0..numRoundTrips-1) is approximately LoopGain^k *
+// burstAmplitude in PadeSaturator::Saturate's near-linear small-signal
+// region (exact at 0, slope 1 at 0 -- FilterFx.hpp): Process() returns a
+// pure READ of history, so round trip k's peak reflects the write
+// committed k round trips earlier, dominated by the ONE nonzero seed
+// sample in this construction (dtim==0/dwid==0/dmod==0 keep the round trip
+// an exact, constant, un-smeared sample count, so exactly one echo lands
+// per round-trip block, and `LoopGain ~= peaks[k+1]/peaks[k]` for any k).
+std::vector<float> MeasureFreezeRoundTripPeaks(dsp::StereoDelay& delay, const dsp::DelayParams& p,
+                                                float burstAmplitude, int roundTripSamples, int numRoundTrips) {
+    dsp::DelayParams seed = p;
+    seed.dfrz = 0.0f;
+    seed.dfrzLatched = false;
+    for (int i = 0; i < roundTripSamples; ++i) {
+        const float bumpIn = (i == 0) ? burstAmplitude : 0.0f;
+        delay.Process(bumpIn, seed);
+    }
+
+    std::vector<float> peaks(static_cast<std::size_t>(numRoundTrips), 0.0f);
+    for (int k = 0; k < numRoundTrips; ++k) {
+        for (int i = 0; i < roundTripSamples; ++i) {
+            const dsp::DelayWetPair wet = delay.Process(0.0f, p);
+            const float mag = std::max(std::fabs(wet.l), std::fabs(wet.r));
+            peaks[static_cast<std::size_t>(k)] = std::max(peaks[static_cast<std::size_t>(k)], mag);
+        }
+    }
+    return peaks;
+}
+
+TEST_CASE(stereo_delay_freeze_effective_values_are_bit_exact_at_default_across_full_sweep) {
+    // T3.1a/T3.1b's own "why exactly this form" claim (dsp/Delay.hpp
+    // Process()): at freeze==0, not latched, `fbEff` must be BIT-EXACTLY
+    // `fbk` (not merely close) and `freezeEff` BIT-EXACTLY `0.0f` -- an
+    // exact-zero multiply followed by adding that exact zero, both IEEE-754
+    // identities regardless of the finite magnitude of `1/fbDrive - fbk`.
+    // Same formula text as the production call site, swept across dfbk's
+    // whole [0,1] range x Feedback Drive's whole knob range: this is
+    // exactly the regression this packet's brief warns an algebraically-
+    // equivalent but NOT bit-exact rewrite (`lerp(fbk*fbDrive,1,freeze)/
+    // fbDrive`) would cause. This test alone cannot catch that regression
+    // in the SHIPPED formula (it never calls Process()) -- its sibling
+    // below does; see the packet report for the broken/restored numbers
+    // both produce under exactly that rewrite.
+    for (int fbkStep = 0; fbkStep <= 20; ++fbkStep) {
+        const float dfbk = static_cast<float>(fbkStep) / 20.0f;
+        const float fbk = std::min(std::max(dfbk, 0.0f), 0.98f);
+        for (int driveStep = 0; driveStep <= 20; ++driveStep) {
+            const float knob = static_cast<float>(driveStep) / 20.0f;
+            const float fbDrive = dsp::ExpMapCompute(0.25f, 4.0f, knob);
+            const float freeze = 0.0f;  // the value under test -- Freeze's own default.
+            const bool dfrzLatched = false;
+            const float freezeEff = dfrzLatched ? 1.0f : freeze;
+            const float fbEff = dfrzLatched ? 1.0f : fbk + (1.0f / fbDrive - fbk) * freeze;
+            REQUIRE_TRUE(freezeEff == 0.0f);  // bit-exact, not merely near.
+            REQUIRE_TRUE(fbEff == fbk);        // bit-exact -- this packet's own binding claim.
+        }
+    }
+}
+
+TEST_CASE(stereo_delay_freeze_at_default_reproduces_pinned_pre_packet_output_through_real_process) {
+    // Companion to the pure-formula sweep above, but through the REAL
+    // production dsp::StereoDelay::Process() entry point, over a nontrivial
+    // continuous input, so a regression in the ACTUAL shipped formula (not
+    // just a parallel copy of it) is what this test is sensitive to -- the
+    // packet's own required §9.1 proof for "the bit-identical test" breaks
+    // THIS test, not the sweep above, precisely because only this one calls
+    // production code.
+    //
+    // fbDrive is deliberately NOT 1.0: the forbidden rewrite
+    // (`lerp(fbk*fbDrive,1,freeze)/fbDrive`) divides back out by fbDrive,
+    // and fbDrive==1.0 would let that multiply-then-divide round-trip
+    // exactly by construction (x*1/1==x, no rounding possible), hiding the
+    // very regression this test exists to catch. "Not a power of two" is
+    // NOT by itself sufficient, per OMNI §9.1's own positive-control
+    // discipline -- a first attempt at this test used dfbk=0.6/knob=0.3
+    // (fbDrive~=0.574, not a power of two) and a float32 probe (OMNI §9.1,
+    // see the packet report) showed `(0.6f*0.574...f)/0.574...f` round-
+    // trips to bit-exact 0.6f anyway, which would have made this test's own
+    // required §9.1 falsifiability proof a dead instrument -- a NULL result
+    // silently mistaken for a negative one. knob==0.437 was chosen by
+    // instead PROBING float32 arithmetic directly (not reasoned about) and
+    // confirming `(fbk*fbDrive)/fbDrive` differs from `fbk` by 1 ULP at
+    // this exact pair -- see the packet report for the probe. dtim==0 keeps
+    // the round trip short (~48 samples at 48kHz, this file's own "shortest
+    // reachable round trip" convention), so hundreds of samples cover many
+    // round trips -- a recursive loop, so even that 1-ULP-per-round-trip
+    // discrepancy compounds instead of staying hidden.
+    //
+    // MEASURED FIRST, then written to match (OMNI: measured, not assumed):
+    // see the packet report for these two constants' provenance and for the
+    // broken-vs-restored numbers the required §9.1 mutation produced.
+    const float sr = 48000.0f;
+    dsp::StereoDelay delay;
+    delay.SetSampleRate(sr);
+    delay.SetFeedbackDrive(0.437f);  // -> fbDrive ~= 0.840 (ExpMapCompute(0.25,4,0.437)); see comment above.
+
+    const dsp::DelayParams p = dsp::MapRowsToDelayParams(
+        /*time=*/0.0f, /*send=*/1.0f, /*feedback=*/0.6f, /*width=*/0.25f,
+        /*freeze=*/0.0f, /*mod=*/0.2f, /*mix=*/0.6f, /*reverse=*/0.0f, /*diffusion=*/0.0f);
+
+    dsp::DelayWetPair lastWet{};
+    constexpr int kSamples = 500;
+    for (int i = 0; i < kSamples; ++i) {
+        const float input = 0.5f * std::sin(0.05f * static_cast<float>(i));
+        lastWet = delay.Process(input, p);
+        REQUIRE_TRUE(std::isfinite(lastWet.l) && std::isfinite(lastWet.r));
+    }
+
+    std::cout << std::setprecision(9) << "  [T3.1a/T3.1b bit-identical] sample " << (kSamples - 1) << " wet=("
+              << lastWet.l << ", " << lastWet.r << ")\n";
+
+    REQUIRE_NEAR(lastWet.l, -0.11269673f, 0.0);
+    REQUIRE_NEAR(lastWet.r, -0.0563911721f, 0.0);
+}
+
+TEST_CASE(stereo_delay_freeze_clamp_does_not_reach_zero_loop_gain_matches_pre_packet_at_max_feedback_drive) {
+    // T3.1a's own binding invariant, stated as the thing this packet's
+    // brief says must NOT change: at freeze==0, the loop-gain product is
+    // `fbk*fbDrive` exactly as it was before this packet -- including past
+    // 1.0 (an "accidental Stop-sustain" the brief rules must survive
+    // untouched), NOT clamped toward the freeze==1 hold. Measured here at
+    // Feedback Drive's own maximum (knob 1.0 -> fbDrive==4.0,
+    // ExpMapCompute(0.25,4,1.0)), the extreme where freeze==1's own hold
+    // (1/fbDrive==0.25) sits FARTHEST from fbk -- the most sensitive point
+    // to detect any leakage of the clamp into freeze==0.
+    const float sr = 48000.0f;
+    dsp::StereoDelay delay;
+    delay.SetSampleRate(sr);
+    delay.SetFeedbackDrive(1.0f);  // -> fbDrive == 4.0 (maximum).
+
+    dsp::DelayParams p;
+    p.dtim = 0.0f;  // shortest reachable round trip -- this file's own established worst-case probe.
+    p.dsnd = 1.0f;
+    p.dfbk = 1.0f;  // -> fbk clamps to 0.98 (this file's own established "max feedback" convention).
+    p.dwid = 0.0f;  // no cross-feed -- keeps the round trip a single, clean, un-smeared echo train.
+    p.dmod = 0.0f;  // no LFO wobble -- keeps the round trip an exact, constant sample count.
+    p.dfrz = 0.0f;  // the value under test.
+    p.dfrzLatched = false;
+
+    constexpr int kRoundTripSamples = 48;      // dtim==0's own 0.001s floor * 48kHz.
+    constexpr float kBurstAmplitude = 1.0e-4f;  // tiny -- keeps every round trip in Saturate's linear region.
+    const std::vector<float> peaks = MeasureFreezeRoundTripPeaks(delay, p, kBurstAmplitude, kRoundTripSamples, 2);
+
+    REQUIRE_TRUE(peaks[0] > 0.0f);
+    const float measuredGain = peaks[1] / peaks[0];
+    const float fbk = 0.98f;
+    const float fbDrive = 4.0f;
+    const float theoreticalGain = fbk * fbDrive;  // 3.92 -- the packet's own cited figure.
+
+    std::cout << "  [T3.1a clamp-does-not-reach-zero] fbDrive=max(4.0) fbk=0.98 measured loop gain="
+              << measuredGain << " theoretical fbk*fbDrive=" << theoreticalGain << "\n";
+
+    REQUIRE_NEAR(measuredGain, theoreticalGain, theoreticalGain * 0.02);  // within 2%.
+    REQUIRE_TRUE(measuredGain > 1.0f);  // still exceeds unity -- NOT clamped toward the freeze==1 hold.
+}
+
+TEST_CASE(stereo_delay_freeze_feedback_is_monotonically_non_decreasing_across_its_whole_range) {
+    // T3.1e's own guard, and the test whose ABSENCE let the defect ship.
+    // Operator, 2026-08-14: "obviously an encoder turning left to right
+    // should make a value go from zero to a higher value." The prior
+    // mapping, `fbk + (1/fbDrive - fbk) * freeze`, ran DOWNWARD at high
+    // Feedback Drive (0.98 -> 0.25 at fbDrive 4.0), so raising Freeze
+    // lowered loop gain. Every other Freeze test held freeze FIXED for its
+    // whole run, so none of them could observe a direction of travel --
+    // which is exactly why a knob wired backwards passed the entire suite
+    // (proposal.md §3 names this defect class).
+    //
+    // Asserted against dsp::StereoDelay::FreezeFeedback directly rather than
+    // through round-trip peak measurement: at high fbDrive the loop
+    // saturates within a couple of round trips, so measured peak ratios
+    // cannot distinguish "grew a lot" from "grew a bit" and would give a
+    // false pass. This tests the mapping at the level the property lives.
+    //
+    // `fbk` is swept too, since it is the mapping's other input (dfbk
+    // clamps to [0, 0.98] in Process()). The old mapping's fbDrive
+    // dependence is gone, so there is no fbDrive to sweep -- its absence IS
+    // the fix.
+    float minStep = 1.0e9f;
+    float worstFbk = -1.0f;
+    float minSeen = 1.0e9f;
+    float maxSeen = -1.0e9f;
+    for (int fbkStep = 0; fbkStep <= 10; ++fbkStep) {
+        const float fbk = 0.098f * static_cast<float>(fbkStep);  // 0.0 .. 0.98, dfbk's own clamped range.
+        float previous = -1.0e9f;
+        for (int i = 0; i <= 100; ++i) {
+            const float freeze = static_cast<float>(i) / 100.0f;
+            const float value = dsp::StereoDelay::FreezeFeedback(fbk, freeze, /*latched=*/false);
+            REQUIRE_TRUE(std::isfinite(value));
+            if (i > 0) {
+                const float step = value - previous;
+                REQUIRE_TRUE(step >= 0.0f);  // the property: never decreases as the knob rises.
+                if (step < minStep) {
+                    minStep = step;
+                    worstFbk = fbk;
+                }
+            }
+            previous = value;
+            minSeen = std::min(minSeen, value);
+            maxSeen = std::max(maxSeen, value);
+        }
+        // The ceiling, at every fbk: lossless recirculation, never self-gain.
+        REQUIRE_NEAR(dsp::StereoDelay::FreezeFeedback(fbk, 1.0f, false), 1.0, 1.0e-6);
+        // Bit-exact passthrough at zero -- the invariant that keeps the
+        // default, and proposal.md §7's accidental sustain, untouched.
+        REQUIRE_TRUE(dsp::StereoDelay::FreezeFeedback(fbk, 0.0f, false) == fbk);
+    }
+
+    // OMNI 9.1 positive control: report the swept ranges and the smallest
+    // observed step, so a run that swept nothing is visible as such rather
+    // than reading as a pass.
+    std::cout << "  [T3.1e monotonicity] swept fbk 0.00..0.98 (11 steps) x freeze 0.00..1.00 (101 steps); "
+              << "value range [" << minSeen << ", " << maxSeen << "]; smallest step " << minStep
+              << " at fbk=" << worstFbk << "\n";
+    REQUIRE_TRUE(maxSeen > minSeen);  // the sweep actually moved the quantity under test.
+}
+
+TEST_CASE(stereo_delay_freeze_latch_exceeds_every_value_the_encoder_can_reach) {
+    // T3.1e, replacing the retired "full freeze holds the PRODUCT at unity"
+    // test. The encoder's ceiling is now unity feedback (lossless), and the
+    // latch's whole purpose is to exceed it -- operator, 2026-08-13: "when
+    // toggled, the freeze button should override the freeze encoder
+    // parameter and take it to the maximum above the clamp -- period."
+    // kFreezeLatchOverdrive is a BY-EAR constant, so this pins the RELATION
+    // (strictly greater, at every reachable encoder position) rather than
+    // its numeric value, which the operator may retune freely.
+    const float latched = dsp::StereoDelay::FreezeFeedback(0.0f, 0.0f, /*latched=*/true);
+    REQUIRE_TRUE(latched > 1.0f);  // above unity: the loop adds energy of its own.
+
+    float maxEncoder = -1.0e9f;
+    for (int fbkStep = 0; fbkStep <= 10; ++fbkStep) {
+        const float fbk = 0.098f * static_cast<float>(fbkStep);
+        for (int i = 0; i <= 100; ++i) {
+            const float freeze = static_cast<float>(i) / 100.0f;
+            maxEncoder = std::max(maxEncoder, dsp::StereoDelay::FreezeFeedback(fbk, freeze, false));
+        }
+    }
+    std::cout << "  [T3.1e latch-exceeds-encoder] latched=" << latched
+              << "  max reachable by encoder across fbk 0.00..0.98 x freeze 0.00..1.00 = " << maxEncoder << "\n";
+    REQUIRE_TRUE(latched > maxEncoder);  // the gate: the knob cannot reach it.
+    // The latch ignores the encoder entirely -- same value whatever dfrz is.
+    REQUIRE_TRUE(dsp::StereoDelay::FreezeFeedback(0.98f, 1.0f, true) == latched);
+}
+TEST_CASE(stereo_delay_freeze_latched_grows_the_loop_measurably_beyond_unlatched_full_freeze) {
+    // T3.1b's own override, and "the test that distinguishes the override
+    // from the hold; the most important one in this packet" per the brief.
+    // dfrzLatched bypasses T3.1a's clamp outright (fbEff := 1.0f, so the
+    // loop-gain product becomes fbDrive itself) rather than driving dfrz
+    // past its own clamp, which by construction could never exceed the
+    // freeze==1 hold measured just above -- so this test's own claim can
+    // ONLY be true if dfrzLatched is honoured as its own branch, not folded
+    // into dfrz (the trap this packet's brief warns two earlier packets
+    // met). Feedback Drive above centre (knob 1.0 -> fbDrive==4.0, "above
+    // centre" since knob 0.5 -> fbDrive==1.0 is SetFeedbackDrive's own
+    // documented centre) so the override's own gain (==fbDrive==4.0)
+    // clearly exceeds the hold's gain (==1.0) measured above.
+    const float sr = 48000.0f;
+    constexpr int kRoundTripSamples = 48;
+    constexpr float kBurstAmplitude = 1.0e-4f;
+
+    dsp::StereoDelay delayLatched;
+    delayLatched.SetSampleRate(sr);
+    delayLatched.SetFeedbackDrive(1.0f);  // -> fbDrive == 4.0, above centre.
+
+    dsp::DelayParams pLatched;
+    pLatched.dtim = 0.0f;
+    pLatched.dsnd = 1.0f;
+    pLatched.dfbk = 0.6f;
+    pLatched.dwid = 0.0f;
+    pLatched.dmod = 0.0f;
+    pLatched.dfrz = 1.0f;          // per the trap warning: dfrz alone, even at its own max, cannot exceed the hold.
+    pLatched.dfrzLatched = true;   // the override -- this field is what must do the work.
+
+    dsp::StereoDelay delayUnlatched;
+    delayUnlatched.SetSampleRate(sr);
+    delayUnlatched.SetFeedbackDrive(1.0f);  // identical fbDrive -- isolates dfrzLatched as the only difference.
+
+    dsp::DelayParams pUnlatched = pLatched;
+    pUnlatched.dfrzLatched = false;  // same patch, latch released -- T3.1a's hold applies instead.
+
+    const std::vector<float> peaksLatched =
+        MeasureFreezeRoundTripPeaks(delayLatched, pLatched, kBurstAmplitude, kRoundTripSamples, 2);
+    const std::vector<float> peaksUnlatched =
+        MeasureFreezeRoundTripPeaks(delayUnlatched, pUnlatched, kBurstAmplitude, kRoundTripSamples, 2);
+
+    REQUIRE_TRUE(peaksLatched[0] > 0.0f);
+    REQUIRE_TRUE(peaksUnlatched[0] > 0.0f);
+    // T3.1e retune. Under the retired product-clamp mapping these were
+    // ~4.0 (latched) vs ~1.0 (the hold), so a `> 2x` threshold read as
+    // "measurably greater". That ratio was an artifact of fbDrive living
+    // inside Freeze's mapping. It no longer does: both branches are now
+    // multiplied by the SAME fbDrive afterward, so the ratio between them is
+    // exactly kFreezeLatchOverdrive / 1.0 == 1.05 at every Drive setting.
+    // Asserting `> 2x` here would be asserting the old coupling back into
+    // existence. The relation -- latched strictly and repeatably greater --
+    // is what matters, and the 1.05 itself is a BY-EAR constant the operator
+    // may retune, so this pins the relation and reports the ratio rather
+    // than pinning a number that is not derived from anything.
+    const float gainLatched = peaksLatched[1] / peaksLatched[0];      // per-round-trip, ~1.05 * fbDrive.
+    const float gainUnlatched = peaksUnlatched[1] / peaksUnlatched[0];  // per-round-trip, ~1.00 * fbDrive.
+
+    std::cout << "  [T3.1e latched-grows] fbDrive=4.0 (max) latched per-round-trip gain=" << gainLatched
+              << "  unlatched (freeze==1) per-round-trip gain=" << gainUnlatched
+              << "  ratio=" << (gainLatched / gainUnlatched) << "\n";
+
+    REQUIRE_TRUE(gainLatched > gainUnlatched);          // the gate: the latch exceeds the encoder's ceiling.
+    REQUIRE_TRUE(gainLatched / gainUnlatched > 1.02f);  // by a real margin, not float noise.
+    REQUIRE_TRUE(gainLatched > gainUnlatched * 1.0f);   // restated as a strict relation, no magic multiple.
+}
+
+TEST_CASE(stereo_delay_freeze_latched_below_centre_feedback_drive_does_not_grow) {
+    // "Expected behaviour, not a defect" (this packet's brief, verbatim) --
+    // pinned here so nobody "fixes" it later. dfrzLatched's own gain is
+    // ==fbDrive regardless of dfbk (fbEff := 1.0f unconditionally), so
+    // BELOW centre (fbDrive < 1, knob < 0.5) the override's own gain is <1
+    // -- it decays, exactly like an ordinary sub-unity feedback loop,
+    // because there is nothing in T3.1b's own formula that floors fbDrive
+    // at 1; latching only ever multiplies the SAME fbDrive already chosen
+    // by the Feedback Drive knob.
+    const float sr = 48000.0f;
+    dsp::StereoDelay delay;
+    delay.SetSampleRate(sr);
+    delay.SetFeedbackDrive(0.0f);  // -> fbDrive == 0.25 (minimum), below the setter's own 0.5-knob centre.
+
+    dsp::DelayParams p;
+    p.dtim = 0.0f;
+    p.dsnd = 1.0f;
+    p.dfbk = 0.6f;
+    p.dwid = 0.0f;
+    p.dmod = 0.0f;
+    p.dfrz = 1.0f;
+    p.dfrzLatched = true;
+
+    constexpr int kRoundTripSamples = 48;
+    constexpr float kBurstAmplitude = 0.01f;
+    const std::vector<float> peaks = MeasureFreezeRoundTripPeaks(delay, p, kBurstAmplitude, kRoundTripSamples, 2);
+
+    REQUIRE_TRUE(peaks[0] > 0.0f);
+    const float gain = peaks[1] / peaks[0];
+
+    std::cout << "  [T3.1b latched-below-centre] fbDrive=0.25 (min) latched per-round-trip gain=" << gain << "\n";
+
+    REQUIRE_TRUE(gain < 0.9f);  // clearly does not grow -- decays, matching fbDrive itself (~0.25).
+    REQUIRE_NEAR(gain, 0.25, 0.05);
+}
+
+TEST_CASE(stereo_delay_freeze_releasing_the_latch_after_running_hot_decays_toward_silence) {
+    // Spec invariant: the control can never leave a runaway behind it. Run
+    // dfrzLatched==true, Feedback Drive above centre (same 4.0x as the
+    // latched-grows test above) for enough round trips to get "hot" (a
+    // clearly-grown, non-trivial recirculating level -- Saturate's own
+    // hard +-1 clamp bounds it once latching zeroes freezeEff's new-input
+    // term and pushes fbEff to 1.0, so "hot" here means "against that
+    // ceiling", not unbounded), then release the latch AND return dfrz to
+    // its own default (0.0f) -- at a dfbk chosen so the released
+    // fbk*fbDrive product sits BELOW unity (0.15*4.0==0.6), so the released
+    // loop decays rather than continuing to grow on its own (the untouched
+    // "accidental Stop-sustain" this packet's brief protects is a
+    // SEPARATE, deliberately-unrelated claim about dfbk/fbDrive
+    // combinations that exceed unity; this test picks a combination that
+    // does not, so release's own decay is the only effect in view).
+    const float sr = 48000.0f;
+    dsp::StereoDelay delay;
+    delay.SetSampleRate(sr);
+    delay.SetFeedbackDrive(1.0f);  // -> fbDrive == 4.0.
+
+    dsp::DelayParams p;
+    p.dtim = 0.0f;
+    p.dsnd = 1.0f;
+    p.dfbk = 0.15f;  // -> fbk == 0.15; released product 0.15*4.0 == 0.6, below unity.
+    p.dwid = 0.0f;
+    p.dmod = 0.0f;
+    p.dfrz = 1.0f;
+    p.dfrzLatched = true;
+
+    constexpr int kRoundTripSamples = 48;
+    constexpr int kHotRoundTrips = 8;  // latched gain==4.0/round-trip -- plenty to reach Saturate's ceiling.
+
+    // Reuses MeasureFreezeRoundTripPeaks for its own seed phase too (OMNI
+    // §8: one definition site) -- p already carries dfrzLatched==true/
+    // dfrz==1.0f here, so injecting the burst under THESE params directly
+    // would hit the exact same "frozen input never enters the line" trap
+    // the helper's own header comment exists to avoid.
+    const std::vector<float> hotPeaks = MeasureFreezeRoundTripPeaks(delay, p, 0.01f, kRoundTripSamples, kHotRoundTrips);
+    for (float peak : hotPeaks) {
+        REQUIRE_TRUE(std::isfinite(peak));
+    }
+    const float peakDuringLatch = *std::max_element(hotPeaks.begin(), hotPeaks.end());
+    REQUIRE_TRUE(peakDuringLatch > 0.5f);  // positive control -- genuinely "hot" before release, not still quiet.
+
+    p.dfrzLatched = false;  // release.
+    p.dfrz = 0.0f;          // back to Freeze's own default.
+
+    constexpr int kReleaseRoundTrips = 20;
+    std::vector<float> postReleasePeaks(static_cast<std::size_t>(kReleaseRoundTrips), 0.0f);
+    for (int k = 0; k < kReleaseRoundTrips; ++k) {
+        for (int i = 0; i < kRoundTripSamples; ++i) {
+            const dsp::DelayWetPair wet = delay.Process(0.0f, p);
+            REQUIRE_TRUE(std::isfinite(wet.l) && std::isfinite(wet.r));
+            postReleasePeaks[static_cast<std::size_t>(k)] =
+                std::max(postReleasePeaks[static_cast<std::size_t>(k)], std::max(std::fabs(wet.l), std::fabs(wet.r)));
+        }
+    }
+
+    std::cout << "  [T3.1b release-decays] peak while hot=" << peakDuringLatch << "  post-release peak[0]="
+              << postReleasePeaks[0] << "  post-release peak[" << (kReleaseRoundTrips - 1)
+              << "]=" << postReleasePeaks[static_cast<std::size_t>(kReleaseRoundTrips - 1)] << "\n";
+
+    const float finalPeak = postReleasePeaks[static_cast<std::size_t>(kReleaseRoundTrips - 1)];
+    REQUIRE_TRUE(finalPeak < postReleasePeaks[0] * 0.1f);  // decays toward silence.
+    REQUIRE_TRUE(finalPeak < 0.01f);                        // clearly quiet by the end.
+}
+
+TEST_CASE(stereo_delay_freeze_midpoint_differs_from_both_endpoints) {
+    // Same "midpoint is a real state" shape as ddif/drev's own midpoint
+    // tests above: dfrz==0.5 must differ measurably from BOTH dfrz==0.0 and
+    // dfrz==1.0 -- proving Freeze is a continuous crossfade, not a switch.
+    const float sr = 48000.0f;
+    dsp::StereoDelay delay0;
+    delay0.SetSampleRate(sr);
+    delay0.SetFeedbackDrive(1.0f);  // -> fbDrive == 4.0, so the three states' fbEff values are well separated.
+    dsp::StereoDelay delayHalf;
+    delayHalf.SetSampleRate(sr);
+    delayHalf.SetFeedbackDrive(1.0f);
+    dsp::StereoDelay delay1;
+    delay1.SetSampleRate(sr);
+    delay1.SetFeedbackDrive(1.0f);
+
+    const dsp::DelayParams p0 = dsp::MapRowsToDelayParams(
+        /*time=*/0.0f, /*send=*/1.0f, /*feedback=*/0.6f, /*width=*/0.0f,
+        /*freeze=*/0.0f, /*mod=*/0.0f, /*mix=*/0.6f, /*reverse=*/0.0f, /*diffusion=*/0.0f);
+    dsp::DelayParams pHalf = p0;
+    pHalf.dfrz = 0.5f;
+    dsp::DelayParams p1 = p0;
+    p1.dfrz = 1.0f;
+
+    float maxAbsDiffFrom0 = 0.0f;
+    float maxAbsDiffFrom1 = 0.0f;
+    for (int i = 0; i < 300; ++i) {
+        const float input = 0.3f * std::sin(0.05f * static_cast<float>(i));
+        const dsp::DelayWetPair wet0 = delay0.Process(input, p0);
+        const dsp::DelayWetPair wetHalf = delayHalf.Process(input, pHalf);
+        const dsp::DelayWetPair wet1 = delay1.Process(input, p1);
+        maxAbsDiffFrom0 = std::max(maxAbsDiffFrom0, std::fabs(wetHalf.l - wet0.l));
+        maxAbsDiffFrom1 = std::max(maxAbsDiffFrom1, std::fabs(wetHalf.l - wet1.l));
+    }
+    REQUIRE_TRUE(maxAbsDiffFrom0 > 1.0e-3f);  // differs from the dfrz==0 endpoint.
+    REQUIRE_TRUE(maxAbsDiffFrom1 > 1.0e-3f);  // differs from the dfrz==1 endpoint.
 }
 
 // =========================================================================

@@ -39,3 +39,25 @@ nice make -j2 -C External/Sheaf/projects/synth/apps/sheaf-patch \
   APP_BUILD_DIR="$REPO_ROOT/app/build-launcher" \
   APP_INFO_PLIST="$REPO_ROOT/app/Frogg3rs-Info.plist" \
   "$@"
+
+# Icon (operator 2026-08-17, "why isn't this using the same logo we were
+# using for the v1 build?"): juce_build.mk's bundle rule (:152-154) has no
+# icon/resource step at all -- it only mkdir's Contents/MacOS and copies the
+# binary and Info.plist, so Contents/Resources/ does not exist after the make
+# above runs. app/Frogg3rs-Info.plist's CFBundleIconFile (see that file's own
+# comment) names Icon.icns, but the plist key alone does nothing: the file it
+# names has to actually be sitting in Contents/Resources/, and since we must
+# not touch External/Sheaf or its Makefile, this script is the only place
+# left to put it there. `set -euo pipefail` above means a missing
+# app/Resources/Icon.icns fails this script loudly (good) -- but a
+# SUCCESSFUL run is not proof the icon is visible: Finder caches app icons
+# per bundle path/mtime, so a stale generic icon can keep showing after a
+# clean build and a correct plist, which is exactly the kind of thing that
+# hides from a build-exit-code check. If the icon looks wrong after a
+# rebuild, verify with `plutil -p Contents/Info.plist` and `ls
+# Contents/Resources/` before assuming the build is broken -- Finder's icon
+# cache is the more likely culprit (`killall Finder` or moving/renaming the
+# .app forces a refresh).
+APP_BUNDLE_DIR="$REPO_ROOT/app/build-launcher/Frogg3rs.app"
+mkdir -p "$APP_BUNDLE_DIR/Contents/Resources"
+cp "$REPO_ROOT/app/Resources/Icon.icns" "$APP_BUNDLE_DIR/Contents/Resources/Icon.icns"

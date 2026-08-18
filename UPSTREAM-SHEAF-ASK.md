@@ -57,8 +57,14 @@ it. "Landed" verdicts cite the re-check sections (evidence at `77a3019e` unless 
 | 13 | `APP_NAME`/`APP_INFO_PLIST` coupled but documented independent | **issue #3** | no |
 | 14 | `ControlStyle::caption` placement (below/trailing) | **issue #3** | no |
 | 15 | Embedded surfaces can't resolve a live extent | **issue #1** | no |
+| 16 | `RandomizeVisibleValue` deltas against modulated, not commanded, value | **not yet sent** | no |
 
 **All 15 asks are now in front of jvictor0** (2026-08-05): 1-11 by email, 15 as issue #1, 7+12 as issue #2, 13+14 as issue #3. Issues deliberately do not use this file's item numbers -- they are internal.
+
+**Item 16 added 2026-08-17** (`frogg3rs-stop-isolation-and-legible-labels` packet 3, T3.3) — audit-
+corrected: an earlier draft of that change mislabelled this "Sheaf#9 candidate," but #9 above is
+already the parameter-timing ask and this file's own header warns that duplicate numbering caused a
+mixup before; it is filed here as #16, the next free file number, not sent yet.
 
 ---
 
@@ -490,6 +496,50 @@ app-side workaround: `RuntimeSessionOwner` exposes only `juce::Component&`
 **Not blocking us** — F.3 ships a declared-layout grid resolving against the `Config()`-sized
 region, and adopting a live extent later is a change to where `RootBounds()` sources its extent
 rather than a redesign.
+
+## 16. `Parameter::RandomizeVisibleValue` deltas against the modulated, not the commanded, value
+
+`Parameter::RandomizeVisibleValue` (`src/ParameterModulation.cpp:1723-1731`):
+
+```cpp
+void Parameter::RandomizeVisibleValue(const SceneState& scene, float normalized) {
+    ValidateSceneEndpoints(scene);
+    const float target = LinearMap(RangeMin(config_.range), RangeMax(config_.range),
+                                   std::clamp(normalized, 0.0f, 1.0f));
+    Compute(scene);
+    SnapCurrentToTarget();
+    const float delta = target - TargetValue(0);   // <-- delta vs the RESOLVED value
+    HandleIncDec(scene, delta);
+    Compute(scene);
+    SnapCurrentToTarget();
+}
+```
+
+`TargetValue(0)` is the modulation-**resolved** value (`ParameterModulation.cpp:2345-2352`: commanded
+center plus every active route's live source signal times its depth) — not the commanded value the
+delta is nominally being applied against. On a parameter with live audio-rate modulation attached,
+each press's delta is therefore measured against whatever the modulated signal happens to read at
+that instant. A negative-phase snapshot produces an overshooting positive delta; repeated presses
+ratchet the commanded value into the `[0, 1]` clamp, where it sticks — not because the draws are
+biased, but because the reference point the delta is computed against is a moving, unbounded-relative-
+to-commanded target on every call.
+
+**Measured**: after 5 presses on a parameter carrying full-positive audio-rate modulation, the
+commanded value landed at **exactly `1.0000` in 20/20 independent trials** — impossible for a
+sequence of genuinely uniform draws. On the running instrument this is also why Randomize All
+reliably lands in a drone-like patch: the same mechanism steers every modulated parameter's commanded
+value toward its ceiling, press after press.
+
+Any Sheaf app that randomizes a parameter under live modulation via this path inherits the same
+ratchet — it is not specific to our patch shape. Computing the delta against the parameter's own
+**commanded** value (e.g. `SceneCenter`/`sceneCenters_` directly, or an equivalent pre-modulation
+snapshot) rather than `TargetValue(0)` would fix it at the source.
+
+**Not blocking us** — Sheaf is pinned and untouched here; the app-side fix (drawing our own uniform
+value and committing it directly via `HandleSetAbsolute`, bypassing this code path entirely for our
+own value-randomize press) already ships in `app/FroggersModulation.hpp`'s
+`PressBankWithRandomValue`. Reporting because the same ratchet will bite any other Sheaf app that
+randomizes a modulated parameter through this method.
 
 ## What we are NOT asking for
 

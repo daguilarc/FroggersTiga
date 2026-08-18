@@ -115,16 +115,28 @@ inline constexpr const char* kRightBlock = "froggers.layout.right";
 
 inline constexpr const char* kPlay = "froggers.transport.play";
 inline constexpr const char* kStop = "froggers.transport.stop";
-// Row 3 of the left block (tasks.md F.3 CELL MAP): Play | Stop.
+// T5.2 (proposal.md §6.4b-ii/§8.2): the Freeze transport BUTTON's own node
+// id -- distinct from the Freeze ENCODER (Delay bank slot 4,
+// FroggersParameters.hpp), which has no id here because encoder cells are
+// addressed by grid index (FroggersNodeIds::Encoder), not by name.
+inline constexpr const char* kFreeze = "froggers.transport.freeze";
+// P7b (tasks.md T5.3b): the Record transport BUTTON's own node id -- fourth
+// child of the transport row, beside Play/Stop/Freeze.
+inline constexpr const char* kRecord = "froggers.transport.record";
+// Row 3 of the left block (tasks.md F.3 CELL MAP): Play | Stop | Freeze | Record.
 inline constexpr const char* kTransportRow = "froggers.layout.left.transport";
 // Row 4 of the left block: Scene 1 | Scene 2.
 inline constexpr const char* kScenesRow = "froggers.layout.left.scenes";
 
 inline constexpr const char* kRandomizeAll = "froggers.randomize.all";
 inline constexpr const char* kRandomizePage = "froggers.randomize.page";
+inline constexpr const char* kResetAll = "froggers.reset.all";
+inline constexpr const char* kResetPage = "froggers.reset.page";
 // Row 6 of the right block: Randomize Page | Randomize All (moved out of the
 // bank-header group by the CELL MAP -- see AppendRandomizeRow()'s comment).
 inline constexpr const char* kRandomizeRow = "froggers.layout.right.randomize";
+// T5.1: Row 7, directly below Randomize, same two-halves weighting.
+inline constexpr const char* kResetRow = "froggers.layout.right.reset";
 // Row 1 of the right block: the six bank-select tabs.
 inline constexpr const char* kBankTabsRow = "froggers.layout.right.banks";
 // STEP 1 (operator, 2026-08-09, fourth session on the same complaint): a
@@ -192,8 +204,12 @@ namespace FroggersActions {
 
 inline constexpr const char* kPlay = "froggers.transport.play";
 inline constexpr const char* kStop = "froggers.transport.stop";
+inline constexpr const char* kFreeze = "froggers.transport.freeze";
+inline constexpr const char* kRecord = "froggers.transport.record";
 inline constexpr const char* kRandomizeAll = "froggers.randomize.all";
 inline constexpr const char* kRandomizePage = "froggers.randomize.page";
+inline constexpr const char* kResetAll = "froggers.reset.all";
+inline constexpr const char* kResetPage = "froggers.reset.page";
 inline constexpr const char* kBankSelect = "froggers.bank.select";
 inline constexpr const char* kSceneSelect = "froggers.scene.select";
 inline constexpr const char* kSceneBlend = "froggers.scene.blend";
@@ -220,7 +236,21 @@ struct FroggersPageLayout {
     // matching `FroggersAppCore::Config().uiHeight` (see that file's own
     // comment -- demoted from a derived cross-check to an initial window
     // size, task F.3's "config.uiHeight is NOT deleted" precision).
-    static constexpr float kDefaultHeight = 632.0f;
+    //
+    // T4.2 (operator ruling 2026-08-17, "do not shrink the encoder ring" /
+    // "space you should have ADDED below each encoder"): 632.0f -> 712.0f,
+    // +80px, exactly `FroggersEncoderGridLayout::kLabelBandHeight` (20px)
+    // times the 4 encoder rows -- see that struct's own comment for the
+    // exact-by-construction row-height arithmetic this pays for (bank
+    // tabs/randomize/reset stay pixel-identical; each encoder row alone
+    // grows by kLabelBandHeight). `FroggersAppCore::Config()`'s own
+    // `config.uiHeight` is the SAME number, hand-synced (see that file's
+    // own comment on why it cannot be derived FROM this one) -- kept in
+    // sync here, not verified by any cross-check test (task F.3's own
+    // finding: such a test can pass even when both sides are already
+    // wrong, see this file's own report for a fresh instance of exactly
+    // that failure mode in the row-height comment this change corrects).
+    static constexpr float kDefaultHeight = 712.0f;
 
     // The outer split Row's own padding (inset from the window edge) and the
     // gap between the left/right blocks and between each block's own stacked
@@ -290,6 +320,51 @@ struct FroggersEncoderGridLayout {
     // its own distinct structural role vs. `FroggersPageLayout::kGap`, which
     // separates the left/right blocks and each block's own top-level rows.
     static constexpr float kGap = 8.0f;
+
+    // T4.2 (operator ruling 2026-08-17, "do not shrink the encoder ring" /
+    // "space you should have ADDED below each encoder"): this task's own
+    // MEASURED value (BuildFroggersTreeAtDefaultSize()'s resolved
+    // Encoder(0) bounds, cross-checked against `AllocateExtents`'
+    // documented formula -- kRightBlock content height 600px at the
+    // pre-existing 900x632 window, minus the modulation header's fixed
+    // 26px and 7 inter-row gaps of 14 (98), leaves 476, split 7 ways
+    // across BankTabs + the 4 EncoderRows + Randomize + Reset, all
+    // Weight(1.0) at the time of measurement: 476/7 = 68.0 exactly).
+    //
+    // NOTE (this task's own §9.1-adjacent finding, not this task's fault to
+    // fix beyond correcting it here): the pre-dispatch brief this task
+    // implements traced this same cell at "136.333 x 88.333px" -- STALE,
+    // predating the Reset-row addition to `FroggersCellMap::kRightRows`
+    // (which added an 8th right-block row without anyone re-deriving this
+    // figure; the file's OWN `AppendModulationHeaderRow` comment already
+    // shows an earlier, ALSO-stale intermediate value, 81.67px, from
+    // before Reset existed). This task's own measurement (a temporary
+    // diagnostic TEST_CASE, built and run, then removed -- see this task's
+    // report) found 136.333 x 68.0, matching the analytic formula above
+    // bit-for-bit; the ring math below is built on the VERIFIED figure.
+    static constexpr float kUnchangedRowHeight = 68.0f;
+
+    // The label band this task adds strictly BELOW the ring (operator:
+    // "space you should have ADDED below each encoder"), ~20px per the
+    // task brief.
+    static constexpr float kLabelBandHeight = 20.0f;
+
+    // Each encoder row's own resolved height after this task: the
+    // ring-bearing portion (unchanged) plus the new label band. Deliberately
+    // the SUM of the two constants above, never a separately hand-typed
+    // literal -- AppendEncoderRow passes this as an `Extent::Weight` value
+    // (not a later multiply) specifically so `AllocateExtents`
+    // (PortableUILayout.hpp:165-241)'s `remaining * weight / totalWeight`
+    // resolves EXACTLY (bit-for-bit, no float rounding) at the default
+    // window: `kDefaultHeight` above is chosen so that `remaining` there
+    // exactly equals the total weight (BankTabs/Randomize/Reset at
+    // kUnchangedRowHeight=68 each + 4 EncoderRows at kGrownRowHeight=88
+    // each = 556), which makes every `remaining * weight / totalWeight`
+    // division reduce to the exact input weight (a property of IEEE754
+    // correctly-rounded division over exactly-representable integer
+    // operands, not an approximation) -- see AppendEncoderCell's own
+    // comment for how this feeds the ring's byte-identical sub-extent.
+    static constexpr float kGrownRowHeight = kUnchangedRowHeight + kLabelBandHeight;
 };
 
 static_assert(FroggersEncoderGridLayout::kEncoderCount == kFroggersSlotsPerBank,
@@ -335,7 +410,7 @@ static_assert(FroggersEncoderGridLayout::kEncoderCount == kFroggersSlotsPerBank,
 //   7 | Randomize page (span 2) | Randomize all (span 2)
 struct FroggersCellMap {
     enum class LeftKind { Scope, Transport, Scenes, SceneBlend, Bpm };
-    enum class RightKind { BankTabs, Header, EncoderRow, Randomize };
+    enum class RightKind { BankTabs, Header, EncoderRow, Randomize, Reset };
 
     struct LeftRow {
         LeftKind kind;
@@ -359,7 +434,10 @@ struct FroggersCellMap {
         {LeftKind::Bpm, 1.0f},
     }};
 
-    static constexpr std::array<RightRow, 7> kRightRows = {{
+    // T5.1: extent 7 -> 8 for the Reset row. This is a FIXED-extent
+    // std::array, so appending a row means changing the count too, not just
+    // adding an initializer.
+    static constexpr std::array<RightRow, 8> kRightRows = {{
         {RightKind::BankTabs, 0},
         {RightKind::Header, 0},
         {RightKind::EncoderRow, 0},
@@ -367,6 +445,7 @@ struct FroggersCellMap {
         {RightKind::EncoderRow, 8},
         {RightKind::EncoderRow, 12},
         {RightKind::Randomize, 0},
+        {RightKind::Reset, 0},
     }};
 
     // The outer split Row's weights (L1+L2 = 2 units, E1-E4 = 4 units,
@@ -398,6 +477,9 @@ struct FroggersCellMap {
 // 57/106/127) instead of stark white so it sits in the dark instrument face
 // instead of glaring out of it.
 inline constexpr synth::Color kTransportPlateColor = synth::Color::Rgb(57, 106, 127);
+// P7b (tasks.md T5.3b): Record's own glyph/armed-plate colour -- a dark red,
+// distinct from Stop's plain synth::Color::Red square sharing this same row.
+inline constexpr synth::Color kRecordColor = synth::Color::Rgb(139, 0, 0);
 inline constexpr float kTransportIconFraction = 0.575f;  // ~55-60% of the plate
 inline constexpr float kTransportPlateSize = 28.0f;      // matches the old Button height
 
@@ -434,6 +516,77 @@ inline std::vector<synth::ui::DrawCommand> BuildStopDrawCommands(synth::ui::Boun
         std::max(0.0f, bounds.height - insetY * 2.0f),
     };
     commands.push_back(synth::ui::DrawCommand::Fill(square, synth::Color::Red));
+    return commands;
+}
+
+// T5.2 (proposal.md §6.4b-ii/§8.2, tasks.md T5.2): Freeze, third transport
+// plate beside Play/Stop -- same plate-plus-glyph idiom as
+// BuildPlayDrawCommands/BuildStopDrawCommands above (rounded-rect plate,
+// inset glyph at kTransportIconFraction), but with a `latched` parameter the
+// other two do not take. A diamond glyph, visually distinct from Play's
+// triangle and Stop's square.
+//
+// WHY A Draw NODE AND NOT A Button (proposal.md §8.2, ruled out there):
+// `StateColourFor` renders `ControlStyle::selected` as `brighter(0.14f)` on
+// the background and `TextColourForNode` (PortableJuceBackend.hpp:1036-1042)
+// branches on `enabled` only -- text colour never changes on selection, so a
+// genuine colour INVERSION is not available from the library's own
+// selected-state handling. A Draw node emits its own commands, so the
+// inversion below is free and needs no upstream change.
+//
+// When `latched` is true the plate and glyph colours SWAP outright (a real
+// exchange, not a brightness bump) -- this is the whole reason Freeze is a
+// Draw node rather than a Button relying on `selected`.
+inline std::vector<synth::ui::DrawCommand> BuildFreezeDrawCommands(synth::ui::Bounds bounds, bool latched) {
+    constexpr float kCornerRadius = 4.0f;
+    const synth::Color plateColor = latched ? synth::Color::Cyan : kTransportPlateColor;
+    const synth::Color glyphColor = latched ? kTransportPlateColor : synth::Color::Cyan;
+    std::vector<synth::ui::DrawCommand> commands;
+    commands.push_back(synth::ui::DrawCommand::FillRoundedRect(bounds, kCornerRadius, plateColor));
+    const float insetX = bounds.width * (1.0f - kTransportIconFraction) * 0.5f;
+    const float insetY = bounds.height * (1.0f - kTransportIconFraction) * 0.5f;
+    const float left = bounds.x + insetX;
+    const float right = bounds.x + bounds.width - insetX;
+    const float top = bounds.y + insetY;
+    const float bottom = bounds.y + bounds.height - insetY;
+    const float midX = (left + right) * 0.5f;
+    const float midY = (top + bottom) * 0.5f;
+    commands.push_back(synth::ui::DrawCommand::FillPolygon(
+        {
+            synth::ui::Point{midX, top},
+            synth::ui::Point{right, midY},
+            synth::ui::Point{midX, bottom},
+            synth::ui::Point{left, midY},
+        },
+        glyphColor));
+    return commands;
+}
+
+// T5.3b (tasks.md, packet P7b): Record, fourth transport plate beside
+// Play/Stop/Freeze -- same plate-plus-glyph idiom as BuildFreezeDrawCommands
+// above (rounded-rect plate, inset glyph at kTransportIconFraction, a
+// genuine colour EXCHANGE while armed, not a brightness tweak -- see that
+// function's own comment for why a Draw node is what makes the exchange
+// free). A filled circle glyph (DrawCommand::FillEllipse over a square inset
+// box, same inset box BuildStopDrawCommands already computes for its
+// square), visually distinct from Play's triangle, Stop's square, and
+// Freeze's diamond. Dark red normally; armed swaps plate and glyph outright,
+// same as Freeze's own cyan/plate-colour exchange.
+inline std::vector<synth::ui::DrawCommand> BuildRecordDrawCommands(synth::ui::Bounds bounds, bool armed) {
+    constexpr float kCornerRadius = 4.0f;
+    const synth::Color plateColor = armed ? kRecordColor : kTransportPlateColor;
+    const synth::Color glyphColor = armed ? kTransportPlateColor : kRecordColor;
+    std::vector<synth::ui::DrawCommand> commands;
+    commands.push_back(synth::ui::DrawCommand::FillRoundedRect(bounds, kCornerRadius, plateColor));
+    const float insetX = bounds.width * (1.0f - kTransportIconFraction) * 0.5f;
+    const float insetY = bounds.height * (1.0f - kTransportIconFraction) * 0.5f;
+    const synth::ui::Bounds circleBounds{
+        bounds.x + insetX,
+        bounds.y + insetY,
+        std::max(0.0f, bounds.width - insetX * 2.0f),
+        std::max(0.0f, bounds.height - insetY * 2.0f),
+    };
+    commands.push_back(synth::ui::DrawCommand::FillEllipse(circleBounds, glyphColor));
     return commands;
 }
 
@@ -498,59 +651,95 @@ inline std::string FormatFroggersBpm(double bpm) {
     return oss.str();
 }
 
-// Encoder-cell label grid (this task, "fixed 10-column x 2-row 14-segment
-// grid, identical in every cell"), step 2's line-splitting rule for a
-// FroggersParamSpec long name, applied verbatim:
-//   1. Split on whitespace into tokens.
-//   2. If the LAST token is exactly one character and a digit, fold it onto
-//      the previous token (rejoined with a single space) -- "a
-//      one-character number is not a word" (operator). So "Shape 1" ->
-//      ["Shape 1"], "Peak Q" stays ["Peak","Q"] (Q is not a digit).
-//   3. 1 remaining token -> line 0 only (line 1 stays empty, meaning
-//      "blank"); 2 tokens -> one per line.
-//   4. Both lines uppercased (the display is uppercase-only).
-// Verified against every name in FroggersBankLayouts() post-rename
-// (FroggersSurfaceTests.cpp's every_parameter_label_fits_the_two_line_grid):
-// no name ever yields more than 2 tokens after the merge, and the longest
-// resulting line is exactly 10 characters ("ANTI-ALIAS"/"BRIGHTNESS"/
-// "WAVESHAPER", Drive bank) -- this is checked by that test, not assumed
-// here.
-inline std::array<std::string, 2> SplitFourteenSegmentLines(std::string_view name) {
-    std::vector<std::string> tokens;
-    std::string current;
-    for (char c : name) {
-        if (std::isspace(static_cast<unsigned char>(c)) != 0) {
-            if (!current.empty()) {
-                tokens.push_back(current);
-                current.clear();
-            }
-        } else {
-            current.push_back(c);
-        }
-    }
-    if (!current.empty()) {
-        tokens.push_back(current);
-    }
+// T4.1 (openspec/changes/frogg3rs-stop-isolation-and-legible-labels/
+// labels.md, operator-approved 2026-08-17, BINDING VERBATIM, all 86
+// entries): the label actually RENDERED in each encoder cell. This table is
+// deliberately SEPARATE from `FroggersParamSpec::name`/`shortName`
+// (FroggersParameters.hpp) -- labels.md wins for RENDERING ONLY (operator's
+// own instruction: the seven marked shortenings, e.g. "Comb feedback" ->
+// "Comb FB", must not rename the REGISTERED parameter, whose `name`/
+// `shortName` stay load-bearing for ParameterManager's own name space and
+// other consumers). Indexed [bankIx][slot] for slots 0-13, in
+// `FroggersBankLayouts()`'s own bank order (FroggersBankId::Audio=0 ...
+// Reverb=5); the Envelope row (index 1) is labels.md's canonical short
+// forms verbatim (operator ruling: "A1 S1 can use short names"), every
+// other row is the readable long name (operator ruling: "it is not
+// acceptable for every parameter" to abbreviate) except the seven marked
+// shortenings, called out per row below. Slots 14/15 (Crispy/Crunchy) are
+// handled by `FroggersApprovedGlobalLabel` below, not this table -- they
+// are not per-bank `FroggersParamSpec` entries (Crispy is six separate
+// per-bank Parameter objects that all render the same word; Crunchy is one
+// shared Parameter across all six banks).
+inline const std::array<std::array<const char*, kFroggersParamsPerBank>, kFroggersBankCount>&
+FroggersApprovedLabels() {
+    static const std::array<std::array<const char*, kFroggersParamsPerBank>, kFroggersBankCount> labels{{
+        {{"VCO1", "VCO2", "VCO3", "Shape 1", "Shape 2", "Shape 3", "Ph.mod 1", "Ph.mod 2", "Ph.mod 3",
+          "Ringmod 1", "Ringmod 2", "Ringmod 3", "PM rate", "VCO balance"}},
+        // Envelope -- canonical short forms (operator ruling), not a
+        // truncation: the short form IS the name here.
+        {{"A1", "D1", "S1", "R1", "A2", "D2", "S2", "R2", "A3", "D3", "S3", "R3", "Curve", "Grace"}},
+        // Filter -- slot 5 shortened ("Comb feedback" -> "Comb FB").
+        {{"Comb offset", "Peak freq", "Peak gain", "Peak Q", "Comb delay", "Comb FB", "Comb LP",
+          "Comb/Peak", "Scoop", "Topology", "Scoop freq", "Scoop width", "Comb drive", "Scoop depth"}},
+        // Drive -- slot 9 shortened ("Anti-alias brightness" -> "Anti-alias"),
+        // slot 13 shortened ("Waveshaper offset" -> "Bias").
+        {{"Drive", "Shape", "SRR 1", "SRR 2", "XOR", "Bit depth", "Fuzz", "Blend", "Phase",
+          "Anti-alias", "Link", "Fold", "Tone", "Bias"}},
+        // Delay -- slot 7 ("Reverse blend" -> "Reverse"), slot 9
+        // ("Feedback drive" -> "FB drive"), slot 10 ("Feedback tone" ->
+        // "FB tone"), slot 12 ("Width balance" -> "Width bal").
+        {{"Delay time", "Send", "Feedback", "Stereo width", "Freeze", "Mod depth", "Wet mix",
+          "Reverse", "Diffusion", "FB drive", "FB tone", "Mod rate", "Width bal", "Crush"}},
+        // Reverb -- no shortenings.
+        {{"Wet/dry", "Room size", "Decay", "Pre-delay", "Damping", "Stereo width", "Diffusion",
+          "Mod depth", "Hold", "Mod rate", "Tank drive", "Grit", "Tilt", "Tuned"}},
+    }};
+    return labels;
+}
 
-    if (tokens.size() >= 2) {
-        const std::string& lastToken = tokens.back();
-        if (lastToken.size() == 1 && std::isdigit(static_cast<unsigned char>(lastToken[0])) != 0) {
-            const std::string merged = tokens[tokens.size() - 2] + " " + lastToken;
-            tokens.pop_back();
-            tokens.back() = merged;
-        }
-    }
+// labels.md's "Global" row: one rendered word regardless of which bank's
+// local Crispy this is (all six read the same word; Crunchy is the one
+// shared Parameter). Deliberately independent of Crunchy's registered
+// `shortName` ("Crnchy", FroggersParameters.hpp) -- labels.md wins for
+// RENDERING, per this table's own header comment.
+inline const char* FroggersApprovedGlobalLabel(std::size_t slot) {
+    return slot == kFroggersCrispySlot ? "Crispy" : "Crunchy";
+}
 
-    std::array<std::string, 2> lines{};
-    for (std::size_t lineIx = 0; lineIx < tokens.size() && lineIx < 2; ++lineIx) {
-        std::string upper;
-        upper.reserve(tokens[lineIx].size());
-        for (char c : tokens[lineIx]) {
-            upper.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
-        }
-        lines[lineIx] = std::move(upper);
+// T4.1 (operator ruling, replacing the predecessor's rejected fixed
+// 10-column x 2-row plate -- see AppendEncoderCell's own citation): the
+// SINGLE-ROW native idiom, sized to hold the longest approved label.
+// Verified (not assumed) by FroggersSurfaceTests.cpp's own
+// `every_approved_label_fits_the_single_row_grid`: the longest of all 86
+// entries in `FroggersApprovedLabels()`/`FroggersApprovedGlobalLabel` is
+// "Stereo width" (Delay slot 3 and Reverb slot 5), 12 characters including
+// the space.
+inline constexpr int kApprovedLabelGridColumns = 12;
+
+// T4.1/T4.3: builds the single-row 14-segment label block for one encoder
+// cell's label band -- ONE function, called from AppendEncoderCell's own
+// Draw lambda AND directly from FroggersSurfaceTests.cpp's verbatim/
+// non-intersection guards (T4.3), so those tests compare against the exact
+// commands production emits, not a second hand-written copy of this
+// centering/padding arithmetic (OMNI §8). `label` is uppercased here (the
+// display is uppercase-only, same convention the retired
+// SplitFourteenSegmentLines used) and centered by left-padding with spaces
+// to `columns` -- `BuildFourteenSegmentCommands` (EncoderDraw.hpp) already
+// left-aligns and pads the TRAILING side with spaces on its own, so
+// centering only needs the leading pad computed here.
+inline std::vector<synth::ui::DrawCommand> BuildEncoderLabelRowCommands(std::string_view label,
+                                                                        synth::ui::Bounds rowBounds,
+                                                                        synth::Color onColor,
+                                                                        synth::Color offColor, int columns) {
+    std::string upper;
+    upper.reserve(label.size());
+    for (char c : label) {
+        upper.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
     }
-    return lines;
+    const int len = std::min(columns, static_cast<int>(upper.size()));
+    const int leadingSpaces = (columns - len) / 2;
+    const std::string padded = std::string(static_cast<std::size_t>(leadingSpaces), ' ') + upper.substr(0, static_cast<std::size_t>(len));
+    return synth::ui::BuildFourteenSegmentCommands(padded, rowBounds, onColor, offColor, columns);
 }
 
 class FroggersUiSurface final : public synth::ui::Surface {
@@ -603,6 +792,18 @@ public:
     }
 
 private:
+    // Display-only offset for the scene-blend slider (operator 2026-08-17):
+    // the Scene 1/Scene 2 buttons read 1/2 (design E3d, AppendScenesRow()
+    // above, DO NOT CHANGE), while Sheaf's own `SceneState.blend` -- clamped
+    // 0..1 inside Sheaf -- must stay 0..1. Rather than relabel the buttons to
+    // 0/1, the operator chose to make the slider PRESENT 1.0-2.0 so it agrees
+    // with the buttons; the underlying message still carries 0..1. Both call
+    // sites (AppendSceneBlendGroup()'s `b.Slider(...)` below and
+    // HandleAction()'s `kSceneBlend` branch) must apply the SAME offset, so
+    // it is this one named constant rather than two bare `1.0f`s that would
+    // have to be kept in agreement by hand.
+    static constexpr float kSceneBlendDisplayOffset = 1.0f;
+
     // -- Left block (tasks.md F.3 CELL MAP, columns L1-L2) ------------------
 
     void AppendLeftBlock(synth::ui::Builder& builder) const {
@@ -727,7 +928,13 @@ private:
         rowLayout.cross = synth::ui::Extent::Weight(1.0f);
         rowLayout.padding = 0.0f;
         rowLayout.gap = FroggersPageLayout::kGap;
-        builder.Row(FroggersNodeIds::kTransportRow, rowLayout, [](synth::ui::Builder& b) {
+        // T5.2: the Freeze plate's draw factory needs to read `app_`'s
+        // CURRENT latch state on every rebuild (the tree rebuilds every
+        // frame, this file's header comment) -- captured into a local first,
+        // same idiom AppendScopeCell above uses for kVcoScope, so the
+        // now-const-context row-builder lambda below can capture it too.
+        FroggersAppCore* app = app_;
+        builder.Row(FroggersNodeIds::kTransportRow, rowLayout, [app](synth::ui::Builder& b) {
             synth::ui::ControlStyle playStyle{};
             playStyle.action = synth::ui::Action::Named(FroggersActions::kPlay);
             playStyle.layout.main = synth::ui::Extent::Px(kTransportPlateSize);
@@ -739,6 +946,41 @@ private:
             stopStyle.layout.main = synth::ui::Extent::Px(kTransportPlateSize);
             stopStyle.layout.cross = synth::ui::Extent::Px(kTransportPlateSize);
             b.Draw(FroggersNodeIds::kStop, BuildStopDrawCommands, stopStyle);
+
+            // T5.2: Freeze, third child, same 28px plate idiom as Play/Stop.
+            // A capturing lambda wrapping BuildFreezeDrawCommands (it takes a
+            // `latched` bool the DrawFactory signature -- Bounds only -- has
+            // no room for), same style the encoder-cell `b.Draw(encoderId,
+            // [state, ...](Bounds){...}, ...)` call (AppendEncoderCell)
+            // already uses for its own per-frame captured state. Reads
+            // `app->FreezeLatched()` fresh on every call rather than a value
+            // cached at click time, so a click updates the drawn colours on
+            // the very next rebuild.
+            synth::ui::ControlStyle freezeStyle{};
+            freezeStyle.action = synth::ui::Action::Named(FroggersActions::kFreeze);
+            freezeStyle.layout.main = synth::ui::Extent::Px(kTransportPlateSize);
+            freezeStyle.layout.cross = synth::ui::Extent::Px(kTransportPlateSize);
+            b.Draw(
+                FroggersNodeIds::kFreeze,
+                [app](synth::ui::Bounds bounds) {
+                    return BuildFreezeDrawCommands(bounds, app != nullptr && app->FreezeLatched());
+                },
+                freezeStyle);
+
+            // P7b (tasks.md T5.3b): Record, fourth child, same 28px plate
+            // idiom and same "read live state fresh every rebuild" lambda
+            // shape as Freeze just above -- app->RecordArmed() rather than
+            // app->FreezeLatched().
+            synth::ui::ControlStyle recordStyle{};
+            recordStyle.action = synth::ui::Action::Named(FroggersActions::kRecord);
+            recordStyle.layout.main = synth::ui::Extent::Px(kTransportPlateSize);
+            recordStyle.layout.cross = synth::ui::Extent::Px(kTransportPlateSize);
+            b.Draw(
+                FroggersNodeIds::kRecord,
+                [app](synth::ui::Bounds bounds) {
+                    return BuildRecordDrawCommands(bounds, app != nullptr && app->RecordArmed());
+                },
+                recordStyle);
         });
     }
 
@@ -846,7 +1088,15 @@ private:
         AppendLabelledSlider(
             builder, rowWeight, FroggersNodeIds::kSceneBlendGroup,
             [sceneBlend](synth::ui::Builder& b, const synth::ui::ControlStyle& sliderStyle) {
-                b.Slider(FroggersNodeIds::kSceneBlend, "Scene blend", sceneBlend, 0.0f, 1.0f, 0.001f,
+                // Presented value/range are the blend shifted by
+                // kSceneBlendDisplayOffset (this class's own display-only
+                // constant, see its declaration above) so the slider reads
+                // 1.0-2.0 to match the Scene 1/Scene 2 buttons; the message
+                // this produces still carries 0..1 -- see HandleAction()'s
+                // `kSceneBlend` branch, which subtracts the same offset back
+                // out.
+                b.Slider(FroggersNodeIds::kSceneBlend, "Scene blend", sceneBlend + kSceneBlendDisplayOffset,
+                         kSceneBlendDisplayOffset, 1.0f + kSceneBlendDisplayOffset, 0.001f,
                          synth::ui::Action::Named(FroggersActions::kSceneBlend), sliderStyle);
                 // Label-visibility fix (2026-07-28): `NodeKind::Slider` routes
                 // `node.label` to `juce::Slider::setName()` only
@@ -932,6 +1182,9 @@ private:
             case FroggersCellMap::RightKind::Randomize:
                 AppendRandomizeRow(builder);
                 return;
+            case FroggersCellMap::RightKind::Reset:
+                AppendResetRow(builder);
+                return;
         }
     }
 
@@ -946,7 +1199,13 @@ private:
     // active bank now comes from `ControlStyle::selected`.
     void AppendBankTabsRow(synth::ui::Builder& builder) const {
         synth::ui::LayoutOptions rowLayout;
-        rowLayout.main = synth::ui::Extent::Weight(1.0f);
+        // T4.2: `kUnchangedRowHeight` (68, not the encoder rows' 88) --
+        // paired with AppendEncoderRow's own change above so this row
+        // stays pixel-identical to today at the default window while the
+        // 4 encoder rows alone grow by kLabelBandHeight. See
+        // FroggersEncoderGridLayout's own comment for the exact-division
+        // property this relies on.
+        rowLayout.main = synth::ui::Extent::Weight(FroggersEncoderGridLayout::kUnchangedRowHeight);
         rowLayout.cross = synth::ui::Extent::Weight(1.0f);
         rowLayout.padding = 0.0f;
         rowLayout.gap = FroggersPageLayout::kGap;
@@ -989,10 +1248,15 @@ private:
     // (AllocateExtents, PortableUILayout.hpp:165-241: `remaining =
     // contentExtent - totalGaps - nonWeighted`, then split by weight) -- an
     // arithmetic CONSEQUENCE of the insertion, not a declared change.
-    // Computed (not eyeballed) at the real 900x632 config: kRightBlock is
-    // 600px tall; 7 rows now cost 6 gaps of 14 = 84, and this row's fixed
-    // 26px, leaving 490 for the six Weight(1.0) rows to split, 81.67px each
-    // -- down from 88.33px (a ~7.5% reduction). Nothing moves horizontally,
+    // ARITHMETIC RESTATED 2026-08-17 (the numbers below were computed for a
+    // 7-row/900x632 surface and went stale twice -- once when the Reset row
+    // made it 8 rows, again when the label-band task grew the window to
+    // 900x712; see this file's own drift note where the encoder cell height
+    // is derived). Current, at 900x712: kRightBlock is 680px tall; 8 rows
+    // cost 7 gaps of 14 = 98, plus this row's fixed 26px, leaving 556 --
+    // which is exactly the total weight (3 unchanged rows at 68 + 4 encoder
+    // rows at 88), so every row resolves to its declared height bit-exactly.
+    // Nothing moves horizontally,
     // no row is reordered, and the encoder grid's own 4-column-per-row
     // internal structure (ids, order, weights) is completely untouched.
     // Verified in FroggersSurfaceTests.cpp's
@@ -1050,7 +1314,14 @@ private:
     void AppendEncoderRow(synth::ui::Builder& builder, std::size_t firstEncoderIndex) const {
         const std::size_t row = firstEncoderIndex / FroggersEncoderGridLayout::kColumns;
         synth::ui::LayoutOptions rowLayout;
-        rowLayout.main = synth::ui::Extent::Weight(1.0f);
+        // T4.2: `kGrownRowHeight` (88, not the sibling rows' 68) -- see
+        // that constant's own comment for why a weight VALUE equal to the
+        // target px height, alongside `AppendBankTabsRow`/
+        // `AppendTwoButtonRow`'s matching change below, resolves this
+        // row's height EXACTLY at the default window, growing only the
+        // encoder rows and leaving bank tabs/Randomize/Reset pixel-
+        // identical to today.
+        rowLayout.main = synth::ui::Extent::Weight(FroggersEncoderGridLayout::kGrownRowHeight);
         rowLayout.cross = synth::ui::Extent::Weight(1.0f);
         rowLayout.padding = 0.0f;
         rowLayout.gap = FroggersEncoderGridLayout::kGap;
@@ -1185,20 +1456,22 @@ private:
             cellStyle.pointerDragAction =
                 synth::ui::Action::WithValue(FroggersActions::kEncoderDrag, FormatFroggersEncoderDrag(ix, 0.0f));
         }
-        // Operator decision (this task, superseding the single-line "a
-        // couple lines up from here" version): a FIXED 10-column x 2-row
-        // 14-segment grid, identical in every cell, with the label centered
-        // inside it. The old code sized its box to the label length --
-        // "A1" got half the plate per glyph (auto-sized to 2 chars) and
-        // rendered flat and stretched, while long labels overflowed. A
-        // fixed grid makes every cell look the same regardless of label
-        // length. `EncoderDrawState` has no field to change Sheaf's own
-        // trailing block, but `BuildEncoderDrawCommands` returns its
-        // command vector BY VALUE with that block appended LAST
-        // (EncoderDraw.hpp:793-796) and both `BuildFourteenSegmentCommands`
-        // and `SplitFourteenSegmentLines` (above) are public/inline -- so
-        // this app strips Sheaf's trailing block by its exact,
-        // deterministic size and appends its own grid instead.
+        // T4.1/T4.2 (operator ruling, replacing the predecessor's REJECTED
+        // fixed 10-column x 2-row plate, which covered ~95% of the ring's
+        // lower semicircle -- "these labels look great. as long as you're
+        // not shrinking the encoder ring itself, i approve."): a SINGLE-ROW
+        // 14-segment strip, sized to the longest approved label
+        // (`kApprovedLabelGridColumns`), living ENTIRELY in the ~20px of
+        // cell height this task adds below the ring
+        // (`FroggersEncoderGridLayout::kLabelBandHeight`) -- never inside
+        // the ring's own sub-extent, so it structurally cannot intersect
+        // the ring's drawn arc (T4.3(b)). `EncoderDrawState` has no field
+        // to change Sheaf's own trailing block, but `BuildEncoderDrawCommands`
+        // returns its command vector BY VALUE with that block appended LAST
+        // (EncoderDraw.hpp:793-796) and `BuildFourteenSegmentCommands` is
+        // public/inline -- so this app strips Sheaf's trailing block by its
+        // exact, deterministic size and appends its own single-row strip
+        // instead, same mechanism as before this task, just one row not two.
         const std::size_t bankIx = CurrentBankIndex();
         builder.Draw(
             encoderId,
@@ -1207,7 +1480,34 @@ private:
                     return std::vector<synth::ui::DrawCommand>{};
                 }
 
-                std::vector<synth::ui::DrawCommand> commands = synth::ui::BuildEncoderDrawCommands(state, extent);
+                // T4.2 (operator ruling, "do not shrink the encoder ring"):
+                // `extent` is THIS cell's full resolved bounds, now
+                // `FroggersEncoderGridLayout::kLabelBandHeight` px TALLER
+                // than the ring alone needs (that constant is exactly how
+                // much `AppendEncoderRow` grew each encoder row by). Handing
+                // `BuildEncoderDrawCommands` the FULL extent would grow the
+                // ring too (it derives `baseRadius`/`centerY` from
+                // `min(width,height)` of whatever extent it is given,
+                // EncoderDraw.hpp:664-669) -- so this app instead hands it a
+                // SUB-extent, anchored at the cell's own top-left origin
+                // (unaffected by growth, since the label band is added
+                // BELOW, not above), whose height is `extent.height` minus
+                // the label band -- at the default window this resolves to
+                // EXACTLY `kUnchangedRowHeight` (68.0px, bit-for-bit: see
+                // `FroggersEncoderGridLayout`'s own comment for why the row
+                // weights make this an exact division, not an
+                // approximation), reproducing today's ring geometry
+                // byte-identically. At other window sizes the ring still
+                // scales with the window, just `kLabelBandHeight` narrower
+                // than the full cell -- the SAME resize behaviour as before
+                // this task, offset by a constant.
+                const synth::ui::Bounds ringExtent{
+                    0.0f,
+                    0.0f,
+                    extent.width,
+                    std::max(0.0f, extent.height - FroggersEncoderGridLayout::kLabelBandHeight),
+                };
+                std::vector<synth::ui::DrawCommand> commands = synth::ui::BuildEncoderDrawCommands(state, ringExtent);
                 if (!state.connected) {
                     // BuildEncoderDrawCommands returns {} immediately for a
                     // disconnected cell (EncoderDraw.hpp:653-656) -- there
@@ -1237,133 +1537,57 @@ private:
                     commands.resize(commands.size() - kSheafLabelCommandCount);
                 }
 
-                // Recompute the same cell geometry BuildEncoderDrawCommands
-                // derives internally (EncoderDraw.hpp:658-669).
-                constexpr float x_Inset = 4.0f;
-                const synth::ui::Bounds bounds{
-                    x_Inset,
-                    x_Inset,
-                    std::max(0.0f, extent.width - x_Inset * 2.0f),
-                    std::max(0.0f, extent.height - x_Inset * 2.0f),
-                };
-                const float centerX = bounds.x + bounds.width * 0.5f;
-                const float displayCenterY = bounds.y + bounds.height * 0.5f;
-                const float centerY = displayCenterY - bounds.height * 0.03f;
-                const float baseRadius = std::min(bounds.width, bounds.height) * 0.43f;
-
-                // Grid geometry, verified against this app's real measured
-                // cell size (136.333 x 88.333 px --
-                // FroggersSurfaceTests.cpp's own
-                // encoder_cell_never_emits_a_frame_draw_command header
-                // comment) in this task's own report, not assumed:
-                //
-                // Vertical: top edge is a small proportional gap BELOW
-                // centerY (never above it -- see the badge-clearance note
-                // below); bottom edge is a small proportional gap ABOVE
-                // this cell's own inset bottom (bounds.y+bounds.height),
-                // so the plate never runs past it. The two rows split that
-                // band evenly. At the measured cell size this gives a
-                // ~39.8px-tall plate (~19.9px/row), taller than Sheaf's own
-                // single-line floor (14px, EncoderDraw.hpp:782's Clamp).
-                //
-                // Horizontal: 94% of `bounds.width`, centered on centerX,
-                // leaving ~8px symmetric clearance to the RAW cell edge on
-                // each side (bounds is already inset x_Inset=4px from that
-                // edge) -- 10 columns cannot collide with the neighbouring
-                // cell, whose own content is clipped to ITS OWN extent in
-                // any case. ~12px/column at the measured size, comparable
-                // to Sheaf's own ~11.55px/char default.
-                //
-                // Badge clearance (verified, not assumed): drawBadges
-                // (EncoderDraw.hpp:697-724) draws modulator badges with
-                // upper=true and gesture badges with upper=false.
-                // GetBadgePosition (EncoderDraw.hpp:249-275) computes
-                // `badgeY = upper ? centerY - radius*badgeY_norm : centerY
-                // + radius*badgeY_norm - badgeLength_scaled` -- an UPPER
-                // (modulator) badge's bottom edge is at or above centerY by
-                // construction (radius*badgeY_norm >= 0), so it can never
-                // reach this plate, which starts strictly BELOW centerY.
-                // Lower (gesture) badges are structurally absent in this
-                // app: FroggersParameterModel::Init()
-                // (FroggersParameters.hpp) never calls
-                // ParameterGroup::SetGestureCount(), so GestureCount()
-                // stays 0, gesturesAffectingMask is always 0, and
-                // drawBadges' `total` is 0 -- its badge loop never runs
-                // (grep confirms no SetGestureCount call anywhere under
-                // app/).
-                const float plateTop = centerY + baseRadius * 0.05f;
-                const float plateBottom = (bounds.y + bounds.height) - baseRadius * 0.03f;
-                const float plateHeight = std::max(0.0f, plateBottom - plateTop);
-                const float rowHeight = plateHeight * 0.5f;
-                const float plateWidth = bounds.width * 0.94f;
-                const float plateLeft = centerX - plateWidth * 0.5f;
-
-                const synth::ui::Bounds plateBounds{plateLeft, plateTop, plateWidth, plateHeight};
-                const synth::ui::Bounds rowBounds[2] = {
-                    {plateLeft, plateTop, plateWidth, rowHeight},
-                    {plateLeft, plateTop + rowHeight, plateWidth, rowHeight},
-                };
+                // The label band: everything below the ring's own
+                // sub-extent (`ringExtent.height`), i.e. exactly the added
+                // `kLabelBandHeight` strip -- by construction this can never
+                // reach up into `ringExtent`'s own [0, ringExtent.height)
+                // span, which is the whole of what `BuildEncoderDrawCommands`
+                // was given to draw into (T4.3(b)'s guarantee).
+                const float bandTop = ringExtent.height;
+                const float bandHeight = std::max(0.0f, extent.height - bandTop);
+                const float plateWidth = extent.width * 0.94f;
+                const float plateLeft = (extent.width - plateWidth) * 0.5f;
+                const synth::ui::Bounds rowBounds{plateLeft, bandTop, plateWidth, bandHeight};
 
                 const synth::Color cellColor = state.baseColor;
                 const synth::Color onColor = synth::Brighten(cellColor, 0.45f);
                 const synth::Color offColor = synth::Color::Rgb(36, 40, 42);
                 // Same plate colour AppendBadge already uses for its own
                 // chip background (EncoderDraw.hpp:595) -- one opaque plate
-                // behind BOTH rows, drawn before them.
+                // behind the row, drawn before it.
                 const synth::Color plateColor = synth::Color::Rgb(32, 34, 36);
                 commands.push_back(synth::ui::DrawCommand::FillRoundedRect(
-                    plateBounds, rowHeight * 0.15f, plateColor));
+                    rowBounds, bandHeight * 0.15f, plateColor));
 
-                // Source text (step 2): FroggersParamSpec::name is the
-                // UNQUALIFIED long name FroggersBankLayouts() carries for a
-                // page parameter (slots 0-13; ParameterManager::Name() is
-                // bank-QUALIFIED, e.g. "Envelope Attack VCO1",
-                // FroggersParameters.hpp:385/404 -- deliberately not used
-                // here). Slot 14 (Crispy)/15 (Crunchy) have no page spec.
-                // A modulation drill-in view ALSO substitutes a DIFFERENT
-                // Parameter into this same physical slot index
-                // (Bank::OpenModulationView, ParameterModulation.cpp:
-                // 2648/2813 -- BankSlot::PopulateUIState's cells[] then
-                // reflects that substituted parameter, not the bank's own
-                // page layout; this is exactly why this file's own
-                // AppendEncoderCell header comment says this loop must NOT
-                // re-derive slot->parameter from FroggersBankLayouts()) --
-                // looking the spec up by (bank,slot) in that case would
-                // silently name the WRONG control. All three cases (Crispy,
-                // Crunchy, and modulation drill-in) fall back to the live
-                // `state.shortLabel`, which EncoderDrawStateFromParameter
-                // already sources from whichever Parameter is actually
-                // bound to this slot right now -- the drill-in fallback is
-                // this app's own addition beyond the task brief's literal
-                // Crispy/Crunchy-only wording, added to avoid that mislabel
-                // (OMNI "if you see something, say something").
-                std::string labelSource;
-                if (!showingModulationView && ix < kFroggersParamsPerBank && bankIx < kFroggersBankCount) {
-                    labelSource = FroggersBankLayouts()[bankIx].params[ix].name;
+                // T4.1: labels.md is the authority for what RENDERS here,
+                // not `FroggersParamSpec::name`/`shortName`
+                // (FroggersApprovedLabels()'s own header comment). Slots
+                // 14/15 (Crispy/Crunchy) have no page spec, so they read
+                // `FroggersApprovedGlobalLabel` instead. A modulation
+                // drill-in view ALSO substitutes a DIFFERENT Parameter into
+                // this same physical slot index (Bank::OpenModulationView,
+                // ParameterModulation.cpp:2648/2813 -- BankSlot::
+                // PopulateUIState's cells[] then reflects that substituted
+                // parameter, not the bank's own page layout; this is
+                // exactly why this file's own AppendEncoderCell header
+                // comment says this loop must NOT re-derive slot->parameter
+                // from FroggersBankLayouts()) -- looking the approved list
+                // up by (bank,slot) in that case would silently mislabel
+                // the substituted control, and that substituted parameter
+                // is outside labels.md's 86-entry scope in any case. This
+                // one case falls back to the live `state.shortLabel`
+                // (EncoderDrawStateFromParameter's own source), unchanged
+                // from before this task.
+                std::string approvedLabel;
+                if (!showingModulationView && bankIx < kFroggersBankCount) {
+                    approvedLabel = (ix < kFroggersParamsPerBank) ? FroggersApprovedLabels()[bankIx][ix]
+                                                                   : FroggersApprovedGlobalLabel(ix);
                 } else {
-                    labelSource = state.shortLabel;
+                    approvedLabel = state.shortLabel;
                 }
-                const std::array<std::string, 2> lines = SplitFourteenSegmentLines(labelSource);
-
-                constexpr int kGridColumns = 10;
-                for (int row = 0; row < 2; ++row) {
-                    const std::string& line = lines[static_cast<std::size_t>(row)];
-                    // Center by padding the SHORT side ourselves --
-                    // BuildFourteenSegmentCommands renders left-aligned
-                    // into numChars slots and pads the tail with spaces
-                    // (EncoderDraw.hpp:554-567), so centering means
-                    // prepending (10-len)/2 spaces before handing it in. A
-                    // one-line label occupies row 0 only; row 1 (an empty
-                    // `line`) renders an all-space, all-off row rather than
-                    // being vertically re-centered, so single- and
-                    // double-line cells never disagree on where row 0 sits.
-                    const int len = std::min(kGridColumns, static_cast<int>(line.size()));
-                    const int leadingSpaces = (kGridColumns - len) / 2;
-                    const std::string padded = std::string(static_cast<std::size_t>(leadingSpaces), ' ') + line;
-                    std::vector<synth::ui::DrawCommand> rowCommands = synth::ui::BuildFourteenSegmentCommands(
-                        padded, rowBounds[row], onColor, offColor, /*numChars=*/kGridColumns);
-                    commands.insert(commands.end(), rowCommands.begin(), rowCommands.end());
-                }
+                std::vector<synth::ui::DrawCommand> rowCommands = BuildEncoderLabelRowCommands(
+                    approvedLabel, rowBounds, onColor, offColor, kApprovedLabelGridColumns);
+                commands.insert(commands.end(), rowCommands.begin(), rowCommands.end());
 
                 return commands;
             },
@@ -1380,25 +1604,53 @@ private:
     // above); Randomize Page and Randomize All sit together in the last row.
     // Exactly one Randomize All control exists anywhere in this surface
     // (task 10.2's constraint, unchanged).
-    void AppendRandomizeRow(synth::ui::Builder& builder) const {
+    // §8/§14 postflight (frogg3rs-post-expansion-consolidation): the ONE
+    // two-half-width-buttons row builder. AppendResetRow began as a
+    // name-for-name copy of AppendRandomizeRow -- byte-identical after
+    // substitution -- which is §8's "2+ occurrences of structurally similar
+    // code". Both rows now route here; §6: reused twice, prevents that
+    // repetition. The operator-facing property ("same size" halves) is now
+    // structural: the two rows cannot drift apart.
+    void AppendTwoButtonRow(synth::ui::Builder& builder, const char* rowId,
+                            const char* leftId, const char* leftLabel, const char* leftAction,
+                            const char* rightId, const char* rightLabel, const char* rightAction) const {
         synth::ui::LayoutOptions rowLayout;
-        rowLayout.main = synth::ui::Extent::Weight(1.0f);
+        // T4.2: `kUnchangedRowHeight`, same reasoning as AppendBankTabsRow
+        // above -- Randomize and Reset (this method's two callers) both
+        // stay pixel-identical to today at the default window.
+        rowLayout.main = synth::ui::Extent::Weight(FroggersEncoderGridLayout::kUnchangedRowHeight);
         rowLayout.cross = synth::ui::Extent::Weight(1.0f);
         rowLayout.padding = 0.0f;
         rowLayout.gap = FroggersEncoderGridLayout::kGap;
-        builder.Row(FroggersNodeIds::kRandomizeRow, rowLayout, [](synth::ui::Builder& b) {
-            synth::ui::ControlStyle pageStyle{};
-            pageStyle.layout.main = synth::ui::Extent::Weight(2.0f);
-            pageStyle.layout.cross = synth::ui::Extent::Intrinsic();
-            b.Button(FroggersNodeIds::kRandomizePage, "Randomize Page",
-                     synth::ui::Action::Named(FroggersActions::kRandomizePage), pageStyle);
+        builder.Row(rowId, rowLayout, [&](synth::ui::Builder& b) {
+            synth::ui::ControlStyle leftStyle{};
+            leftStyle.layout.main = synth::ui::Extent::Weight(2.0f);
+            leftStyle.layout.cross = synth::ui::Extent::Intrinsic();
+            b.Button(leftId, leftLabel, synth::ui::Action::Named(leftAction), leftStyle);
 
-            synth::ui::ControlStyle allStyle{};
-            allStyle.layout.main = synth::ui::Extent::Weight(2.0f);
-            allStyle.layout.cross = synth::ui::Extent::Intrinsic();
-            b.Button(FroggersNodeIds::kRandomizeAll, "Randomize All",
-                     synth::ui::Action::Named(FroggersActions::kRandomizeAll), allStyle);
+            synth::ui::ControlStyle rightStyle{};
+            rightStyle.layout.main = synth::ui::Extent::Weight(2.0f);
+            rightStyle.layout.cross = synth::ui::Extent::Intrinsic();
+            b.Button(rightId, rightLabel, synth::ui::Action::Named(rightAction), rightStyle);
         });
+    }
+
+    void AppendRandomizeRow(synth::ui::Builder& builder) const {
+        AppendTwoButtonRow(builder, FroggersNodeIds::kRandomizeRow,
+                           FroggersNodeIds::kRandomizePage, "Randomize Page", FroggersActions::kRandomizePage,
+                           FroggersNodeIds::kRandomizeAll, "Randomize All", FroggersActions::kRandomizeAll);
+    }
+
+    // T5.1 (operator: "below them, same size"): Row 7, directly below
+    // Randomize. Deliberately the SAME shape as AppendRandomizeRow above --
+    // row Weight(1), two Buttons at Weight(2) of four weight-units, i.e. two
+    // equal halves, same gap -- because "same size" is defined by that row,
+    // not re-derived. Reset is Randomize's exact inverse in scope, so the
+    // two rows should also be each other's visual twin.
+    void AppendResetRow(synth::ui::Builder& builder) const {
+        AppendTwoButtonRow(builder, FroggersNodeIds::kResetRow,
+                           FroggersNodeIds::kResetPage, "Reset Page", FroggersActions::kResetPage,
+                           FroggersNodeIds::kResetAll, "Reset All", FroggersActions::kResetAll);
     }
 
     bool BankSelected(std::size_t bankIx) const {
@@ -1435,6 +1687,17 @@ private:
         // Generic, safe over the existing uiBus (see this file's header
         // comment): transport, scene select/blend, encoder drag.
         if (action.name == FroggersActions::kPlay) {
+            // T7.7 (operator 2026-08-17): Play disarms the Freeze latch, for
+            // the same reason kStop does (T7.2) -- and it is arguably more
+            // urgent here. A latched Freeze holds the voice gate OPEN
+            // unconditionally (FroggersAppCore's `setGate(gateOpen ||
+            // FreezeLatched())`), so starting the transport with the latch
+            // still engaged would run the sequencer while every voice was
+            // pinned sustaining, and leave the delay frozen at its latch
+            // overdrive -- Play would not actually return the instrument to
+            // playing. Cleared BEFORE the Start push, the same happens-before
+            // ordering kStop's own comment traces.
+            app_->SetFreezeLatched(false);
             PushMessage(synth::MessageIn::Start(NowMicros()));
             // D17 robustness fix (see FroggersAppCore::PrepareToPlay's own
             // comment): record the intent behind this push so a later
@@ -1446,8 +1709,94 @@ private:
             return;
         }
         if (action.name == FroggersActions::kStop) {
+            // T7.2 (tasks.md, operator ruling 2026-08-17): disarm the latch
+            // BEFORE pushing Stop, not after -- the two reach the audio
+            // thread by different paths (freezeLatched_ is a plain
+            // release/acquire atomic FreezeLatched() re-reads every sample;
+            // MessageIn::Stop travels through MessageInBus's ring buffer,
+            // drained once per block by Engine::DrainMessageBus() BEFORE
+            // FroggersAppCore::ProcessBlock's per-sample transport-edge
+            // check runs). Writing the latch first in THIS thread's program
+            // order, before the Push() whose internal fetch_add is the
+            // release half of that ring buffer's release/acquire pair,
+            // makes the write happen-before the corresponding acquire load
+            // in MessageInBus::Pop -- and therefore happen-before every
+            // later read on the audio thread this sample, including the
+            // FreezeLatched() read TransportTeardownActive() makes on the
+            // very edge this Stop causes. So there is no window where the
+            // audio thread can observe "stopped AND still latched": by
+            // construction, not by timing luck. (Reversing the two calls
+            // would still very likely land the latch write in time in
+            // practice -- an atomic store completes far faster than a
+            // message surviving a full block's round trip -- but "very
+            // likely" is not the guarantee TransportTeardownActive()'s
+            // silence contract needs, so this order is deliberate, not
+            // cosmetic.)
+            app_->SetFreezeLatched(false);
             PushMessage(synth::MessageIn::Stop(NowMicros()));
             app_->SetDesiredTransportRunning(false);
+            return;
+        }
+        if (action.name == FroggersActions::kFreeze) {
+            // T7.1 (tasks.md, operator ruling 2026-08-17, supersedes T5.2):
+            // the comment this replaces said Freeze "pushes no MessageIn and
+            // never touches SetDesiredTransportRunning" -- that is now FALSE.
+            // Freeze is self-contained: engaging it stops the transport
+            // itself (spec.md's "The Freeze button alone reaches the
+            // sustained drone" scenario), so the drone needs no separate
+            // Stop press and a later Stop always means stop (T7.2 above).
+            //
+            // ENGAGE (latch false -> true): push MessageIn::Stop and call
+            // SetDesiredTransportRunning(false), exactly as the kStop branch
+            // above -- including SetDesiredTransportRunning, which is not
+            // optional bookkeeping (FroggersAppCore::PrepareToPlay's own D17
+            // comment: without it, a later audio-device renegotiation could
+            // re-assert Start behind the app's back, silently restarting the
+            // transport under a still-latched Freeze). The latch write is
+            // ordered before the Stop push here for the same happens-before
+            // reason the kStop branch's own comment traces -- here the
+            // property it buys is the mirror image: the audio thread must
+            // see the latch ALREADY true on the very edge that stops the
+            // transport, so TransportTeardownActive() reads false and
+            // suppresses teardown (sustains) instead of silencing.
+            //
+            // RELEASE (latch true -> false): do NOT start the transport --
+            // the operator resumes with Play, not by releasing Freeze. No
+            // MessageIn is pushed on release; FroggersAppCore's existing
+            // "latch released while already stopped" edge
+            // (`latchReleasedWhileStopped`, FroggersAppCore.hpp) is what
+            // notices the plain atomic flip and runs the teardown that
+            // silences the held drone.
+            const bool engaging = !app_->FreezeLatched();
+            app_->SetFreezeLatched(engaging);
+            if (engaging) {
+                PushMessage(synth::MessageIn::Stop(NowMicros()));
+                app_->SetDesiredTransportRunning(false);
+            }
+            return;
+        }
+        if (action.name == FroggersActions::kRecord) {
+            // T5.3b/T5.3c (packet P7b): unlike Freeze's plain latch flip,
+            // Record can REFUSE (transport stopped -- FroggersAppCore::
+            // ArmRecording's own comment) and produces a result the host
+            // cares about (captured audio to export), so both outcomes are
+            // surfaced through the host-facing callbacks
+            // (SetOnRecordRefused/SetOnRecordingFinished, FroggersAppCore.hpp)
+            // rather than a silent state flip -- see this file's own
+            // HandleAction() header comment: this is still a direct
+            // message-thread call, same as kFreeze above, not the
+            // Request*/pending*_ bridge the encoder/randomize/BPM actions
+            // below use.
+            if (!app_->RecordArmed()) {
+                if (!app_->ArmRecording()) {
+                    app_->NotifyRecordRefused(app_->RecordRefusalReason());
+                }
+                return;
+            }
+            app_->StopRecording();
+            if (app_->RecordedFrameCount() > 0) {
+                app_->NotifyRecordingFinished();
+            }
             return;
         }
         if (action.name == FroggersActions::kSceneSelect) {
@@ -1469,7 +1818,24 @@ private:
             return;
         }
         if (action.name == FroggersActions::kSceneBlend) {
-            PushMessage(synth::MessageIn::SetSceneBlend(NowMicros(), FroggersParseFloat(action.value, 0.0f)));
+            // action.value now carries the DISPLAYED 1.0-2.0 reading (see
+            // AppendSceneBlendGroup()'s `b.Slider(...)` and
+            // kSceneBlendDisplayOffset's own comment above), so the fallback
+            // fed to FroggersParseFloat must be in that same displayed
+            // domain -- kSceneBlendDisplayOffset (the bottom of the
+            // displayed range, i.e. "no offset applied") rather than the
+            // pre-offset 0.0f this used to pass. 0.0f would be a
+            // displayed-domain value that only happened to land on the
+            // right blend (0.0, Scene 1's extreme) after the subtract-and-
+            // clamp below coincidentally rescued it; kSceneBlendDisplayOffset
+            // is the value that is actually correct in the domain being
+            // parsed, not merely one that clamps to the same place. Subtract
+            // the offset back out and clamp to [0,1]: the message must still
+            // carry Sheaf's own 0..1 blend, and a slider edge value (or a
+            // malformed action) must never push an out-of-range blend.
+            const float displayed = FroggersParseFloat(action.value, kSceneBlendDisplayOffset);
+            const float blend = std::clamp(displayed - kSceneBlendDisplayOffset, 0.0f, 1.0f);
+            PushMessage(synth::MessageIn::SetSceneBlend(NowMicros(), blend));
             return;
         }
         if (action.name == FroggersActions::kEncoderDrag) {
@@ -1499,6 +1865,14 @@ private:
         }
         if (action.name == FroggersActions::kRandomizePage) {
             app_->RequestRandomizePage();
+            return;
+        }
+        if (action.name == FroggersActions::kResetAll) {
+            app_->RequestResetAll();
+            return;
+        }
+        if (action.name == FroggersActions::kResetPage) {
+            app_->RequestResetPage();
             return;
         }
         if (action.name == FroggersActions::kBpm) {

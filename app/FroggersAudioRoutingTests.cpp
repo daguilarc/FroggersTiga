@@ -146,6 +146,45 @@ void RequireFiniteStereo(const std::vector<Rig::OutputFrame>& frames) {
     }
 }
 
+// F2 (omni-rule §8 postflight, audit-fix-brief 2026-08-17): settle/check-
+// window silence-measurement scaffolding, extracted after it appeared a
+// third near-byte-identical time (T2.5's Grit stopped-state test) -- the
+// third instance is what turned two pre-existing near-identical blocks into
+// a §8 violation (§14's postflight clause: a new named concept retroactively
+// turns previously-fine code into duplication). Every caller only varies HOW
+// LONG to wait before measuring (settleSeconds); sample rate, block size,
+// the trailing check-window length, and the silence floor are the same
+// fixed values at all 3 call sites (FroggersApp::Config() sets 48 kHz/
+// 256-sample blocks, FroggersAppCore.hpp:156-157; -60 dBFS: 20*log10(x) =
+// -60 -> x = 1.0e-3), so only settleSeconds is a parameter here.
+//
+// Deliberately does NOT also fold in the RunBlocks/ClearOutput/PeakAbs/
+// REQUIRE_TRUE sequence that follows each call site -- that part is each
+// test's own narrative and differs materially between callers (2 windows
+// here, 3 windows -- one of them a distinct "afterStop" concept -- in the
+// long-release test, an intervening Freeze-button press in the Freeze-latch
+// test), so folding it in would gut those per-test assertions.
+// Only the declaration block that derives checkWindowBlocks/settleLeadBlocks
+// (§8's flagged concept) is shared.
+struct SilenceSettleWindow {
+    std::size_t settleLeadBlocks;
+    std::size_t checkWindowBlocks;
+    float silenceFloorLinear;
+};
+
+SilenceSettleWindow ComputeSilenceSettleWindow(double settleSeconds) {
+    constexpr double kSampleRateHz = 48000.0;
+    constexpr double kBlockSizeSamples = 256.0;
+    constexpr double kCheckWindowSeconds = 0.02;  // ~20 ms trailing measurement window.
+    const auto checkWindowBlocks =
+        static_cast<std::size_t>(std::ceil((kCheckWindowSeconds * kSampleRateHz) / kBlockSizeSamples));
+    const auto settleLeadBlocks =
+        static_cast<std::size_t>(std::ceil((settleSeconds * kSampleRateHz) / kBlockSizeSamples)) -
+        checkWindowBlocks;
+    constexpr float kSilenceFloorLinear = 1.0e-3f;  // -60 dBFS.
+    return {settleLeadBlocks, checkWindowBlocks, kSilenceFloorLinear};
+}
+
 // -----------------------------------------------------------------------
 // Band-limited energy check (6.2's mandatory "not RMS" assertion) -- a
 // naive single-frequency Goertzel evaluated at arbitrary (non-bin-aligned)
@@ -1183,8 +1222,8 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb) {
     model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;  // nonzero Drive.
 
     // Delay bank: rows per dsp::MapRowsToDelayParams's own comment (Delay.hpp
-    // :250-256) -- 1=Send, 2=Feedback, 6=Mix. Feedback at 1.0 clamps to 0.98
-    // inside StereoDelay::Process (Delay.hpp:135), the near-unity extreme
+    // :1088-1119) -- 1=Send, 2=Feedback, 6=Mix. Feedback at 1.0 clamps to 0.98
+    // inside StereoDelay::Process (Delay.hpp:818), the near-unity extreme
     // the defect report cites.
     model.PageParameter(synth_froggers::FroggersBankId::Delay, 1).SceneCenter(0) = 1.0f;  // Send.
     model.PageParameter(synth_froggers::FroggersBankId::Delay, 2).SceneCenter(0) = 1.0f;  // Feedback -> 0.98.
@@ -1245,16 +1284,8 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb) {
     // never read as silent regardless of how well the fix works).
     // (FroggersApp::Config() sets 48 kHz/256-sample blocks,
     // FroggersAppCore.hpp:156-157). -60 dBFS: 20*log10(x) = -60 -> x = 1.0e-3.
-    constexpr double kSampleRateHz = 48000.0;
-    constexpr double kBlockSizeSamples = 256.0;
-    constexpr double kSettleSeconds = 0.25;
-    constexpr double kCheckWindowSeconds = 0.02;  // ~20 ms trailing measurement window.
-    const auto checkWindowBlocks =
-        static_cast<std::size_t>(std::ceil((kCheckWindowSeconds * kSampleRateHz) / kBlockSizeSamples));
-    const auto settleLeadBlocks =
-        static_cast<std::size_t>(std::ceil((kSettleSeconds * kSampleRateHz) / kBlockSizeSamples)) -
-        checkWindowBlocks;
-    constexpr float kSilenceFloorLinear = 1.0e-3f;  // -60 dBFS.
+    const auto [settleLeadBlocks, checkWindowBlocks, kSilenceFloorLinear] =
+        ComputeSilenceSettleWindow(/*settleSeconds=*/0.25);
 
     rig.RunBlocks(settleLeadBlocks);
     timestamp += settleLeadBlocks;
@@ -1329,7 +1360,7 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
     model.PageParameter(synth_froggers::FroggersBankId::Envelope, 11).SceneCenter(0) = 1.0f;  // Release VCO3 -> ~10s.
 
     // Delay bank: rows per dsp::MapRowsToDelayParams's own comment
-    // (Delay.hpp:250-256) -- 0=Time, 1=Send, 2=Feedback, 6=Mix.
+    // (Delay.hpp:1088-1119) -- 0=Time, 1=Send, 2=Feedback, 6=Mix.
     model.PageParameter(synth_froggers::FroggersBankId::Delay, 0).SceneCenter(0) = 0.6f;  // Time -> ~96ms/cycle.
     model.PageParameter(synth_froggers::FroggersBankId::Delay, 1).SceneCenter(0) = 1.0f;  // Send.
     model.PageParameter(synth_froggers::FroggersBankId::Delay, 2).SceneCenter(0) = 1.0f;  // Feedback -> 0.98.
@@ -1368,16 +1399,15 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
     // reset leaves behind -- so this window only passes once the delay/
     // reverb tanks are actively being kept clear through the whole release,
     // not merely once they've had "long enough" to ring out on their own.
+    // kSampleRateHz/kBlockSizeSamples are kept local (not folded into
+    // ComputeSilenceSettleWindow) because this test alone also reuses them
+    // below for its own separate afterStopSeconds -> afterStopBlocks
+    // conversion (a single-occurrence computation, not part of the 3x
+    // duplicated settle-window concept F2 flagged).
     constexpr double kSampleRateHz = 48000.0;
     constexpr double kBlockSizeSamples = 256.0;
-    constexpr double kSettleSeconds = 10.5;
-    constexpr double kCheckWindowSeconds = 0.02;  // ~20 ms trailing measurement window.
-    const auto checkWindowBlocks =
-        static_cast<std::size_t>(std::ceil((kCheckWindowSeconds * kSampleRateHz) / kBlockSizeSamples));
-    const auto settleLeadBlocks =
-        static_cast<std::size_t>(std::ceil((kSettleSeconds * kSampleRateHz) / kBlockSizeSamples)) -
-        checkWindowBlocks;
-    constexpr float kSilenceFloorLinear = 1.0e-3f;  // -60 dBFS.
+    const auto [settleLeadBlocks, checkWindowBlocks, kSilenceFloorLinear] =
+        ComputeSilenceSettleWindow(/*settleSeconds=*/10.5);
 
     // ITEM 1 (clear-once-at-AllIdle, not clear-every-block): this is the
     // assertion that actually distinguishes the two policies. Both the
@@ -1451,6 +1481,548 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
     RequireFiniteStereo(staysSilentLongReleaseOutput);
     const float staysSilentLongReleasePeak = PeakAbs(staysSilentLongReleaseOutput);
     REQUIRE_TRUE(staysSilentLongReleasePeak < kSilenceFloorLinear);
+}
+
+// =========================================================================
+// T2.3(a) (frogg3rs-stop-isolation-and-legible-labels tasks.md): pins T2.2
+// (proposal.md SS2 W2) directly -- while the transport is stopped, the
+// three drive pre-gains (Delay slot 9 "Feedback drive", Reverb slot 10
+// "Tank drive", Filter slot 12 "Comb drive") and Freeze (Delay slot 4)
+// resolve to their unity/zero effective values regardless of the commanded
+// knob, WITHOUT writing to the parameter model, and resuming play restores
+// the commanded mapping bit-exactly. Commanded values are deliberately
+// pinned to each control's MAX (1.0f) -- the opposite extreme from the
+// override's unity/zero target -- so a passing run cannot be a coincidence
+// of the override happening to match a default. Comb drive/Feedback drive
+// read directly off dsp::Comb::combDrive/dsp::StereoDelay::fbDrive
+// (TestFilterComb()/TestDelay(), both already public members storing the
+// POST-ExpMapCompute value); Reverb Tank drive and the Freeze knob have no
+// such member (Reverb::Process computes tankDrive as a Process()-local, and
+// DelayParams::dfrz lives on a RouteAudioSample()-local DelayParams), so
+// T2.2 added TestLastReverbTankDriveKnobEffective()/
+// TestLastDelayFreezeKnobEffective() (FroggersAppCore.hpp) for this test.
+//
+// T2.5 (proposal.md SS2 W2b, tasks.md T2.5; MEASURED third mechanism,
+// packet 2b 2026-08-17) extends this SAME test rather than adding a new
+// one (brief's own instruction): Grit (Reverb slot 11) joins the override,
+// resolving to 0.0f (its exact bit-identical bypass by construction,
+// dsp/Reverb.hpp:534-538) -- same "no member to read back" situation as
+// Tank drive/Freeze, so TestLastReverbGritKnobEffective() was added the
+// same way.
+// =========================================================================
+TEST_CASE(stopped_transport_overrides_drive_and_freeze_to_unity_zero_and_resumes_bit_exact) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("stop_overrides_drive_freeze"));
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+    using synth_froggers::FroggersBankId;
+
+    model.PageParameter(FroggersBankId::Filter, 12).SceneCenter(0) = 1.0f;  // Comb drive commanded MAX.
+    model.PageParameter(FroggersBankId::Delay, 9).SceneCenter(0) = 1.0f;    // Feedback drive commanded MAX.
+    model.PageParameter(FroggersBankId::Reverb, 10).SceneCenter(0) = 1.0f;  // Tank drive commanded MAX.
+    model.PageParameter(FroggersBankId::Delay, 4).SceneCenter(0) = 1.0f;    // Freeze commanded MAX.
+    // T2.5 (proposal.md SS2 W2b, tasks.md T2.5; MEASURED third mechanism,
+    // packet 2b): Grit (Reverb slot 11) commanded MAX -- joins the same
+    // stopped-state override this test already pins for the other four.
+    model.PageParameter(FroggersBankId::Reverb, 11).SceneCenter(0) = 1.0f;  // Grit commanded MAX.
+    ApplyPatchNow(rig);
+
+    // Deliberately no rig.StartAt(...) -- transport starts Stopped by
+    // default (this file's own header comment, and silent_while_transport_
+    // is_stopped above relies on the same starting point). A few blocks so
+    // RouteAudioSample() actually executes the commanded-max patch while
+    // stopped.
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(!rig.SawNaN());
+
+    // Effective values: unity/zero, not the commanded max. dsp::Reverb::
+    // TankDriveFromKnob is the SAME public static map Reverb::Process
+    // itself calls (dsp/Reverb.hpp:392,553) -- reused here rather than
+    // re-derived, so this assertion cannot silently drift from the real
+    // mapping if that range is ever retuned (OMNI: a test that retypes a
+    // production formula is a second definition site of it).
+    REQUIRE_TRUE(rig.Application().TestFilterComb().combDrive == 1.0f);
+    REQUIRE_TRUE(rig.Application().TestDelay().fbDrive == 1.0f);
+    REQUIRE_TRUE(rig.Application().TestLastReverbTankDriveKnobEffective() == 0.5f);
+    REQUIRE_TRUE(dsp::Reverb::TankDriveFromKnob(rig.Application().TestLastReverbTankDriveKnobEffective()) == 1.0f);
+    REQUIRE_TRUE(rig.Application().TestLastDelayFreezeKnobEffective() == 0.0f);
+    // T2.5: Grit's effective value reads 0.0f (its own exact bit-identical
+    // bypass by construction, dsp/Reverb.hpp:534-538), not the commanded
+    // MAX -- same override, joining the four above.
+    REQUIRE_TRUE(rig.Application().TestLastReverbGritKnobEffective() == 0.0f);
+
+    // WITHOUT writing to the parameter model: the commanded values set
+    // above are exactly what was written, not silently rewritten to the
+    // override's unity/zero.
+    REQUIRE_TRUE(model.PageParameter(FroggersBankId::Filter, 12).CachedKnobValue(0) == 1.0f);
+    REQUIRE_TRUE(model.PageParameter(FroggersBankId::Delay, 9).CachedKnobValue(0) == 1.0f);
+    REQUIRE_TRUE(model.PageParameter(FroggersBankId::Reverb, 10).CachedKnobValue(0) == 1.0f);
+    REQUIRE_TRUE(model.PageParameter(FroggersBankId::Delay, 4).CachedKnobValue(0) == 1.0f);
+    REQUIRE_TRUE(model.PageParameter(FroggersBankId::Reverb, 11).CachedKnobValue(0) == 1.0f);
+
+    // Resume play: the override stops applying and the never-touched
+    // commanded MAX values reach the DSP units bit-exactly -- checked
+    // against the real mapping formula's own value at knob==1.0, not
+    // merely "no longer 1.0f/0.0f".
+    rig.StartAt(4);
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(!rig.SawNaN());
+
+    const float kExpectedMaxDrive = dsp::ExpMapCompute(0.25f, 4.0f, 1.0f);  // same [0.25,4.0] map all three drive pre-gains share.
+    REQUIRE_TRUE(rig.Application().TestFilterComb().combDrive == kExpectedMaxDrive);
+    REQUIRE_TRUE(rig.Application().TestDelay().fbDrive == kExpectedMaxDrive);
+    REQUIRE_TRUE(rig.Application().TestLastReverbTankDriveKnobEffective() == 1.0f);
+    REQUIRE_TRUE(dsp::Reverb::TankDriveFromKnob(rig.Application().TestLastReverbTankDriveKnobEffective()) ==
+                 kExpectedMaxDrive);
+    REQUIRE_TRUE(rig.Application().TestLastDelayFreezeKnobEffective() == 1.0f);
+    // T2.5: Grit's commanded MAX (1.0f) reaches the DSP unit bit-exactly on
+    // resume too -- the override was never a write to the parameter model,
+    // so `stoppedKnob` just returns `knob(bank, slot)` unchanged the instant
+    // `wasTransportRunning_` is true again, same as the other four.
+    REQUIRE_TRUE(rig.Application().TestLastReverbGritKnobEffective() == 1.0f);
+}
+
+// =========================================================================
+// T2.3(b) (tasks.md): pins T2.1 (proposal.md SS2 W2's forced-release
+// addition) directly, isolated from T1.1's ramp bound -- Curve (Envelope
+// slot 12) stays at its default 0.0f (the untouched linear ComputeRampStep
+// path, no ramp-progress-floor arithmetic even runs), so a pass here can
+// only be T2.1's doing. Attack VCO1 (slot 0) is pinned near its own
+// ceiling (kMaxAttackSeconds, 0.5f post-W5) and the run is stopped well
+// inside that 0.5s window, so the voice is still genuinely mid-Attack (not
+// yet Hold) at the moment Stop lands. Grace (slot 13) is pinned to its own
+// ceiling (kMaxGraceSeconds, 1.0f): WITHOUT T2.1, a pending release
+// deliberately defers through Attack/Decay to Hold and only THEN starts
+// this 1.0s countdown (VoiceEnvelope.hpp's own Grace comment) -- stage
+// completion (>=0.4s remaining Attack + Decay) plus this 1.0s grace puts
+// pre-T2.1 AllIdle comfortably past 2s, matching this task's own "NOT
+// stage-completion + grace (~2s+)" framing. T2.1 forces Release
+// immediately at the edge instead, bounded only by the existing ~50ms
+// kStopFadeReleaseKnob fade -- AllIdle within the fade time (~0.1s).
+// =========================================================================
+TEST_CASE(stop_forces_release_from_mid_attack_bypassing_grace_and_stage_completion) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("stop_forces_release_mid_attack"));
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+    using synth_froggers::FroggersBankId;
+
+    model.PageParameter(FroggersBankId::Audio, 0).SceneCenter(0) = 0.5f;  // VCO1 pitch.
+    model.PageParameter(FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;  // Drive gain.
+    model.PageParameter(FroggersBankId::Envelope, 0).SceneCenter(0) = 1.0f;   // Attack VCO1: ceiling (~0.5s).
+    model.PageParameter(FroggersBankId::Envelope, 13).SceneCenter(0) = 1.0f;  // Grace: ceiling (~1.0s).
+    // Curve (slot 12) left at its 0.0f default -- explicit per this test's
+    // own "isolated from T1.1" framing, not merely relying on the registered
+    // default silently.
+    model.PageParameter(FroggersBankId::Envelope, 12).SceneCenter(0) = 0.0f;
+    ApplyPatchNow(rig);
+
+    rig.StartAt(0);
+    std::uint64_t timestamp = 0;
+    const std::size_t blockSize = 256;
+    constexpr double kSampleRateHz = 48000.0;
+    const auto secondsToBlocks = [&](double seconds) -> std::size_t {
+        return static_cast<std::size_t>(std::ceil((seconds * kSampleRateHz) / static_cast<double>(blockSize)));
+    };
+
+    // 0.1s: well inside VCO1's 0.5s Attack ceiling, and well inside the
+    // 120 BPM default tempo's first (open) gate half (0.25s -- MasterClock::
+    // kDefaultTempoBpm), so the gate never closes/reopens under this voice
+    // before Stop lands.
+    rig.RunBlocks(secondsToBlocks(0.1));
+    timestamp += secondsToBlocks(0.1);
+    REQUIRE_TRUE(!rig.SawNaN());
+    // Precondition this test needs: still genuinely non-idle (mid-Attack),
+    // not already settled -- otherwise the AllIdle() check below would pass
+    // vacuously regardless of T2.1.
+    REQUIRE_TRUE(!rig.Application().TestAudioAdsr().AllIdle());
+
+    rig.StopAt(timestamp);
+
+    // T2.1's bound: AllIdle within the fade time, generously budgeted to
+    // 0.2s (comfortably above the ~50ms+wet-tail-irrelevant fade, since
+    // AllIdle() only measures the ADSR stage, not delay/reverb) -- NOT the
+    // pre-fix ~2s+ (stage completion + grace).
+    rig.RunBlocks(secondsToBlocks(0.2));
+    REQUIRE_TRUE(rig.Application().TestAudioAdsr().AllIdle());
+}
+
+// =========================================================================
+// T6 (tasks.md, REOPENED 2026-08-17): T2.4's claim above -- "latching the
+// Freeze button while stopped is a no-op on the audio" -- is SUPERSEDED and
+// exactly backwards (operator report, "Why this exists" in tasks.md's own
+// T6 preamble): the sustained-drive drone the button exists to reproduce
+// only ever existed with the transport stopped, and T2.1/T2.2/T2.4 together
+// made it unreachable. The old test above (deleted) proved the latch was a
+// no-op by engaging it AFTER Stop, onto an already-silenced instrument --
+// which is still true (nothing to hold once already torn down) but was
+// never the operator's scenario and does not exercise T6.1/T6.2 at all.
+// spec.md's own scenario order is latch-THEN-Stop; the three tests below
+// (T6.4 a/b/c) follow that order instead.
+//
+// T7 (tasks.md, REOPENED AGAIN 2026-08-17, operator ruling after testing
+// T6): T6 reached the drone only via Freeze+Stop, and left the latch armed
+// through Stop -- so a button labelled Stop could conditionally sustain
+// instead of silence. Freeze is now SELF-CONTAINED: engaging it stops the
+// transport itself (FroggersUiSurface.hpp's kFreeze branch pushes
+// MessageIn::Stop and calls SetDesiredTransportRunning(false) on engage, the
+// same as kStop), so BuildLatchedRingHeldAcrossStop below drives the drone
+// through a single Freeze press -- no separate Stop press reaches it
+// anymore -- and Stop's own branch now also disarms the latch
+// unconditionally. Both handler branches are driven through the real
+// DispatchAction -> HandleAction path below (PressFreeze/PressStop), never
+// SetFreezeLatched() directly: a direct flag write bypasses the exact
+// handler logic T7.1/T7.2 add.
+// =========================================================================
+
+// Drives the Freeze/Stop transport BUTTONS through the real UI action path
+// (DispatchAction -> FroggersUiSurface::HandleAction) rather than the app
+// flags directly -- see this section's own T7 comment above for why that
+// distinction matters for these particular two buttons.
+void PressFreeze(Rig& rig) {
+    rig.Application().PortableSurface().DispatchAction(
+        synth::ui::Action::Named(synth_froggers::FroggersActions::kFreeze));
+}
+
+void PressStop(Rig& rig) {
+    rig.Application().PortableSurface().DispatchAction(
+        synth::ui::Action::Named(synth_froggers::FroggersActions::kStop));
+}
+
+// Shared setup for T6.4(a)/(b)/(c): the SAME self-sustaining-ring recipe as
+// stopping_transport_silences_self_sustaining_delay_and_reverb above
+// (feedback/hold pushed to their near-unity extremes, so there is real
+// recirculating energy for the latch to hold), but with the Freeze BUTTON
+// pressed WHILE RUNNING -- spec.md's "The Freeze button alone reaches the
+// sustained drone" scenario (T7). Leaves the rig stopped-and-latched, with
+// the ring already confirmed audible immediately beforehand (the
+// ringingPeak check below), so every caller starts from a genuinely live
+// drone, not an assumed one.
+// Same value the deleted T2.4 test and stopping_transport_silences_self_
+// sustaining_delay_and_reverb both used for "actually ringing" (~-40 dBFS)
+// -- named distinctly from those tests' own LOCAL kRingingFloorLinear so
+// this one file-scope constant can be shared by BuildLatchedRingHeldAcrossStop
+// and every T6.4 test below without colliding with those unrelated locals.
+constexpr float kFrozenRingFloorLinear = 1.0e-2f;
+
+std::uint64_t BuildLatchedRingHeldAcrossStop(Rig& rig) {
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+    using synth_froggers::FroggersBankId;
+
+    model.PageParameter(FroggersBankId::Audio, 0).SceneCenter(0) = 0.5f;
+    model.PageParameter(FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;
+    model.PageParameter(FroggersBankId::Delay, 1).SceneCenter(0) = 1.0f;  // Send.
+    model.PageParameter(FroggersBankId::Delay, 2).SceneCenter(0) = 1.0f;  // Feedback -> 0.98.
+    model.PageParameter(FroggersBankId::Delay, 6).SceneCenter(0) = 1.0f;  // Wet mix.
+    model.PageParameter(FroggersBankId::Reverb, 8).SceneCenter(0) = 0.08f;  // Hold -> moderate.
+    model.PageParameter(FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;   // Wet/dry fully wet.
+
+    rig.StartAt(0);
+    std::uint64_t timestamp = 0;
+
+    constexpr std::size_t kExciteBlocks = 300;
+    rig.RunBlocks(kExciteBlocks);
+    timestamp += kExciteBlocks;
+    REQUIRE_TRUE(!rig.SawNaN());
+
+    rig.ClearOutput();
+    constexpr std::size_t kConfirmRingBlocks = 40;
+    rig.RunBlocks(kConfirmRingBlocks);
+    timestamp += kConfirmRingBlocks;
+    const float ringingPeak = PeakAbs(rig.Output());
+    REQUIRE_TRUE(ringingPeak > kFrozenRingFloorLinear);  // actually ringing before trusting anything below.
+
+    // T7.1: a single Freeze press now both engages the latch AND stops the
+    // transport (FroggersUiSurface.hpp's kFreeze branch) -- no separate Stop
+    // press needed or wanted here anymore (T6's version of this helper
+    // pushed SetFreezeLatched(true) directly, then a separate rig.StopAt(...);
+    // both are wrong under T7).
+    PressFreeze(rig);
+
+    return timestamp;
+}
+
+// T7.3(a) (tasks.md; was T6.4(a), UPDATED under T7 rather than duplicated):
+// Freeze pressed while playing, with NO Stop press -- the transport reads
+// stopped (TransportRunning() false) AND output stays above an audible
+// floor PAST the bound an unlatched Stop must meet (stopping_transport_
+// silences_self_sustaining_delay_and_reverb's own 0.25s settle window), the
+// inverse of that test's own silence assertion. Checked twice (settle mark,
+// then a further stretch) to prove the drone HOLDS rather than merely
+// decaying slower. Was named ..._before_stop_...; BuildLatchedRingHeldAcrossStop
+// no longer presses Stop at all (T7.1), so the old name is now false --
+// renamed rather than left describing a step this test no longer takes.
+TEST_CASE(freeze_alone_holds_the_ring_above_an_audible_floor_and_stops_the_transport) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("freeze_alone_holds_ring_stops_transport"));
+    BuildLatchedRingHeldAcrossStop(rig);
+
+    const auto [settleLeadBlocks, checkWindowBlocks, kSilenceFloorLinear] =
+        ComputeSilenceSettleWindow(/*settleSeconds=*/0.25);
+    (void)kSilenceFloorLinear;  // Not the assertion here -- this test asserts the INVERSE.
+
+    rig.RunBlocks(settleLeadBlocks);
+    // T7.1: the Freeze press itself (inside BuildLatchedRingHeldAcrossStop,
+    // no separate Stop press) must have stopped the transport -- this is
+    // the "transport reads stopped" half of T7.3(a)'s two-part claim.
+    REQUIRE_TRUE(!rig.Application().TransportRunning());
+    rig.ClearOutput();
+    rig.RunBlocks(checkWindowBlocks);
+    REQUIRE_TRUE(!rig.SawNaN());
+    const auto& heldOutput = rig.Output();
+    RequireFiniteStereo(heldOutput);
+    REQUIRE_TRUE(PeakAbs(heldOutput) > kFrozenRingFloorLinear);  // still audible, past the bound an unlatched Stop must meet.
+
+    // And it must STAY held, not merely still be mid-decay at the first
+    // checkpoint -- same "stays there" shape the silence tests use, proving
+    // the opposite property.
+    rig.RunBlocks(settleLeadBlocks);
+    rig.ClearOutput();
+    rig.RunBlocks(checkWindowBlocks);
+    REQUIRE_TRUE(!rig.SawNaN());
+    const auto& stillHeldOutput = rig.Output();
+    RequireFiniteStereo(stillHeldOutput);
+    REQUIRE_TRUE(PeakAbs(stillHeldOutput) > kFrozenRingFloorLinear);
+    REQUIRE_TRUE(!rig.Application().TransportRunning());  // still stopped -- nothing restarted it.
+}
+
+// T6.4(b) (tasks.md, T6.2) -- STILL a live scenario under T7 ("Freeze
+// pressed again -> teardown runs, silence. Transport stays stopped", p7-
+// brief.md's target-behaviour list): a second Freeze press, releasing the
+// latch while stopped, is the escape hatch out of the drone -- it must
+// silence within the SAME bound an unlatched Stop guarantees. Now driven
+// through PressFreeze() (DispatchAction -> HandleAction) rather than a
+// direct SetFreezeLatched(false) call, per this task's rule that these
+// tests exercise the real handler, not the flag.
+TEST_CASE(freeze_latch_release_while_stopped_silences_within_the_bound) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("freeze_latch_release_while_stopped_silences"));
+    BuildLatchedRingHeldAcrossStop(rig);
+
+    const auto [settleLeadBlocks, checkWindowBlocks, kSilenceFloorLinear] =
+        ComputeSilenceSettleWindow(/*settleSeconds=*/0.25);
+
+    // Confirm the drone is genuinely still held immediately before
+    // releasing the latch -- the positive control this test's silence
+    // claim below needs (OMNI SS9.1): a "silences" result means nothing if
+    // there was nothing sounding to silence.
+    rig.RunBlocks(settleLeadBlocks);
+    rig.ClearOutput();
+    rig.RunBlocks(checkWindowBlocks);
+    REQUIRE_TRUE(!rig.SawNaN());
+    REQUIRE_TRUE(PeakAbs(rig.Output()) > kFrozenRingFloorLinear);
+
+    // Release the latch with a second Freeze press -- still stopped, no
+    // Play in between. T7.1: RELEASE does not start the transport.
+    PressFreeze(rig);
+
+    rig.RunBlocks(settleLeadBlocks);
+    rig.ClearOutput();
+    rig.RunBlocks(checkWindowBlocks);
+    REQUIRE_TRUE(!rig.SawNaN());
+    const auto& silencedOutput = rig.Output();
+    RequireFiniteStereo(silencedOutput);
+    REQUIRE_TRUE(PeakAbs(silencedOutput) < kSilenceFloorLinear);
+    REQUIRE_TRUE(!rig.Application().TransportRunning());  // T7.1: release never starts the transport.
+}
+
+// T7.3(b) (tasks.md): the NEW behaviour T6 got backwards -- Stop, pressed
+// while Freeze is engaged and the drone is sustaining, must disarm the
+// latch AND silence within the bound, exactly as any other Stop
+// (spec.md's "Stop always means stop" scenario). Under T6 this used to
+// SUSTAIN instead (the bug this whole packet exists to fix); this is the
+// direct regression test for that fix, distinct from T6.4(b) above (which
+// exits the drone via a second Freeze press, not Stop).
+TEST_CASE(stop_disarms_the_latch_and_silences_the_held_drone_within_the_bound) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("stop_disarms_latch_silences_drone"));
+    BuildLatchedRingHeldAcrossStop(rig);
+
+    const auto [settleLeadBlocks, checkWindowBlocks, kSilenceFloorLinear] =
+        ComputeSilenceSettleWindow(/*settleSeconds=*/0.25);
+
+    // Positive control (OMNI SS9.1): the drone is genuinely live immediately
+    // before Stop.
+    rig.RunBlocks(settleLeadBlocks);
+    rig.ClearOutput();
+    rig.RunBlocks(checkWindowBlocks);
+    REQUIRE_TRUE(!rig.SawNaN());
+    REQUIRE_TRUE(PeakAbs(rig.Output()) > kFrozenRingFloorLinear);
+    REQUIRE_TRUE(rig.Application().FreezeLatched());  // still latched right before Stop.
+
+    PressStop(rig);
+
+    rig.RunBlocks(settleLeadBlocks);
+    rig.ClearOutput();
+    rig.RunBlocks(checkWindowBlocks);
+    REQUIRE_TRUE(!rig.SawNaN());
+    const auto& silencedOutput = rig.Output();
+    RequireFiniteStereo(silencedOutput);
+    REQUIRE_TRUE(PeakAbs(silencedOutput) < kSilenceFloorLinear);
+    REQUIRE_TRUE(!rig.Application().FreezeLatched());  // T7.2: Stop disarms the latch.
+    REQUIRE_TRUE(!rig.Application().TransportRunning());
+}
+
+// T7.3(c) (tasks.md): no sequence of Freeze/Stop presses may leave the
+// instrument sounding after a Stop -- exercises the three sequences the
+// task names at minimum, each on a fresh rig with the same self-sustaining
+// recipe BuildLatchedRingHeldAcrossStop's ring uses (inlined here rather
+// than reusing that helper, since two of the three sequences below need a
+// DIFFERENT press order than the helper's own "Freeze once" shape).
+void RequireSilentAfter(Rig& rig, const char* label) {
+    const auto [settleLeadBlocks, checkWindowBlocks, kSilenceFloorLinear] =
+        ComputeSilenceSettleWindow(/*settleSeconds=*/0.25);
+    rig.RunBlocks(settleLeadBlocks);
+    rig.ClearOutput();
+    rig.RunBlocks(checkWindowBlocks);
+    REQUIRE_TRUE(!rig.SawNaN());
+    const auto& output = rig.Output();
+    RequireFiniteStereo(output);
+    const float peak = PeakAbs(output);
+    std::cout << "T7.3(c) " << label << ": peak after final Stop=" << peak << "\n";
+    REQUIRE_TRUE(peak < kSilenceFloorLinear);
+    REQUIRE_TRUE(!rig.Application().FreezeLatched());
+    REQUIRE_TRUE(!rig.Application().TransportRunning());
+}
+
+TEST_CASE(no_freeze_stop_press_sequence_leaves_the_instrument_sounding_after_stop) {
+    // Sequence 1: Freeze -> Stop (engage the drone, then Stop over it).
+    {
+        Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("freeze_stop_sequence_1"));
+        BuildLatchedRingHeldAcrossStop(rig);  // presses Freeze once, confirms the ring first.
+        PressStop(rig);
+        RequireSilentAfter(rig, "Freeze->Stop");
+    }
+    // Sequence 2: Freeze -> Freeze -> Stop (engage, release via a second
+    // Freeze press, then Stop on an already-unlatched-and-silent instrument
+    // -- Stop must still be a no-op-safe unconditional silence, not assume
+    // something is left to tear down).
+    {
+        Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("freeze_stop_sequence_2"));
+        BuildLatchedRingHeldAcrossStop(rig);
+        PressFreeze(rig);  // release.
+        PressStop(rig);
+        RequireSilentAfter(rig, "Freeze->Freeze->Stop");
+    }
+    // Sequence 3: Stop -> Freeze -> Stop (Stop while already unlatched and
+    // playing, then Freeze re-engages and re-stops the transport, holding a
+    // fresh drone, then a second Stop must disarm and silence it again).
+    {
+        Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("freeze_stop_sequence_3"));
+        synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+        using synth_froggers::FroggersBankId;
+        model.PageParameter(FroggersBankId::Audio, 0).SceneCenter(0) = 0.5f;
+        model.PageParameter(FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;
+        model.PageParameter(FroggersBankId::Delay, 1).SceneCenter(0) = 1.0f;
+        model.PageParameter(FroggersBankId::Delay, 2).SceneCenter(0) = 1.0f;
+        model.PageParameter(FroggersBankId::Delay, 6).SceneCenter(0) = 1.0f;
+        model.PageParameter(FroggersBankId::Reverb, 8).SceneCenter(0) = 0.08f;
+        model.PageParameter(FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;
+
+        rig.StartAt(0);
+        rig.RunBlocks(300);
+        REQUIRE_TRUE(!rig.SawNaN());
+
+        PressStop(rig);  // Stop while unlatched and playing: must silence, same as any other Stop.
+        RequireSilentAfter(rig, "Stop (first, unlatched)");
+
+        // Play again, re-build the ring, then Freeze re-engages and
+        // re-stops the transport, holding a fresh drone.
+        rig.StartAt(0);
+        rig.RunBlocks(300);
+        REQUIRE_TRUE(!rig.SawNaN());
+        rig.ClearOutput();
+        rig.RunBlocks(40);
+        REQUIRE_TRUE(PeakAbs(rig.Output()) > kFrozenRingFloorLinear);  // positive control: really ringing again.
+        PressFreeze(rig);
+        REQUIRE_TRUE(rig.Application().FreezeLatched());
+
+        PressStop(rig);
+        RequireSilentAfter(rig, "Stop->Freeze->Stop (final)");
+    }
+}
+
+// T7.3(d) (tasks.md): releasing Freeze must NOT restart the transport --
+// the operator resumes with Play, not by releasing the latch.
+TEST_CASE(releasing_freeze_does_not_restart_the_transport) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("releasing_freeze_does_not_restart_transport"));
+    BuildLatchedRingHeldAcrossStop(rig);
+
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(!rig.Application().TransportRunning());  // Freeze engage stopped it (T7.1).
+
+    PressFreeze(rig);  // release.
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(!rig.Application().FreezeLatched());
+    REQUIRE_TRUE(!rig.Application().TransportRunning());  // still stopped -- release did not restart it.
+}
+
+// T6.4(c) (tasks.md, T6.3): parameter edits stay live while frozen -- an
+// encoder edit made while the drone is held must change the output
+// measurably, with a positive control proving the drone was live
+// immediately before the edit (OMNI SS9.1 -- a null result from an
+// already-dead instrument would be void). Edits Delay Mix (bank Delay slot
+// 6, "6=Mix" per MapRowsToDelayParams's own comment) from fully wet to
+// fully dry -- a post-gain crossfade applied every sample to the delay's
+// own (already self-sustaining) output, so its effect on an ALREADY-
+// ringing signal is immediate, not dependent on new input reaching the
+// tank.
+TEST_CASE(encoder_edit_while_frozen_changes_the_output_measurably) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("encoder_edit_while_frozen_changes_output"));
+    BuildLatchedRingHeldAcrossStop(rig);
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+    using synth_froggers::FroggersBankId;
+
+    const auto [settleLeadBlocks, checkWindowBlocks, kSilenceFloorLinear] =
+        ComputeSilenceSettleWindow(/*settleSeconds=*/0.25);
+    (void)kSilenceFloorLinear;
+
+    rig.RunBlocks(settleLeadBlocks);
+    rig.ClearOutput();
+    rig.RunBlocks(checkWindowBlocks);
+    REQUIRE_TRUE(!rig.SawNaN());
+    const float peakBeforeEdit = PeakAbs(rig.Output());
+    // Positive control (OMNI SS9.1): the drone must be genuinely audible
+    // right here, immediately before the edit below, or a measured change
+    // (or lack of one) proves nothing.
+    REQUIRE_TRUE(peakBeforeEdit > kFrozenRingFloorLinear);
+
+    // The "encoder edit" -- still latched, still stopped, no Play in
+    // between. Deliberately NOT using ApplyPatchNow/ComputeAllParameters()
+    // here (same reasoning as patch_change_still_reaches_dsp_while_
+    // transport_stopped's own comment, above in this file): that helper
+    // writes CachedKnobValue() directly, bypassing parameters_.
+    // ProcessSample()'s smoothed per-sample Compute entirely -- so it would
+    // still pass even if THIS task's actual claim (ProcessSample() itself
+    // stays ungated by transport state) were broken. A plain SceneCenter
+    // write exercises the real path an operator's encoder turn uses.
+    model.PageParameter(FroggersBankId::Delay, 6).SceneCenter(0) = 0.0f;  // Mix: fully wet -> fully dry.
+
+    // B7.5.0's periodic smoothed Compute (alpha 0.0994 every 16 samples,
+    // this file's own ApplyPatchNow comment) converges geometrically;
+    // patch_change_still_reaches_dsp_while_transport_stopped's own comment
+    // works the math for 50 blocks x 256 samples -- comfortably converged
+    // well under float precision. Run that many BEFORE measuring so the
+    // "after" window reads the settled value, not a mid-crossfade one.
+    constexpr std::size_t kConvergeBlocks = 50;
+    rig.RunBlocks(kConvergeBlocks);
+
+    rig.ClearOutput();
+    rig.RunBlocks(checkWindowBlocks);
+    REQUIRE_TRUE(!rig.SawNaN());
+    const auto& afterEditOutput = rig.Output();
+    RequireFiniteStereo(afterEditOutput);
+    const float peakAfterEdit = PeakAbs(afterEditOutput);
+
+    // Measurable, not merely different in the noise: a self-sustaining ring
+    // is not a pure tone, so consecutive non-overlapping windows differ by
+    // a small amount even with NO edit at all -- measured directly (with
+    // parameters_.ProcessSample() deliberately gated behind
+    // `transportRunningNow`, so the edit above could not reach the DSP):
+    // diff == 0.00627667 over this same 50-block gap. The real edit (Mix
+    // 1.0 -> 0.0 collapsing delayOut toward the near-silent dry signal,
+    // dsp/Delay.hpp's ToReverbMono) measures diff == 0.537887 -- ~86x that
+    // noise floor. kMeasurableChangeLinear sits an order of magnitude above
+    // the measured noise floor and comfortably below the measured true
+    // effect, so this cannot pass on drift alone.
+    const float peakDiff = std::fabs(peakBeforeEdit - peakAfterEdit);
+    std::cout << "T6.4(c) encoder-edit-while-frozen: peakBeforeEdit=" << peakBeforeEdit
+              << " peakAfterEdit=" << peakAfterEdit << " diff=" << peakDiff << "\n";
+    constexpr float kMeasurableChangeLinear = 0.05f;  // noise floor 0.0063, true effect 0.538 (both measured, comment above).
+    REQUIRE_TRUE(peakDiff > kMeasurableChangeLinear);
 }
 
 // =========================================================================

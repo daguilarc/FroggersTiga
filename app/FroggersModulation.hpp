@@ -124,6 +124,22 @@
 // `FroggersModulationDrillIn::PressEncoder`, which never presses slot 15)
 // is what makes the exclusion possible without touching Bank's private
 // surface.
+//
+// T3.1 CORRECTION (frogg3rs-stop-isolation-and-legible-labels, packet 3,
+// 2026-08-17): the paragraph above is no longer true for the VALUE path.
+// `Parameter::RandomizeVisibleValue` (called by `Bank::ApplyModifierToParameter`
+// under a held `Modifier::Random` press, src/ParameterModulation.cpp:1723-1731)
+// computes its delta against `TargetValue(0)`, the MODULATION-RESOLVED value --
+// so under live audio-rate modulation each press ratchets the commanded value
+// into the [0,1] clamp (proposal §1b; measured 20/20 at exactly 1.0000 after 5
+// presses). `PressBankWithRandomValue` below no longer presses through
+// `Bank::HandlePress`/`Modifier::Random` at all for the value write: it draws
+// its own uniform value and commits it directly via `HandleSetAbsolute`
+// (see that function's own comment). Depth randomization is UNCHANGED --
+// `RandomizeParameterModulationDepths` above still calls Sheaf's
+// `RandomizeVisibleValue` directly, which is correct because a freshly
+// zeroed depth has no live modulation of its own to resolve against. Filed
+// upstream as `UPSTREAM-SHEAF-ASK.md` ask #16; the app does not wait on it.
 
 #include "FroggersParameters.hpp"
 #include "FroggersRandomShVisualizer.hpp"
@@ -1173,30 +1189,65 @@ inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager,
     return partial;
 }
 
-// Presses `encoderId` directly on `bank` (bypassing any BankSlot -- confirmed
-// safe: Bank::HandlePress/FindVisibleCell/topLevel_/visible_ are entirely
-// Bank-owned state, with no dependency on whether this Bank is the slot's
-// currently *selected* one) while `Modifier::Random` is held, then clears
-// it -- i.e. a single-cell VALUE randomize. Narrowed from a generic
-// `Modifier` parameter (E.1, design A6): depth-randomize
-// (`Modifier::RandomMod`) no longer routes through a press at all --
-// `RandomizeParameterModulationDepths` above is called directly on the
-// target `Parameter&` instead -- so a parameter accepting a modifier this
-// function never receives would itself have been misleading. Calling this
-// directly on a `Bank&` (rather than through a level-tracking
-// FroggersModulationDrillIn) is safe here specifically because a held
-// modifier makes Bank::HandlePress's modifier branch
-// (ParameterModulation.cpp:2633-2642) return before ever touching
-// `selected_`/showing-modulation state, so no level bookkeeping can be
-// disturbed by these presses.
+// T3.1 (frogg3rs-stop-isolation-and-legible-labels, packet 3): a single-cell
+// VALUE randomize of whatever parameter is currently VISIBLE at `encoderId`
+// on `bank` -- `bank.VisibleParameter(encoderId)` is exactly
+// `FindVisibleCell(encoderId)->parameter` (src/ParameterModulation.cpp:2718-
+// 2721), the same lookup `Bank::HandlePress`'s modifier branch used
+// internally, so this targets the identical cell the old press-based path
+// did (top-level or drilled-in, whichever is visible), with no dependency
+// on whether this Bank is the slot's currently *selected* one.
+//
+// Previously this dispatched a press under a held `Modifier::Random`, which
+// routed into Sheaf's `Parameter::RandomizeVisibleValue`
+// (ParameterModulation.cpp:1723-1731). That function deltas against
+// `TargetValue(0)`, the MODULATION-RESOLVED value, so under live audio-rate
+// modulation repeated presses ratchet the commanded value into the [0,1]
+// clamp instead of landing the drawn value (proposal §1b; measured 20/20 at
+// exactly 1.0000 after 5 presses on a modulated Freeze). Sheaf is pinned and
+// untouched (UPSTREAM-SHEAF-ASK.md #16), so the fix is here: draw ONE
+// uniform value and commit it directly as the COMMANDED value via
+// `HandleSetAbsolute` (`sceneCenters_`, no dependency on resolved/modulated
+// state) to BOTH scene poles -- A3's already-established "Randomize
+// All/Page is agnostic to scene-slider position" convention (`kScenePoles`'s
+// own comment above), the same idiom `RandomizeParameterModulationDepths`
+// and `ResetParameterValueAndDepths` already use elsewhere in this file. One
+// draw, not one per pole (unlike the depth path): "a draw lands the drawn
+// value" is the whole fix, and a single shared draw is what makes that
+// literally true regardless of scene-slider position.
+// `manager.NextRandomValue()` is the same RNG source Sheaf's own
+// `RandomizeVisibleValue` call site draws from (`Bank::ApplyModifierToParameter`,
+// ParameterModulation.cpp:2872), so seeded/reproducible randomize is
+// unaffected.
+//
+// `ParameterManager::SetRandomHeld` is deliberately no longer called here --
+// traced, not assumed. Its only readers are: (1) `Bank::HandlePress`'s
+// modifier branch, which this function no longer calls; (2)
+// `ParameterManager::HandleSetAbsolute(slotIx, position, ...)`'s
+// GetCurrentModifier()-gate, an overload this app never calls (app-side
+// absolute/encoder input goes through `MessageIn::ParamIncDec` instead,
+// FroggersUiSurface.hpp:1677); (3) `SelectBankForSlot`/`NavigateBankForSlot`'s
+// bank-wide-randomize branch, not invoked from inside this function; (4) the
+// `randomHeld` mirror `PopulateUIState` publishes for UI rendering -- this
+// app never reads `RandomHeld()` or that mirror anywhere (no "modifier held"
+// indicator exists in this app), and never wires Sheaf's `MidiController`
+// (which is the only other reader, for hardware LED feedback). With every
+// reachable reader ruled out, holding it around this function's now-direct
+// write would be a no-op; it is genuinely dead on this path, not merely
+// unused by convention, and is removed rather than kept "just in case."
 inline void PressBankWithRandomValue(synth::ParameterManager& manager, synth::Bank& bank,
                                      synth::PhysicalEncoderId encoderId) {
-    manager.SetRandomHeld(true);
-    bank.HandlePress(encoderId, FullPhysicalLayout(bank));
-    manager.SetRandomHeld(false);
+    synth::Parameter* parameter = bank.VisibleParameter(encoderId);
+    if (parameter == nullptr) {
+        return;
+    }
+    const float drawn = manager.NextRandomValue();
+    for (const synth::SceneState& pole : kScenePoles) {
+        parameter->HandleSetAbsolute(pole, drawn);
+    }
 }
 
-// Randomizes one bank's 9 page-parameter values plus its Crispy (encoder 14)
+// Randomizes one bank's 14 page-parameter values plus its Crispy (encoder 14)
 // -- NEVER Crunchy (encoder 15) -- matching D14's "include per-bank Crispy,
 // exclude global Crunchy" rule shared by Randomize All and Randomize Page's
 // parameter-page cases. Presses `bank` directly (see PressBankWithRandomValue);
@@ -1220,7 +1271,7 @@ inline void RandomizeBankValues(synth::ParameterManager& manager, synth::Bank& b
     }
 }
 
-// Randomizes one bank's 9 page parameters' LEVEL-1 depths -- and only those.
+// Randomizes one bank's 14 page parameters' LEVEL-1 depths -- and only those.
 // Crispy (encoder 14) is deliberately EXCLUDED here, as is Crunchy (encoder
 // 15), so unlike RandomizeBankValues above there is no `includeCrispy` knob:
 // that function randomizes VALUES and its two callers differ on Crispy, while
@@ -1260,10 +1311,65 @@ inline bool RandomizeBankLevel1Depths(synth::ParameterManager& manager, synth::B
     return partial;
 }
 
+// ----------------------------------------------------------------------------
+// Packet P6a -- Reset Page/Reset All (model layer): counterparts to the
+// randomize helpers just above, reusing their exact enumeration idioms.
+// ----------------------------------------------------------------------------
+
+// Resets ONE top-level parameter completely: its own commanded value to 0.0
+// in BOTH scene poles (kScenePoles idiom -- the same pattern
+// ApplyFroggersDefaultPatch's own HandleSetAbsolute calls already use
+// further down in this file), and its own materialized modulation depths to
+// NEUTRAL via the existing ZeroExistingModulationDepths -- reused as-is, not
+// reimplemented. A depth's "off" is kNeutralModulationDepthCenter (0.5f), not
+// 0.0f (depths are RangeKind::Bipolar): writing a literal 0.0 to a depth
+// would be full NEGATIVE depth, the opposite of off -- which is exactly why
+// depths go through the existing neutral-writing helper here instead of the
+// direct HandleSetAbsolute(pole, 0.0f) this function uses for `parameter`
+// itself.
+inline void ResetParameterValueAndDepths(synth::Parameter& parameter) {
+    for (const synth::SceneState& pole : kScenePoles) {
+        parameter.HandleSetAbsolute(pole, 0.0f);
+    }
+    ZeroExistingModulationDepths(parameter);
+}
+
+// Reset counterpart to RandomizeBankValues above: the SAME enumeration (this
+// bank's kFroggersParamsPerBank page parameters, reached via
+// Bank::VisibleParameter -- reused from RandomizeBankLevel1Depths's own
+// idiom just above, safe for the same reason PressBankWithRandomValue's own
+// header comment gives: this bank is never drilled into here, so
+// visible_ == topLevel_ -- plus Crispy when `includeCrispy`, NEVER Crunchy).
+// Each enumerated parameter gets the full ResetParameterValueAndDepths
+// treatment (value -> 0.0, own depths -> neutral). `includeCrispy` mirrors
+// RandomizeBankValues's own knob and its own reasoning: Reset Page wants
+// TRUE (a page's local Crispy is that page's own business), Reset All wants
+// FALSE (resetting local Crispy on all six banks at once is effectively
+// resetting global Crunchy, which this app never touches either way).
+inline void ResetBankValues(synth::Bank& bank, bool includeCrispy) {
+    for (synth::PhysicalEncoderId e = 0; e < kFroggersParamsPerBank; ++e) {
+        synth::Parameter* param = bank.VisibleParameter(e);
+        if (param == nullptr) {
+            // Not defensive padding (OMNI 12): the parameter-model spec's
+            // "Sparse banks are valid" scenario permits unregistered slots,
+            // so a null here is a REAL reachable case for any future sparse
+            // bank, even though every current bank registers all fourteen.
+            continue;
+        }
+        ResetParameterValueAndDepths(*param);
+    }
+    if (includeCrispy) {
+        synth::Parameter* crispy = bank.VisibleParameter(kFroggersCrispySlot);
+        if (crispy != nullptr) {
+            ResetParameterValueAndDepths(*crispy);
+        }
+    }
+}
+
 }  // namespace detail
 
 // task 6.9: Randomize Page -- "randomize exactly what is displayed."
-//   - parameter page (drillIn.Level()==0): this bank's 9 values + Crispy,
+//   - parameter page (drillIn.Level()==0): this bank's 14 values + Crispy,
 //     excluding Crunchy; no depths.
 //   - level-1 grid (Level()==1): one RandomizeParameterModulationDepths call
 //     on the selected parameter (the L1 parameter's own 15 depths).
@@ -1398,6 +1504,87 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
     }
     return {partial};
 
+}
+
+// ============================================================================
+// Packet P6a -- Reset Page/Reset All: siblings of RandomizePage/RandomizeAll
+// just above, mirroring their own drillIn.Level() branching and enumeration
+// exactly (this packet's own brief: "cover the same set the matching
+// Randomize covers at the same level"). Reset is fully deterministic (no
+// manager.NextRandom*() calls, no allocation -- HandleSetAbsolute never
+// allocates and ZeroExistingModulationDepths only ever touches already-
+// materialized depths), so unlike Randomize there is no partial/capacity-
+// exhaustion outcome to report; both return void.
+// ============================================================================
+
+// task 6.9 sibling -- Reset Page.
+//   - parameter page (drillIn.Level()==0): this bank's kFroggersParamsPerBank
+//     values + Crispy reset to 0.0, excluding Crunchy (RandomizeBankValues's
+//     own Crispy/Crunchy rule -- includeCrispy=true, matching RandomizePage's
+//     own call) -- PLUS each of those parameters' own materialized depths
+//     reset to NEUTRAL, never 0.0 (see ResetParameterValueAndDepths's own
+//     comment on the depth-neutral trap).
+//   - level-1/level-2 grid (Level()==1 or 2): the SAME set
+//     RandomizeParameterModulationDepths would act on from that view -- the
+//     selected parameter's own depth CHILDREN, reset to neutral via
+//     ZeroExistingModulationDepths. `selected`'s own value is deliberately
+//     left untouched here, matching Randomize exactly:
+//     RandomizeParameterModulationDepths never writes to `parameter` itself,
+//     only to its depth children. This also matters for the trap: at level
+//     2, `selected` IS itself a depth parameter, so forcing it to 0.0
+//     directly here would silently reintroduce the exact defect item 3 warns
+//     against, through a different call site.
+inline void ResetPage(synth::ParameterManager& /*manager*/, FroggersModulationDrillIn& drillIn) {
+    if (drillIn.Level() == 0) {
+        detail::ResetBankValues(drillIn.BankRef(), /*includeCrispy=*/true);
+        return;
+    }
+    synth::Parameter& selected = *drillIn.BankRef().SelectedParameter();
+    detail::ZeroExistingModulationDepths(selected);
+}
+
+// task 6.8 sibling -- Reset All.
+//   - parameter page (Level()==0): every bank's kFroggersParamsPerBank page
+//     parameters get the full ResetParameterValueAndDepths treatment (value
+//     -> 0.0, own depths -> neutral) -- Crispy EXCLUDED on every bank,
+//     matching RandomizeAll's own includeCrispy=false (resetting local
+//     Crispy on all six banks at once is effectively resetting global
+//     Crunchy, which is never touched either way). Each bank is reached
+//     directly via `model.BankAt(bankId)` (RandomizeAll's own idiom),
+//     independent of which bank the BankSlot currently displays.
+//   - ANY drilled-in grid (Level() >= 1): the selected parameter's own depth
+//     children reset to neutral, PLUS -- mirroring RandomizeAll's own
+//     recursive one-level descent, gated the same way by kMaxDrillLevel --
+//     each of THOSE depths' own depth children reset to neutral too, i.e.
+//     resetting at level N also resets level N+1, exactly matching how
+//     RandomizeAll randomizes level N+1 too. Unlike RandomizeAll, this does
+//     NOT gate the descent on detail::DepthIsModulating first: that gate
+//     exists to skip meaningless RANDOM draws on a depth that modulates
+//     nothing, which does not apply to a deterministic clear --
+//     ZeroExistingModulationDepths is already a safe no-op on a depth that
+//     has no materialized children of its own.
+inline void ResetAll(synth::ParameterManager& /*manager*/, FroggersModulationDrillIn& drillIn,
+                      FroggersParameterModel& model) {
+    if (drillIn.Level() == 0) {
+        for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+            const auto bankId = static_cast<FroggersBankId>(bankIx);
+            synth::Bank& bank = model.BankAt(bankId);
+            detail::ResetBankValues(bank, /*includeCrispy=*/false);
+        }
+        return;
+    }
+
+    synth::Parameter& selectedParam = *drillIn.BankRef().SelectedParameter();
+    detail::ZeroExistingModulationDepths(selectedParam);
+    if (drillIn.Level() < FroggersModulationDrillIn::kMaxDrillLevel) {
+        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+            synth::Parameter* depthParam = selectedParam.ModulationDepthParameter(modIx);
+            if (depthParam == nullptr) {
+                continue;  // not connected, or never materialized.
+            }
+            detail::ZeroExistingModulationDepths(*depthParam);
+        }
+    }
 }
 
 // ============================================================================

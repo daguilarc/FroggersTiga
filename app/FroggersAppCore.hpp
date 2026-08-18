@@ -100,11 +100,15 @@
 #include <cstdio>   // F3 diagnostic (stopDiagBlocks_): std::fprintf.
 #include <cstdlib>  // F3 diagnostic (stopDiagEnabled_): std::getenv.
 #include <cstddef>
+#include <cstdint>      // T5.3c: EncodeWavPcm16Mono's byte/sample types.
+#include <functional>   // T5.3c: SetOnRecordingFinished/SetOnRecordRefused host seams.
 #include <limits>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace synth_froggers {
 
@@ -221,15 +225,25 @@ public:
         // derived FROM, and the circular-include workaround that comment
         // used to describe (`FroggersUiSurface.hpp` cannot call back into
         // this file) no longer applies because there is no call to make.
-        // 632 itself is unchanged -- it is simply a plain, hand-picked
-        // initial window size now, matching
-        // `synth_froggers::FroggersPageLayout::kDefaultHeight`
-        // (FroggersUiSurface.hpp). `FroggersSurfaceTests.cpp`'s fit-guard
-        // tests assert the surface actually fits its declared grid at this
-        // size (and at a smaller and a larger one), which is a stronger
-        // guarantee than the old cross-check ever was (see task F.3's
-        // report for why the old test could never fail even when wrong).
-        config.uiHeight = 632;
+        // T4.2 (operator ruling 2026-08-17, "do not shrink the encoder
+        // ring" / "space you should have ADDED below each encoder"):
+        // 632 -> 712, +80px (4 encoder rows x
+        // `synth_froggers::FroggersEncoderGridLayout::kLabelBandHeight`,
+        // 20px each -- FroggersUiSurface.hpp), so the label band added
+        // below each encoder ring has somewhere to live without shrinking
+        // the ring or the window's other rows. Otherwise unchanged from
+        // before this task -- still simply a plain, hand-picked initial
+        // window size, matching `synth_froggers::FroggersPageLayout::
+        // kDefaultHeight` (FroggersUiSurface.hpp) by hand, not derivation
+        // (that file's own comment explains why no cross-check test
+        // exists for this pair -- task F.3's finding that such a test can
+        // pass even when both sides are already wrong).
+        // `FroggersSurfaceTests.cpp`'s fit-guard tests assert the surface
+        // actually fits its declared grid at this size (and at a smaller
+        // and a larger one), which is a stronger guarantee than a
+        // cross-check ever was (see task F.3's report for why the old test
+        // could never fail even when wrong).
+        config.uiHeight = 712;
         config.uiFrameHz = 30;
         return config;
     }
@@ -420,6 +434,119 @@ public:
         desiredTransportRunning_.store(running, std::memory_order_release);
     }
 
+    // T5.2 (openspec/changes/frogg3rs-post-expansion-consolidation,
+    // proposal.md §6.4b-ii / tasks.md T5.2): the Freeze transport button's
+    // latch -- toggled by FroggersUiSurface::HandleAction's kFreeze branch
+    // (UI/message thread) and read every sample inside RouteAudioSample()
+    // (audio thread, below) to set DelayParams::dfrzLatched before it
+    // reaches dsp::StereoDelay::Process(). Same release/acquire pairing as
+    // SetDesiredTransportRunning()/its own read just above -- a direct
+    // UI-thread-write, audio-thread-read flag, not the separate "pending
+    // request -> published display value" two-hop some of the atomics below
+    // use.
+    void SetFreezeLatched(bool latched) {
+        freezeLatched_.store(latched, std::memory_order_release);
+    }
+    bool FreezeLatched() const { return freezeLatched_.load(std::memory_order_acquire); }
+
+    // T6.1 (tasks.md, REOPENED 2026-08-17): the ONE gate every stop-edge
+    // teardown site reads -- ForceReleaseAll(), the six `stoppedKnob`
+    // overrides (all through ONE lambda instance, RouteAudioSample() below),
+    // and both the immediate and deferred `ForEachStatefulUnit(Reset)`
+    // clears (ProcessBlock() below) -- instead of each re-deriving its own
+    // `!running`/`!FreezeLatched()` check (OMNI SS8). `running` is the
+    // transport's ACTUAL state at the call site: pass the freshly computed
+    // local where the edge-detect block below has one (it reads this BEFORE
+    // updating `wasTransportRunning_`, so the member would still be stale),
+    // or `wasTransportRunning_` itself everywhere later in the same sample,
+    // where it is already current (see that member's own comment).
+    //
+    // Stopped-and-unlatched is the only condition the teardown runs under;
+    // while FreezeLatched() is true the instrument holds its sounding state
+    // instead of tearing down. This is the operator's deliberate route to
+    // the sustained-drive drone the Freeze button exists to reproduce (see
+    // this task's "Why this exists" in tasks.md) -- the effect only ever
+    // existed with the transport stopped, so suppressing the teardown here
+    // is what makes it reachable again, not a bug being reintroduced.
+    bool TransportTeardownActive(bool running) const { return !running && !FreezeLatched(); }
+
+    // T5.3a/T5.3b (packet P7a, tasks.md): arm/stop a bounded mono capture of
+    // what the operator hears. UI-thread call. Refuses while the transport
+    // is stopped -- v1 precedent for the wording (desktop/Source/
+    // MainComponent.cpp:201, reference only, not ported): exactly "Press
+    // Play before recording." via RecordRefusalReason() below. All
+    // allocation happens here, on the UI thread, never on the audio thread
+    // -- `capacityFramesOverride` lets tests bound the buffer far below the
+    // real kMaxRecordSeconds*sampleRate_ cap (~345 MB at 30 minutes/48kHz);
+    // production callers pass the default (0).
+    bool ArmRecording(std::size_t capacityFramesOverride = 0) {
+        if (!TransportRunning()) {
+            recordRefusalReason_ = kRecordRefusalReason;
+            return false;
+        }
+        const std::size_t capacityFrames = capacityFramesOverride != 0
+            ? capacityFramesOverride
+            : static_cast<std::size_t>(kMaxRecordSeconds * sampleRate_);
+        recordBuffer_.assign(capacityFrames, 0.0f);
+        recordFrames_.store(0, std::memory_order_release);
+        recordTruncated_.store(false, std::memory_order_release);
+        recordRefusalReason_ = nullptr;
+        recordArmed_.store(true, std::memory_order_release);
+        return true;
+    }
+    // Reason the LAST ArmRecording() call was refused, or nullptr if it
+    // succeeded (or has never been called).
+    const char* RecordRefusalReason() const { return recordRefusalReason_; }
+
+    // UI-thread call to end a capture -- clears the armed flag only.
+    // Captured data stays readable afterward via RecordedAudio()/
+    // RecordedFrameCount() below (v1 precedent for the truncation wording,
+    // reference only: "Recording stopped at the 30-minute limit.",
+    // desktop/Source/MainComponent.cpp:219).
+    void StopRecording() { recordArmed_.store(false, std::memory_order_release); }
+
+    // Read-back for the capture (UI thread). Safe to call while still armed
+    // (reads whatever has been written so far).
+    std::span<const float> RecordedAudio() const {
+        return std::span<const float>(recordBuffer_.data(), RecordedFrameCount());
+    }
+    std::uint64_t RecordedFrameCount() const { return recordFrames_.load(std::memory_order_acquire); }
+    bool RecordingTruncated() const { return recordTruncated_.load(std::memory_order_acquire); }
+    float RecordSampleRate() const { return sampleRate_; }
+
+    // P7b (tasks.md T5.3b): whether a capture is currently armed -- the
+    // surface's transport-row Record glyph and HandleAction both need this
+    // (BuildRecordDrawCommands' colour swap, and the toggle branch's
+    // arm-vs-stop decision), same one-line-acquire-load shape as
+    // FreezeLatched() above.
+    bool RecordArmed() const { return recordArmed_.load(std::memory_order_acquire); }
+
+    // T5.3c (tasks.md, "the WAV encoding itself could live either side"):
+    // host-facing seams -- registered by the host (FroggersMain.cpp) on the
+    // message thread once, after launch. Both are plain std::function; JUCE
+    // stays on the other side of this boundary (this class only stores,
+    // null-checks, and invokes -- see check-no-juce, this file's own header
+    // comment). Fired by the SURFACE (FroggersUiSurface::HandleAction),
+    // never internally by ArmRecording()/StopRecording() themselves, so the
+    // surface -- not the core -- decides when a stop counts as "finished
+    // with data" versus "stopped with nothing captured."
+    void SetOnRecordingFinished(std::function<void()> callback) {
+        onRecordingFinished_ = std::move(callback);
+    }
+    void SetOnRecordRefused(std::function<void(const char*)> callback) {
+        onRecordRefused_ = std::move(callback);
+    }
+    void NotifyRecordingFinished() {
+        if (onRecordingFinished_) {
+            onRecordingFinished_();
+        }
+    }
+    void NotifyRecordRefused(const char* reason) {
+        if (onRecordRefused_) {
+            onRecordRefused_(reason);
+        }
+    }
+
     // Packet 10 (design D11/D14, tasks 10.2-10.7): the surface's request API
     // -- called from FroggersUiSurface::DispatchAction (UI/message thread).
     // Each is a single-slot pending request; a later write before the audio
@@ -435,6 +562,10 @@ public:
     }
     void RequestRandomizeAll() { pendingRandomizeAll_.store(true, std::memory_order_release); }
     void RequestRandomizePage() { pendingRandomizePage_.store(true, std::memory_order_release); }
+    // T5.1 (Reset Page / Reset All): same UI-thread -> audio-thread request
+    // idiom as the two Randomize flags above, deliberately not a new one.
+    void RequestResetAll() { pendingResetAll_.store(true, std::memory_order_release); }
+    void RequestResetPage() { pendingResetPage_.store(true, std::memory_order_release); }
     // Task 10.6 (design D17's citation chain): a negative sentinel means "no
     // pending request." `MasterClock::SetTempoBpm` itself already no-ops
     // (returns false) while slaved to external MIDI clock
@@ -561,6 +692,18 @@ public:
                 const bool pagePartial = RandomizePage(*context_->parameterManager, *drillIn_).partial;
                 anyPartial = anyPartial || pagePartial;
                 randomizeRan = true;
+            }
+            // T5.1: Reset drains here, beside Randomize, so the two are
+            // serviced on the same audio-thread edge and in the same order
+            // every block. Reset allocates nothing (it never calls
+            // EnsureModulationDepth), so it has no partial/capacity outcome
+            // to fold into `anyPartial` and returns void -- see
+            // FroggersModulation.hpp's ResetPage/ResetAll.
+            if (pendingResetAll_.exchange(false, std::memory_order_acq_rel)) {
+                ResetAll(*context_->parameterManager, *drillIn_, parameters_);
+            }
+            if (pendingResetPage_.exchange(false, std::memory_order_acq_rel)) {
+                ResetPage(*context_->parameterManager, *drillIn_);
             }
             if (randomizeRan) {
                 // A4: surface a partial randomize -- observable to tests via
@@ -721,7 +864,30 @@ public:
                 const double phase = *transportQuarterNotes - std::floor(*transportQuarterNotes);
                 gateOpen = phase >= 0.0 && phase < 0.5;
             }
-            audioAdsr_.setGate(gateOpen);
+            // T7.6 (operator 2026-08-17, measured in the built app: the drone
+            // "lasts only a few seconds"). Suppressing the stop-edge teardown
+            // is NOT sufficient to hold the drone, and this line is why: the
+            // gate closes whenever the transport is not running, so engaging
+            // Freeze -- which stops the transport (HandleAction's kFreeze
+            // branch) -- let every voice release NATURALLY and reach Idle
+            // within its release time, leaving only a decaying delay/reverb
+            // tail. The teardown gate only ever skipped the FORCED release,
+            // the stopped-state overrides and the buffer clear; it never
+            // touched this.
+            //
+            // The accidental state this button reproduces was sustained by
+            // voices that never reached Idle (curve~1 stuck envelopes,
+            // proposal §1a) CONTINUOUSLY exciting the chain -- that is what
+            // made it a drone rather than a tail. T1.1's ramp bound removed
+            // that mechanism deliberately and permanently, so the latch has
+            // to hold the voices open itself: while Freeze is engaged the
+            // gate stays OPEN, voices sit at their sustain level, and the
+            // chain keeps being fed for as long as the operator holds the
+            // latch. Releasing it drops the gate back to the transport's own
+            // answer (false while stopped), so the voices release and the
+            // teardown silences the instrument -- the escape hatch is
+            // unchanged.
+            audioAdsr_.setGate(gateOpen || FreezeLatched());
 
             // Stop-transport reset (see wasTransportRunning_'s own comment):
             // `transportQuarterNotes.has_value()` above is already exactly
@@ -763,7 +929,54 @@ public:
             if (stopDiagEnabled_ && wasTransportRunning_ && !transportRunningNow) {
                 stopDiagBlocks_ = kStopDiagBlocks;
             }
-            if (wasTransportRunning_ && !transportRunningNow) {
+            // T6.2 (tasks.md, REOPENED 2026-08-17): releasing the Freeze
+            // latch while the transport is already stopped is a SECOND
+            // "stop edge" -- symmetric to the running->stopped edge just
+            // below, keyed on the latch's own transition instead of the
+            // transport's, and following the SAME idiom
+            // (`wasTransportRunning_`'s edge check just below, and its own
+            // comment) rather than inventing a new one. Read before
+            // `wasFreezeLatched_` is updated at the bottom of this same
+            // per-sample iteration, so this holds THIS sample's latch
+            // state, not the previous one's.
+            const bool freezeLatchedNow = FreezeLatched();
+            const bool latchReleasedWhileStopped =
+                wasFreezeLatched_ && !freezeLatchedNow && !transportRunningNow;
+            // T6.1/T6.2 (tasks.md, REOPENED 2026-08-17): the stop-edge
+            // teardown action itself, shared by BOTH edges capable of
+            // firing it below (the running->stopped edge, and the latch-
+            // released-while-stopped edge) so the two can never drift apart
+            // in what "teardown" means. One lambda instance per sample,
+            // cheap (no heap capture; `this` only).
+            const auto runStopTeardown = [this]() {
+                // T2.1 (proposal.md SS2 W2, AUDIT-ADDED 2026-08-17): force
+                // every non-idle voice into Release right at the edge,
+                // BEFORE the AllIdle() check below reads its post-edge
+                // state. `setGate(gateOpen)` above already ran for this
+                // sample and, on play-time gate-close, only marks
+                // m_releasePending -- it does NOT itself move a voice out
+                // of Attack/Decay/Hold, so without this call a voice mid-
+                // Attack/Decay at the stop instant would sit there through
+                // the Grace minimum-hold and/or stage completion (up to
+                // ~9s at kMaxAttack/Decay/GraceSeconds each) before ever
+                // reaching Release, let alone Idle -- exactly the pre-W1
+                // "Stop doesn't stop" symptom this packet's proposal.md
+                // SS1 measured. ForceReleaseAll() (VoiceEnvelope.hpp) is
+                // idempotent on an already-idle voice (leaves it Idle), so
+                // this is safe to call unconditionally on every edge here,
+                // including the "gate already closed, every voice already
+                // released naturally" case the comment below describes --
+                // in that case every voice is already Idle and this is a
+                // no-op, so `audioAdsr_.AllIdle()` just below still reads
+                // true exactly as before this call existed. In the more
+                // common case (a voice non-idle at the edge), this call
+                // moves it to Release, so AllIdle() below correctly reads
+                // false and the deferred-clear branch (delayReverbClearPending_
+                // = true) arms -- a forced-Release voice is NOT idle at the
+                // edge, so it still needs its (now ~50ms, kStopFadeReleaseKnob
+                // below) release tail to finish before delay_/reverb_ can be
+                // cleared; that ordering is unchanged by this task.
+                audioAdsr_.ForceReleaseAll();
                 // ITEM 1 (revised, superseding the old "clear every block
                 // while releasing" policy): a releasing voice is still
                 // musically live and still feeding delay_/reverb_
@@ -805,28 +1018,55 @@ public:
                     // stopped.
                     delayReverbClearPending_ = true;
                 }
+            };
+            if (wasTransportRunning_ && !transportRunningNow) {
+                if (TransportTeardownActive(transportRunningNow)) {
+                    runStopTeardown();
+                }
+                // T6.1: else -- FreezeLatched() is true, so NONE of
+                // runStopTeardown() above runs. The instrument holds its
+                // sounding state instead of tearing down; see
+                // TransportTeardownActive()'s own comment for why this is
+                // the deliberate exception, not a regression.
+            } else if (latchReleasedWhileStopped) {
+                // T6.2: the latch's own release, while already stopped, is
+                // the escape hatch out of the drone the edge above just
+                // held open -- run the exact same teardown that edge would
+                // have run had the latch not suppressed it. (No
+                // TransportTeardownActive() call needed here: this branch's
+                // own condition already implies !transportRunningNow &&
+                // !FreezeLatched(), i.e. the gate is true by construction.)
+                runStopTeardown();
             } else if (delayReverbClearPending_) {
                 if (transportRunningNow) {
                     // Transport resumed mid-release: this is now a
                     // legitimately playing delay/reverb, not a stale
                     // release tail -- cancel instead of wiping it.
                     delayReverbClearPending_ = false;
-                } else if (audioAdsr_.AllIdle()) {
+                } else if (audioAdsr_.AllIdle() && TransportTeardownActive(transportRunningNow)) {
+                    // T6.1 (deferred-clear site -- the easy miss this gate
+                    // exists to cover): AllIdle() alone used to be
+                    // sufficient here. It no longer is -- if the latch got
+                    // engaged during this release-tail window (armed while
+                    // unlatched, then latched before AllIdle() turned true),
+                    // this must NOT clear; the instrument keeps holding
+                    // until the latch itself releases (the branch above).
                     // The moment every voice reaches Idle while still
-                    // stopped: the release can no longer inject anything
-                    // into delay_/reverb_ (or anything upstream of them), so
-                    // this single clear is permanent. Checked per-sample
-                    // (cheap: AllIdle() is just three stage comparisons) so
-                    // the expensive part (every unit's own Reset(), O(its
-                    // own state size) each) still runs exactly once for the
-                    // whole release, not once per block for up to
-                    // kMaxReleaseSeconds (10s, VoiceEnvelope.hpp:36) the way
-                    // the old policy did.
+                    // stopped AND unlatched: the release can no longer
+                    // inject anything into delay_/reverb_ (or anything
+                    // upstream of them), so this single clear is permanent.
+                    // Checked per-sample (cheap: AllIdle() is just three
+                    // stage comparisons) so the expensive part (every
+                    // unit's own Reset(), O(its own state size) each) still
+                    // runs exactly once for the whole release, not once per
+                    // block for up to kMaxReleaseSeconds (10s,
+                    // VoiceEnvelope.hpp:36) the way the old policy did.
                     ForEachStatefulUnit([](auto& unit, auto) { unit.Reset(); });
                     delayReverbClearPending_ = false;
                 }
             }
             wasTransportRunning_ = transportRunningNow;
+            wasFreezeLatched_ = freezeLatchedNow;
 
             // VCO audio-rate modulation sources (design D5 slots 6-8) are
             // driven from each VCO's own Audio-bank pitch/shape/PM knobs --
@@ -906,6 +1146,18 @@ public:
             // open, so a normal run pays one already-loaded bool test.
             if (stopDiagBlocks_ > 0) {
                 stopDiagPeak_ = std::max(stopDiagPeak_, std::fabs(sample));
+            }
+
+            // T5.3a: capture hook -- post-limiter mono, what the operator hears.
+            if (recordArmed_.load(std::memory_order_acquire) && transportRunningNow) {
+                const std::uint64_t recordedSoFar = recordFrames_.load(std::memory_order_acquire);
+                if (recordedSoFar < recordBuffer_.size()) {
+                    recordBuffer_[recordedSoFar] = sample;
+                    recordFrames_.store(recordedSoFar + 1, std::memory_order_release);
+                } else {
+                    recordTruncated_.store(true, std::memory_order_release);
+                    recordArmed_.store(false, std::memory_order_release);
+                }
             }
 
             if (hasOutputs) {
@@ -1062,6 +1314,10 @@ public:
         }
     }
     dsp::DriveBlendPhase& TestDriveBlendPhase() { return driveBlendPhase_; }
+    // T4.2 continuation (FroggersStopSustainRepro.cpp): read-only voice-state
+    // probe, same convention as TestDelay()/TestReverb() (added by F3.1's
+    // repro for the same reason -- measurement, not control).
+    const dsp::VcoAdsrState& TestAudioAdsr() const { return audioAdsr_; }
     dsp::Oversampler2x& TestDriveOversampler() { return drive_.oversampler; }
     // S1.2 (openspec/changes/archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/
     // tasks.md): same convention as the accessors above -- added because the
@@ -1104,6 +1360,36 @@ public:
     // unit's behaviour.
     dsp::StereoDelay& TestDelay() { return delay_; }
     dsp::Reverb& TestReverb() { return reverb_; }
+
+    // T2.2 (frogg3rs-stop-isolation-and-legible-labels): test/inspection
+    // access to the resolved Freeze-KNOB (dsp::DelayParams::dfrz) and
+    // Reverb Tank-drive knob values RouteAudioSample() (below) last used,
+    // same "TestXxx() convention read-only, measurement not control" as
+    // TestDelay()/TestReverb() above. Neither value has a home on delay_/
+    // reverb_ themselves to read back after the fact: `delayParams` is
+    // RouteAudioSample()-local (constructed fresh every sample, see the
+    // dfrzLatched comment below), and Reverb::Process computes `tankDrive`
+    // from its knob argument as a purely local (dsp/Reverb.hpp,
+    // TankDriveFromKnob) -- unlike Filter's comb.combDrive and Delay's own
+    // fbDrive, which are members already reachable via TestFilterComb()/
+    // TestDelay() above. Comb drive and Feedback drive tests read those
+    // directly instead of adding parallel accessors here.
+    float TestLastDelayFreezeKnobEffective() const { return lastDelayFreezeKnobEffective_; }
+    float TestLastReverbTankDriveKnobEffective() const { return lastReverbTankDriveKnobEffective_; }
+    // T2.5 (proposal.md SS2 W2b, tasks.md T2.5; MEASURED third mechanism,
+    // packet 2b): same rationale as TestLastReverbTankDriveKnobEffective()
+    // immediately above -- Reverb::Process computes `gritKnob01`'s use
+    // (DigitalReorganizer::Mangle) as a purely local, no member to read
+    // back after the fact.
+    float TestLastReverbGritKnobEffective() const { return lastReverbGritKnobEffective_; }
+
+    // T5.2: test/inspection access to the actual `DelayParams::dfrzLatched`
+    // value RouteAudioSample() (below) last handed to `delay_.Process()` --
+    // same "TestXxx() convention" as the accessors above. `delayParams`
+    // itself is a RouteAudioSample()-local (constructed fresh every sample),
+    // so there is no other route for a test to confirm the wire at that call
+    // site actually ran, as opposed to merely re-reading FreezeLatched()'s
+    // own atomic a second time.
 
     // B7.5: test/inspection access to the live synth::ParameterManager, same
     // convention as TestOutputLimiter() above. `context_` (below) is
@@ -1241,8 +1527,71 @@ private:
         constexpr float kStopFadeReleaseKnob =
             (kStopFadeSeconds - dsp::VcoAdsrState::kMinTimeSeconds) /
             (dsp::VcoAdsrState::kMaxReleaseSeconds - dsp::VcoAdsrState::kMinTimeSeconds);
+        // T2.2 (proposal.md SS2 W2, tasks.md T2.2): while the transport is
+        // STOPPED, override effective knob values for the release knob
+        // (releaseKnob, below -- already existed) PLUS the three drive
+        // pre-gains (Delay slot 9 "Feedback drive", Reverb slot 10 "Tank
+        // drive", Filter slot 12 "Comb drive" -- each maps through the SAME
+        // ExpMapCompute(0.25,4,knob) idiom, unity at knob==0.5, see each
+        // unit's own SetFeedbackDrive()/TankDriveFromKnob()/this file's
+        // Filter-slot-12 comment for the citation) and Freeze (Delay slot
+        // 4, dsp::DelayParams::dfrz, resolves to 0.0f) -- WITHOUT writing to
+        // the parameter model, exactly as kStopFadeReleaseKnob's release
+        // override above never writes the Release knob. Play resumes
+        // bit-identical because the commanded value was never touched: the
+        // instant `wasTransportRunning_` is true again, `stoppedKnob` below
+        // just returns `knob(bank, slot)` unchanged.
+        //
+        // T2.5 (proposal.md SS2 W2b, tasks.md T2.5; MEASURED third
+        // mechanism, packet 2b 2026-08-17): Reverb's Grit (slot 11) joins
+        // the same list. With W1+W2 in place the pass-D 20-trial repro
+        // still reproduced 20/20 -- measured cause: Grit's stage
+        // (dsp::DigitalReorganizer::Mangle, dsp/Drive.hpp:363-382) sits
+        // INSIDE the tank feedback path ahead of the loop's own
+        // PadeSaturator::Saturate bound, and Mangle's 8-bit-bucket
+        // quantize-then-XOR has UNBOUNDED local gain across a bucket
+        // boundary, so at Hold-high (fb~=0.999) the ordinary sub-audible
+        // release tail gets re-amplified every round trip into a
+        // saturator-bounded but never-decaying limit cycle (control,
+        // isolated dsp::Reverb: one 0.01 seed then exact zero for 6.25s --
+        // locks at 0.306814 forever at the drawn Grit 0.8094; decays to
+        // 1.98e-7 at Grit 0). Grit 0.0f is its own exact bit-identical
+        // bypass by construction (Mangle(x,0,0) - Mangle(0,0,0) == x,
+        // dsp/Reverb.hpp:534-538), so this override is silent by
+        // construction too, same as the others.
+        //
+        // OMNI SS8: one shared lookup, not a sixth independent ternary --
+        // `stoppedKnob(bank, slot, stoppedValue)` generalizes the
+        // `wasTransportRunning_ ? knob(...) : override` shape the old
+        // inlined `releaseKnob` used to hardcode to any (bank, slot,
+        // override) triple, and `releaseKnob` itself is now defined in
+        // terms of it below, so all SIX stopped-state overrides (release
+        // x3 voices [already one call site via releaseKnob's own slot
+        // argument], the three drive pre-gains, Freeze, Grit) render
+        // through this ONE lambda instance.
+        //
+        // T6.1 (tasks.md, REOPENED 2026-08-17): the condition below reads
+        // TransportTeardownActive(wasTransportRunning_) -- the SAME gate
+        // ForceReleaseAll() and both ForEachStatefulUnit(Reset) clears read
+        // in ProcessBlock() above -- instead of the bare `wasTransportRunning_`
+        // this used to test. `wasTransportRunning_` is current for THIS
+        // sample already (ProcessBlock's edge-detect block updates it
+        // before RouteAudioSample() runs, see that member's own comment),
+        // so passing it through is exactly "is the transport actually
+        // running", and the gate itself folds in "...or held open by the
+        // latch": while FreezeLatched() is true and the transport is
+        // stopped, these six overrides stay OFF (return the live knob, as
+        // if still running) so the drone's above-unity drives and nonzero
+        // Grit survive the stop instead of being forced to their
+        // bypass/unity values.
+        constexpr float kStopUnityDriveKnob = 0.5f;  // ExpMapCompute(0.25,4,0.5) == 1.0 (unity) -- shared by all three drive pre-gains.
+        constexpr float kStopFreezeKnob = 0.0f;
+        constexpr float kStopGritKnob = 0.0f;  // Mangle(x,0,0) - Mangle(0,0,0) == x (dsp/Reverb.hpp:534-538) -- exact bit-identical bypass, same as Grit's own registered default.
+        const auto stoppedKnob = [&](FroggersBankId bank, std::size_t slot, float stoppedValue) -> float {
+            return TransportTeardownActive(wasTransportRunning_) ? stoppedValue : knob(bank, slot);
+        };
         const auto releaseKnob = [&](std::size_t slot) -> float {
-            return wasTransportRunning_ ? knob(FroggersBankId::Envelope, slot) : kStopFadeReleaseKnob;
+            return stoppedKnob(FroggersBankId::Envelope, slot, kStopFadeReleaseKnob);
         };
 
         dsp::GatedVoices gatedVoices;
@@ -1400,7 +1749,11 @@ private:
         // 0.5) == 0.25 * sqrt(16) == 1.0. The Filter slot-12 default
         // (FroggersParameters.hpp) is set to 0.5f for exactly this reason
         // (Task E).
-        filterChain_.comb.SetDrive(dsp::ExpMapCompute(0.25f, 4.0f, knob(FroggersBankId::Filter, 12)));
+        // T2.2: stoppedKnob (defined above, beside kStopFadeReleaseKnob)
+        // overrides this to kStopUnityDriveKnob (0.5, i.e. unity post-map)
+        // while the transport is stopped, regardless of the commanded knob.
+        filterChain_.comb.SetDrive(
+            dsp::ExpMapCompute(0.25f, 4.0f, stoppedKnob(FroggersBankId::Filter, 12, kStopUnityDriveKnob)));
         // Task A (Filter slot 9, "Topology", "Topo"): continuous morph
         // replacing the old `useParallel` bool -- see FilterFxChain::Process's
         // own comment (FilterFx.hpp) for why topology==0 is bit-identical to
@@ -1423,12 +1776,38 @@ private:
         // own shape is `delay.process(bumpIn, params)` then
         // `delay.toReverbMono(bumpIn, wet, params.dmix)` (:196-198),
         // reproduced identically below.
-        const dsp::DelayParams delayParams = dsp::MapRowsToDelayParams(
+        // T2.2: row4Freeze (the Freeze KNOB, dsp::DelayParams::dfrz) goes
+        // through stoppedKnob too -- kStopFreezeKnob (0.0f) while stopped,
+        // regardless of the commanded knob -- distinct from the Freeze
+        // BUTTON's latch (dfrzLatched, T5.2, set just below: T2.4 pins that
+        // the latch stays a no-op on the audio while stopped, since this
+        // override already zeroes dfrz and T2.1 forces every voice's
+        // Release, so FreezeFeedback's above-unity overdrive has nothing
+        // left feeding it). lastDelayFreezeKnobEffective_ records the
+        // resolved value for TestLastDelayFreezeKnobEffective() -- dfrz has
+        // no other test-readable home since `delayParams` is local to this
+        // function, freshly constructed every sample (this file's own
+        // dfrzLatched comment, below).
+        const float delayFreezeKnobEffective = stoppedKnob(FroggersBankId::Delay, 4, kStopFreezeKnob);
+        lastDelayFreezeKnobEffective_ = delayFreezeKnobEffective;
+        dsp::DelayParams delayParams = dsp::MapRowsToDelayParams(
             knob(FroggersBankId::Delay, 0), knob(FroggersBankId::Delay, 1), knob(FroggersBankId::Delay, 2),
-            knob(FroggersBankId::Delay, 3), knob(FroggersBankId::Delay, 4), knob(FroggersBankId::Delay, 5),
+            knob(FroggersBankId::Delay, 3), delayFreezeKnobEffective, knob(FroggersBankId::Delay, 5),
             knob(FroggersBankId::Delay, 6), knob(FroggersBankId::Delay, 7), knob(FroggersBankId::Delay, 8));
+        // T5.2 (proposal.md §6.4b-ii's own binding implementation
+        // constraint): the Freeze BUTTON's override, applied where the
+        // freeze mapping resolves the encoder's value -- MapRowsToDelayParams
+        // just above sets `dfrz` from the clamped (T3.1a) encoder alone and
+        // never touches `dfrzLatched`, which dsp::StereoDelay::Process()
+        // (dsp/Delay.hpp) already honours as a SINK (packet P4) but nothing
+        // until this packet ever sets as a SOURCE. Not folded into
+        // MapRowsToDelayParams itself: dfrzLatched is not a row (this
+        // file's own DelayParams::dfrzLatched comment).
+        delayParams.dfrzLatched = FreezeLatched();
         // -- Delay slots 9-13 (D6-D10, strict-executor packet) ---------------
-        delay_.SetFeedbackDrive(knob(FroggersBankId::Delay, 9));
+        // T2.2: stoppedKnob overrides Feedback drive to kStopUnityDriveKnob
+        // while stopped, same idiom as the Filter comb drive above.
+        delay_.SetFeedbackDrive(stoppedKnob(FroggersBankId::Delay, 9, kStopUnityDriveKnob));
         delay_.SetFeedbackTone(knob(FroggersBankId::Delay, 10));
         delay_.SetModRate(knob(FroggersBankId::Delay, 11));
         delay_.SetWidthBalance(knob(FroggersBankId::Delay, 12));
@@ -1450,6 +1829,26 @@ private:
         // away the source. Applied to the mapped value, not the knob range, so
         // the control still sweeps its whole travel.
         constexpr float kMaxReverbWetMix = 0.7f;
+        // T2.2: stoppedKnob overrides Tank drive (slot 10) to
+        // kStopUnityDriveKnob while stopped, same idiom as the Filter comb
+        // drive and Delay feedback drive above. Reverb::Process computes
+        // its own `tankDrive` from this knob as a LOCAL (dsp/Reverb.hpp,
+        // TankDriveFromKnob), so there is no member to read back after the
+        // fact -- lastReverbTankDriveKnobEffective_ records the resolved
+        // knob value passed in here for TestLastReverbTankDriveKnobEffective().
+        const float reverbTankDriveKnobEffective = stoppedKnob(FroggersBankId::Reverb, 10, kStopUnityDriveKnob);
+        lastReverbTankDriveKnobEffective_ = reverbTankDriveKnobEffective;
+        // T2.5: stoppedKnob overrides Grit (slot 11) to kStopGritKnob
+        // (0.0f) while stopped, same idiom as the Tank drive override
+        // immediately above -- see this method's own T2.5 comment (beside
+        // kStopFadeReleaseKnob) for why (measured, packet 2b: Grit is the
+        // third mechanism keeping the tank sustained after Stop).
+        // lastReverbGritKnobEffective_ records the resolved knob value for
+        // TestLastReverbGritKnobEffective(), same convention as
+        // lastReverbTankDriveKnobEffective_ immediately above (Reverb::
+        // Process has no member to read gritKnob01's use back from either).
+        const float reverbGritKnobEffective = stoppedKnob(FroggersBankId::Reverb, 11, kStopGritKnob);
+        lastReverbGritKnobEffective_ = reverbGritKnobEffective;
         // Reverb slots 9-13 (R1-R5, strict-executor packet: Mod rate/Tank
         // drive/Grit/Tilt/Tuned) -- passed as Process()'s own trailing
         // arguments, mirroring how slots 7-8 (Mod depth/Hold) are already
@@ -1464,7 +1863,7 @@ private:
             knob(FroggersBankId::Reverb, 3), knob(FroggersBankId::Reverb, 4), knob(FroggersBankId::Reverb, 5),
             knob(FroggersBankId::Reverb, 6), sampleRate_,
             knob(FroggersBankId::Reverb, 7), knob(FroggersBankId::Reverb, 8),
-            knob(FroggersBankId::Reverb, 9), knob(FroggersBankId::Reverb, 10), knob(FroggersBankId::Reverb, 11),
+            knob(FroggersBankId::Reverb, 9), reverbTankDriveKnobEffective, reverbGritKnobEffective,
             knob(FroggersBankId::Reverb, 12), knob(FroggersBankId::Reverb, 13));
 
         return SanitizeOutputSample(reverbOut);
@@ -1767,6 +2166,18 @@ private:
     dsp::FilterFxChain filterChain_;
     dsp::StereoDelay delay_;
     dsp::Reverb reverb_;
+    // T2.2/T2.5: RouteAudioSample()'s last-resolved effective values for the
+    // Freeze knob (dsp::DelayParams::dfrz), Reverb Tank-drive knob, and
+    // Reverb Grit knob -- written every sample, read only by
+    // TestLastDelayFreezeKnobEffective()/TestLastReverbTankDriveKnobEffective()/
+    // TestLastReverbGritKnobEffective() above (test-only; production
+    // code never reads these back). Default values match each knob's own
+    // registered default (0.0f for Freeze, 0.5f/unity for Tank drive, 0.0f
+    // for Grit) so an un-run instance reads a sane value rather than
+    // 0-initialized noise.
+    float lastDelayFreezeKnobEffective_ = 0.0f;
+    float lastReverbTankDriveKnobEffective_ = 0.5f;
+    float lastReverbGritKnobEffective_ = 0.0f;
     // Item 3 (design.md A2/A2a): the output-stage limiter's own per-sample
     // gain-envelope state -- see the comment above `SanitizeOutputSample()`
     // for the full design rationale, and `dsp::OutputLimiter`'s own
@@ -1825,6 +2236,14 @@ private:
     // handler (FroggersUiSurface.hpp's HandleAction) instead.
     bool wasTransportRunning_ = false;
 
+    // T6.2 (tasks.md, REOPENED 2026-08-17): the PREVIOUS sample's Freeze-
+    // latch state, same idiom as `wasTransportRunning_` just above --
+    // remembered so ProcessBlock can detect the latch's own
+    // latched->unlatched edge while the transport is already stopped (the
+    // "release the latch" escape hatch out of the T6.1 drone) instead of
+    // only the transport's running->stopped edge.
+    bool wasFreezeLatched_ = false;
+
     // ITEM 1 (revised): true while stopped and a clear is still owed --
     // armed either at the running->stopped edge (if a voice was still
     // releasing there) or left false (if the edge's own AllIdle() check
@@ -1874,6 +2293,9 @@ private:
     std::atomic<int> pendingEncoderPress_{-1};
     std::atomic<bool> pendingRandomizeAll_{false};
     std::atomic<bool> pendingRandomizePage_{false};
+    // T5.1: Reset's own request flags, beside the Randomize pair they mirror.
+    std::atomic<bool> pendingResetAll_{false};
+    std::atomic<bool> pendingResetPage_{false};
     std::atomic<double> pendingTempoBpmRequest_{-1.0};
 
     std::atomic<double> tempoDisplayBpm_{synth::MasterClock::kDefaultTempoBpm};
@@ -1893,6 +2315,39 @@ private:
     // `MasterClock::TransportState()` -- defaults false so a fresh app (or a
     // headless rig that never presses Play) stays silent exactly as before.
     std::atomic<bool> desiredTransportRunning_{false};
+
+    // T5.2: the Freeze transport button's latch (see SetFreezeLatched()/
+    // FreezeLatched() above) -- defaults false so a fresh app's Delay stays
+    // on the ordinary clamped-encoder path (T3.1a) until the operator
+    // latches it.
+    std::atomic<bool> freezeLatched_{false};
+
+    // T5.3a/T5.3b (packet P7a): a bounded mono capture buffer of what the
+    // operator hears (post-limiter, pre-channel-fanout -- see the capture
+    // hook inside ProcessBlock()'s per-sample loop below). recordArmed_ is a
+    // direct UI-thread-write, audio-thread-read (and audio-thread-
+    // clearable, on truncation) flag -- same release/acquire pairing as
+    // desiredTransportRunning_/freezeLatched_ above, not the coalescing
+    // "pending request" two-hop the Request*/pending*_ atomics above use.
+    // All allocation happens once, in ArmRecording() (UI thread, above);
+    // the audio thread only ever appends to an already-sized recordBuffer_
+    // or clears a flag, never allocates.
+    std::vector<float> recordBuffer_;
+    std::atomic<bool> recordArmed_{false};
+    std::atomic<std::uint64_t> recordFrames_{0};
+    std::atomic<bool> recordTruncated_{false};
+    static constexpr float kMaxRecordSeconds = 30.0f * 60.0f;
+    // UI-thread-only (written/read only from ArmRecording()/
+    // RecordRefusalReason() above, never touched by the audio thread) -- no
+    // atomic needed.
+    static constexpr const char* kRecordRefusalReason = "Press Play before recording.";
+    const char* recordRefusalReason_ = nullptr;
+
+    // T5.3c: storage for the two host-facing seams (SetOnRecordingFinished/
+    // SetOnRecordRefused above) -- message-thread-only, same as
+    // recordRefusalReason_ just above (never touched by the audio thread).
+    std::function<void()> onRecordingFinished_;
+    std::function<void(const char*)> onRecordRefused_;
 
     // F3 DIAGNOSTIC (2026-08-07). F3 -- "Stop does not stop" -- has never
     // reproduced in the test harness: F3.1 measured a clean decay on a static
@@ -1914,5 +2369,62 @@ private:
     std::size_t activeBankIx_ = 0;
     std::optional<FroggersModulationDrillIn> drillIn_;
 };
+
+// T5.3c (tasks.md, "the WAV encoding itself could live either side"): a
+// pure std:: WAV encoder, kept in the no-JUCE core (check-no-juce, this
+// file's own header comment) so it is testable headlessly -- no test binary
+// compiles FroggersMain.cpp, the only place a juce::AudioFormatWriter could
+// otherwise have done this -- and so the host stays a thin
+// dialog-plus-byte-stream layer that calls this and writes exactly what it
+// returns. Canonical 44-byte PCM header (RIFF/WAVE/fmt /data), mono, 16-bit
+// signed little-endian samples, scaled by 32767 (not 32768) so +1.0f
+// round-trips exactly and the encoder does not need a separate rule for the
+// one negative value 32768 would otherwise reach -- the same convention
+// most hand-rolled PCM16 encoders use.
+inline std::vector<std::uint8_t> EncodeWavPcm16Mono(std::span<const float> samples, float sampleRate) {
+    constexpr std::uint16_t kNumChannels = 1;
+    constexpr std::uint16_t kBitsPerSample = 16;
+    constexpr std::uint16_t kBytesPerSample = kBitsPerSample / 8;
+
+    const auto sampleRateHz = static_cast<std::uint32_t>(sampleRate > 0.0f ? sampleRate : 0.0f);
+    const auto dataSize = static_cast<std::uint32_t>(samples.size() * kBytesPerSample);
+    const std::uint32_t byteRate = sampleRateHz * kNumChannels * kBytesPerSample;
+    const auto blockAlign = static_cast<std::uint16_t>(kNumChannels * kBytesPerSample);
+
+    std::vector<std::uint8_t> bytes;
+    bytes.reserve(44 + dataSize);
+    const auto appendTag = [&bytes](const char* fourCc) { bytes.insert(bytes.end(), fourCc, fourCc + 4); };
+    const auto appendU32 = [&bytes](std::uint32_t value) {
+        for (int shift = 0; shift < 32; shift += 8) {
+            bytes.push_back(static_cast<std::uint8_t>((value >> shift) & 0xff));
+        }
+    };
+    const auto appendU16 = [&bytes](std::uint16_t value) {
+        bytes.push_back(static_cast<std::uint8_t>(value & 0xff));
+        bytes.push_back(static_cast<std::uint8_t>((value >> 8) & 0xff));
+    };
+
+    appendTag("RIFF");
+    appendU32(36 + dataSize);  // ChunkSize: everything after this field.
+    appendTag("WAVE");
+    appendTag("fmt ");
+    appendU32(16);  // Subchunk1Size -- 16 for PCM.
+    appendU16(1);   // AudioFormat -- 1 for integer PCM.
+    appendU16(kNumChannels);
+    appendU32(sampleRateHz);
+    appendU32(byteRate);
+    appendU16(blockAlign);
+    appendU16(kBitsPerSample);
+    appendTag("data");
+    appendU32(dataSize);
+
+    for (float sample : samples) {
+        const float clamped = std::clamp(sample, -1.0f, 1.0f);
+        const auto pcm = static_cast<std::int16_t>(
+            std::clamp(std::lround(clamped * 32767.0f), static_cast<long>(-32768), static_cast<long>(32767)));
+        appendU16(static_cast<std::uint16_t>(pcm));
+    }
+    return bytes;
+}
 
 }  // namespace synth_froggers
