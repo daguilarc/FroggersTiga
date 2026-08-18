@@ -44,7 +44,7 @@ model, sequential code changes, per-task review with §14 postflight.
 
 ## 3. Full gate and operator acceptance (user-gated finish)
 
-- [ ] 3.1 Full suite green (`cd app && nice make -j2 test`), counts reported;
+- [x] 3.1 Full suite green (`cd app && nice make -j2 test`), counts reported;
       rebuild the launcher (`./app/build-launcher.sh`).
 - [ ] 3.2 OPERATOR GATE: the operator confirms in the built app that the
       arrows render centered between the bank row and the encoder grid at
