@@ -10,17 +10,17 @@ by the executing task before being relied on.
 
 ## 1. Old VST deletion (cheapest, unblocks nothing, goes first)
 
-- [ ] 1.1 Read then delete both option blocks in
+- [x] 1.1 Read then delete both option blocks in
       `desktop/CMakeLists.txt:136-296` (capture the `juce_add_plugin`
       idiom for group 4 BEFORE deleting); delete tracked v2 plugin sources
       (`desktop-v2/Source/PluginProcessorV2.*`, `PluginEditorV2.*`,
       `HostParameterInventoryV2.hpp`, `HostParameterProcessorV2*` test)
       and their CTest wiring; grep-gate that nothing else references the
       deleted names.
-- [ ] 1.2 Docs: remove `desktop/PACKAGING.md:115-127`,
+- [x] 1.2 Docs: remove `desktop/PACKAGING.md:115-127`,
       `desktop-v2/PACKAGING.md:68-97`, the `docs/CI.md:89` VST clause, and
       any README mention (enumerate by grep; report found vs changed).
-- [ ] 1.3 Verify the default desktop configure/build still succeeds
+- [x] 1.3 Verify the default desktop configure/build still succeeds
       (options were default-OFF; prove it, don't assume) and the app suite
       is green.
 

@@ -74,10 +74,28 @@ CTest wiring (`desktop/CMakeLists.txt:279-296`); doc sections
 `vst-v2-midi-modulation` (REMOVED deltas in this change; dirs deleted at
 archive-time sync). v1 sources are local-only (`.git/info/exclude`) —
 nothing tracked to delete beyond the CMake block that references them.
-The `HostParameterInventoryV2` dual-ID concept (stableId + displayName,
-`desktop-v2/Source/HostParameterInventoryV2.hpp:11,91`,
-`vst-v2-midi-modulation` spec) is RE-CREATED fresh against the current
-model in B3 — deleted as code, kept as an idea.
+**Amended after Task 1 execution (2026-08-18) — the original deletion
+list was wrong about four file groups, caught by
+verify-before-delete:** `HostParameterInventoryV2.hpp` and its
+Routing/PendingStore/StateEnvelope siblings are desktop-v2's live,
+compiled host-parameter model (used by `FroggersV2ControlCore`,
+`FroggersV2HostBridge`, `FroggersV2AppManifest`; compiled into the live
+app targets, `desktop-v2/CMakeLists.txt:99-105,193-198`) — not
+plugin-wrapper corpses; kept untouched.
+`HostParameterProcessorV2_test.cpp` has its own always-on CTest target
+(`desktop-v2/CMakeLists.txt:290-302`); the deleted desktop/ copy was
+stale (hardcoded count 142 vs live 119). `PluginEditorV2.*` and
+`HostedMainComponentV2.*` are compilation-dead but text-asserted by live
+projection-validator tests; kept under the corpse-removal-only rule.
+Actually deleted: `PluginProcessorV2.*`, `HostParameterRegistryV2.*`,
+the v1 `desktop/Source` set, both CMake option blocks, doc sections, and
+the dead lines in `scripts/verify_clean_rebuild.sh`. B3 builds an
+INDEPENDENT dual-ID inventory over the unrelated `app/`-side six-bank
+model — a parallel construction, not a recreation of deleted code. The
+dual-ID requirement was never uniquely owned by `vst-v2-midi-modulation`:
+`froggers-v2-app-manifest` (untouched) independently specifies and
+enforces it, so removing `vst-v2-midi-modulation` in its entirety orphans
+nothing.
 
 - **B1. Plugin skeleton** (`app/vst/`): a JUCE `AudioProcessor` (VST3 +
   AU, IS_SYNTH) via CMake modeled on the JUCE infra already in
