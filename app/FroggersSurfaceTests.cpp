@@ -798,7 +798,17 @@ TEST_CASE(modulation_header_shown_only_while_drilled_in_and_matches_the_level) {
         const synth::ui::NodeTree undrilledTree = surface.BuildTree();
         const synth::ui::Node* headerAtLevel0 = FindNodeById(undrilledTree, headerId);
         REQUIRE_TRUE(headerAtLevel0 != nullptr);
-        REQUIRE_TRUE(headerAtLevel0->drawCommands.empty());
+        // Pin the header row's level-0 children instead of a container tautology:
+        // exactly [left spacer, prev arrow, next arrow, right spacer], no title.
+        REQUIRE_TRUE(headerAtLevel0->children.size() == 4);
+        REQUIRE_TRUE(headerAtLevel0->children[0].value == "froggers.layout.right.header.spacer.left");
+        REQUIRE_TRUE(headerAtLevel0->children[1].value == synth_froggers::FroggersNodeIds::kBankPrevArrow);
+        REQUIRE_TRUE(headerAtLevel0->children[2].value == synth_froggers::FroggersNodeIds::kBankNextArrow);
+        REQUIRE_TRUE(headerAtLevel0->children[3].value == "froggers.layout.right.header.spacer.right");
+        // kModulationHeaderTitle must not be a level-0 child (it exists only while drilled).
+        for (const synth::ui::NodeId& child : headerAtLevel0->children) {
+            REQUIRE_TRUE(child.value != titleId);
+        }
     }
 
     surface.DispatchAction(
@@ -1014,7 +1024,7 @@ TEST_CASE(bank_carousel_arrows_are_centered_in_the_modulation_header_band_at_top
     // Pair-midpoint == band-midpoint, computed (not eyeballed), same
     // FullyInside/AbsoluteBounds idiom every other geometry test in this file
     // uses.
-    constexpr float kTolerance = 0.5f;
+    constexpr float kTolerance = 0.01f;
     const float pairLeft = prevBounds.x;
     const float pairRight = nextBounds.x + nextBounds.width;
     const float pairMidpoint = (pairLeft + pairRight) * 0.5f;
