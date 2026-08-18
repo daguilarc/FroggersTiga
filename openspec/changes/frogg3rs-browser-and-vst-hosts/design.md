@@ -155,7 +155,14 @@ nothing.
   `FroggersAppCore::ProcessFrame`; `prepareToPlay` maps to the core's
   prepare path (exact seam: read how `app/FroggersMain.cpp`'s launcher
   session drives the core — UNVERIFIED which init calls are needed,
-  enumerate at implementation).
+  enumerate at implementation). Bus/MIDI posture (audit-traced
+  2026-08-18): stereo output, NO audio input bus — the core requests
+  zero input channels (`UPSTREAM-SHEAF-ASK.md:52`, same fact Part A's
+  input-capture note rests on) — and NO MIDI-note wiring: the app core
+  exposes no note-input seam (zero note-handling hits across all of
+  `app/`, audit grep 2026-08-18), so the MIDI buffer is accepted and
+  ignored; DAW MIDI reaches the instrument only via host parameters
+  (B3).
 - **B2. DAW-external transport:** the ONLY transport producer today is
   `HandleAction` off UI clicks (`app/FroggersUiSurface.hpp:1826-1900`,
   `kPlay/kStop/kFreeze` → `SetFreezeLatched`/
@@ -164,11 +171,34 @@ nothing.
   position info → the SAME `MessageIn::Start/Stop` messages + 
   `SetDesiredTransportRunning`, edge-triggered on host play-state change.
   In plugin mode the editor's internal transport controls are NOT
-  rendered (DAW is the authority — the operator's explicit contract);
-  Freeze is NOT transport — it is a musical control and becomes an
-  automatable parameter (B3), preserving the stop-isolation semantics
-  (`SetFreezeLatched`, `app/FroggersAppCore.hpp:447-450`,
-  `TransportTeardownActive` `:471`).
+  rendered (DAW is the authority — the operator's explicit contract).
+  The transport row is Play | Stop | Freeze | Record
+  (`app/FroggersUiSurface.hpp:126`, audit-traced 2026-08-18): Play,
+  Stop, AND Record are suppressed — recording is the DAW's job, the
+  host records the plugin's output natively. Freeze is NOT transport —
+  it is a musical control and becomes an automatable parameter (B3),
+  preserving the stop-isolation semantics (`SetFreezeLatched`,
+  `app/FroggersAppCore.hpp:447-450`, `TransportTeardownActive` `:471`);
+  its button stays rendered and gains a "FREEZE" text label beside it
+  in the row space the three suppressed controls free (operator
+  instruction 2026-08-18; the transport plates are glyph-only today —
+  the BPM label idiom `kBpmLabel`, `app/FroggersUiSurface.hpp:185`, is
+  the nearest labeling precedent, though it sits below its control, not
+  beside).
+  **Host tempo (audit addition 2026-08-18):** the core already treats
+  external clock as tempo authority — `MasterClock::SetTempoBpm` no-ops
+  while slaved to external MIDI clock and the surface never enqueues a
+  tempo request while slaved (comment chain
+  `app/FroggersAppCore.hpp:569-577`, citing `src/MasterClock.cpp:963-965`
+  UNVERIFIED at that path), with display-direction reads
+  `DisplayTempoBpm()`/`TempoExternallyClocked()`
+  (`app/FroggersAppCore.hpp:582-584`). In plugin mode the HOST is the
+  external clock: host tempo reaches the master clock and the BPM slider
+  behaves exactly as when MIDI-clock-slaved (display-only). Mechanism
+  UNVERIFIED: playhead-BPM → `RequestTempoBpm` on change vs synthesizing
+  external-origin `MessageIn::Clock` ticks (the message exists with an
+  `Origin` distinction, Sheaf `ParameterModulation.hpp:990-996`) — read
+  the slave-engage path in MasterClock before choosing.
   UNVERIFIED: whether the surface can suppress the transport row cleanly
   (a host-capability flag on the surface vs a build-time branch) — decide
   at implementation against the FroggersCellMap row-table structure
@@ -181,9 +211,12 @@ nothing.
   `juce::AudioProcessorParameter`s with dual identity (flat stableId for
   automation/MIDI-mapping + grouped display name), bridged bidirectionally
   to Sheaf's `ParameterManager` via the existing message bus
-  (`MessageIn::ParamIncDec`/set messages — enumerate the exact set-value
-  message at implementation; `app/FroggersUiSurface.hpp:1978-1986` shows
-  the `ParamIncDec` producer idiom — audit-corrected; `:1954-1975` is the
+  (`MessageIn::ParamIncDec`/`MessageIn::ParamSetAbsolute` — the
+  set-value message the first audit left to enumerate is
+  `ParamSetAbsolute`, Sheaf `ParameterModulation.hpp:976`, traced at the
+  second audit; verify its value semantics against the surface's usage
+  at implementation. `app/FroggersUiSurface.hpp:1978-1986` shows the
+  `ParamIncDec` producer idiom — audit-corrected; `:1954-1975` is the
   adjacent `SetSceneBlend` producer). MIDI mapping is thereby the DAW's job end to end;
   the plugin registers no internal MIDI-learn (the core has none —
   `app/FroggersModulation.hpp:1233`).
@@ -213,7 +246,11 @@ nothing.
   parameter round-trip tests (host sets param → core value moves → host
   readback matches; stableIds stable across runs), transport edge tests
   (playhead run/stop transitions produce exactly one Start/Stop message
-  each), `check_no_juce` untouched and green, plugin loads in
+  each), tempo-follow test (host tempo change reaches the clock,
+  `DisplayTempoBpm()` follows, `TempoExternallyClocked()` true, user
+  tempo request rejected while slaved), editor-row assertions
+  (Play/Stop/Record absent, Freeze present with its "FREEZE" label),
+  `check_no_juce` untouched and green, plugin loads in
   `pluginval`-style host if available (else the DAW smoke is the
   operator's gate — say which in the report). Full app suite
   (`cd app && nice make -j2 test`, 279/279 baseline) green throughout.
@@ -234,4 +271,7 @@ nothing.
 
 Per task group: `cd app && nice make -j2 test` green (279/279 + new);
 NEVER above -j2. A-side additionally: the browser build script runs green
-locally. Operator gates: browser smoke (A3), DAW smoke (B, in a real DAW).
+locally. Operator gates: browser smoke (A3/A4) and DAW smoke (B, in a
+real DAW) — BOTH deferred to the end and run together in one sitting
+(group 9); the operator tests nothing until every group has landed
+(operator instruction 2026-08-18).

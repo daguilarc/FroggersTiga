@@ -115,11 +115,12 @@ by the executing task before being relied on.
       being published). Layout assertion CI-runnable where the harness
       allows, else deferred to the 4.4 smoke (say which in the report);
       link targets covered by 4.1's old-name gate.
-- [ ] 4.4 OPERATOR GATE: browser smoke — the operator loads the app via
-      the launcher/catalog locally and confirms the surface (incl.
-      carousel arrows) works in the browser; at phone width the encoder
-      grid spans the screen with everything else above or below it; the
-      site links resolve with no old-name references.
+- [ ] 4.4 Browser smoke DEFERRED (operator instruction 2026-08-18): the
+      operator tests nothing until every group lands — the browser smoke
+      runs together with the DAW smoke in the combined gate at 9.2.
+      This group is complete when its automated checks (4.1's URL gate,
+      4.2's dry-run + byte-identity, 4.3's layout assertion where
+      CI-runnable) are green.
 
 ## 5. VST skeleton (design B1)
 
@@ -127,7 +128,9 @@ by the executing task before being relied on.
       wrapping the core: `processBlock` → `ProcessFrame`, `prepareToPlay`
       → the core's prepare path (enumerate the launcher session's init
       calls first — design UNVERIFIED item; cite what you traced).
-      All JUCE in the host layer only.
+      All JUCE in the host layer only. Bus/MIDI posture per design B1:
+      stereo output, no audio input bus, MIDI buffer accepted and
+      ignored (no note wiring — the core has no note-input seam).
 - [ ] 5.2 Tests: plugin target builds; core suite + `check_no_juce`
       untouched and green; basic processBlock smoke (nonzero output on a
       running transport state injected directly).
@@ -138,14 +141,27 @@ by the executing task before being relied on.
       `MessageIn::Start`/`Stop` + `SetDesiredTransportRunning` per
       transition (the standalone producer at
       `app/FroggersUiSurface.hpp:1826-1900` is the semantic reference).
-- [ ] 6.2 Editor transport suppression: internal transport controls not
-      rendered in plugin mode (mechanism per design UNVERIFIED item —
-      decide against the FroggersCellMap row-table conventions, cite).
-      Freeze exposed as an automatable parameter preserving
-      `SetFreezeLatched` semantics.
-- [ ] 6.3 Tests: transport edge tests (run→stop→run: one message each, no
+- [ ] 6.2 Editor transport suppression: Play, Stop, AND Record not
+      rendered in plugin mode — the row is Play | Stop | Freeze | Record
+      (`app/FroggersUiSurface.hpp:126`); recording is the DAW's job
+      (mechanism per design UNVERIFIED item — decide against the
+      FroggersCellMap row-table conventions, cite). Freeze exposed as an
+      automatable parameter preserving `SetFreezeLatched` semantics; its
+      button stays and gains a "FREEZE" text label beside it in the
+      freed row space (operator instruction 2026-08-18; design B2 cites
+      the nearest labeling precedent).
+- [ ] 6.3 Host tempo (design B2 audit addition): host tempo reaches the
+      master clock via the core's existing external-clock slaving; BPM
+      slider behaves exactly as when MIDI-clock-slaved (display-only,
+      requests suppressed). Mechanism is a design UNVERIFIED item —
+      read the slave-engage path in MasterClock first, cite the trace.
+- [ ] 6.4 Tests: transport edge tests (run→stop→run: one message each, no
       repeats while state holds); freeze-parameter latch semantics test
-      (mirror the stop-isolation T6/T7 assertions from the app suite).
+      (mirror the stop-isolation T6/T7 assertions from the app suite);
+      tempo-follow test (host tempo change → `DisplayTempoBpm()`
+      follows, `TempoExternallyClocked()` true, user tempo request
+      rejected while slaved); editor-row assertions (Play/Stop/Record
+      absent, Freeze present with its label — ties to 8.2).
 
 ## 7. Stable-ID parameter surface (design B3)
 
@@ -169,17 +185,24 @@ by the executing task before being relied on.
       parameter view now, editor as follow-up change) is the operator's
       decision, not a silent descope.
 - [ ] 8.2 Tests: editor constructs/destructs cleanly headless where the
-      harness allows; surface tree renders with transport row suppressed
-      (ties to 6.2's assertions).
+      harness allows; surface tree renders with Play/Stop/Record absent
+      and Freeze present with its "FREEZE" label, BPM display-only
+      (ties to 6.4's assertions).
 
 ## 9. Whole-change gate and operator acceptance (user-gated finish)
 
 - [ ] 9.1 Full suite green; browser build green; plugin builds VST3+AU;
       counts reported.
-- [ ] 9.2 OPERATOR GATE: DAW smoke — load the VST in a real DAW: host
-      transport drives it, a parameter automates, a DAW-side MIDI mapping
-      moves a parameter, the editor shows the surface without transport
-      controls.
+- [ ] 9.2 OPERATOR GATE (combined, one sitting — browser AND DAW
+      together, per operator instruction 2026-08-18):
+      browser — load the app via the launcher/catalog locally, confirm
+      the surface (incl. carousel arrows) works; at phone width the
+      encoder grid spans the screen with everything else above or below
+      it; site links resolve with no old-name references.
+      DAW — load the VST in a real DAW: host transport drives it, host
+      tempo drives the clock, a parameter automates, a DAW-side MIDI
+      mapping moves a parameter, the editor shows the surface with
+      Play/Stop/Record gone and Freeze labeled "FREEZE".
 - [ ] 9.3 On both gates: archive with spec sync (ADDED froggers-vst-host;
       froggers-web-host ADDED delta synced; REMOVED capabilities synced
       from their per-capability delta files and spec dirs deleted;

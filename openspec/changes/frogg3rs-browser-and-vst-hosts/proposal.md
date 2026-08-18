@@ -46,10 +46,14 @@ while deleting the old, never-tested VST implementations.
   dormant. The repository-rename publication gate in `froggers-web-host`
   remains the operator's.
 - **froggers-vst-host** (NEW capability): a JUCE plugin host (VST3/AU)
-  under `app/` wrapping the JUCE-free core — DAW-external transport
-  (playhead → the existing `MessageIn` bus), stable-ID automatable
-  parameter inventory over the six-bank model, plugin editor hosting the
-  same portable `FroggersUiSurface`, and the core's `check_no_juce` gate
+  under `app/` wrapping the JUCE-free core — DAW-external transport AND
+  tempo (playhead → the existing `MessageIn` bus; host tempo → the
+  core's existing external-clock slaving), recording left to the DAW
+  (the Record control suppressed with Play/Stop; Freeze stays, labeled
+  "FREEZE"), stable-ID automatable parameter inventory over the
+  six-bank model, a stereo-out/no-input instrument with no MIDI-note
+  wiring (the core has no note seam), plugin editor hosting the same
+  portable `FroggersUiSurface`, and the core's `check_no_juce` gate
   preserved untouched.
 - **juce-vst-cc-mod-gating, vst-v2-midi-modulation** (REMOVED capabilities):
   these specify the deleted wrappers' behavior; they are retired with the
@@ -90,6 +94,8 @@ while deleting the old, never-tested VST implementations.
   branch cut; the machine-local folder rename is operator-coordinated at
   a session boundary. (The remote URL and the legacy site's base path
   were already fixed directly: commit `7beec7f`.)
-- Delivery: one commit per task group on the current branch; operator gates
-  for the browser smoke and the DAW smoke; the site-cutover step
-  is user-gated per the existing spec.
+- Delivery: one commit per task group on the current branch; operator
+  gates for the browser smoke and the DAW smoke, both deferred to the
+  end and run together in one sitting (group 9 — the operator tests
+  nothing until every group lands, instruction 2026-08-18); the
+  site-cutover step is user-gated per the existing spec.
