@@ -27,7 +27,7 @@ model, sequential code changes, per-task review with §14 postflight.
 
 ## 2. Arrow action handling
 
-- [ ] 2.1 `HandleAction` branches for `kBankPrevious`/`kBankNext` beside the
+- [x] 2.1 `HandleAction` branches for `kBankPrevious`/`kBankNext` beside the
       `kBankSelect` branch (`:1858-1861`), GATED on
       `app_->DrillLevel() == 0` (MANDATORY — preflight finding, design
       §behavior: HandleAction matches action names with no node-presence
@@ -36,7 +36,7 @@ model, sequential code changes, per-task review with §14 postflight.
       `(CurrentBankIndex() ± 1 + kFroggersBankCount) % kFroggersBankCount` →
       `app_->RequestBankSelect(ix)`. No new state; single authority
       preserved.
-- [ ] 2.2 Tests (TDD): dispatch `kBankNext` steps +1 with highlight following
+- [x] 2.2 Tests (TDD): dispatch `kBankNext` steps +1 with highlight following
       (exactly one `selected==true` after every step, imitate `:565-612`);
       wrap 5→0 on next and 0→5 on previous; while drilled, the tree carries
       no arrow action node AND a synthetic dispatch of `kBankNext` changes

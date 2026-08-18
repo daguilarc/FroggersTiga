@@ -1986,6 +1986,33 @@ private:
             app_->RequestBankSelect(FroggersParseSize(action.value, 0));
             return;
         }
+        // frogg3rs-bank-carousel-arrows task 2.1 (design.md "Behavior
+        // decisions", MANDATORY preflight finding): the carousel arrows
+        // route through the SAME single selection authority as the bank
+        // buttons above (RequestBankSelect -- no second selection state).
+        // GATED on DrillLevel() == 0, the same source
+        // AppendModulationHeaderRow reads to decide whether to emit the
+        // arrow nodes at all: HandleAction matches on action NAME with no
+        // node-presence check, so without this gate a synthetic dispatch
+        // while drilled would still switch banks and, via the ProcessFrame
+        // drain reconstructing drillIn_ on any bank change
+        // (FroggersAppCore.hpp:627-641), silently exit the drill -- even
+        // though no arrow node exists in the tree to click.
+        if (action.name == FroggersActions::kBankPrevious) {
+            if (app_->DrillLevel() == 0) {
+                const std::size_t bankIx =
+                    (CurrentBankIndex() + kFroggersBankCount - 1) % kFroggersBankCount;
+                app_->RequestBankSelect(bankIx);
+            }
+            return;
+        }
+        if (action.name == FroggersActions::kBankNext) {
+            if (app_->DrillLevel() == 0) {
+                const std::size_t bankIx = (CurrentBankIndex() + 1) % kFroggersBankCount;
+                app_->RequestBankSelect(bankIx);
+            }
+            return;
+        }
         if (action.name == FroggersActions::kRandomizeAll) {
             app_->RequestRandomizeAll();
             return;
