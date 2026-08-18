@@ -66,11 +66,15 @@ renderer, so surface improvements reach the plugin without a parallel UI.
 - **THEN** the plugin editor renders it without plugin-specific UI work
   beyond the DAW-owned exclusions
 
-## REMOVED Requirements
+## Removed capabilities
 
 The capabilities `juce-vst-cc-mod-gating` and `vst-v2-midi-modulation` are
 removed in their entirety: they specify the deleted `desktop/` /
 `desktop-v2/` plugin wrappers (never tested at the AudioProcessor layer,
-never built by CI). Their spec directories are deleted at archive-time
-sync. The dual-identity parameter idea they contained is re-specified
-above against the current model.
+never built by CI). Their requirement-level REMOVED deltas live in this
+change's own `specs/<capability>/spec.md` files per repo convention
+(added at the second 2026-08-18 audit — a `## REMOVED Requirements`
+heading here would mis-target this capability's own spec at sync time).
+Their spec directories are deleted at archive-time sync. The
+dual-identity parameter idea they contained is re-specified above
+against the current model.

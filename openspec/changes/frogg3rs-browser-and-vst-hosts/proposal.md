@@ -34,7 +34,11 @@ while deleting the old, never-tested VST implementations.
 ## What Changes
 
 - **froggers-browser-package + froggers-web-host** (existing main specs,
-  implemented, no delta): browser build of `synth_froggers::FroggersApp`
+  implemented; browser-package carries no delta, web-host gains a small
+  ADDED delta recording the operator's 2026-08-18 site-presentation
+  decisions — mobile viewport stacks around a full-width encoder grid,
+  legacy site link roles carried forward under renamed references):
+  browser build of `synth_froggers::FroggersApp`
   through Sheaf's generic pipeline (out-of-tree manifest +
   `--allowed-source-root`, the same mechanism `browser-fixture-app` uses);
   self-hosted catalog + package artifacts; pages.yml swapped to build and
@@ -53,9 +57,12 @@ while deleting the old, never-tested VST implementations.
 
 ## Impact
 
-- Affected specs: `froggers-browser-package`, `froggers-web-host`
-  (implemented as written); `froggers-vst-host` (added);
-  `juce-vst-cc-mod-gating`, `vst-v2-midi-modulation` (removed).
+- Affected specs: `froggers-browser-package` (implemented as written);
+  `froggers-web-host` (implemented as written + ADDED site-presentation
+  delta, operator decisions 2026-08-18); `froggers-vst-host` (added);
+  `juce-vst-cc-mod-gating`, `vst-v2-midi-modulation` (removed; each has
+  its own REMOVED delta file per repo convention, added at the second
+  2026-08-18 audit).
 - Affected code: NEW `app/browser/` (manifest + build script + CI step),
   NEW `app/vst/` (plugin host + CMake), `.github/workflows/pages.yml`
   (swap), DELETED `desktop/CMakeLists.txt:136-313` (both `BUILD_VST*`

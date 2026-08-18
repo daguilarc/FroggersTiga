@@ -50,14 +50,16 @@ by the executing task before being relied on.
 ## 3. Rename completion (repo renamed to `frogg3rs` 2026-08-18; MUST precede publication)
 
 - [ ] 3.1 Tracked-name sweep: `git grep FroggersTiga` excluding
-      `openspec/changes/archive`. Survey re-measured at audit (2026-08-18,
-      HEAD `eb989a8`, method pinned:
+      `openspec/changes/archive`. Survey re-measured at the second audit
+      (2026-08-18, HEAD `a0f2f6c`, method pinned:
       `git grep -c FroggersTiga -- ':!openspec/changes/archive'`, matching
       lines summed per top-level path — the proposal-time numbers were
-      method-inconsistent and are superseded): total 753 — src 518 (513
+      method-inconsistent and are superseded; drift vs the `eb989a8`
+      measurement is +3, all inside this change's own audit-amended
+      artifacts): total 756 — src 518 (513
       of these in checked-in Daisy build artifacts under
       `src/FroggersTiga/build/`: frozen tree, expect KEEP), desktop-v2 70,
-      desktop 47, openspec 41 (incl. this change's own artifacts), docs
+      desktop 47, openspec 44 (incl. this change's own artifacts), docs
       17, README 13, web 12, DAISY_MANUAL.md 10, scripts 6, app 4,
       SIM_MANUAL.md 4, sim 3, MANUAL.md 2, .github 2,
       sheaf-audioconfig-labels.patch 1, publish 1, QUICK_DICT.md 1,
@@ -102,9 +104,22 @@ by the executing task before being relied on.
       `froggers-web-host:34-45` — the workflow lands ready, dry-run
       proven (workflow_dispatch), without flipping anything the spec
       gates on the rename.
-- [ ] 4.3 OPERATOR GATE: browser smoke — the operator loads the app via
+- [ ] 4.3 Site shell (design A4; operator decisions 2026-08-18, ADDED
+      delta on `froggers-web-host`): mobile-width viewports stack around
+      a full-width sixteen-slot encoder grid, everything else above or
+      below (mechanism is a design UNVERIFIED item — trace Sheaf's
+      browser sizing path and the grid geometry first; surface-side
+      layout work is in scope if the trace demands it, report it);
+      legacy link roles carried forward (`web/index.html:39-62` is the
+      enumeration; manual → `MANUAL.md`, release links → the release
+      being published). Layout assertion CI-runnable where the harness
+      allows, else deferred to the 4.4 smoke (say which in the report);
+      link targets covered by 4.1's old-name gate.
+- [ ] 4.4 OPERATOR GATE: browser smoke — the operator loads the app via
       the launcher/catalog locally and confirms the surface (incl.
-      carousel arrows) works in the browser.
+      carousel arrows) works in the browser; at phone width the encoder
+      grid spans the screen with everything else above or below it; the
+      site links resolve with no old-name references.
 
 ## 5. VST skeleton (design B1)
 
@@ -166,5 +181,6 @@ by the executing task before being relied on.
       moves a parameter, the editor shows the surface without transport
       controls.
 - [ ] 9.3 On both gates: archive with spec sync (ADDED froggers-vst-host;
-      REMOVED spec dirs deleted; browser/web-host specs implemented as
-      written, no delta).
+      froggers-web-host ADDED delta synced; REMOVED capabilities synced
+      from their per-capability delta files and spec dirs deleted;
+      browser-package spec implemented as written, no delta).

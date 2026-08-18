@@ -7,6 +7,12 @@ UNVERIFIED must be read before the task relying on them executes. Sheaf
 paths are `External/Sheaf/projects/synth/...` unless prefixed.
 Re-audited 2026-08-18 (omni-rule preflight, three verification subagents,
 HEAD `eb989a8`): corrections below are marked "audit-corrected".
+Second audit 2026-08-18 (HEAD `a0f2f6c`): the Sheaf pin moved
+`7bf1f223` → `c0bf7b48`, a docs-only delta (one sdd ledger file), so all
+Sheaf anchors verified at `7bf1f223` remain valid; FroggersTiga code is
+unchanged since `eb989a8` (artifact + pin commits only) and spot-checked
+anchors held. A4, the Web-preflight classification in A3, and the
+per-capability REMOVED delta files date from this second audit.
 
 ## Part A — Browser host
 
@@ -52,6 +58,13 @@ same way — NO Sheaf-side change required, per
   legacy `wasm/` emcmake + `web/` vite steps (`pages.yml:41-59`; artifact
   upload at `:64-67`, deploy at `:69-71` — audit-corrected) with the A1/A2 build + site publication; `web/` and `wasm/`
   remain byte-identical (spec scenario asserts dormancy, not deletion).
+  The `Web preflight` step (`pages.yml:26-38`) is NOT one of the legacy
+  build steps — it builds nothing (sim/doc mirror checks + generated
+  host-display parity checks, e.g. `generate-host-display.mjs` writes
+  `web/src/hostDisplay.generated.ts` and `--check` only verifies);
+  classify each of its five checks at execution — keep what gates
+  sim/doc parity that stays live, drop only what exists solely to serve
+  the legacy site, and report kept vs dropped.
   The rename/publication gate stays with the operator — the workflow lands
   ready but the public cutover is their call per the spec.
 - **Input capture:** frogg3rs currently requests ZERO input channels
@@ -60,6 +73,23 @@ same way — NO Sheaf-side change required, per
   (`sbw-4`: zero-input apps never call it). Re-enabling recording input
   in the browser is OUT OF SCOPE here; the sar-33 signal exists upstream
   when that day comes.
+- **A4. Site shell: mobile stacking + legacy link roles** (operator
+  decisions 2026-08-18; ADDED delta on `froggers-web-host` in this
+  change): on mobile-width viewports the published page renders the
+  sixteen-slot (4×4) encoder grid full-width, everything else stacked
+  above/below — the legacy site's mobile stacking is the reference;
+  small is acceptable, side-by-side is not. The page carries the legacy
+  link roles — downloads/license/manual, enumerated at
+  `web/index.html:39-62` — re-pointed at current references: manual →
+  `MANUAL.md` (the current app's manual, `MANUAL.md:1-3`), release
+  links → the release being published; old-name absence is already
+  CI-gated by task 4.1's renamed-origin check. UNVERIFIED at write
+  time: the mechanism for viewport-adaptive stacking of the
+  Sheaf-rendered surface (host-page CSS/canvas sizing vs surface-side
+  layout) — read Sheaf's browser runtime sizing path and the
+  FroggersCellMap grid geometry before implementing; if it requires
+  surface-side layout work beyond the browser host, that is in scope
+  per the operator's instruction, but report the coupling trace.
 
 ## Part B — VST host
 
@@ -173,7 +203,11 @@ nothing.
 - A: manifest validation + build emits `frogg3rs.js/.wasm` (build-level
   test in the new script, CI-runnable); catalog JSON schema-validates;
   pages workflow dry-run builds; legacy `web/`+`wasm/` byte-identity
-  asserted (git-clean check in CI step). Operator browser smoke.
+  asserted (git-clean check in CI step); mobile-viewport stacking
+  asserted (grid spans viewport width, nothing beside it) CI-runnably
+  where the harness allows, else at the operator smoke; link roles
+  present with no old-name target (folds into 4.1's old-name gate).
+  Operator browser smoke incl. phone-width layout and links.
 - B: deletion — desktop default build still configures/builds green
   (option blocks gone, nothing references them: grep gate); new plugin —
   parameter round-trip tests (host sets param → core value moves → host
