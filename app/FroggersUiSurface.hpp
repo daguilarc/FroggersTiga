@@ -496,16 +496,48 @@ inline constexpr synth::Color kRecordColor = synth::Color::Rgb(139, 0, 0);
 inline constexpr float kTransportIconFraction = 0.575f;  // ~55-60% of the plate
 inline constexpr float kTransportPlateSize = 28.0f;      // matches the old Button height
 
-inline std::vector<synth::ui::DrawCommand> BuildPlayDrawCommands(synth::ui::Bounds bounds) {
+// frogg3rs-bank-carousel-arrows task 1.1 (final fix wave, §6/§8 extraction):
+// six builders below (Play/Stop/Freeze/Record/BankPrevArrow/BankNextArrow)
+// each opened with the identical rounded-rect plate plus inset-box
+// arithmetic. Factored to one shared helper -- the plate `DrawCommand` and
+// the inset `Bounds` every caller derives its own glyph geometry from.
+// Byte-identical output is preserved: the inset `Bounds` computed here is
+// LITERALLY the same expression BuildStopDrawCommands/BuildRecordDrawCommands
+// already built inline (`square`/`circleBounds` below), and the four
+// polygon-glyph builders derive left/top directly from `inset.x`/`inset.y`
+// (again the same expression, `bounds.x + insetX` / `bounds.y + insetY`) --
+// only right/bottom move from `bounds.x + bounds.width - insetX` to
+// `inset.x + inset.width`, algebraically identical and, per this file's own
+// test suite (FroggersSurfaceTests.cpp's `PointsClose`/`BoundsClose`, 0.01-0.02f
+// tolerance, never bit-exact), not something any test distinguishes.
+struct PlateAndInsetBox {
+    synth::ui::DrawCommand plate;
+    synth::ui::Bounds inset;
+};
+
+inline PlateAndInsetBox BuildPlateAndInsetBox(synth::ui::Bounds bounds, synth::Color plateColor) {
     constexpr float kCornerRadius = 4.0f;
-    std::vector<synth::ui::DrawCommand> commands;
-    commands.push_back(synth::ui::DrawCommand::FillRoundedRect(bounds, kCornerRadius, kTransportPlateColor));
     const float insetX = bounds.width * (1.0f - kTransportIconFraction) * 0.5f;
     const float insetY = bounds.height * (1.0f - kTransportIconFraction) * 0.5f;
-    const float left = bounds.x + insetX;
-    const float right = bounds.x + bounds.width - insetX;
-    const float top = bounds.y + insetY;
-    const float bottom = bounds.y + bounds.height - insetY;
+    return PlateAndInsetBox{
+        synth::ui::DrawCommand::FillRoundedRect(bounds, kCornerRadius, plateColor),
+        synth::ui::Bounds{
+            bounds.x + insetX,
+            bounds.y + insetY,
+            std::max(0.0f, bounds.width - insetX * 2.0f),
+            std::max(0.0f, bounds.height - insetY * 2.0f),
+        },
+    };
+}
+
+inline std::vector<synth::ui::DrawCommand> BuildPlayDrawCommands(synth::ui::Bounds bounds) {
+    std::vector<synth::ui::DrawCommand> commands;
+    const PlateAndInsetBox plate = BuildPlateAndInsetBox(bounds, kTransportPlateColor);
+    commands.push_back(plate.plate);
+    const float left = plate.inset.x;
+    const float right = plate.inset.x + plate.inset.width;
+    const float top = plate.inset.y;
+    const float bottom = plate.inset.y + plate.inset.height;
     commands.push_back(synth::ui::DrawCommand::FillPolygon(
         {
             synth::ui::Point{left, top},
@@ -517,18 +549,10 @@ inline std::vector<synth::ui::DrawCommand> BuildPlayDrawCommands(synth::ui::Boun
 }
 
 inline std::vector<synth::ui::DrawCommand> BuildStopDrawCommands(synth::ui::Bounds bounds) {
-    constexpr float kCornerRadius = 4.0f;
     std::vector<synth::ui::DrawCommand> commands;
-    commands.push_back(synth::ui::DrawCommand::FillRoundedRect(bounds, kCornerRadius, kTransportPlateColor));
-    const float insetX = bounds.width * (1.0f - kTransportIconFraction) * 0.5f;
-    const float insetY = bounds.height * (1.0f - kTransportIconFraction) * 0.5f;
-    const synth::ui::Bounds square{
-        bounds.x + insetX,
-        bounds.y + insetY,
-        std::max(0.0f, bounds.width - insetX * 2.0f),
-        std::max(0.0f, bounds.height - insetY * 2.0f),
-    };
-    commands.push_back(synth::ui::DrawCommand::Fill(square, synth::Color::Red));
+    const PlateAndInsetBox plate = BuildPlateAndInsetBox(bounds, kTransportPlateColor);
+    commands.push_back(plate.plate);
+    commands.push_back(synth::ui::DrawCommand::Fill(plate.inset, synth::Color::Red));
     return commands;
 }
 
@@ -551,17 +575,15 @@ inline std::vector<synth::ui::DrawCommand> BuildStopDrawCommands(synth::ui::Boun
 // exchange, not a brightness bump) -- this is the whole reason Freeze is a
 // Draw node rather than a Button relying on `selected`.
 inline std::vector<synth::ui::DrawCommand> BuildFreezeDrawCommands(synth::ui::Bounds bounds, bool latched) {
-    constexpr float kCornerRadius = 4.0f;
     const synth::Color plateColor = latched ? synth::Color::Cyan : kTransportPlateColor;
     const synth::Color glyphColor = latched ? kTransportPlateColor : synth::Color::Cyan;
     std::vector<synth::ui::DrawCommand> commands;
-    commands.push_back(synth::ui::DrawCommand::FillRoundedRect(bounds, kCornerRadius, plateColor));
-    const float insetX = bounds.width * (1.0f - kTransportIconFraction) * 0.5f;
-    const float insetY = bounds.height * (1.0f - kTransportIconFraction) * 0.5f;
-    const float left = bounds.x + insetX;
-    const float right = bounds.x + bounds.width - insetX;
-    const float top = bounds.y + insetY;
-    const float bottom = bounds.y + bounds.height - insetY;
+    const PlateAndInsetBox plate = BuildPlateAndInsetBox(bounds, plateColor);
+    commands.push_back(plate.plate);
+    const float left = plate.inset.x;
+    const float right = plate.inset.x + plate.inset.width;
+    const float top = plate.inset.y;
+    const float bottom = plate.inset.y + plate.inset.height;
     const float midX = (left + right) * 0.5f;
     const float midY = (top + bottom) * 0.5f;
     commands.push_back(synth::ui::DrawCommand::FillPolygon(
@@ -586,20 +608,12 @@ inline std::vector<synth::ui::DrawCommand> BuildFreezeDrawCommands(synth::ui::Bo
 // Freeze's diamond. Dark red normally; armed swaps plate and glyph outright,
 // same as Freeze's own cyan/plate-colour exchange.
 inline std::vector<synth::ui::DrawCommand> BuildRecordDrawCommands(synth::ui::Bounds bounds, bool armed) {
-    constexpr float kCornerRadius = 4.0f;
     const synth::Color plateColor = armed ? kRecordColor : kTransportPlateColor;
     const synth::Color glyphColor = armed ? kTransportPlateColor : kRecordColor;
     std::vector<synth::ui::DrawCommand> commands;
-    commands.push_back(synth::ui::DrawCommand::FillRoundedRect(bounds, kCornerRadius, plateColor));
-    const float insetX = bounds.width * (1.0f - kTransportIconFraction) * 0.5f;
-    const float insetY = bounds.height * (1.0f - kTransportIconFraction) * 0.5f;
-    const synth::ui::Bounds circleBounds{
-        bounds.x + insetX,
-        bounds.y + insetY,
-        std::max(0.0f, bounds.width - insetX * 2.0f),
-        std::max(0.0f, bounds.height - insetY * 2.0f),
-    };
-    commands.push_back(synth::ui::DrawCommand::FillEllipse(circleBounds, glyphColor));
+    const PlateAndInsetBox plate = BuildPlateAndInsetBox(bounds, plateColor);
+    commands.push_back(plate.plate);
+    commands.push_back(synth::ui::DrawCommand::FillEllipse(plate.inset, glyphColor));
     return commands;
 }
 
@@ -622,15 +636,13 @@ inline std::vector<synth::ui::DrawCommand> BuildRecordDrawCommands(synth::ui::Bo
 // reused verbatim; the back glyph (BuildBankPrevArrowDrawCommands) mirrors
 // it (apex left, base right).
 inline std::vector<synth::ui::DrawCommand> BuildBankPrevArrowDrawCommands(synth::ui::Bounds bounds) {
-    constexpr float kCornerRadius = 4.0f;
     std::vector<synth::ui::DrawCommand> commands;
-    commands.push_back(synth::ui::DrawCommand::FillRoundedRect(bounds, kCornerRadius, kTransportPlateColor));
-    const float insetX = bounds.width * (1.0f - kTransportIconFraction) * 0.5f;
-    const float insetY = bounds.height * (1.0f - kTransportIconFraction) * 0.5f;
-    const float left = bounds.x + insetX;
-    const float right = bounds.x + bounds.width - insetX;
-    const float top = bounds.y + insetY;
-    const float bottom = bounds.y + bounds.height - insetY;
+    const PlateAndInsetBox plate = BuildPlateAndInsetBox(bounds, kTransportPlateColor);
+    commands.push_back(plate.plate);
+    const float left = plate.inset.x;
+    const float right = plate.inset.x + plate.inset.width;
+    const float top = plate.inset.y;
+    const float bottom = plate.inset.y + plate.inset.height;
     commands.push_back(synth::ui::DrawCommand::FillPolygon(
         {
             synth::ui::Point{right, top},
@@ -642,15 +654,13 @@ inline std::vector<synth::ui::DrawCommand> BuildBankPrevArrowDrawCommands(synth:
 }
 
 inline std::vector<synth::ui::DrawCommand> BuildBankNextArrowDrawCommands(synth::ui::Bounds bounds) {
-    constexpr float kCornerRadius = 4.0f;
     std::vector<synth::ui::DrawCommand> commands;
-    commands.push_back(synth::ui::DrawCommand::FillRoundedRect(bounds, kCornerRadius, kTransportPlateColor));
-    const float insetX = bounds.width * (1.0f - kTransportIconFraction) * 0.5f;
-    const float insetY = bounds.height * (1.0f - kTransportIconFraction) * 0.5f;
-    const float left = bounds.x + insetX;
-    const float right = bounds.x + bounds.width - insetX;
-    const float top = bounds.y + insetY;
-    const float bottom = bounds.y + bounds.height - insetY;
+    const PlateAndInsetBox plate = BuildPlateAndInsetBox(bounds, kTransportPlateColor);
+    commands.push_back(plate.plate);
+    const float left = plate.inset.x;
+    const float right = plate.inset.x + plate.inset.width;
+    const float top = plate.inset.y;
+    const float bottom = plate.inset.y + plate.inset.height;
     commands.push_back(synth::ui::DrawCommand::FillPolygon(
         {
             synth::ui::Point{left, top},
@@ -2008,6 +2018,10 @@ private:
         }
         if (action.name == FroggersActions::kBankNext) {
             if (app_->DrillLevel() == 0) {
+                // No `+ kFroggersBankCount` term here, unlike kBankPrevious
+                // above: this is a plain addition of two non-negative
+                // std::size_t values, which cannot underflow, so there is no
+                // borrow to guard against the way the subtraction above has.
                 const std::size_t bankIx = (CurrentBankIndex() + 1) % kFroggersBankCount;
                 app_->RequestBankSelect(bankIx);
             }
