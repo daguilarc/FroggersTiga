@@ -766,6 +766,14 @@ TEST_CASE(modulation_header_shown_only_while_drilled_in_and_matches_the_level) {
 
     synth::ui::Surface& surface = rig.Application().PortableSurface();
     const std::string headerId = synth_froggers::FroggersNodeIds::kModulationHeader;
+    // frogg3rs-bank-carousel-arrows re-anchor: kModulationHeader is now a Row
+    // wrapper (arrows at level 0, this title at level > 0), so the fill+text
+    // commands this test pins live on the title CHILD, not on headerId
+    // itself any more -- see kModulationHeaderTitle's own comment,
+    // FroggersUiSurface.hpp. headerId itself is still used below for the
+    // level-0 "row draws nothing of its own" check and is untouched by the
+    // structural change (design.md "Placement": outer geometry unchanged).
+    const std::string titleId = synth_froggers::FroggersNodeIds::kModulationHeaderTitle;
     // Not the carrying node any more, but still the specific site the
     // rejected S5.2 attempt mislabelled "BACK" -- this test's own removal
     // guard below needs it.
@@ -782,9 +790,11 @@ TEST_CASE(modulation_header_shown_only_while_drilled_in_and_matches_the_level) {
     {
         // At level 0 the row is RESERVED (present, so sibling geometry
         // never jumps when entering/exiting a drilldown -- see
-        // AppendModulationHeaderRow's own comment) but must draw NOTHING:
-        // not just "no text" but no draw commands at all, so this cannot
-        // pass merely because the node doesn't exist yet.
+        // AppendModulationHeaderRow's own comment) but the ROW ITSELF must
+        // carry no draw commands of its own (it is a container; its
+        // level-0 children are the arrow pair, covered by
+        // bank_carousel_arrows_are_centered_in_the_modulation_header_band_at_top_level
+        // above).
         const synth::ui::NodeTree undrilledTree = surface.BuildTree();
         const synth::ui::Node* headerAtLevel0 = FindNodeById(undrilledTree, headerId);
         REQUIRE_TRUE(headerAtLevel0 != nullptr);
@@ -796,7 +806,7 @@ TEST_CASE(modulation_header_shown_only_while_drilled_in_and_matches_the_level) {
     rig.RunBlocks(4);
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 1);
     const synth::ui::NodeTree drilledTree = surface.BuildTree();
-    REQUIRE_TRUE(DrillBadgeText(drilledTree, headerId).value_or("") == "Modulation Level 1");
+    REQUIRE_TRUE(DrillBadgeText(drilledTree, titleId).value_or("") == "Modulation Level 1");
     // Removal guards: neither kVcoScope (the first rejected placement) nor
     // the Target/Back cell (the second) may carry this text any more. The
     // Target/Back check is a substring search, not "no Text command at
@@ -813,20 +823,20 @@ TEST_CASE(modulation_header_shown_only_while_drilled_in_and_matches_the_level) {
     // already covered by the three "== Modulation Level <N>" checks in this
     // test), so checking the style and band once here is not a guess about
     // levels 2/3 -- it is the same code path they also execute.
-    const std::optional<synth::ui::DrawCommand> headerCommand = DrillBadgeTextCommand(drilledTree, headerId);
+    const std::optional<synth::ui::DrawCommand> headerCommand = DrillBadgeTextCommand(drilledTree, titleId);
     REQUIRE_TRUE(headerCommand.has_value());
     // Different from TextStyle{}'s own 14px default (PortableUI.hpp) -- the
     // concrete, testable form of "an explicit size, not a default."
     REQUIRE_TRUE(headerCommand->textStyle.size != synth::ui::TextStyle{}.size);
 
-    const synth::ui::Node* headerNode = FindNodeById(drilledTree, headerId);
+    const synth::ui::Node* headerNode = FindNodeById(drilledTree, titleId);
     REQUIRE_TRUE(headerNode != nullptr);
     // Exactly two commands (the backing Fill then the Text) -- a precise,
     // non-vacuous form of "nothing else is drawn on this row and nothing
     // follows the text," stronger than looping over a range that happens to
     // be empty (this row carries no badges -- it is not an encoder cell).
     REQUIRE_TRUE(headerNode->drawCommands.size() == 2);
-    const std::optional<std::size_t> headerIndex = DrillBadgeTextIndex(drilledTree, headerId);
+    const std::optional<std::size_t> headerIndex = DrillBadgeTextIndex(drilledTree, titleId);
     REQUIRE_TRUE(headerIndex.has_value());
     REQUIRE_TRUE(*headerIndex == 1);  // the Text command is the LAST of the two
     const synth::ui::DrawCommand& bandBeforeText = headerNode->drawCommands[*headerIndex - 1];
@@ -838,14 +848,14 @@ TEST_CASE(modulation_header_shown_only_while_drilled_in_and_matches_the_level) {
         std::to_string(static_cast<std::size_t>(synth_froggers::kModSlotVco1Audio))));
     rig.RunBlocks(4);
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 2);
-    REQUIRE_TRUE(DrillBadgeText(surface.BuildTree(), headerId).value_or("") == "Modulation Level 2");
+    REQUIRE_TRUE(DrillBadgeText(surface.BuildTree(), titleId).value_or("") == "Modulation Level 2");
 
     surface.DispatchAction(synth::ui::Action::WithValue(
         synth_froggers::FroggersActions::kEncoderPress,
         std::to_string(static_cast<std::size_t>(synth_froggers::kModSlotVco2Audio))));
     rig.RunBlocks(4);
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 3);
-    REQUIRE_TRUE(DrillBadgeText(surface.BuildTree(), headerId).value_or("") == "Modulation Level 3");
+    REQUIRE_TRUE(DrillBadgeText(surface.BuildTree(), titleId).value_or("") == "Modulation Level 3");
 }
 
 // STEP 1 (operator, 2026-08-09, fourth session on the same complaint -- see
@@ -908,14 +918,21 @@ TEST_CASE(modulation_header_sits_below_bank_row_and_above_parameter_cells) {
     const synth::ui::Bounds sourceBounds = AbsoluteBounds(tree, sourceId);
     REQUIRE_TRUE(FullyInside(sourceBounds, gridRegion));
 
-    // The header itself, folded to ABSOLUTE (screen) coordinates.
+    // The header itself, folded to ABSOLUTE (screen) coordinates. Bounds are
+    // still pinned by the OUTER row's own id (kModulationHeader) -- design.md
+    // "Placement" guarantees this id's geometry is unchanged by the
+    // frogg3rs-bank-carousel-arrows restructure. Its title TEXT, however, now
+    // lives on the child kModulationHeaderTitle (the row's own draw commands
+    // are empty; it is a container), so the content check below is
+    // re-anchored there.
     const std::string headerId = synth_froggers::FroggersNodeIds::kModulationHeader;
     const synth::ui::Bounds header = AbsoluteBounds(tree, headerId);
     REQUIRE_TRUE(header.width > 0.0f && header.height > 0.0f);
     REQUIRE_TRUE(FullyInside(header, gridRegion));
     // Positive control 3: the region checked is a REAL, populated header,
     // not a coincidentally passing empty rectangle.
-    REQUIRE_TRUE(DrillBadgeText(tree, headerId).value_or("") == "Modulation Level 1");
+    REQUIRE_TRUE(DrillBadgeText(tree, synth_froggers::FroggersNodeIds::kModulationHeaderTitle).value_or("") ==
+                 "Modulation Level 1");
 
     // Every parameter cell's own absolute bounds -- checked against all 16,
     // not just whichever row happens to be topmost, so "above EVERY
@@ -952,6 +969,121 @@ TEST_CASE(modulation_header_sits_below_bank_row_and_above_parameter_cells) {
         synth_froggers::FroggersEncoderGridLayout::kEncoderCount - 1);
     REQUIRE_TRUE(!NodeDrawnTextContains(tree, backId, "BACK"));
     REQUIRE_TRUE(!AnyDrawnTextContains(tree, "BACK"));
+}
+
+// frogg3rs-bank-carousel-arrows task 1.3 (design.md "Testing"): at drill
+// level 0 the modulation-header band emits a centered back/forward arrow
+// pair instead of drawing nothing. This is the STRUCTURE/geometry half only
+// -- task group 2 wires the actions up to actual bank switching; this test
+// pins that the pair renders, carries the right action names, and sits
+// centered and fully inside the band, all independent of whatever
+// HandleAction eventually does with those actions.
+TEST_CASE(bank_carousel_arrows_are_centered_in_the_modulation_header_band_at_top_level) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("bank_carousel_arrows_centered"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+    // OMNI §9.1 positive control: confirm we are genuinely at the top level
+    // (arrows are only specified there), not assuming a fresh rig's default.
+    REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 0);
+
+    const synth::ui::NodeTree tree = surface.BuildTree();
+    const synth::ui::Bounds band = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kModulationHeader);
+    REQUIRE_TRUE(band.width > 0.0f && band.height > 0.0f);
+
+    const synth::ui::Node* prevNode = FindNodeById(tree, synth_froggers::FroggersNodeIds::kBankPrevArrow);
+    const synth::ui::Node* nextNode = FindNodeById(tree, synth_froggers::FroggersNodeIds::kBankNextArrow);
+    REQUIRE_TRUE(prevNode != nullptr);
+    REQUIRE_TRUE(nextNode != nullptr);
+    // Positive control: the arrows actually draw something (plate + glyph),
+    // not a coincidentally-empty pair of zero-size nodes.
+    REQUIRE_TRUE(prevNode->drawCommands.size() > 0);
+    REQUIRE_TRUE(nextNode->drawCommands.size() > 0);
+    REQUIRE_TRUE(prevNode->action.has_value());
+    REQUIRE_TRUE(prevNode->action->name == synth_froggers::FroggersActions::kBankPrevious);
+    REQUIRE_TRUE(nextNode->action.has_value());
+    REQUIRE_TRUE(nextNode->action->name == synth_froggers::FroggersActions::kBankNext);
+
+    const synth::ui::Bounds prevBounds = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kBankPrevArrow);
+    const synth::ui::Bounds nextBounds = AbsoluteBounds(tree, synth_froggers::FroggersNodeIds::kBankNextArrow);
+    REQUIRE_TRUE(FullyInside(prevBounds, band));
+    REQUIRE_TRUE(FullyInside(nextBounds, band));
+    REQUIRE_TRUE(prevBounds.x < nextBounds.x);  // prev sits left of next
+
+    // Pair-midpoint == band-midpoint, computed (not eyeballed), same
+    // FullyInside/AbsoluteBounds idiom every other geometry test in this file
+    // uses.
+    constexpr float kTolerance = 0.5f;
+    const float pairLeft = prevBounds.x;
+    const float pairRight = nextBounds.x + nextBounds.width;
+    const float pairMidpoint = (pairLeft + pairRight) * 0.5f;
+    const float bandMidpoint = band.x + band.width * 0.5f;
+    std::cout << "[OBSERVED] band={" << band.x << "," << band.width << "} pair={" << pairLeft << "," << pairRight
+              << "} pairMid=" << pairMidpoint << " bandMid=" << bandMidpoint << "\n";
+    REQUIRE_TRUE(std::fabs(pairMidpoint - bandMidpoint) <= kTolerance);
+}
+
+// frogg3rs-bank-carousel-arrows task 1.3: the band's own outer geometry
+// (design.md "Placement": "outer geometry identical in both drill states")
+// must not move by even a pixel between drill states, and the child
+// structure genuinely SWITCHES (arrows only at level 0, the title only while
+// drilled) rather than merely hiding one side. Complements the existing
+// modulation_header_shown_only_while_drilled_in_and_matches_the_level /
+// modulation_header_sits_below_bank_row_and_above_parameter_cells tests
+// above, which this change re-anchors onto kModulationHeaderTitle for their
+// own draw-content checks (see that constant's own comment,
+// FroggersUiSurface.hpp) since kModulationHeader is no longer the leaf that
+// carries the title's draw commands.
+TEST_CASE(modulation_header_band_bounds_are_identical_across_drill_states_and_arrows_vanish_while_drilled) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("bank_carousel_arrows_drilled"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+    const std::string headerId = synth_froggers::FroggersNodeIds::kModulationHeader;
+
+    const synth::ui::NodeTree undrilledTree = surface.BuildTree();
+    const synth::ui::Bounds bandAtLevel0 = AbsoluteBounds(undrilledTree, headerId);
+    REQUIRE_TRUE(bandAtLevel0.width > 0.0f && bandAtLevel0.height > 0.0f);
+    // At level 0, no title node -- the child structure switches, it does not
+    // merely hide one side while both exist.
+    REQUIRE_TRUE(FindNodeById(undrilledTree, synth_froggers::FroggersNodeIds::kModulationHeaderTitle) == nullptr);
+
+    surface.DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kEncoderPress, "0"));
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 1);  // genuinely drilled, not assumed
+
+    const synth::ui::NodeTree drilledTree = surface.BuildTree();
+    const synth::ui::Bounds bandAtLevel1 = AbsoluteBounds(drilledTree, headerId);
+
+    // Band bounds byte-identical (to a tight float tolerance) pre/post
+    // drill-in -- the same declarative Px(26)/Weight(1) LayoutOptions resolve
+    // the same way regardless of which children the row emits.
+    constexpr float kTolerance = 0.01f;
+    REQUIRE_TRUE(std::fabs(bandAtLevel0.x - bandAtLevel1.x) <= kTolerance);
+    REQUIRE_TRUE(std::fabs(bandAtLevel0.y - bandAtLevel1.y) <= kTolerance);
+    REQUIRE_TRUE(std::fabs(bandAtLevel0.width - bandAtLevel1.width) <= kTolerance);
+    REQUIRE_TRUE(std::fabs(bandAtLevel0.height - bandAtLevel1.height) <= kTolerance);
+
+    // While drilled, neither arrow node exists at all -- no hit target, no
+    // draw commands, nothing for a synthetic dispatch to even find (task
+    // group 2's HandleAction gate is a second, independent layer this test
+    // does not exercise).
+    REQUIRE_TRUE(FindNodeById(drilledTree, synth_froggers::FroggersNodeIds::kBankPrevArrow) == nullptr);
+    REQUIRE_TRUE(FindNodeById(drilledTree, synth_froggers::FroggersNodeIds::kBankNextArrow) == nullptr);
+
+    // The title child renders today's exact fill+text commands, now under
+    // its own id.
+    REQUIRE_TRUE(DrillBadgeText(drilledTree, synth_froggers::FroggersNodeIds::kModulationHeaderTitle)
+                     .value_or("") == "Modulation Level 1");
+    const synth::ui::Node* titleNode =
+        FindNodeById(drilledTree, synth_froggers::FroggersNodeIds::kModulationHeaderTitle);
+    REQUIRE_TRUE(titleNode != nullptr);
+    REQUIRE_TRUE(titleNode->drawCommands.size() == 2);
+    REQUIRE_TRUE(titleNode->drawCommands[0].kind == synth::ui::DrawCommand::Kind::Fill);
+    REQUIRE_TRUE(titleNode->drawCommands[1].kind == synth::ui::DrawCommand::Kind::Text);
 }
 
 // S5.1 (operator regression report, 2026-08-07: "the drilldown back button

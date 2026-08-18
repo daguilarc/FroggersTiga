@@ -145,6 +145,13 @@ inline constexpr const char* kBankTabsRow = "froggers.layout.right.banks";
 // placement investigation and FroggersCellMap::RightKind::Header for its
 // place in the topology table.
 inline constexpr const char* kModulationHeader = "froggers.layout.right.header";
+// frogg3rs-bank-carousel-arrows task 1.1: children of kModulationHeader at
+// level 0 (the arrow pair) and level > 0 (the title, now a distinct child
+// rather than the row's own leaf content -- see AppendModulationHeaderRow()'s
+// own comment for the full child-structure switch).
+inline constexpr const char* kBankPrevArrow = "froggers.bank.prev";
+inline constexpr const char* kBankNextArrow = "froggers.bank.next";
+inline constexpr const char* kModulationHeaderTitle = "froggers.layout.right.header.title";
 
 inline constexpr const char* kSceneBlend = "froggers.scene.blend";
 // Row 5 of the left block: the Scene-blend slider with its label BELOW it
@@ -211,6 +218,12 @@ inline constexpr const char* kRandomizePage = "froggers.randomize.page";
 inline constexpr const char* kResetAll = "froggers.reset.all";
 inline constexpr const char* kResetPage = "froggers.reset.page";
 inline constexpr const char* kBankSelect = "froggers.bank.select";
+// frogg3rs-bank-carousel-arrows task 1.1: the secondary arrow-pair navigation
+// beside direct bank selection above -- routed through the same single
+// selection authority (task group 2, HandleAction, not this file's own
+// concern here).
+inline constexpr const char* kBankPrevious = "froggers.bank.previous";
+inline constexpr const char* kBankNext = "froggers.bank.next";
 inline constexpr const char* kSceneSelect = "froggers.scene.select";
 inline constexpr const char* kSceneBlend = "froggers.scene.blend";
 inline constexpr const char* kBpm = "froggers.bpm";
@@ -587,6 +600,64 @@ inline std::vector<synth::ui::DrawCommand> BuildRecordDrawCommands(synth::ui::Bo
         std::max(0.0f, bounds.height - insetY * 2.0f),
     };
     commands.push_back(synth::ui::DrawCommand::FillEllipse(circleBounds, glyphColor));
+    return commands;
+}
+
+// frogg3rs-bank-carousel-arrows task 1.2: the bank-carousel back/forward
+// arrow pair, AppendModulationHeaderRow's level-0 children. Same
+// plate-plus-glyph idiom as the four builders above (rounded-rect plate,
+// glyph inset at `kTransportIconFraction`) -- but plain triangles with no
+// state to invert (no latched/armed toggle, unlike Freeze/Record), so no
+// second colour-swapped variant is needed. The plate colour is
+// `kTransportPlateColor`, the SAME neutral chrome colour every transport
+// plate above uses; the glyph is `synth::Color::White`, matching the header
+// band's own title text colour (`kModulationHeaderTextStyle`,
+// AppendModulationHeaderRow's own comment) rather than any one transport
+// plate's glyph colour -- Play/Stop/Freeze/Record's glyph colours
+// (Green/Red/Cyan/dark-red) each encode that control's own state semantics,
+// which this plain nav pair does not carry.
+//
+// The forward glyph (BuildBankNextArrowDrawCommands) is the exact same
+// apex-right triangle shape as BuildPlayDrawCommands' own glyph above,
+// reused verbatim; the back glyph (BuildBankPrevArrowDrawCommands) mirrors
+// it (apex left, base right).
+inline std::vector<synth::ui::DrawCommand> BuildBankPrevArrowDrawCommands(synth::ui::Bounds bounds) {
+    constexpr float kCornerRadius = 4.0f;
+    std::vector<synth::ui::DrawCommand> commands;
+    commands.push_back(synth::ui::DrawCommand::FillRoundedRect(bounds, kCornerRadius, kTransportPlateColor));
+    const float insetX = bounds.width * (1.0f - kTransportIconFraction) * 0.5f;
+    const float insetY = bounds.height * (1.0f - kTransportIconFraction) * 0.5f;
+    const float left = bounds.x + insetX;
+    const float right = bounds.x + bounds.width - insetX;
+    const float top = bounds.y + insetY;
+    const float bottom = bounds.y + bounds.height - insetY;
+    commands.push_back(synth::ui::DrawCommand::FillPolygon(
+        {
+            synth::ui::Point{right, top},
+            synth::ui::Point{right, bottom},
+            synth::ui::Point{left, (top + bottom) * 0.5f},
+        },
+        synth::Color::White));
+    return commands;
+}
+
+inline std::vector<synth::ui::DrawCommand> BuildBankNextArrowDrawCommands(synth::ui::Bounds bounds) {
+    constexpr float kCornerRadius = 4.0f;
+    std::vector<synth::ui::DrawCommand> commands;
+    commands.push_back(synth::ui::DrawCommand::FillRoundedRect(bounds, kCornerRadius, kTransportPlateColor));
+    const float insetX = bounds.width * (1.0f - kTransportIconFraction) * 0.5f;
+    const float insetY = bounds.height * (1.0f - kTransportIconFraction) * 0.5f;
+    const float left = bounds.x + insetX;
+    const float right = bounds.x + bounds.width - insetX;
+    const float top = bounds.y + insetY;
+    const float bottom = bounds.y + bounds.height - insetY;
+    commands.push_back(synth::ui::DrawCommand::FillPolygon(
+        {
+            synth::ui::Point{left, top},
+            synth::ui::Point{left, bottom},
+            synth::ui::Point{right, (top + bottom) * 0.5f},
+        },
+        synth::Color::White));
     return commands;
 }
 
@@ -1284,25 +1355,81 @@ private:
     static constexpr synth::ui::TextStyle kModulationHeaderTextStyle{
         20.0f, synth::Color::Rgb(255, 255, 255), synth::ui::TextAlign::Center};
 
+    // frogg3rs-bank-carousel-arrows task 1.2: the row's OUTER geometry (id
+    // kModulationHeader, Px(kModulationHeaderRowHeight) main / Weight(1)
+    // cross) is identical in both drill states -- only the CHILDREN switch,
+    // matching design.md's "Placement" section verbatim. Level 0 emits a
+    // centered back/forward arrow pair; level > 0 emits the single
+    // full-width title child (kModulationHeaderTitle) carrying the exact
+    // fill+text commands this row itself used to draw directly before this
+    // change (only the carrying node moved, not the content).
     void AppendModulationHeaderRow(synth::ui::Builder& builder) const {
         synth::ui::LayoutOptions layout;
         layout.main = synth::ui::Extent::Px(kModulationHeaderRowHeight);
         layout.cross = synth::ui::Extent::Weight(1.0f);
+        // Container defaults (padding=12/gap=8, PortableUILayout.hpp's
+        // kSpacing) would eat most of a 26px-tall band and misplace the
+        // arrow pair -- explicit zero padding, same idiom AppendTransportRow
+        // already uses for its own fixed-height row (`rowLayout.padding =
+        // 0.0f`, above); the row's own `gap` is the pair's documented
+        // separation (design.md "Placement": "the pair's internal separation
+        // uses the row's gap", FroggersPageLayout::kGap).
+        layout.padding = 0.0f;
+        layout.gap = FroggersPageLayout::kGap;
         const std::size_t drillLevel = app_ != nullptr ? app_->DrillLevel() : 0;
-        builder.Draw(FroggersNodeIds::kModulationHeader, layout,
-                     [drillLevel](synth::ui::Bounds extent) -> std::vector<synth::ui::DrawCommand> {
-                         if (drillLevel == 0) {
-                             return {};
-                         }
-                         std::vector<synth::ui::DrawCommand> commands;
-                         commands.push_back(synth::ui::DrawCommand::Fill(
-                             synth::ui::Bounds{0.0f, 0.0f, extent.width, extent.height},
-                             kModulationHeaderBandColor));
-                         commands.push_back(synth::ui::DrawCommand::Text(
-                             synth::ui::Bounds{0.0f, 0.0f, extent.width, extent.height},
-                             "Modulation Level " + std::to_string(drillLevel), kModulationHeaderTextStyle));
-                         return commands;
-                     });
+        builder.Row(FroggersNodeIds::kModulationHeader, layout, [drillLevel](synth::ui::Builder& b) {
+            if (drillLevel == 0) {
+                // [spacer Weight(1)][prev Px][next Px][spacer Weight(1)]:
+                // two equal-weight spacers centre the fixed-size pair
+                // regardless of the band's resolved width -- the row's own
+                // uniform `gap` (set above) applies symmetrically on every
+                // side of the pair, so the pair's midpoint lands on the
+                // band's midpoint by construction (verified by
+                // bank_carousel_arrows_are_centered_in_the_modulation_header_band_at_top_level,
+                // FroggersSurfaceTests.cpp). Spacers are empty Draw nodes --
+                // the same "always emit the node, sometimes with empty
+                // commands" idiom AppendEncoderCell already uses for a
+                // hidden grid slot -- with ad hoc suffixed ids, the same
+                // convention `encoderId + ".visualizer"` already uses
+                // elsewhere in this file rather than new named constants
+                // (task 1.1 lists no spacer ids).
+                synth::ui::LayoutOptions spacerLayout;
+                spacerLayout.main = synth::ui::Extent::Weight(1.0f);
+                const auto emptyDraw = [](synth::ui::Bounds) -> std::vector<synth::ui::DrawCommand> {
+                    return {};
+                };
+                b.Draw(std::string(FroggersNodeIds::kModulationHeader) + ".spacer.left", spacerLayout, emptyDraw);
+
+                synth::ui::ControlStyle prevStyle{};
+                prevStyle.action = synth::ui::Action::Named(FroggersActions::kBankPrevious);
+                prevStyle.layout.main = synth::ui::Extent::Px(kModulationHeaderRowHeight);
+                prevStyle.layout.cross = synth::ui::Extent::Px(kModulationHeaderRowHeight);
+                b.Draw(FroggersNodeIds::kBankPrevArrow, BuildBankPrevArrowDrawCommands, prevStyle);
+
+                synth::ui::ControlStyle nextStyle{};
+                nextStyle.action = synth::ui::Action::Named(FroggersActions::kBankNext);
+                nextStyle.layout.main = synth::ui::Extent::Px(kModulationHeaderRowHeight);
+                nextStyle.layout.cross = synth::ui::Extent::Px(kModulationHeaderRowHeight);
+                b.Draw(FroggersNodeIds::kBankNextArrow, BuildBankNextArrowDrawCommands, nextStyle);
+
+                b.Draw(std::string(FroggersNodeIds::kModulationHeader) + ".spacer.right", spacerLayout, emptyDraw);
+                return;
+            }
+
+            synth::ui::LayoutOptions titleLayout;
+            titleLayout.main = synth::ui::Extent::Weight(1.0f);
+            b.Draw(FroggersNodeIds::kModulationHeaderTitle, titleLayout,
+                   [drillLevel](synth::ui::Bounds extent) -> std::vector<synth::ui::DrawCommand> {
+                       std::vector<synth::ui::DrawCommand> commands;
+                       commands.push_back(synth::ui::DrawCommand::Fill(
+                           synth::ui::Bounds{0.0f, 0.0f, extent.width, extent.height},
+                           kModulationHeaderBandColor));
+                       commands.push_back(synth::ui::DrawCommand::Text(
+                           synth::ui::Bounds{0.0f, 0.0f, extent.width, extent.height},
+                           "Modulation Level " + std::to_string(drillLevel), kModulationHeaderTextStyle));
+                       return commands;
+                   });
+        });
     }
 
     // Rows 3-6 (renumbered by STEP 1's inserted header row; the 16-slot
