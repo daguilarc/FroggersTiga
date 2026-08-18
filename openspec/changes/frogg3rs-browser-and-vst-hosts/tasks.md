@@ -11,7 +11,8 @@ by the executing task before being relied on.
 ## 1. Old VST deletion (cheapest, unblocks nothing, goes first)
 
 - [x] 1.1 Read then delete both option blocks in
-      `desktop/CMakeLists.txt:136-296` (capture the `juce_add_plugin`
+      `desktop/CMakeLists.txt:136-296` (audit-corrected 2026-08-18:
+      actual span was 136-313) (capture the `juce_add_plugin`
       idiom for the VST-skeleton group BEFORE deleting); delete tracked v2 plugin sources
       (`desktop-v2/Source/PluginProcessorV2.*`, `PluginEditorV2.*`,
       `HostParameterInventoryV2.hpp`, `HostParameterProcessorV2*` test)
@@ -23,6 +24,13 @@ by the executing task before being relied on.
 - [x] 1.3 Verify the default desktop configure/build still succeeds
       (options were default-OFF; prove it, don't assume) and the app suite
       is green.
+- [ ] 1.4 Audit residue (found 2026-08-18 omni-rule audit): delete the
+      guarded `BUILD_VST_V2` block in
+      `scripts/verify_clean_rebuild.sh:147-161` — its `-LAH` option probe
+      can never pass again (option and capability removed for good), so
+      the block is permanently-skipping dead code, missed by 1.1's
+      grep-gate. NOT residue (classified, KEEP): `desktop/PACKAGING.md:116`
+      mentions `BUILD_VST` only in prose recording the removal itself.
 
 ## 2. Browser build of the app (design Part A1)
 
@@ -42,10 +50,18 @@ by the executing task before being relied on.
 ## 3. Rename completion (repo renamed to `frogg3rs` 2026-08-18; MUST precede publication)
 
 - [ ] 3.1 Tracked-name sweep: `git grep FroggersTiga` excluding
-      `openspec/changes/archive` (proposal-time survey: README 13,
-      desktop-v2 12, desktop 10, src 7, docs 7, openspec main specs 15,
-      web 4, app 4, scripts 3, sim 2, MANUAL.md 2, desktop-release.yml 2,
-      publish 1, SIM_MANUAL.md 1, sheaf-audioconfig-labels.patch 1).
+      `openspec/changes/archive`. Survey re-measured at audit (2026-08-18,
+      HEAD `eb989a8`, method pinned:
+      `git grep -c FroggersTiga -- ':!openspec/changes/archive'`, matching
+      lines summed per top-level path — the proposal-time numbers were
+      method-inconsistent and are superseded): total 753 — src 518 (513
+      of these in checked-in Daisy build artifacts under
+      `src/FroggersTiga/build/`: frozen tree, expect KEEP), desktop-v2 70,
+      desktop 47, openspec 41 (incl. this change's own artifacts), docs
+      17, README 13, web 12, DAISY_MANUAL.md 10, scripts 6, app 4,
+      SIM_MANUAL.md 4, sim 3, MANUAL.md 2, .github 2,
+      sheaf-audioconfig-labels.patch 1, publish 1, QUICK_DICT.md 1,
+      FroggersTiga.code-workspace 1.
       Classify EVERY hit before changing any (§8 method): rename
       product-, doc-, and publication-facing mentions to `frogg3rs`;
       KEEP, with per-hit reasons, historical citations (archived

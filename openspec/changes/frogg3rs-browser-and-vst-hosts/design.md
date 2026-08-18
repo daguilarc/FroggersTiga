@@ -5,6 +5,8 @@ spot-checks at FroggersTiga HEAD (`ce847c8`) and the checked-out Sheaf
 submodule (`7bf1f223`, branch `fix-out-of-tree-app-gaps`). Anchors marked
 UNVERIFIED must be read before the task relying on them executes. Sheaf
 paths are `External/Sheaf/projects/synth/...` unless prefixed.
+Re-audited 2026-08-18 (omni-rule preflight, three verification subagents,
+HEAD `eb989a8`): corrections below are marked "audit-corrected".
 
 ## Part A — Browser host
 
@@ -17,7 +19,7 @@ explorer had cited the right lines in the wrong file), compiles with
 uniform emscripten flags (`:46-68`) against the fixed `CORE_SOURCES`
 (`:10-23`), emits `dist/wasm/apps/<appId>/{appId.js,.wasm}` atomically
 (`:138-197`). CLI accepts `--manifest`, repeatable
-`--allowed-source-root`, `--output-root` (`:200-230`). Default allowed
+`--allowed-source-root`, `--output-root` (`:203-231`, audit-corrected). Default allowed
 source root is only `projects/synth/apps` (`app-build-manifest.mjs:113`);
 out-of-tree dirs are rejected by `requireAllowedDirectory`
 (`:58-74`) unless allowlisted. The fixture target
@@ -45,15 +47,15 @@ same way — NO Sheaf-side change required, per
   CORS/media-type constraints `sbac-7` imposes
   (`synth-browser-app-catalog/spec.md:95-106`). Local smoke: Sheaf's
   launcher with a localhost catalog URL (`sbac-10` keeps a relative/local
-  catalog source for development, `spec.md:140-156`).
+  catalog source for development, `spec.md:140-157`).
 - **A3. pages.yml swap** (`froggers-web-host/spec.md:7-45`): replace the
-  legacy `wasm/` emcmake + `web/` vite steps (`pages.yml:41-59`, deploy at
-  `:64-67`) with the A1/A2 build + site publication; `web/` and `wasm/`
+  legacy `wasm/` emcmake + `web/` vite steps (`pages.yml:41-59`; artifact
+  upload at `:64-67`, deploy at `:69-71` — audit-corrected) with the A1/A2 build + site publication; `web/` and `wasm/`
   remain byte-identical (spec scenario asserts dormancy, not deletion).
   The rename/publication gate stays with the operator — the workflow lands
   ready but the public cutover is their call per the spec.
 - **Input capture:** frogg3rs currently requests ZERO input channels
-  (`UPSTREAM-SHEAF-ASK.md:38`, stale on upstream status but accurate on
+  (`UPSTREAM-SHEAF-ASK.md:52`, audit-corrected; stale on upstream status but accurate on
   the app side), so the browser build needs no `getUserMedia` path
   (`sbw-4`: zero-input apps never call it). Re-enabling recording input
   in the browser is OUT OF SCOPE here; the sar-33 signal exists upstream
@@ -63,9 +65,12 @@ same way — NO Sheaf-side change required, per
 
 **Deletion first (risk-descending is wrong here; the corpse blocks
 nothing, so it goes first as the cheapest group):** both option blocks in
-`desktop/CMakeLists.txt:136-296` (`BUILD_VST`, `BUILD_VST_V2`, default
-OFF, never set by CI — `desktop-release.yml:27-28,60-61`,
-`pages.yml:44-45`, `desktop/PACKAGING.md:117`); tracked v2 sources
+`desktop/CMakeLists.txt:136-313` (audit-corrected span; closing `endif()`
+at 313) (`BUILD_VST`, `BUILD_VST_V2`, default
+OFF, never set by CI — `desktop-release.yml:27-28,60-61` carry no
+`-DBUILD_VST*`, and `pages.yml` never configures `desktop/` at all
+(audit-corrected: its `:44-45` cmake lines configure `wasm/`);
+`desktop/PACKAGING.md:117`); tracked v2 sources
 `desktop-v2/Source/PluginProcessorV2.*`, `PluginEditorV2.*`,
 `HostParameterInventoryV2.hpp`, `HostParameterProcessorV2` test and its
 CTest wiring (`desktop/CMakeLists.txt:279-296`); doc sections
@@ -77,19 +82,30 @@ nothing tracked to delete beyond the CMake block that references them.
 **Amended after Task 1 execution (2026-08-18) — the original deletion
 list was wrong about four file groups, caught by
 verify-before-delete:** `HostParameterInventoryV2.hpp` and its
-Routing/PendingStore/StateEnvelope siblings are desktop-v2's live,
-compiled host-parameter model (used by `FroggersV2ControlCore`,
-`FroggersV2HostBridge`, `FroggersV2AppManifest`; compiled into the live
-app targets, `desktop-v2/CMakeLists.txt:99-105,193-198`) — not
-plugin-wrapper corpses; kept untouched.
+Routing/PendingStore siblings are desktop-v2's live, compiled
+host-parameter model (reached by the live app targets via
+`FroggersV2ControlCore`/`FroggersV2HostBridge` includes,
+`desktop-v2/CMakeLists.txt:99-105,193-198`) — not plugin-wrapper
+corpses; kept untouched. Audit-corrected 2026-08-18:
+`HostParameterStateEnvelopeV2.hpp` is NOT compiled into the live app
+targets — its only includer repo-wide is
+`HostParameterProcessorV2_test.cpp`; it is kept as test-only support for
+that always-on CTest target.
 `HostParameterProcessorV2_test.cpp` has its own always-on CTest target
 (`desktop-v2/CMakeLists.txt:290-302`); the deleted desktop/ copy was
 stale (hardcoded count 142 vs live 119). `PluginEditorV2.*` and
 `HostedMainComponentV2.*` are compilation-dead but text-asserted by live
 projection-validator tests; kept under the corpse-removal-only rule.
-Actually deleted: `PluginProcessorV2.*`, `HostParameterRegistryV2.*`,
-the v1 `desktop/Source` set, both CMake option blocks, doc sections, and
-the dead lines in `scripts/verify_clean_rebuild.sh`. B3 builds an
+Actually deleted (commit `0be9ab0`): `PluginProcessorV2.*`,
+`HostParameterRegistryV2.*`, the tracked v1 `HostParameterRegistry.*`,
+both CMake option blocks, doc sections, and the v1 `BUILD_VST` lines in
+`scripts/verify_clean_rebuild.sh`. Audit-corrected 2026-08-18: the v1
+`PluginProcessor.*`/`PluginEditor.*` were never tracked
+(`.git/info/exclude`) and remain on disk, untracked and untouched; the
+script's guarded `BUILD_VST_V2` block
+(`scripts/verify_clean_rebuild.sh:147-161`) was NOT deleted — its
+`-LAH` option probe can never pass again, so it permanently SKIPs; its
+removal is task 1.4. B3 builds an
 INDEPENDENT dual-ID inventory over the unrelated `app/`-side six-bank
 model — a parallel construction, not a recreation of deleted code. The
 dual-ID requirement was never uniquely owned by `vst-v2-midi-modulation`:
@@ -101,7 +117,8 @@ nothing.
   AU, IS_SYNTH) via CMake modeled on the deleted blocks' `juce_add_plugin`
   idiom. Durable source (the deletion has landed): the Task-1 report's
   capture, or authoritatively
-  `git show 0be9ab0~1:desktop/CMakeLists.txt` lines 136-296 — git history
+  `git show 0be9ab0~1:desktop/CMakeLists.txt` lines 136-313
+  (audit-corrected span) — git history
   is the reference, not the tmp scratchpad. It owns ALL JUCE; the core stays
   JUCE-free and `check_no_juce` (`app/Makefile:110-116,185-189,245`)
   stays green and untouched. `processBlock` drives
@@ -135,8 +152,9 @@ nothing.
   automation/MIDI-mapping + grouped display name), bridged bidirectionally
   to Sheaf's `ParameterManager` via the existing message bus
   (`MessageIn::ParamIncDec`/set messages — enumerate the exact set-value
-  message at implementation; `app/FroggersUiSurface.hpp:1954-1984` shows
-  the producer idiom). MIDI mapping is thereby the DAW's job end to end;
+  message at implementation; `app/FroggersUiSurface.hpp:1978-1986` shows
+  the `ParamIncDec` producer idiom — audit-corrected; `:1954-1975` is the
+  adjacent `SetSceneBlend` producer). MIDI mapping is thereby the DAW's job end to end;
   the plugin registers no internal MIDI-learn (the core has none —
   `app/FroggersModulation.hpp:1233`).
 - **B4. Plugin editor:** hosts the SAME portable `FroggersUiSurface`

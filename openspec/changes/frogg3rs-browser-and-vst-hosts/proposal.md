@@ -58,10 +58,14 @@ while deleting the old, never-tested VST implementations.
   `juce-vst-cc-mod-gating`, `vst-v2-midi-modulation` (removed).
 - Affected code: NEW `app/browser/` (manifest + build script + CI step),
   NEW `app/vst/` (plugin host + CMake), `.github/workflows/pages.yml`
-  (swap), DELETED `desktop/CMakeLists.txt:136-296` (both `BUILD_VST*`
-  option blocks), DELETED `desktop-v2/Source/PluginProcessorV2.*`,
-  `PluginEditorV2.*`, `HostParameterInventoryV2.hpp`,
-  `HostParameterProcessorV2*`, doc sections
+  (swap), DELETED `desktop/CMakeLists.txt:136-313` (both `BUILD_VST*`
+  option blocks; span and list audit-corrected 2026-08-18 to match
+  Task-1 reality), DELETED `desktop-v2/Source/PluginProcessorV2.*` and
+  `HostParameterRegistryV2.*` (plus tracked v1 `HostParameterRegistry.*`);
+  KEPT, contrary to the original list: `PluginEditorV2.*`,
+  `HostParameterInventoryV2.hpp`, and the `HostParameterProcessorV2`
+  test — live, or text-asserted by live tests (see design amendment),
+  doc sections
   (`desktop/PACKAGING.md:115-127`, `desktop-v2/PACKAGING.md:68-97`,
   `docs/CI.md:89` mention, README as applicable).
 - Explicitly untouched: `web/`, `wasm/` (dormant, byte-identical, per
