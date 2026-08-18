@@ -1685,6 +1685,13 @@ void PressStop(Rig& rig) {
         synth::ui::Action::Named(synth_froggers::FroggersActions::kStop));
 }
 
+// T7.7: Play, through the same real action path, for the one branch T7's
+// own tests left unpinned.
+void PressPlay(Rig& rig) {
+    rig.Application().PortableSurface().DispatchAction(
+        synth::ui::Action::Named(synth_froggers::FroggersActions::kPlay));
+}
+
 // Shared setup for T6.4(a)/(b)/(c): the SAME self-sustaining-ring recipe as
 // stopping_transport_silences_self_sustaining_delay_and_reverb above
 // (feedback/hold pushed to their near-unity extremes, so there is real
@@ -1937,6 +1944,39 @@ TEST_CASE(no_freeze_stop_press_sequence_leaves_the_instrument_sounding_after_sto
 
 // T7.3(d) (tasks.md): releasing Freeze must NOT restart the transport --
 // the operator resumes with Play, not by releasing the latch.
+// T7.7 (operator 2026-08-17, found in the built app: "why does clicking play
+// not de-select freeze"). Play disarms the latch for the same reason Stop
+// does -- and more urgently, because a latched Freeze holds the voice gate
+// open unconditionally (FroggersAppCore's `setGate(gateOpen ||
+// FreezeLatched())`). Starting the transport with the latch still engaged
+// would run the sequencer with every voice pinned sustaining and the delay
+// still at its latch overdrive, so Play would not actually return the
+// instrument to playing.
+//
+// This was the single behaviour the T7 packet's own tests did not pin: the
+// Play branch was written last, by hand, and every other Freeze/Stop
+// sequence had a test while this one did not. Without this case, deleting
+// `SetFreezeLatched(false)` from the kPlay handler leaves the whole suite
+// green.
+TEST_CASE(play_disarms_the_freeze_latch_and_returns_the_voice_gate_to_the_transport) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("play_disarms_freeze_latch"));
+    BuildLatchedRingHeldAcrossStop(rig);
+
+    rig.RunBlocks(4);
+    // Positive control (OMNI SS9.1): the preconditions this test needs must
+    // actually hold before Play is pressed, or "the latch cleared" would be
+    // provable by an instrument that was never latched in the first place.
+    REQUIRE_TRUE(rig.Application().FreezeLatched());
+    REQUIRE_TRUE(!rig.Application().TransportRunning());
+
+    PressPlay(rig);
+    rig.RunBlocks(4);
+
+    REQUIRE_TRUE(!rig.Application().FreezeLatched());   // the fix under test.
+    REQUIRE_TRUE(rig.Application().TransportRunning());  // Play still starts the transport.
+    REQUIRE_TRUE(!rig.SawNaN());
+}
+
 TEST_CASE(releasing_freeze_does_not_restart_the_transport) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("releasing_freeze_does_not_restart_transport"));
     BuildLatchedRingHeldAcrossStop(rig);
