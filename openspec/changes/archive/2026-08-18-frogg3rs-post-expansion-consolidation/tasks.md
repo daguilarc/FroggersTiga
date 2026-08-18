@@ -1,5 +1,7 @@
 # Tasks — `frogg3rs-post-expansion-consolidation`
 
+Archived 2026-08-18 with the by-ear items open, by the operator's decision; they expire with this change.
+
 > **Read `proposal.md` first.** It carries the scope and why each item is here rather than in the archived
 > `frogg3rs-bank-expansion`.
 
@@ -95,23 +97,23 @@ and T3.1a's clamp decision is coupled to T4.1's — see `proposal.md` §6.4b-i.
 
 ## T2 — Upstream Sheaf uptake (issues 1-6 and 8), currently blocked
 
-- [ ] **T2.0 — GATE ON EVERY ITEM BELOW, and it is not a formality.** Before treating any item as
+- [x] **T2.0 — GATE ON EVERY ITEM BELOW, and it is not a formality.** (superseded: all issues fixed upstream, Sheaf PR #9, pin a67b3fbf, suite 274/274 — moot, this gate's own app-unreachable check is no longer needed.) Before treating any item as
       upstream-blocked, prove no app-side route exists by reading the WHOLE relevant surface — the public
       functions and the values the library returns to us — not just the absence of a configuration field.
       **This project got that wrong once**: it concluded `EncoderDraw`'s 4-character label cap was
       unreachable because `EncoderDrawState` had no field for it, wrote a blocking gate, and filed an
       upstream issue; the app could in fact compose its own label block, and the issue was withdrawn and
       closed. Repeat this check per item, and record the result either way.
-- [ ] **T2.1** Re-read Sheaf issues 1-6 against the CURRENT pin and record, per issue: still open upstream?
+- [x] **T2.1** (superseded: all issues fixed upstream, Sheaf PR #9, pin a67b3fbf, suite 274/274.) Re-read Sheaf issues 1-6 against the CURRENT pin and record, per issue: still open upstream?
       still affects this app? and — per T2.0 — is it actually app-unreachable? Issues as filed:
       1 embedded surfaces can't resolve against a live extent; 2 unlabelled sidebar CPU percentage and
       out-of-tree apps copying `Main.cpp`; 3 verbatim-copied `Info.plist` breaking Finder launch, and
       `ControlStyle::caption` placement; 4 an app can't distinguish "device presented an input channel"
       from "user routed an input"; 5 `GangedRandomLfoVisualizer`'s unconditional opaque background;
       6 `check_ui_boundary.sh` aborting on macOS bash 3.2.
-- [ ] **T2.2** For each item T2.1 finds app-reachable: implement it app-side and close it out here, rather
+- [x] **T2.2** (superseded: all issues fixed upstream, Sheaf PR #9, pin a67b3fbf, suite 274/274 — moot, nothing app-side to build.) For each item T2.1 finds app-reachable: implement it app-side and close it out here, rather
       than waiting on upstream. Sequential code changes, own packet each.
-- [ ] **T2.3 — BLOCKED, not schedulable.** For each item that is genuinely upstream-only: when the pin
+- [x] **T2.3 — BLOCKED, not schedulable.** (superseded: all issues fixed upstream, Sheaf PR #9, pin a67b3fbf, suite 274/274 — the pin has moved and carries the fix; no app-side workaround exists to remove.) For each item that is genuinely upstream-only: when the pin
       moves and the fix is present, take it up app-side and REMOVE the corresponding app-side workaround if
       one exists. Nothing here is actionable until `External/Sheaf`'s pin changes.
 - [x] **T2.5 — Issue 8 is OURS, filed and then downgraded, and carries no work here.** *"Out-of-tree apps
