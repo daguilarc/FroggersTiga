@@ -12,7 +12,7 @@ by the executing task before being relied on.
 
 - [x] 1.1 Read then delete both option blocks in
       `desktop/CMakeLists.txt:136-296` (capture the `juce_add_plugin`
-      idiom for group 4 BEFORE deleting); delete tracked v2 plugin sources
+      idiom for the VST-skeleton group BEFORE deleting); delete tracked v2 plugin sources
       (`desktop-v2/Source/PluginProcessorV2.*`, `PluginEditorV2.*`,
       `HostParameterInventoryV2.hpp`, `HostParameterProcessorV2*` test)
       and their CTest wiring; grep-gate that nothing else references the
@@ -39,9 +39,37 @@ by the executing task before being relied on.
       `frogg3rs.js` + `frogg3rs.wasm` + emissions report; wire into the
       app suite or a dedicated make target per existing conventions.
 
-## 3. Package + catalog + site swap (design A2, A3)
+## 3. Rename completion (repo renamed to `frogg3rs` 2026-08-18; MUST precede publication)
 
-- [ ] 3.1 Package artifacts + self-hosted catalog JSON per
+- [ ] 3.1 Tracked-name sweep: `git grep FroggersTiga` excluding
+      `openspec/changes/archive` (proposal-time survey: README 13,
+      desktop-v2 12, desktop 10, src 7, docs 7, openspec main specs 15,
+      web 4, app 4, scripts 3, sim 2, MANUAL.md 2, desktop-release.yml 2,
+      publish 1, SIM_MANUAL.md 1, sheaf-audioconfig-labels.patch 1).
+      Classify EVERY hit before changing any (§8 method): rename
+      product-, doc-, and publication-facing mentions to `frogg3rs`;
+      KEEP, with per-hit reasons, historical citations (archived
+      changes stay byte-identical) and frozen-tree source identifiers
+      (desktop/desktop-v2 are frozen: doc-line edits only where
+      publication-facing; NO behavioral renames of frozen build targets
+      or bundle names). Report found vs changed.
+- [ ] 3.2 Workspace file: `git mv FroggersTiga.code-workspace
+      frogg3rs.code-workspace`, updating any internal folder references
+      inside it.
+- [ ] 3.3 Branch naming: `froggerstiga-desktop-v2` carries the old name.
+      Recommendation: finish this change on the current branch (renaming
+      a branch mid-change churns remotes for zero content), and cut the
+      NEXT branch under a `frogg3rs-*` name; record the decision here.
+      Operator may override to rename now.
+- [ ] 3.4 OPERATOR-COORDINATED, machine-local: rename the working folder
+      `~/Desktop/FroggersTiga` → `~/Desktop/frogg3rs` at a session
+      boundary (it invalidates the running session's paths). Afterwards
+      the controller updates its own memory/ledger entries that cite the
+      old absolute path.
+
+## 4. Package + catalog + site swap (design A2, A3)
+
+- [ ] 4.1 Package artifacts + self-hosted catalog JSON per
       `froggers-browser-package` (identity `spec.md:27-49`, no Sheaf-side
       slot `spec.md:75-81`; CORS/media-type constraints per `sbac-7`).
       Local smoke: Sheaf launcher + localhost catalog (`sbac-10`).
@@ -51,76 +79,76 @@ by the executing task before being relied on.
       published outputs and FAILS on any `FroggersTiga` string — the
       redirect GitHub provides is not compliance, absence of the old name
       is.
-- [ ] 3.2 `pages.yml`: replace the legacy `wasm/`+`web/` steps
-      (`pages.yml:41-59`) with the group-2/3 build + publication;
+- [ ] 4.2 `pages.yml`: replace the legacy `wasm/`+`web/` steps
+      (`pages.yml:41-59`) with the group-2 build + this group's packaging;
       CI asserts `web/` and `wasm/` stay byte-identical (git-clean
       check). The public cutover/rename gate remains the operator's per
       `froggers-web-host:34-45` — the workflow lands ready, dry-run
       proven (workflow_dispatch), without flipping anything the spec
       gates on the rename.
-- [ ] 3.3 OPERATOR GATE: browser smoke — the operator loads the app via
+- [ ] 4.3 OPERATOR GATE: browser smoke — the operator loads the app via
       the launcher/catalog locally and confirms the surface (incl.
       carousel arrows) works in the browser.
 
-## 4. VST skeleton (design B1)
+## 5. VST skeleton (design B1)
 
-- [ ] 4.1 `app/vst/` CMake + JUCE `AudioProcessor` (VST3+AU, IS_SYNTH)
+- [ ] 5.1 `app/vst/` CMake + JUCE `AudioProcessor` (VST3+AU, IS_SYNTH)
       wrapping the core: `processBlock` → `ProcessFrame`, `prepareToPlay`
       → the core's prepare path (enumerate the launcher session's init
       calls first — design UNVERIFIED item; cite what you traced).
       All JUCE in the host layer only.
-- [ ] 4.2 Tests: plugin target builds; core suite + `check_no_juce`
+- [ ] 5.2 Tests: plugin target builds; core suite + `check_no_juce`
       untouched and green; basic processBlock smoke (nonzero output on a
       running transport state injected directly).
 
-## 5. DAW-external transport (design B2)
+## 6. DAW-external transport (design B2)
 
-- [ ] 5.1 Playhead edge-trigger: host play-state transitions → exactly one
+- [ ] 6.1 Playhead edge-trigger: host play-state transitions → exactly one
       `MessageIn::Start`/`Stop` + `SetDesiredTransportRunning` per
       transition (the standalone producer at
       `app/FroggersUiSurface.hpp:1826-1900` is the semantic reference).
-- [ ] 5.2 Editor transport suppression: internal transport controls not
+- [ ] 6.2 Editor transport suppression: internal transport controls not
       rendered in plugin mode (mechanism per design UNVERIFIED item —
       decide against the FroggersCellMap row-table conventions, cite).
       Freeze exposed as an automatable parameter preserving
       `SetFreezeLatched` semantics.
-- [ ] 5.3 Tests: transport edge tests (run→stop→run: one message each, no
+- [ ] 6.3 Tests: transport edge tests (run→stop→run: one message each, no
       repeats while state holds); freeze-parameter latch semantics test
       (mirror the stop-isolation T6/T7 assertions from the app suite).
 
-## 6. Stable-ID parameter surface (design B3)
+## 7. Stable-ID parameter surface (design B3)
 
-- [ ] 6.1 Inventory over the full six-bank model incl. Crispy/Crunchy:
+- [ ] 7.1 Inventory over the full six-bank model incl. Crispy/Crunchy:
       host parameters with flat stableId + grouped displayName, bridged
       both directions to the parameter authority via the message bus
       (enumerate the exact set-value message first — design UNVERIFIED
       item).
-- [ ] 6.2 Tests: automation round-trip (write→core moves→readback
+- [ ] 7.2 Tests: automation round-trip (write→core moves→readback
       matches); stableId stability (two construction runs produce
       identical id lists); count matches the parameter model (assert
       against the model's own enumeration, not a hardcoded number).
 
-## 7. Plugin editor hosts the portable surface (design B4)
+## 8. Plugin editor hosts the portable surface (design B4)
 
-- [ ] 7.1 Editor renders `FroggersUiSurface` via `PortableJuceBackend`
+- [ ] 8.1 Editor renders `FroggersUiSurface` via `PortableJuceBackend`
       without the runtime shell (trace the render-host seam in
       `app/FroggersMain.cpp` + Sheaf `runtime/LauncherWindow.hpp` first).
       If the renderer is NOT separable from the runtime session, STOP and
       report BLOCKED with the coupling trace — the fallback (generic
       parameter view now, editor as follow-up change) is the operator's
       decision, not a silent descope.
-- [ ] 7.2 Tests: editor constructs/destructs cleanly headless where the
+- [ ] 8.2 Tests: editor constructs/destructs cleanly headless where the
       harness allows; surface tree renders with transport row suppressed
-      (ties to 5.2's assertions).
+      (ties to 6.2's assertions).
 
-## 8. Whole-change gate and operator acceptance (user-gated finish)
+## 9. Whole-change gate and operator acceptance (user-gated finish)
 
-- [ ] 8.1 Full suite green; browser build green; plugin builds VST3+AU;
+- [ ] 9.1 Full suite green; browser build green; plugin builds VST3+AU;
       counts reported.
-- [ ] 8.2 OPERATOR GATE: DAW smoke — load the VST in a real DAW: host
+- [ ] 9.2 OPERATOR GATE: DAW smoke — load the VST in a real DAW: host
       transport drives it, a parameter automates, a DAW-side MIDI mapping
       moves a parameter, the editor shows the surface without transport
       controls.
-- [ ] 8.3 On both gates: archive with spec sync (ADDED froggers-vst-host;
+- [ ] 9.3 On both gates: archive with spec sync (ADDED froggers-vst-host;
       REMOVED spec dirs deleted; browser/web-host specs implemented as
       written, no delta).

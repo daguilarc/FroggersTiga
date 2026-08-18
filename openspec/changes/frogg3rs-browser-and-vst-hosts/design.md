@@ -98,9 +98,11 @@ enforces it, so removing `vst-v2-midi-modulation` in its entirety orphans
 nothing.
 
 - **B1. Plugin skeleton** (`app/vst/`): a JUCE `AudioProcessor` (VST3 +
-  AU, IS_SYNTH) via CMake modeled on the JUCE infra already in
-  `desktop/CMakeLists.txt` (juce_add_plugin usage in the deleted blocks is
-  the template — read before deleting). It owns ALL JUCE; the core stays
+  AU, IS_SYNTH) via CMake modeled on the deleted blocks' `juce_add_plugin`
+  idiom. Durable source (the deletion has landed): the Task-1 report's
+  capture, or authoritatively
+  `git show 0be9ab0~1:desktop/CMakeLists.txt` lines 136-296 — git history
+  is the reference, not the tmp scratchpad. It owns ALL JUCE; the core stays
   JUCE-free and `check_no_juce` (`app/Makefile:110-116,185-189,245`)
   stays green and untouched. `processBlock` drives
   `FroggersAppCore::ProcessFrame`; `prepareToPlay` maps to the core's

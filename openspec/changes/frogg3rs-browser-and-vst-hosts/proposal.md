@@ -69,6 +69,16 @@ while deleting the old, never-tested VST implementations.
   `make test`); `vcv/`/`Rack-SDK` (separate local-only surface, not a VST);
   `sim/` and the desktop app build (the deleted CMake blocks are
   default-OFF and CI never set them).
+- Rename completion (added 2026-08-18, after the operator renamed the
+  GitHub repo to `daguilarc/frogg3rs`): a dedicated task group, placed
+  BEFORE publication, sweeps every tracked `FroggersTiga` mention with
+  per-hit classification — renames land only where they don't break
+  things (product/doc/publication-facing text); archived changes stay
+  byte-identical and frozen-tree build targets keep their names.
+  Workspace file renamed in-repo; branch rename deferred to the next
+  branch cut; the machine-local folder rename is operator-coordinated at
+  a session boundary. (The remote URL and the legacy site's base path
+  were already fixed directly: commit `7beec7f`.)
 - Delivery: one commit per task group on the current branch; operator gates
-  for the browser smoke and the DAW smoke; the repo-rename/publication step
+  for the browser smoke and the DAW smoke; the site-cutover step
   is user-gated per the existing spec.
