@@ -47,10 +47,26 @@ The surface SHALL provide no dedicated waveform-randomize control and no manual 
 ### Requirement: Bank selector with direct selection
 The surface SHALL provide direct selection among banks. Arrow-based paging SHALL NOT be the primary navigation. Exactly one bank SHALL be active at a time, with a single authority for that selection.
 
+The surface SHALL additionally provide a back/forward arrow pair as secondary navigation, horizontally centered within the band between the bank row and the encoder grid (the modulation-header row's reserved space, whose outer geometry SHALL NOT change in any state). The back arrow SHALL step the active bank to the previous index and the forward arrow to the next, wrapping at both ends, routed through the same single selection authority as direct selection; the bank-button highlight SHALL reflect an arrow-driven change identically to a button-driven one. WHILE a modulation drill-in is active, the arrows SHALL NOT render and SHALL NOT accept input, and the band SHALL render its drill-level title exactly as before this change.
+
 #### Scenario: Direct bank selection
 - **WHEN** the operator selects a bank
 - **THEN** that bank's parameters populate the encoder grid
 - **THEN** no second, divergent bank-selection state exists
+
+#### Scenario: Forward arrow steps and wraps
+- **WHEN** the operator clicks the forward arrow repeatedly from the first bank
+- **THEN** the active bank advances one index per click, the highlight following each step
+- **THEN** a click on the last bank wraps the selection to the first
+
+#### Scenario: Back arrow steps and wraps
+- **WHEN** the operator clicks the back arrow on the first bank
+- **THEN** the selection wraps to the last bank, with exactly one bank highlighted
+
+#### Scenario: Arrows yield to the drill-in title
+- **WHEN** a modulation drill-in is active
+- **THEN** the band shows the drill-level title with no arrow rendered and no arrow hit target
+- **THEN** the band's bounds are identical to its bounds at the top level
 
 ### Requirement: Sixteen-slot encoder grid with in-place modulation swap
 The surface SHALL render the active bank as a sixteen-slot encoder grid indexed `0..15`, with the local Crispy control at slot index 14 and global Crunchy at slot index 15 in every bank, and empty cells wherever the bank has no parameter. Entering a modulation view SHALL replace the grid contents in place with the modulation detail cells, occupying the same region; it SHALL NOT open a separate window or push a new page.

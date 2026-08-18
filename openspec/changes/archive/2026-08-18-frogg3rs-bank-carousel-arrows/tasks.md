@@ -46,7 +46,7 @@ model, sequential code changes, per-task review with §14 postflight.
 
 - [x] 3.1 Full suite green (`cd app && nice make -j2 test`), counts reported;
       rebuild the launcher (`./app/build-launcher.sh`).
-- [ ] 3.2 OPERATOR GATE: the operator confirms in the built app that the
+- [x] 3.2 OPERATOR GATE: the operator confirms in the built app that the
       arrows render centered between the bank row and the encoder grid at
       the top level, step and wrap the carousel with the highlight following,
       and disappear inside a modulation drill-in.
