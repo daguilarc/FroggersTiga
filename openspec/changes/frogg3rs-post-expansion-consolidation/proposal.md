@@ -27,6 +27,9 @@ cannot live in an archived change:
 
 - **Delay's Detune, Color and Halo become Freeze, Reverse Blend and Diffusion** (§6). Parameter count
   unchanged at fourteen; Freeze clamps its loop gain continuously, Reverse Blend gets buffer smoothing.
+  **This MODIFIES `froggers-sheaf-parameter-model`'s "One sixteen-slot bank per Froggers page"**, whose
+  Delay scenario currently requires slots 0-8 to be unchanged — the three being replaced are among those
+  nine.
 - **The Stop-sustain defect is analysed and NOT fixed** (§7), at the operator's request — including the
   finding that all three in-loop saturator pre-gains share it, one of which had its headroom flag withdrawn
   during the expansion on exactly the reasoning that turns out to be incomplete.
@@ -56,10 +59,24 @@ upstream items, which need a dependency this project does not control.
 Verified against that change's own `§EXECUTION` record, not assumed:
 
 - **T6.2 — the over-length label rework's acceptance criterion is VISUAL.** The rendering is verified
-  programmatically (six character slots emitted for `CmbOff` where four were before; badge-chip clearance
-  checked algebraically against `AppendBadge`'s own formula), but **nobody has looked at it.** The
-  predecessor change records a prior UI change in this project taking four attempts precisely by asserting
-  a weaker property than "the operator can see it."
+  programmatically, but **nobody has looked at it.** The predecessor change records a prior UI change in
+  this project taking four attempts precisely by asserting a weaker property than "the operator can see
+  it."
+
+  **What actually ships, read from `app/FroggersUiSurface.hpp:1218-1366` — corrected 2026-08-13, see §9.**
+  An earlier version of this bullet said "six character slots emitted for `CmbOff` where four were
+  before, badge-chip clearance checked algebraically against `AppendBadge`'s own formula." That sentence
+  was inherited verbatim from the predecessor's own `§EXECUTION` record and is wrong in three ways
+  against the code. The shipped treatment: the app strips Sheaf's own trailing 4-character label block
+  (`kSheafLabelCommandsPerChar` 15 x `kSheafLabelDefaultChars` 4 = 60 commands, :1232-1239 — the "four
+  before" is the only part that survives), then draws its own plate below `centerY` and renders the
+  parameter's **long** name (`FroggersBankLayouts()[bankIx].params[ix].name`, :1342 — so "Comb offset",
+  not the short name `CmbOff`) split by `SplitFourteenSegmentLines` across **two rows of TEN character
+  slots** (`kGridColumns = 10`, :1348, passed as `numChars` at :1364), each row centred by leading-space
+  padding. Badge clearance is proven against `GetBadgePosition`/`drawBadges`, not `AppendBadge` — the
+  plate starts strictly below `centerY` and upper badges end at or above it, and lower gesture badges are
+  structurally absent because `SetGestureCount()` is never called (:1277-1294). `AppendBadge` is cited in
+  that code for its chip **colour** only (:1310).
 - **T8.4 — Ring Mod's low-frequency end is a by-ear taste call.** It gates nothing: "off" is the shared
   zero taper at the bottom of the knob, not a frequency. The carrier range currently ships at 20 Hz - 5 kHz,
   an implementer's judgement call with no spec value behind it.
@@ -179,9 +196,15 @@ headroom verdict:
 - **Diffusion (`Diff`, round-1 rank 4)** — sharp discrete repeats at 0.0, edges blurring at 0.5, smeared
   into "a reverb built from a delay" at 1.0. Precedent: Valhalla Delay's Diffusion section, Chase Bliss
   Mood's `Modify`. **Reuses in-tree allpass math** — `dsp::DriveBlendPhase`'s own
-  `phased = -a*wet + x1 + a*y1` is the identical building block. Headroom: none, allpass sections being
-  unity-gain by construction — **but only if the coefficient stays strictly inside the unit circle, using
-  the same `0.98` margin `DriveBlendPhase` and `dsp::Comb` already use.** That caveat is now much more
+  `phased = -a*wet + x1 + a*y1` is the identical building block (`app/dsp/Drive.hpp:693`). Headroom: none,
+  allpass sections being unity-gain by construction — **but only if the coefficient stays strictly inside
+  the unit circle, using the same `0.98` margin `DriveBlendPhase` itself uses** (`Drive.hpp:676`, `:689`,
+  `:711` — its authored mapping is `0.98f * (2*knob - 1)`, i.e. the open interval (-0.98, 0.98)).
+  **Corrected 2026-08-13 (§9): an earlier version credited that margin to `dsp::Comb` as well, and `Comb`
+  does not have it.** `Comb`'s own margin is `kMaxFeedbackMagnitude = 0.95f`
+  (`app/dsp/FilterFx.hpp:537`) — the same ±0.95 §7b's table already lists — and `FilterFx.hpp` carries no
+  0.98 stability constant at all. The other 0.98 in this codebase is `StereoDelay`'s feedback clamp
+  `fbk <= 0.98` (`app/dsp/Delay.hpp:442`), which is a feedback bound, not an allpass margin. That caveat is now much more
   interesting than when it was written: §7 shows this codebase has exactly one loop-gain-above-unity
   defect already, and it came from a stage whose bound was proven and whose contraction was not.
 - **Reverse Blend (`Rev`, round-1 rank 6)** — forward repeats at 0.0 through a mixed forward/reverse
@@ -217,12 +240,16 @@ decides. Every claim below was traced by reading.
 On the running→stopped edge (`FroggersAppCore.hpp`) the ASR gate closes and each VCO's Release time is
 force-overridden to a fixed ~50 ms fade regardless of the operator's own Release knob
 (`kStopFadeReleaseKnob`). `modulation_.Step()` then stops being called at all — the modulation slate
-**freezes** at its last values, it does not reset. Once every voice reaches `Stage::Idle`, a single
-unconditional `ForEachStatefulUnit(Reset)` zeroes all fourteen stateful units, including the delay lines,
+**freezes** at its last values, it does not reset. Once every voice reaches `Stage::Idle`, exactly one
+`ForEachStatefulUnit(Reset)` fires and zeroes all fourteen stateful units, including the delay lines,
 the reverb tank, and every sub-unit this change added (`Delay.hpp`'s fbTone and crush, `Reverb.hpp`'s tilt
 filters, damping and wet limiter).
 
 **That reset coverage is complete — the new parameters' state IS reset. Reset coverage is not the gap.**
+(Precision, corrected 2026-08-13 (§9): the reset is written at TWO call sites, not one —
+`FroggersAppCore.hpp:799` for "already idle at the stop edge" and `:825` for the deferred
+clear-on-`AllIdle` watch — and the policy fires exactly one of them per stop. An earlier version said "a
+single unconditional `ForEachStatefulUnit(Reset)`", which reads as one site; it is one FIRING.)
 
 ### 7b. The gap: a bound was mistaken for a decay, and this document is where that happened
 
@@ -341,24 +368,110 @@ in at reduced level over a loop that decays more slowly. **The midpoint is a rea
 exactly what Cycle (stepping through integer retrigger counts) and Hard Sync (whose character IS the
 discontinuity) could not offer. Built instead as a write-enable toggle, it fails the rule outright.
 
-**The condition, and it is not a footnote: Freeze at 1.0 is deliberate loop gain = 1 — the precise
-condition §7 documents as an accident.** With `fbDrive` reaching 4.0, `fb_eff * fbDrive` reaches ~4 and the
-loop GROWS rather than holding. **Freeze cannot be specified without deciding how it interacts with
-Feedback drive**: either Freeze clamps the product to 1, or `fbDrive` multiplies through it and full Freeze
-is a runaway rather than a hold. This is the same decision §7d option 1 raises, arriving from the other
-direction — which is an argument for settling T4.1 and T3.1 together rather than separately.
+**⚠ RETRACTED 2026-08-14 — this paragraph asserted a false binary, and it cost a packet.** It read:
+*"Freeze cannot be specified without deciding how it interacts with Feedback drive: either Freeze clamps
+the product to 1, or `fbDrive` multiplies through it and full Freeze is a runaway rather than a hold."*
+
+**That premise is false, and it was never traced — the code block directly above it already disproves it.**
+`fb_eff = lerp(fbk, 1.0, freeze)` is a complete specification of Freeze in Freeze's own terms: it names no
+`fbDrive`, needs none, and tops out at unity feedback — lossless recirculation, which is what "freeze"
+means. What `fbDrive` then multiplies is Feedback Drive's business, exactly as it is for every other value
+in this loop. There was never a decision to make here.
+
+**The cost of the false binary, recorded because it is the §1 failure mode this rule exists to catch:**
+§6.4b-i took its first horn and ruled "Freeze clamps the loop-gain PRODUCT to 1", which is only expressible
+as `fb_eff = fbk + (1/fbDrive - fbk) * freeze` — dragging `fbDrive` into a mapping that had no business
+knowing about it. Packet P4 built exactly that, and it is **non-monotonic**: at `fbDrive` 4.0 the knob runs
+0.98 -> 0.25, so turning Freeze UP takes loop gain 3.92 -> 1.00. A knob that goes down as it turns up
+violates this change's own new requirement that a control move "in the direction its name implies"
+(`specs/froggers-sheaf-parameter-model/spec.md`), which §3 of this proposal names as a defect class that
+survives every automated test this project has. **It survived the preflight audit (§9) too**: that audit
+checked §6.4b-i's citations and never checked it against the code block in the section it amends.
+§1's corollary is the lesson — when honouring an instruction forces a worse structure (here, a coupling
+that need not exist), the instruction is suspect, not the implementer.
+
+**Superseded by §6.4b-iii.**
 
 ### 6.4b-i Both open Freeze/Reverse questions are now ruled on (operator, 2026-08-13)
 
-- **Freeze clamps.** The loop-gain product is clamped to 1, so full Freeze holds rather than grows.
-  **The clamp is continuous, not a latched state change applied at freeze-on** — un-toggling Freeze
-  restores sub-unity loop gain and the tail decays normally, so the control cannot leave a runaway loop
-  behind it. **Note the consequence for §7:** this is the same clamp §7d option 1 proposes for the
-  accidental case, so building Freeze fixes or half-fixes the Stop-sustain behaviour as a side effect —
-  which the operator likes and has not asked to lose. T4.1 has to be settled knowing that.
+- **⚠ Freeze clamps — SUPERSEDED 2026-08-14 by §6.4b-iii, and the reason is recorded there.** This bullet
+  ruled that "the loop-gain product is clamped to 1", taking the false binary §6.4b posed. Expressing a
+  product clamp requires `fbDrive` inside Freeze's own mapping, which makes the knob non-monotonic at high
+  Feedback Drive. **The ruling it was trying to express — full Freeze holds rather than grows, continuously,
+  never leaving a runaway behind it — is preserved intact in §6.4b-iii**, which achieves it without the
+  coupling by clamping Freeze's OWN feedback coefficient at unity. What changes is the mechanism, not the
+  operator's intent.
+  **Still true and carried forward:** the clamp is continuous rather than a latched state change applied at
+  freeze-on; un-toggling restores sub-unity loop gain and the tail decays; and the clamp does not touch the
+  un-frozen product `fbk * fbDrive`, so §7's accidental Stop-sustain behaviour is left entirely alone and
+  T4.1 is not settled by side effect.
 - **Reverse Blend gets buffer smoothing.** The edge-of-buffer click hazard at the forward/reverse crossfade
   is answered by smoothing rather than by narrowing the control. It is specified with the parameter, not
   left to implementation taste, because it is what makes the control shippable at all.
+
+### 6.4b-iii Freeze, specified in Freeze's own terms (operator, 2026-08-14) — SUPERSEDES §6.4b's binary and §6.4b-i's product clamp
+
+**Operator ruling, verbatim in substance:** *"obviously an encoder turning left to right should make a
+value go from zero to a higher value"*, and — on being offered a knob-vs-gate tradeoff — *"i dont care what
+drive is doing here, that is drive's own business. i already gave you specifications for what freeze
+encoder and button should do."* Both are corrections of this document, not new requirements.
+
+**The whole specification, and it references nothing outside Freeze:**
+
+```
+write  = inSignal * (1 - freeze)          // knob seals the loop as it rises
+fbEff  = fbk + (1.0f - fbk) * freeze      // knob: 0.98 -> 1.00, monotonically UP, clamped at unity
+fbEff  = kFreezeLatchOverdrive            // button: strictly above unity
+```
+
+- **The knob rises monotonically at every Feedback Drive setting**, because `fbDrive` does not appear.
+  It tops out at unity feedback — lossless recirculation, no self-amplification. That IS the clamp, and it
+  is a clamp on Freeze's own contribution rather than on a product Freeze does not own.
+- **The button goes above unity**, so only the latch can make Freeze amplify. The gate the operator asked
+  for on 2026-08-13 (§6.4b-ii) survives exactly: the knob cannot reach what the button reaches.
+- **`fbDrive` multiplies whatever it multiplies**, as it does for every other value in this loop. That the
+  total product may exceed unity at high Drive is Feedback Drive's doing, present at `freeze == 0` too, and
+  not Freeze's to correct.
+- **`kFreezeLatchOverdrive` is a BY-EAR constant, not a derived one.** It is set to a starting value and
+  flagged for the operator to tune; nothing about it is measured or justified, and it must not be written
+  up as though it were.
+
+**At `freeze == 0` this is bit-exact `fbk`** (`fbk + x * 0.0f`), so the default and §7's accidental
+Stop-sustain remain untouched — the same invariant §6.4b-i protected, preserved through the change of
+mechanism.
+
+### 6.4b-ii The Freeze BUTTON overrides the clamp — ruled earlier, written down here (2026-08-13)
+
+**Operator ruling, verbatim in substance:** *"when toggled, the freeze button should override the freeze
+encoder parameter and take it to the maximum above the clamp — period. when not toggled, the clamped
+encoder parameter prevails."* **Recorded during this change's own audit (§9) after the operator noted it
+had been decided in an earlier iteration. It had not been written anywhere:** `d870219`, `b3bc8e4`,
+`1757ba7` and `57a9771` are every commit that touched Freeze, `b3bc8e4` ruled the clamp, `1757ba7`
+specified the button as "drive the delay's Freeze parameter to its maximum", and
+`git log -S"override"` over this directory returns nothing but an unrelated line about the Stop release
+override. A ruling that exists only in conversation is a ruling a subagent cannot execute.
+
+**What it means, and why it is the better design.** §8.2's Freeze button was specified as a latch over the
+Freeze parameter — which made it a shortcut for turning the encoder up, and nothing more. Under this
+ruling the two controls do different things:
+
+| | Freeze value the DSP sees | Loop gain | Result |
+|---|---|---|---|
+| Encoder at max, button off | clamped | 1 | **holds** — recirculates, decaying slowly under `Saturate`'s compression |
+| Button latched | un-clamped maximum | `1.0 * fbDrive`, up to 4.0 | **grows** — the deliberate form of §7's accidental limit cycle |
+| Button released | clamped again | sub-unity | tail decays; nothing is left behind |
+
+So the accidental sound §7 documents is **kept, and promoted to a control**, which is the outcome T4.1
+listed as available and did not choose between. Its depth is the Feedback Drive knob (slot 9): below that
+knob's centre `fbDrive < 1` and the latch holds instead of growing. That is expected behaviour, not a
+defect.
+
+**Implementation constraint that follows from it, and it is not optional:** the override must be applied
+where the freeze mapping resolves the encoder's value, so that the clamp is a property of the PARAMETER
+path and the latch substitutes for it. Writing 1.0 into the Freeze parameter and letting the clamp run
+cannot exceed the clamp by construction — it would silently produce the hold in both cases, which is the
+exact defect this ruling exists to prevent, and it would look correct in any test asserting only "the
+button drives Freeze to maximum."
 
 ### 6.4c What replacing all three entails
 
@@ -389,9 +502,16 @@ of what was asked for.
 Below the existing Randomize row, two buttons of the same size. They set, for the page or for all pages,
 every parameter value to minimum and every modulation depth to off.
 
-- **Placement is exact:** `AppendRandomizeRow()` builds Row 7 of `FroggersCellMap::kRightRows`, two
-  `Button` nodes each at `Extent::Weight(2.0f)` of four weight-units — two equal halves. "Below them, same
-  size" means a new row appended after `Randomize` in `kRightRows` with the same two-halves weighting.
+- **Placement is exact:** `AppendRandomizeRow()` builds the LAST of `FroggersCellMap::kRightRows`'
+  seven entries (`kRightRows[6]`, `app/FroggersUiSurface.hpp:362-369`), two `Button` nodes each at
+  `Extent::Weight(2.0f)` of four weight-units — two equal halves. "Below them, same size" means a new row
+  appended after `Randomize` in `kRightRows` with the same two-halves weighting. **Note `kRightRows` is a
+  fixed-extent `std::array<RightRow, 7>`** — "appended" means bumping that extent to 8, not just adding an
+  initializer.
+- **Recorded, because T5.1 anchors to this row:** `openspec/specs/froggers-app-surface-layout/spec.md:16`
+  still says Randomize All lives in the global chrome band and Randomize Page in the per-page/bank header.
+  The code has had both together in this row since task 10.2. Pre-existing drift; correcting the spec
+  would widen this change's delta set, so it is recorded at T5.1c rather than fixed here.
 - **"Minimum" is unambiguous and uniform: 0.0.** `ClampToRange(value, range)` ignores `range` entirely and
   returns `clamp(value, 0.0f, 1.0f)`; `ParameterConfig` carries no per-parameter min/max. So a reset is
   "set the normalized commanded value to 0.0" for every parameter, with no per-parameter table.
@@ -415,13 +535,29 @@ When on it drives the Delay Freeze parameter (§6.4) to 1.
   `ControlStyle::selected` on `Button` nodes (the bank tabs), which JUCE renders via `StateColourFor` as
   `brighter(0.14f)` on the background — **a brightness bump, not an inversion.**
 - **Upstream item 3 ("selected buttons invert background, not text") landed only PARTIALLY.** The
-  `selected`/`color`/`textStyle` fields now exist, but the re-check in `UPSTREAM-SHEAF-ASK.md` records that
-  `TextColourForNode` still has no `selected` branch — **text colour never changes on selection.** A
-  genuine inversion (background and text swapping) cannot be had from the library's own state handling.
-- **Therefore: build Freeze as a `Draw` node, like Play and Stop already are** (`AppendTransportRow`, 28 px
-  plates). Draw nodes emit their own commands, so a true colour inversion is free and needs no upstream
-  change — and it makes Freeze consistent with the two controls it sits beside rather than a third visual
-  idiom. This is the §4 rule applied before calling anything blocked.
+  `selected`/`color`/`textStyle` fields now exist, but `TextColourForNode`
+  (`External/Sheaf/projects/synth/juce/PortableJuceBackend.hpp:1036-1042`) branches on `enabled` only and
+  has no `selected` branch — **text colour never changes on selection**, and `StateColourFor` (`:285-292`)
+  is a `brighter(0.14f)` bump. A genuine inversion cannot be had from the library's SELECTED-STATE
+  handling.
+- **⚠ But an app-side route does exist, and saying otherwise would break this change's own §4 rule.**
+  **Corrected 2026-08-13 (§9): an earlier version of this bullet ended at "cannot be had from the
+  library's own state handling" and let that stand as the reason Freeze must be a `Draw` node. It is not
+  a sufficient reason.** `ControlStyle` carries app-settable `color` AND `textStyle`
+  (`External/Sheaf/projects/synth/include/synth/PortableUIBuilders.hpp:20-33`), and `GlyphColourForNode`
+  (`PortableJuceBackend.hpp:1046`) prefers `node.textStyle->color` whenever the app supplies one. The app
+  rebuilds its whole tree every frame and already branches a style on its own state
+  (`style.selected = BankSelected(bankIx)`, `app/FroggersUiSurface.hpp:957`). So a `Button` whose `color`
+  and `textStyle.color` the app swaps from its own latch WOULD invert genuinely — the library's `selected`
+  flag simply would not be the mechanism. Recorded because "no lever exists" is exactly the claim §4 says
+  needs the whole surface read, and this bullet is the second time this project reached for it from one
+  absent branch.
+- **Therefore: build Freeze as a `Draw` node, like Play and Stop already are** (`AppendTransportRow`,
+  `app/FroggersUiSurface.hpp:724-744`, 28 px plates) — **as a preference, not a forced choice.** Draw
+  nodes emit their own commands, so the inversion is free, and it makes Freeze consistent with the two
+  controls it sits beside rather than a third visual idiom next to them. The `Button`-with-app-supplied-
+  colours route above is the live alternative if the Draw path proves awkward; either satisfies the
+  spec's "SHALL NOT depend on the control library's selected-state rendering."
 - **Interaction with the clamp, from §6.4b-i:** the clamp is continuous, so un-toggling restores sub-unity
   loop gain and the tail decays. The button is a latch over a continuous parameter, not a mode switch.
 
@@ -478,3 +614,68 @@ and writes via JUCE. Recording is refused unless audio is already running ("Pres
 - **Consequently Sheaf#8 is downgraded to the least important open issue**, and says so upstream. It
   blocks a design that would have been nicer and blocks nothing being built. It becomes real again only if
   MP3/FLAC/OGG are added later — v1 shipped all four; this app does not need them.
+
+## 9. Audit of this change against the code, 2026-08-13
+
+**Every code-shaped claim in this proposal, `tasks.md` and the three spec deltas was re-read against the
+tree at `57a9771` (`External/Sheaf` pinned at `77a3019e`, working tree clean).** Recorded here rather
+than in five places, per OMNI §16.5; each corrected passage cites §9 at its own site.
+
+**Held up under reading** — the Color/Halo fold and its exact form (`Delay.hpp:608-609`); Detune's
+`kMaxDetuneCents = 50` and ±2.93% span against `widthSpread`'s 0.35 (`:422`, `:427`); all three
+saturator pre-gains at 0.25–4.0 (`Delay.hpp:341`, `Reverb.hpp:172-173`, `FroggersAppCore.hpp:1403`) with
+`fbk <= 0.98`, tank `fb -> ~0.99998` and comb `±0.95`; `Saturate`'s `x(27+x²)/(27+9x²)`
+(`FilterFx.hpp:102`); the frozen modulation slate (`FroggersAppCore.hpp:889-891`) and the ~50 ms release
+override (`:1241-1245`); 84 top-level parameters (6 × `kFroggersParamsPerBank` 14) drawing a mean 2.25
+sources (`FroggersModulation.hpp:1119`) with the three VCO audio-outs eligible (`:163`, `:570-581`);
+`ClampToRange` ignoring `RangeKind` and `ParameterConfig` carrying no min/max
+(`ParameterModulation.cpp:449`, `ParameterModulation.hpp:260-269`); `kNeutralModulationDepthCenter = 0.5f`
+and `ZeroExistingModulationDepths` skipping unmaterialized depths (`FroggersModulation.hpp:954`,
+`:1036-1046`); Randomize's enumeration (`:1272-1323`); the Randomize row's two `Weight(2.0f)` halves
+(`FroggersUiSurface.hpp:1383-1402`) and the transport row's 28 px `Draw` plates (`:724-744`); `Toggle`
+present in Sheaf and used nowhere in `app/`; the closed `AudioPageSnapshot` and closed `MainPane::Page`,
+with no `ExtraPage`/`RegisterPage`/`AddPage`/`customPage` anywhere in `include/` or `runtime/`; no
+recording facility in Sheaf; `check_no_juce.cpp` compiling the core with JUCE on the include path; v1's
+30-minute cap and *"Press Play before recording."* (`desktop/Source/MainComponent.cpp:201`, `:219`);
+`kMaxDecaySeconds`/`kMaxGraceSeconds` at 1.0 s, `kPmLfoDepth = 0.15f`, Ring Mod at 20 Hz–5 kHz, Drive
+Bias at ±0.02. **The suite was re-run, not inherited: 213 passed / 0 failed across the 10 test binaries**,
+matching the baseline in `tasks.md`.
+
+**Corrected, each because the code says otherwise:**
+
+1. **§2 / T1.1 — the label rework was described as something else entirely.** "Six character slots for
+   `CmbOff` where four were before" is ten slots across two rows, rendering the LONG name. The sentence
+   came from the predecessor's `§EXECUTION` record, and §2 said it was "verified against that change's own
+   `§EXECUTION` record, not assumed" — which is the laundering OMNI §1 names: verified against the
+   RECORD, never against the code. It matters because T1.1 is a VISUAL task and this is what the operator
+   is being asked to look at.
+2. **§6.3 / T3.1c — `dsp::Comb` does not carry the 0.98 margin** it was credited with; its margin is
+   ±0.95, which §7b's own table already said. The proposal contradicted itself two sections apart.
+3. **§8.2 / T5.2 — "a genuine inversion cannot be had" was true only of the library's `selected`
+   handling**, and was doing the work of a general impossibility claim. `ControlStyle::color` +
+   `textStyle` is a live app-side route. This is the §4 failure mode inside the change that specs §4.
+4. **§7a — "a single unconditional `ForEachStatefulUnit(Reset)`"** is two call sites and one firing.
+5. **A `MODIFIED Requirements` delta was missing.** T3.1 is marked DECIDED and replaces three Delay
+   slots, but `openspec/specs/froggers-sheaf-parameter-model/spec.md:114-117` requires "slots 0-8 are
+   unchanged from the Delay bank's existing nine parameters" — Detune, Color and Halo are three of those
+   nine. The delta held only `ADDED` requirements, so nothing in it contradicted the spec the change
+   contradicts. Added, using the same full-restatement form the predecessor used
+   (`archive/2026-08-13-frogg3rs-bank-expansion/specs/froggers-sheaf-parameter-model/spec.md:55`).
+   `openspec validate --strict` passed both before and after — it checks delta STRUCTURE, not whether a
+   change specified what it decided, so a green validate was never evidence here.
+
+**Found in the code and the live specs, not in this change's artifacts.** Both surfaced while auditing
+T5.1's own anchors, and the operator ruled on them separately on 2026-08-13:
+
+- **FOLDED INTO T5.1's PACKET (T5.1d), not filed for later.** `FroggersModulation.hpp:1266` still
+  describes Randomize Page as "this bank's 9 values + Crispy"; `RandomizeBankValues` loops
+  `kFroggersParamsPerBank`, which is 14. T5.1 tells the implementer to mirror that enumeration, so a stale
+  comment sitting on the function being mirrored is load-bearing here. One line, mechanical once found,
+  and OMNI §16.2 is explicit that such a fix belongs in the next bounded dispatch rather than a
+  someday-chip — so it ships in T5.1's own commit.
+- **RECORDED, still unscheduled (T5.1c).** `openspec/specs/froggers-app-surface-layout/spec.md:16` puts
+  Randomize All in the global chrome band and Randomize Page in the per-page header. The code puts BOTH in
+  the right column's last row (`AppendRandomizeRow`, `kRightRows[6]`). Correcting it would add
+  `froggers-app-surface-layout` to this change's delta set — a scope decision, not a typo fix — so it is
+  recorded rather than folded. It stays load-bearing regardless: T5.1 appends two controls to the row that
+  spec sentence describes wrongly.

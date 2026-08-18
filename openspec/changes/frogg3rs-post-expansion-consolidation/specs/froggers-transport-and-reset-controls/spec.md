@@ -35,14 +35,26 @@ The app SHALL provide a Reset Page control and a Reset All control, which return
 - **WHEN** the operator is drilled into a modulation view and activates a Reset control
 - **THEN** it acts on the same set of values the matching Randomize control would act on from that view
 
-### Requirement: Freeze is a latching control over a continuous parameter
-The app SHALL provide a Freeze control beside the transport controls. Activating it SHALL drive the delay's Freeze parameter to its maximum; deactivating it SHALL release that parameter. The control SHALL show its latched state by inverting its own colours, and SHALL NOT depend on the control library's selected-state rendering to do so.
+### Requirement: Freeze is a latching control that overrides the Freeze parameter's own ceiling
+The app SHALL provide a Freeze control beside the transport controls. While latched it SHALL drive the delay's freeze amount to its maximum ignoring the ceiling the Freeze parameter itself is clamped to, so that the latch reaches a state the Freeze encoder cannot; while unlatched the clamped parameter value SHALL prevail. Deactivating the control SHALL restore the clamped value, so the delay's loop gain returns below unity and no sustaining loop survives the latch. The control SHALL show its latched state by inverting its own colours, and SHALL NOT depend on the control library's selected-state rendering to do so.
 
 #### Scenario: One click latches, a second releases
 - **WHEN** the Freeze control is clicked while unlatched
 - **THEN** it latches on and its colours invert
 - **WHEN** it is clicked again
 - **THEN** it releases and its colours return to normal
+
+#### Scenario: The latch reaches a state the encoder cannot
+- **WHEN** the Freeze encoder is at its own maximum and the Freeze control is unlatched
+- **THEN** the delay's loop gain is at unity and the repeats hold rather than growing
+- **WHEN** the Freeze control is then latched
+- **THEN** the delay's loop gain rises above unity and the repeats grow
+- **THEN** the two states are audibly distinct, so the latch is not merely a shortcut for the encoder
+
+#### Scenario: The latch amplifies where the encoder only recirculates
+- **WHEN** the Freeze control is latched
+- **THEN** the freeze feedback it applies is strictly greater than unity, so the loop adds energy of its own and the repeats grow
+- **THEN** it is strictly greater than the value the Freeze encoder produces at its own maximum, at every feedback-drive setting
 
 #### Scenario: Releasing Freeze leaves a decaying tail, not a sustaining one
 - **WHEN** Freeze is released
