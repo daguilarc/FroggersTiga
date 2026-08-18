@@ -45,6 +45,12 @@ by the executing task before being relied on.
       `froggers-browser-package` (identity `spec.md:27-49`, no Sheaf-side
       slot `spec.md:75-81`; CORS/media-type constraints per `sbac-7`).
       Local smoke: Sheaf launcher + localhost catalog (`sbac-10`).
+      RENAMED-ORIGIN GATE (froggers-web-host:34-45, repo renamed
+      2026-08-18): every URL minted into the catalog, package artifacts,
+      and site config uses `frogg3rs`; a CI-runnable check greps the
+      published outputs and FAILS on any `FroggersTiga` string — the
+      redirect GitHub provides is not compliance, absence of the old name
+      is.
 - [ ] 3.2 `pages.yml`: replace the legacy `wasm/`+`web/` steps
       (`pages.yml:41-59`) with the group-2/3 build + publication;
       CI asserts `web/` and `wasm/` stay byte-identical (git-clean
