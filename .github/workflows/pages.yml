@@ -56,7 +56,7 @@ jobs:
         run: |
           cd web
           npm ci
-          VITE_BASE=/FroggersTiga/ npm run build
+          VITE_BASE=/frogg3rs/ npm run build
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
