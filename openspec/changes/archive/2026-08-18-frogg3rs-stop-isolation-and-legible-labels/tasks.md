@@ -183,23 +183,23 @@ latch — was wrong: the effect only ever existed with the transport STOPPED, so
 made it unreachable by any route and T2.4 pinned that as correct. Third recorded misreading of this same
 operator intent (see proposal §1c for the first two). Spec delta amended to match before any code.
 
-- [ ] **T6.1 — Gate the whole stop-edge teardown on the latch.** While `FreezeLatched()` is true, the
+- [x] **T6.1 — Gate the whole stop-edge teardown on the latch.** (landed 8b26ea8: `TransportTeardownActive()`, `FroggersAppCore.hpp`, single-sources the forced release, the `stoppedKnob` overrides, and both `ForEachStatefulUnit(Reset)` clears.) While `FreezeLatched()` is true, the
       running->stopped edge SHALL NOT force release, SHALL NOT apply the stopped-state effective-value
       overrides (the `stoppedKnob` idiom's six sites: release knob, three drive pre-gains, Freeze knob,
       Grit), and SHALL NOT run the `ForEachStatefulUnit(Reset)` clear — including the deferred clear that
       fires later when `AllIdle()` first turns true. The instrument holds its sounding state. ONE gate
       read by every site, not six independent checks (OMNI §8); `stoppedKnob` already single-sources
       five of them.
-- [ ] **T6.2 — Releasing the latch while stopped silences.** Latch release while stopped is a second
+- [x] **T6.2 — Releasing the latch while stopped silences.** (landed 8b26ea8: `latchReleasedWhileStopped` edge + shared `runStopTeardown()` lambda, `FroggersAppCore.hpp`; test `freeze_latch_release_while_stopped_silences_within_the_bound`.) Latch release while stopped is a second
       "stop edge": it runs the teardown that T6.1 suppressed, silencing within the same bound an
       unlatched Stop guarantees. This is the escape hatch — without it the only way out of the drone is
       Play, which the operator did not ask for and which would make the button a trap.
-- [ ] **T6.3 — Parameter edits stay live while frozen** (operator ruling 2026-08-17, choosing faithful
+- [x] **T6.3 — Parameter edits stay live while frozen** (landed 8b26ea8: test `encoder_edit_while_frozen_changes_the_output_measurably`, `FroggersAudioRoutingTests.cpp`.) (operator ruling 2026-08-17, choosing faithful
       reproduction over a full state lock): the drone responds to encoder changes exactly as the
       original accidental state did. This is the DEFAULT behaviour of `RouteAudioSample` (it runs every
       sample regardless of transport) — so this task is a TEST that pins it, not a code change. Verify
       that claim by reading before writing the test.
-- [ ] **T6.4 — Tests.** (a) Stop with the latch engaged, on a patch with drives up: output stays above
+- [x] **T6.4 — Tests.** (landed 8b26ea8: (a) `freeze_alone_holds_the_ring_above_an_audible_floor_and_stops_the_transport`; (b) `freeze_latch_release_while_stopped_silences_within_the_bound`; (c) `encoder_edit_while_frozen_changes_the_output_measurably`; (d) T2.4 explicitly superseded/replaced in `FroggersAudioRoutingTests.cpp`, comment cites T6; (e) covered by T7.4 below.) (a) Stop with the latch engaged, on a patch with drives up: output stays above
       an audible floor past the bound an unlatched Stop must meet — the inverse of T2.3(b). (b) Release
       the latch while stopped: silence within the bound (T6.2). (c) An encoder edit while frozen changes
       the output measurably (T6.3), with a positive control proving the drone was live before the edit.
@@ -207,7 +207,7 @@ operator intent (see proposal §1c for the first two). Spec delta amended to mat
       no-op while stopped, which is now exactly backwards. (e) Unlatched Stop still silences: T2.3, T1.4
       (pass-D 0/20) and T1.3(b) MUST still pass unchanged — the bound only ever relaxes with the latch
       engaged. §9.1 for (a), (b), (c).
-- [ ] **T6.5 — OPERATOR GATE.** The operator confirms in the built app that pressing Freeze and then
+- [x] **T6.5 — OPERATOR GATE.** (operator confirmed in built app, 2026-08-18.) The operator confirms in the built app that pressing Freeze and then
       Stop reproduces the drone, and that releasing Freeze silences it. An implementer may not close
       this (§0). `kFreezeLatchOverdrive` (1.05f, `dsp/Delay.hpp:505`, flagged in its own comment as a
       by-ear constant that nothing measures or justifies) is the operator's to retune once the effect is
@@ -220,7 +220,7 @@ button labelled Stop conditionally meant "sustain". Operator ruling: **Freeze st
 itself** (the effect needs no Stop press), and **Stop stops everything and resets the Freeze button.**
 This restores Stop's unconditional silence guarantee, which T6 had weakened. Spec delta re-amended.
 
-- [ ] **T7.1 — Engaging Freeze stops the transport.** The `kFreeze` handler
+- [x] **T7.1 — Engaging Freeze stops the transport.** (landed 8b26ea8: `kFreeze` handler now pushes `MessageIn::Stop` + `SetDesiredTransportRunning(false)` on engage, `FroggersUiSurface.hpp`; comment rewritten.) The `kFreeze` handler
       (`FroggersUiSurface.hpp:1705-1712`) currently only flips the latch, with a comment stating it
       "pushes no MessageIn and never touches SetDesiredTransportRunning" — that comment is now wrong and
       must be rewritten, not left. On ENGAGE it SHALL also push `MessageIn::Stop` and
@@ -228,20 +228,20 @@ This restores Stop's unconditional silence guarantee, which T6 had weakened. Spe
       `SetDesiredTransportRunning`, whose D17 purpose is to stop a later audio-device renegotiation from
       re-asserting Start behind the app's back. On RELEASE it SHALL NOT start the transport (the
       operator resumes with Play).
-- [ ] **T7.2 — Stop disarms the latch.** The `kStop` handler SHALL `SetFreezeLatched(false)` alongside
+- [x] **T7.2 — Stop disarms the latch.** (landed 8b26ea8: `kStop` handler calls `SetFreezeLatched(false)` before the Stop push, `FroggersUiSurface.hpp`, with happens-before ordering documented.) The `kStop` handler SHALL `SetFreezeLatched(false)` alongside
       its existing Stop push, so the teardown gate (`TransportTeardownActive`) evaluates true and the
       instrument silences on the same edge. Order matters: the latch must be clear before the audio
       thread next evaluates the gate — trace the message/flag ordering rather than assuming.
-- [ ] **T7.3 — Tests.** (a) Freeze pressed while playing, with no Stop press: transport reads stopped
+- [x] **T7.3 — Tests.** (landed 8b26ea8: (a) `freeze_alone_holds_the_ring_above_an_audible_floor_and_stops_the_transport`; (b) `stop_disarms_the_latch_and_silences_the_held_drone_within_the_bound`; (c) `no_freeze_stop_press_sequence_leaves_the_instrument_sounding_after_stop`; (d) `releasing_freeze_does_not_restart_the_transport`; Play's own latch-disarm pinned separately in a065ebc's `play_disarms_the_freeze_latch_and_returns_the_voice_gate_to_the_transport`.) (a) Freeze pressed while playing, with no Stop press: transport reads stopped
       AND output sustains above an audible floor past the bound (this is T6.4(a) restated without the
       Stop press — update that test rather than duplicating it). (b) Freeze engaged and sustaining, then
       Stop: latch reads disarmed and output silences within the bound. (c) No sequence of Freeze/Stop
       presses leaves the instrument sounding after a Stop — at minimum Freeze->Stop, Freeze->Freeze->Stop,
       Stop->Freeze->Stop. (d) Releasing Freeze does NOT restart the transport. §9.1 for (a), (b), (c).
-- [ ] **T7.4 — Re-verify the T6 regression set** unchanged: the unlatched-Stop tests
+- [x] **T7.4 — Re-verify the T6 regression set** (landed 8b26ea8: `stopped_transport_overrides_drive_and_freeze_to_unity_zero_and_resumes_bit_exact`, `stop_forces_release_from_mid_attack_bypassing_grace_and_stage_completion`, `stop_silences_curve_one_grace_active_voice_within_bound_pass_f_repro_as_suite_test` all present; suite 266/0/0 per T5.1.) unchanged: the unlatched-Stop tests
       (`stopped_transport_overrides_...bit_exact`, `stop_forces_release_from_mid_attack_...`,
       `stop_silences_curve_one_grace_active_voice_...`) and pass-D 0/20 all still hold.
-- [ ] **T7.5 — OPERATOR GATE** (supersedes T6.5): the operator confirms in the built app that Freeze
+- [x] **T7.5 — OPERATOR GATE** (operator confirmed in built app, 2026-08-18) (supersedes T6.5): the operator confirms in the built app that Freeze
       alone produces the drone, that Stop always kills it and clears the button, and that the button's
       lit/unlit state matches reality. `kFreezeLatchOverdrive` (1.05f) remains theirs to retune by ear.
 
