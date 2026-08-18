@@ -8,11 +8,11 @@ model, sequential code changes, per-task review with §14 postflight.
 
 ## 1. Arrow row structure and emission
 
-- [ ] 1.1 Constants: `FroggersActions::kBankPrevious/kBankNext` and
+- [x] 1.1 Constants: `FroggersActions::kBankPrevious/kBankNext` and
       `FroggersNodeIds::kBankPrevArrow/kBankNextArrow/kModulationHeaderTitle`,
       matching the existing `inline constexpr const char*` conventions
       (`app/FroggersUiSurface.hpp:107-220`).
-- [ ] 1.2 Restructure `AppendModulationHeaderRow` (`:1288-1307`) per design:
+- [x] 1.2 Restructure `AppendModulationHeaderRow` (`:1288-1307`) per design:
       outer `Row` keeps id `kModulationHeader` and `Px(26)` main extent in
       BOTH drill states; level 0 emits
       `[spacer W1][prev Px][next Px][spacer W1]` with the pair centered and
@@ -20,7 +20,7 @@ model, sequential code changes, per-task review with §14 postflight.
       `:484`, `:940-941`); level > 0 emits the single full-width title child
       (`kModulationHeaderTitle`) with today's exact fill+text commands and NO
       arrow nodes.
-- [ ] 1.3 Tests (TDD: write first): geometry — pair midpoint == band midpoint
+- [x] 1.3 Tests (TDD: write first): geometry — pair midpoint == band midpoint
       within tolerance, arrows inside the band, band bounds byte-identical to
       pre-change (imitate `:878-955` using `AbsoluteBounds`); drilled — no
       arrow action nodes, title commands unchanged, band bounds unchanged.
