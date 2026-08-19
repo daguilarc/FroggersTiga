@@ -1,0 +1,13 @@
+{
+  "name": "frogg3rs-site-e2e",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Task 4.3 -- Playwright layout regression suite for the published frogg3rs site (app/browser/site/, served from app/browser/dist/site). Its OWN harness/package.json, deliberately separate from the legacy web/e2e suite (which stays dormant and byte-identical) and from External/Sheaf's own test suite (Sheaf source is never edited).",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.60.0"
+  }
+}

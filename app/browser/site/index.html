@@ -1,0 +1,155 @@
+<!doctype html>
+<!--
+  Task 4.3 -- the PUBLIC site shell (design A4, froggers-web-host spec
+  delta). Assembled verbatim into dist/site by package-catalog.mjs's
+  assembleSite() (staged alongside ./sheaf-runtime/ and ./sheaf-public/,
+  which are unmodified copies of Sheaf's own compiled browser runtime +
+  stylesheet -- see that script's own header comment).
+
+  CROSS-ORIGIN ISOLATION: frogg3rs.js needs SharedArrayBuffer (Emscripten
+  pthreads), which needs a crossOriginIsolated context. serve-site.mjs
+  sends the COOP/COEP headers for local/CI serving; GitHub Pages cannot
+  send custom headers at all, so ./coi-serviceworker.js is loaded FIRST,
+  before site-boot.mjs, as the production fallback -- see that file's own
+  header comment for the full trace (confirmed empirically: the app throws
+  on load without one or the other).
+
+  Dedicated to frogg3rs: boots the app directly via its own catalog +
+  package (./site-boot.mjs), mirroring Sheaf's own
+  `launchCatalogApplication` (External/Sheaf/projects/synth/browser/src/
+  main.ts:393-421) MINUS `SheafPatchLauncher`'s picker UI
+  (main.ts:372-391, never imported here) -- so no catalog-browser list of
+  apps is ever rendered, only frogg3rs itself. Every Sheaf symbol
+  site-boot.mjs imports is unmodified and re-exported from the runtime
+  copy below; no Sheaf source is edited or special-cased for frogg3rs
+  (froggers-browser-package/spec.md:75-81, sbac-8 "Miniapp is not
+  special-cased").
+
+  MOBILE STACKING (froggers-web-host spec delta, "encoder grid full
+  width, everything else above/below, never beside"): host-page CSS
+  ALONE cannot reflow the surface's own internal layout -- see
+  task-g4b-report.md's coupling trace. FroggersUiSurface.hpp lays the
+  encoder grid and the left-hand chrome block (scope, transport, scenes,
+  scene-blend, bpm) out as ONE outer Row (FroggersUiSurface.hpp:856-859,
+  `AppendLeftBlock`+`AppendRightBlock` as Weight(2)/Weight(4) siblings),
+  which Sheaf's browser UI backend positions as absolutely-bounded DOM
+  nodes and scales as ONE unit (External/Sheaf/projects/synth/browser/
+  src/ui.ts `fitSurface`, ui.ts:308-319 -- a single uniform
+  `transform: scale()` on the whole surface root), so no plain stylesheet
+  rule can independently reflow those internal, wire-positioned nodes
+  without rewriting the surface's own topology (an app-core change, out
+  of this task's file scope).
+  UN-BLOCKED (Group 4c): rather than fighting those wire-managed
+  properties at the stylesheet level, ./mobile-stack.mjs applies its own
+  PER-BLOCK CSS transforms that compose with them instead, reasserted
+  every render frame -- see that file's own header comment for the full
+  mechanism (gated on a small Sheaf drag-delta fix so drag/press input
+  still maps correctly through the transform; task-g4c-report.md has the
+  input-coordinate trace) and e2e/mobile-stacking.spec.mjs for the
+  assertions this actually satisfies (real, passing tests -- not
+  test.fixme). This shell's OWN chrome (the links banner below)
+  separately stacks above/below the surface in normal document flow,
+  same as before.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>frogg3rs</title>
+    <link rel="stylesheet" href="./sheaf-public/synth-browser.css" />
+    <link rel="stylesheet" href="./site.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <h1 class="site-title">frogg3rs</h1>
+    </header>
+    <main id="synth-root" data-synth-catalog-sources="./catalog-sources.json"></main>
+    <footer class="site-links" aria-label="Downloads and legal">
+      <a data-site-link="download" href="https://github.com/daguilarc/frogg3rs/releases/latest" target="_blank" rel="noopener noreferrer"
+        >Download the desktop app</a
+      >
+      <span aria-hidden="true">|</span>
+      <a data-site-link="license" href="https://github.com/daguilarc/frogg3rs/blob/main/LICENSE" target="_blank" rel="noopener noreferrer"
+        >License</a
+      >
+      <span aria-hidden="true">|</span>
+      <a data-site-link="manual" href="https://github.com/daguilarc/frogg3rs/blob/main/MANUAL.md" target="_blank" rel="noopener noreferrer"
+        >Manual</a
+      >
+    </footer>
+    <script>
+      // Failsafe boot-error rendering, registered first, before ANY other
+      // script on this page -- including site-boot.mjs's own
+      // <script type="module"> below. Deliberately a classic script with
+      // zero imports of its own: site-boot.mjs's `fail()` (see that
+      // file's own header comment) only ever runs as part of that
+      // module's own code, which per ES module semantics never executes
+      // AT ALL if any of its static imports (./sheaf-runtime/*.js) fails
+      // to resolve -- so a handler written INSIDE site-boot.mjs cannot
+      // catch site-boot.mjs's own import failure, no matter where in
+      // that file it is placed (site-boot.mjs's own `error`/
+      // `unhandledrejection` listeners cover every OTHER failure after it
+      // successfully starts running; this is specifically the layer
+      // underneath that one). This script has no imports to fail, so it
+      // stays live for the page's whole lifetime as the backstop of last
+      // resort. It deliberately duplicates a minimal version of
+      // fail()'s own panel markup (same CSS classes, already loaded by
+      // site.css above) instead of importing it -- importing anything
+      // here would reintroduce exactly the failure mode this exists to
+      // catch.
+      (function () {
+        var shown = false;
+        // See site-boot.mjs's own citation of this same set for the full
+        // explanation: Chromium (and other browsers) dispatch a genuine
+        // `window` `error` event for "ResizeObserver loop completed with
+        // undelivered notifications." / "ResizeObserver loop limit
+        // exceeded" -- a benign, spec-sanctioned notice, not a real
+        // failure -- whenever a ResizeObserver callback's own layout work
+        // needs another observation pass in the same frame. This app runs
+        // two independent ResizeObservers on #synth-root (Sheaf's own
+        // fitSurface one, and mobile-stack.mjs's), which reliably
+        // provokes it, especially at narrow viewports. Must NOT be
+        // treated as a boot failure.
+        var BENIGN_WINDOW_ERROR_MESSAGES = {
+          "ResizeObserver loop completed with undelivered notifications.": true,
+          "ResizeObserver loop limit exceeded": true,
+        };
+        function renderBootError(message) {
+          if (shown) return; // keep the FIRST failure visible, not a later cascade
+          var root = document.querySelector("#synth-root");
+          if (!root) return;
+          shown = true;
+          // Same reason as fail()'s own clear: a late failure can land
+          // after fitSurface/mobile-stack.mjs left an inline height (and,
+          // when narrow, overflow: hidden) on this element, which would
+          // otherwise clip the panel below down to invisible.
+          root.style.height = "";
+          root.style.overflow = "";
+          root.textContent = "";
+          var notice = document.createElement("div");
+          notice.className = "boot-error";
+          notice.setAttribute("role", "alert");
+          var heading = document.createElement("p");
+          heading.className = "boot-error-heading";
+          heading.textContent = "frogg3rs could not start in this browser.";
+          var detail = document.createElement("p");
+          detail.className = "boot-error-detail";
+          detail.textContent = message;
+          notice.appendChild(heading);
+          notice.appendChild(detail);
+          root.appendChild(notice);
+        }
+        window.addEventListener("error", function (event) {
+          if (BENIGN_WINDOW_ERROR_MESSAGES[event.message]) return;
+          renderBootError((event.error && event.error.message) || event.message || "frogg3rs failed to start");
+        });
+        window.addEventListener("unhandledrejection", function (event) {
+          var reason = event.reason;
+          renderBootError(reason instanceof Error ? reason.message : String(reason || "frogg3rs failed to start"));
+        });
+      })();
+    </script>
+    <script src="./coi-serviceworker.js"></script>
+    <script type="module" src="./site-boot.mjs"></script>
+  </body>
+</html>
