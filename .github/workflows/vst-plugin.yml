@@ -1,0 +1,77 @@
+name: VST Plugin
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    # AU is Apple-only and app/vst/CMakeLists.txt requests FORMATS VST3 AU,
+    # so this needs a macOS runner. Pinned to macos-14 (not "-latest") to
+    # match desktop-release.yml's own macOS job and avoid silent drift when
+    # GitHub moves the "latest" label.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # app/vst links Sheaf's synth core (External/Sheaf/projects/synth,
+          # SHEAF_SYNTH_DIR in app/vst/CMakeLists.txt) -- same
+          # `submodules: recursive` precedent pages.yml already uses for the
+          # same submodule.
+          submodules: recursive
+
+      # app/vst/CMakeLists.txt requires a LOCAL JUCE checkout
+      # (add_subdirectory("$ENV{HOME}/JUCE" ...), no FetchContent fallback --
+      # deliberate, per that file's own header comment: "the group 5 brief's
+      # explicit instruction (JUCE is already checked out locally), not
+      # FetchContent"). A runner has no such checkout, so this step creates
+      # one at the exact default path the CMakeLists.txt already looks up,
+      # needing no -D override.
+      #
+      # Network-fetching JUCE from its public GitHub repo in CI is already
+      # this repo's own established pattern: desktop/CMakeLists.txt:13-18
+      # does the same thing via FetchContent (GIT_TAG 8.0.4) for the desktop
+      # target's own JUCE dependency. app/vst's JUCE consumption has no such
+      # pin of its own, so this pins to 8.0.12 -- traced 2026-08-19 as the
+      # exact tag the local `~/JUCE` checkout this app/vst suite is
+      # developed and passing against is at (`git describe --tags
+      # --exact-match` on that checkout reports `8.0.12`), i.e. the only
+      # JUCE version actually verified to build this plugin and pass its
+      # own ctest suite, rather than assuming desktop's unrelated 8.0.4 pin
+      # would also work here.
+      - name: Fetch JUCE (pinned, matches the locally-verified checkout)
+        run: git clone --branch 8.0.12 --depth 1 https://github.com/juce-framework/JUCE.git "$HOME/JUCE"
+
+      - name: Configure
+        run: cmake -S app/vst -B app/vst/build -DCMAKE_BUILD_TYPE=Release
+
+      # -j2, nice'd: matches this file's own binding build convention
+      # (app/vst/CMakeLists.txt's header comment, "-j2 max, always, nice'd
+      # -- this machine locks up above -j2") -- written for the operator's
+      # local Mac, not this runner, but kept here too for parity with the
+      # one documented invocation this project already commits to.
+      - name: Build (VST3 + AU)
+        run: nice -n 10 cmake --build app/vst/build --config Release -- -j2
+
+      # Confirms both plugin bundle formats actually landed, not just that
+      # the overall `cmake --build` exit code was 0 (the vst3/component
+      # bundles are directories, produced by juce_add_plugin as part of the
+      # FroggersVst target's normal build -- COPY_PLUGIN_AFTER_BUILD is
+      # FALSE, so they stay in-tree here and are never installed anywhere).
+      - name: Assert plugin bundles were built
+        run: |
+          test -d app/vst/build/FroggersVst_artefacts/VST3/Frogg3rs.vst3
+          test -d app/vst/build/FroggersVst_artefacts/AU/Frogg3rs.component
+          echo "VST3 and AU bundles present"
+
+      # 19 ctest cases across FroggersVstSmokeTest, FroggersVstHostTests,
+      # and FroggersVstEditorTest (app/vst/CMakeLists.txt's own "5.2"/"6.4"/
+      # "8.2" sections) -- previously never run in CI at all.
+      - name: ctest
+        run: ctest --test-dir app/vst/build --output-on-failure

@@ -123,6 +123,16 @@ inline constexpr const char* kFreeze = "froggers.transport.freeze";
 // P7b (tasks.md T5.3b): the Record transport BUTTON's own node id -- fourth
 // child of the transport row, beside Play/Stop/Freeze.
 inline constexpr const char* kRecord = "froggers.transport.record";
+// Task 6.2 (froggers-vst-host delta, plugin-mode thinned transport row): the
+// "FREEZE" text label that sits beside kFreeze -- emitted ONLY when this
+// surface is attached in plugin-host mode
+// (FroggersUiSurface::SetPluginHostMode(true), see that method's own
+// comment); never emitted in the default/standalone/browser mode this file
+// otherwise renders. Naming convention: sibling label id under the SAME
+// dotted namespace as the control it labels
+// (froggers.transport.freeze -> froggers.transport.freeze.label), mirroring
+// kBpmLabel's own "<control>.label" suffix off kBpm above.
+inline constexpr const char* kFreezeLabel = "froggers.transport.freeze.label";
 // Row 3 of the left block (tasks.md F.3 CELL MAP): Play | Stop | Freeze | Record.
 inline constexpr const char* kTransportRow = "froggers.layout.left.transport";
 // Row 4 of the left block: Scene 1 | Scene 2.
@@ -830,6 +840,33 @@ public:
         app_ = app;
     }
 
+    // Task 6.2 (froggers-vst-host delta): a runtime host-capability flag,
+    // defaulted false -- every existing host (desktop, browser) never calls
+    // this, so their rendered tree is byte-identical to before this task.
+    // The plugin host (group 8's editor) calls SetPluginHostMode(true)
+    // before/at attach time so AppendTransportRow() below thins Play |
+    // Stop | Freeze | Record down to Freeze | "FREEZE" label -- the plugin
+    // spec's binding requirement (Play/Stop/Record are meaningless when the
+    // DAW is transport authority, task 6.1/6.3; only Freeze survives as a
+    // plugin-reachable control).
+    //
+    // Deliberately a plain runtime setter on the surface instance, NOT a
+    // new FroggersCellMap::LeftKind row-table entry (contrast the CELL
+    // MAP's own convention, kLeftRows above, ~line 442): kLeftRows is ONE
+    // compile-time static array shared by every host that constructs this
+    // class -- baking a per-host variant into that table would make the
+    // STANDALONE host's row shape depend on a flag it never touches, when
+    // what actually varies here is which CHILDREN one already-declared row
+    // (Transport) emits, not which rows exist at all. This follows the same
+    // "read live state fresh every rebuild" idiom AppendTransportRow
+    // already uses for app_->FreezeLatched() (T5.2, this class rebuilds its
+    // tree every frame) -- pluginHostMode_ is just another per-rebuild-read
+    // runtime flag, owned by the surface instance rather than by app_
+    // (it is a HOST fact, not an application-state fact, so it does not
+    // belong on FroggersAppCore either).
+    void SetPluginHostMode(bool pluginHostMode) { pluginHostMode_ = pluginHostMode; }
+    bool PluginHostMode() const { return pluginHostMode_; }
+
     synth::ui::NodeTree BuildTree() override {
         const synth::ui::Bounds root = FroggersPageLayout::RootBounds(context_);
 
@@ -1015,25 +1052,41 @@ private:
         // same idiom AppendScopeCell above uses for kVcoScope, so the
         // now-const-context row-builder lambda below can capture it too.
         FroggersAppCore* app = app_;
-        builder.Row(FroggersNodeIds::kTransportRow, rowLayout, [app](synth::ui::Builder& b) {
-            synth::ui::ControlStyle playStyle{};
-            playStyle.action = synth::ui::Action::Named(FroggersActions::kPlay);
-            playStyle.layout.main = synth::ui::Extent::Px(kTransportPlateSize);
-            playStyle.layout.cross = synth::ui::Extent::Px(kTransportPlateSize);
-            b.Draw(FroggersNodeIds::kPlay, BuildPlayDrawCommands, playStyle);
+        // Task 6.2: captured by value into the row-builder lambda, same
+        // reason `app` is -- read fresh every rebuild, but this one never
+        // actually changes mid-session (a host does not switch modes after
+        // attaching), so it is really just "the value this render pass
+        // uses," not a live cross-thread read like app_->FreezeLatched().
+        const bool pluginHostMode = pluginHostMode_;
+        builder.Row(FroggersNodeIds::kTransportRow, rowLayout, [app, pluginHostMode](synth::ui::Builder& b) {
+            // Task 6.2 (froggers-vst-host delta, binding): "in plugin mode
+            // Play, Stop, AND Record are NOT rendered ... the Freeze button
+            // stays and gains a 'FREEZE' text label beside it in the freed
+            // row space." pluginHostMode_ defaults false, so this branch is
+            // never taken by the standalone/desktop/browser hosts -- their
+            // Play/Stop/Freeze/Record sequence below is byte-identical to
+            // before this task.
+            if (!pluginHostMode) {
+                synth::ui::ControlStyle playStyle{};
+                playStyle.action = synth::ui::Action::Named(FroggersActions::kPlay);
+                playStyle.layout.main = synth::ui::Extent::Px(kTransportPlateSize);
+                playStyle.layout.cross = synth::ui::Extent::Px(kTransportPlateSize);
+                b.Draw(FroggersNodeIds::kPlay, BuildPlayDrawCommands, playStyle);
 
-            synth::ui::ControlStyle stopStyle{};
-            stopStyle.action = synth::ui::Action::Named(FroggersActions::kStop);
-            stopStyle.layout.main = synth::ui::Extent::Px(kTransportPlateSize);
-            stopStyle.layout.cross = synth::ui::Extent::Px(kTransportPlateSize);
-            b.Draw(FroggersNodeIds::kStop, BuildStopDrawCommands, stopStyle);
+                synth::ui::ControlStyle stopStyle{};
+                stopStyle.action = synth::ui::Action::Named(FroggersActions::kStop);
+                stopStyle.layout.main = synth::ui::Extent::Px(kTransportPlateSize);
+                stopStyle.layout.cross = synth::ui::Extent::Px(kTransportPlateSize);
+                b.Draw(FroggersNodeIds::kStop, BuildStopDrawCommands, stopStyle);
+            }
 
-            // T5.2: Freeze, third child, same 28px plate idiom as Play/Stop.
-            // A capturing lambda wrapping BuildFreezeDrawCommands (it takes a
-            // `latched` bool the DrawFactory signature -- Bounds only -- has
-            // no room for), same style the encoder-cell `b.Draw(encoderId,
-            // [state, ...](Bounds){...}, ...)` call (AppendEncoderCell)
-            // already uses for its own per-frame captured state. Reads
+            // T5.2: Freeze, same 28px plate idiom as Play/Stop -- present in
+            // BOTH modes (task 6.2: "the Freeze button stays"). A capturing
+            // lambda wrapping BuildFreezeDrawCommands (it takes a `latched`
+            // bool the DrawFactory signature -- Bounds only -- has no room
+            // for), same style the encoder-cell `b.Draw(encoderId, [state,
+            // ...](Bounds){...}, ...)` call (AppendEncoderCell) already uses
+            // for its own per-frame captured state. Reads
             // `app->FreezeLatched()` fresh on every call rather than a value
             // cached at click time, so a click updates the drawn colours on
             // the very next rebuild.
@@ -1048,20 +1101,32 @@ private:
                 },
                 freezeStyle);
 
-            // P7b (tasks.md T5.3b): Record, fourth child, same 28px plate
-            // idiom and same "read live state fresh every rebuild" lambda
-            // shape as Freeze just above -- app->RecordArmed() rather than
-            // app->FreezeLatched().
-            synth::ui::ControlStyle recordStyle{};
-            recordStyle.action = synth::ui::Action::Named(FroggersActions::kRecord);
-            recordStyle.layout.main = synth::ui::Extent::Px(kTransportPlateSize);
-            recordStyle.layout.cross = synth::ui::Extent::Px(kTransportPlateSize);
-            b.Draw(
-                FroggersNodeIds::kRecord,
-                [app](synth::ui::Bounds bounds) {
-                    return BuildRecordDrawCommands(bounds, app != nullptr && app->RecordArmed());
-                },
-                recordStyle);
+            if (pluginHostMode) {
+                // Task 6.2: the "FREEZE" text label, beside the Freeze
+                // plate, in the row space Play/Stop/Record no longer
+                // occupy -- same hand-rolled Label idiom kBpmLabel/
+                // kSceneBlendLabel use (AppendBpmControl() above,
+                // `builder.Label(id, text, ControlStyle{})`), just placed
+                // beside its control (a Row's in-flow next child) instead
+                // of below it (those two sit in a Column).
+                b.Label(FroggersNodeIds::kFreezeLabel, "FREEZE", synth::ui::ControlStyle{});
+            } else {
+                // P7b (tasks.md T5.3b): Record, fourth child, same 28px
+                // plate idiom and same "read live state fresh every
+                // rebuild" lambda shape as Freeze just above --
+                // app->RecordArmed() rather than app->FreezeLatched(). Not
+                // rendered in plugin-host mode (task 6.2, binding).
+                synth::ui::ControlStyle recordStyle{};
+                recordStyle.action = synth::ui::Action::Named(FroggersActions::kRecord);
+                recordStyle.layout.main = synth::ui::Extent::Px(kTransportPlateSize);
+                recordStyle.layout.cross = synth::ui::Extent::Px(kTransportPlateSize);
+                b.Draw(
+                    FroggersNodeIds::kRecord,
+                    [app](synth::ui::Bounds bounds) {
+                        return BuildRecordDrawCommands(bounds, app != nullptr && app->RecordArmed());
+                    },
+                    recordStyle);
+            }
         });
     }
 
@@ -2074,6 +2139,10 @@ private:
     synth::AppContext* context_ = nullptr;
     FroggersAppCore* app_ = nullptr;
     ActionHandler outerHandler_;
+    // Task 6.2: see SetPluginHostMode()'s own comment. Defaults false, so
+    // every existing (pre-group-6) construction of this class -- default
+    // constructed, this flag never touched -- renders exactly as before.
+    bool pluginHostMode_ = false;
     mutable std::uint64_t fallbackTimestamp_ = 1;
 };
 
