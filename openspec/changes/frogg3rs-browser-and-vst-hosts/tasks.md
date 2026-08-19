@@ -100,10 +100,14 @@ by the executing task before being relied on.
 - [ ] 4.2 `pages.yml`: replace the legacy `wasm/`+`web/` steps
       (`pages.yml:41-59`) with the group-2 build + this group's packaging;
       CI asserts `web/` and `wasm/` stay byte-identical (git-clean
-      check). The public cutover/rename gate remains the operator's per
-      `froggers-web-host:34-45` — the workflow lands ready, dry-run
-      proven (workflow_dispatch), without flipping anything the spec
-      gates on the rename.
+      check). GATE THE DEPLOY STEP ON MAIN (design A3 audit addition —
+      as written the deploy at `:69-71` is unconditional and a branch
+      dispatch could publish the unreleased site): branch
+      `workflow_dispatch` = build + e2e only, which is the pre-main dry
+      run; prove it from the working branch and confirm the live site
+      is untouched. The public cutover/rename gate remains the
+      operator's per `froggers-web-host:34-45` — the workflow lands
+      ready without flipping anything the spec gates on the rename.
 - [ ] 4.3 Site shell (design A4; operator decisions 2026-08-18, ADDED
       delta on `froggers-web-host`): mobile-width viewports stack around
       a full-width sixteen-slot encoder grid, everything else above or
@@ -112,15 +116,20 @@ by the executing task before being relied on.
       layout work is in scope if the trace demands it, report it);
       legacy link roles carried forward (`web/index.html:39-62` is the
       enumeration; manual → `MANUAL.md`, release links → the release
-      being published). Layout assertion CI-runnable where the harness
-      allows, else deferred to the 4.4 smoke (say which in the report);
-      link targets covered by 4.1's old-name gate.
+      being published). Playwright e2e for the NEW site, own harness
+      (e.g. `app/browser/e2e/` — the legacy `web/` suite stays dormant
+      and byte-identical; copy its idiom, not its files):
+      mobile-emulated stacking + desktop layout + link roles with no
+      old-name target, no audio start, wired into the workflow before
+      the deploy step. Trace first whether Sheaf's renderer exposes DOM
+      geometry or draws to canvas (design UNVERIFIED item — JS-probe or
+      screenshot fallback; cite the trace).
 - [ ] 4.4 Browser smoke DEFERRED (operator instruction 2026-08-18): the
       operator tests nothing until every group lands — the browser smoke
       runs together with the DAW smoke in the combined gate at 9.2.
       This group is complete when its automated checks (4.1's URL gate,
-      4.2's dry-run + byte-identity, 4.3's layout assertion where
-      CI-runnable) are green.
+      4.2's branch-dispatch dry run + byte-identity, 4.3's Playwright
+      suite) are green.
 
 ## 5. VST skeleton (design B1)
 
@@ -198,7 +207,9 @@ by the executing task before being relied on.
       browser — load the app via the launcher/catalog locally, confirm
       the surface (incl. carousel arrows) works; at phone width the
       encoder grid spans the screen with everything else above or below
-      it; site links resolve with no old-name references.
+      it (a real phone on the LAN against the local serve is the
+      device-true check; the live site stays v1 until merge to main);
+      site links resolve with no old-name references.
       DAW — load the VST in a real DAW: host transport drives it, host
       tempo drives the clock, a parameter automates, a DAW-side MIDI
       mapping moves a parameter, the editor shows the surface with

@@ -65,6 +65,20 @@ same way — NO Sheaf-side change required, per
   classify each of its five checks at execution — keep what gates
   sim/doc parity that stays live, drop only what exists solely to serve
   the legacy site, and report kept vs dropped.
+  **Deploy gating (audit addition 2026-08-18):** as pages.yml stands,
+  the deploy step is unconditional (`:69-71`) — a `workflow_dispatch`
+  from the working branch could publish the unreleased site to the live
+  URL. The swapped workflow gates the deploy step on the default branch
+  (`if: github.ref == 'refs/heads/main'` or equivalent), so a branch
+  dispatch is build + e2e only — that IS the pre-main dry run.
+  UNVERIFIED: whether the `github-pages` environment's deployment
+  branch policy already restricts non-main deploys (machine-side
+  setting, not in the repo) — the in-workflow gate makes it moot.
+  Pre-main testing story: branch pushes never trigger pages.yml (its
+  `on: push` is main-only), so the live site stays v1 until merge; the
+  operator's pre-merge surface checks run against the LOCAL serve
+  (launcher + localhost catalog per A2/sbac-10), reachable from a phone
+  on the same LAN for the real-device mobile check.
   The rename/publication gate stays with the operator — the workflow lands
   ready but the public cutover is their call per the spec.
 - **Input capture:** frogg3rs currently requests ZERO input channels
@@ -235,12 +249,19 @@ nothing.
 
 - A: manifest validation + build emits `frogg3rs.js/.wasm` (build-level
   test in the new script, CI-runnable); catalog JSON schema-validates;
-  pages workflow dry-run builds; legacy `web/`+`wasm/` byte-identity
-  asserted (git-clean check in CI step); mobile-viewport stacking
-  asserted (grid spans viewport width, nothing beside it) CI-runnably
-  where the harness allows, else at the operator smoke; link roles
-  present with no old-name target (folds into 4.1's old-name gate).
-  Operator browser smoke incl. phone-width layout and links.
+  pages workflow dry-run builds (branch dispatch: build + e2e, deploy
+  gated to main); legacy `web/`+`wasm/` byte-identity asserted
+  (git-clean check in CI step); Playwright e2e for the NEW site — its
+  own harness (e.g. under `app/browser/e2e/`; the legacy `web/` suite
+  stays dormant and byte-identical, copy its idiom, not its files):
+  mobile-emulated stacking assertion (grid spans viewport width,
+  nothing beside it), desktop-emulated layout, link roles present with
+  no old-name target (overlaps 4.1's old-name gate), all without
+  starting audio, wired before the deploy step. UNVERIFIED: whether
+  Sheaf's browser renderer exposes DOM geometry Playwright can measure
+  or draws to a canvas — trace before writing assertions; the fallback
+  is a JS-probe of the surface's own cell geometry or a screenshot
+  check. Operator browser smoke incl. phone-width layout and links.
 - B: deletion — desktop default build still configures/builds green
   (option blocks gone, nothing references them: grep gate); new plugin —
   parameter round-trip tests (host sets param → core value moves → host
