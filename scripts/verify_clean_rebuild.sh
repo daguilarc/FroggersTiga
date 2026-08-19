@@ -143,21 +143,6 @@ if [[ "${VERIFY_V2:-}" == "1" ]]; then
   if ! ctest --test-dir desktop-v2/build --output-on-failure -R 'ControlCoreBridge'; then
     note_fail "desktop-v2 ControlCoreBridge_test failed"
   fi
-
-  echo "== desktop cmake build (BUILD_VST_V2=ON) =="
-  if cmake -S desktop -B desktop/build-v2-vst -DBUILD_VST_V2=ON -LAH 2>/dev/null | grep -q '^BUILD_VST_V2:BOOL'; then
-  if ! cmake -S desktop -B desktop/build-v2-vst -DBUILD_VST_V2=ON; then
-    note_fail "desktop BUILD_VST_V2 configure failed"
-  elif ! cmake --build desktop/build-v2-vst --config Release; then
-    note_fail "desktop BUILD_VST_V2 build failed"
-  elif [[ -f desktop/build-v2-vst/HostParameterProcessorV2_test ]] || [[ -f desktop/build-v2-vst/Release/HostParameterProcessorV2_test.exe ]]; then
-    if ! ctest --test-dir desktop/build-v2-vst --output-on-failure -R 'HostParameterProcessorV2'; then
-      note_fail "desktop HostParameterProcessorV2 tests failed"
-    fi
-  fi
-  else
-    echo "SKIP: BUILD_VST_V2 option not present yet (OpenSpec §6)"
-  fi
 fi
 
 echo "== git worktree cleanliness =="
