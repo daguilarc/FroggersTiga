@@ -100,11 +100,13 @@ by the executing task before being relied on.
       a branch mid-change churns remotes for zero content), and cut the
       NEXT branch under a `frogg3rs-*` name; record the decision here.
       Operator may override to rename now.
-- [ ] 3.4 OPERATOR-COORDINATED, machine-local: rename the working folder
-      `~/Desktop/FroggersTiga` → `~/Desktop/frogg3rs` at a session
-      boundary (it invalidates the running session's paths). Afterwards
-      the controller updates its own memory/ledger entries that cite the
-      old absolute path.
+- [x] 3.4 MOVED, not done (operator decision 2026-08-19): the
+      machine-local folder rename `~/Desktop/FroggersTiga` ->
+      `~/Desktop/frogg3rs` is carried by
+      `frogg3rs-host-state-and-visibility` task 5b.1 so it survives
+      this change's archive. The repo, remote, and every published URL
+      are already on the new name; only the local working directory
+      still carries the old one.
 
 ## 4. Package + catalog + site swap (design A2, A3)
 
@@ -242,19 +244,23 @@ by the executing task before being relied on.
 
 - [x] 9.1 Full suite green; browser build green; plugin builds VST3+AU;
       counts reported.
-- [ ] 9.2 OPERATOR GATE (combined, one sitting — browser AND DAW
-      together, per operator instruction 2026-08-18):
-      browser — load the app via the launcher/catalog locally, confirm
-      the surface (incl. carousel arrows) works; at phone width the
-      encoder grid spans the screen with everything else above or below
-      it (a real phone on the LAN against the local serve is the
-      device-true check; the live site stays v1 until merge to main);
-      site links resolve with no old-name references.
-      DAW — load the VST in a real DAW: host transport drives it, host
-      tempo drives the clock, a parameter automates, a DAW-side MIDI
-      mapping moves a parameter, the editor shows the surface with
-      Play/Stop/Record gone and Freeze labeled "FREEZE".
-- [ ] 9.3 On both gates: archive with spec sync (ADDED froggers-vst-host;
+- [x] 9.2 OPERATOR GATE — BROWSER, PASSED 2026-08-19: the operator
+      loaded the site and confirmed it working (surface renders at
+      desktop width, encoders labeled before Play, slider values
+      present, mobile stack, links).
+      DAW CONFIRMATION MOVED OUT (operator decision 2026-08-19): the
+      real-DAW smoke — host transport, host tempo, parameter
+      automation, DAW-side MIDI mapping, and the editor's suppressed
+      transport row — is no longer a gate on THIS change and is
+      carried by `frogg3rs-host-state-and-visibility` (its group 6
+      operator gate). This change therefore archives on automated
+      evidence for the plugin (app suite 279/279, app/vst ctest 3/3
+      covering transport edges, tempo slaving, the 92-parameter
+      round-trip and stable ids, and the editor's plugin-mode surface;
+      both formats building in CI) plus the browser confirmation above
+      — NOT on a real-DAW run, which has not happened. Recorded so the
+      archived change never reads as if one had.
+- [x] 9.3 On both gates: archive with spec sync (ADDED froggers-vst-host;
       froggers-web-host ADDED delta synced; REMOVED capabilities synced
       from their per-capability delta files and spec dirs deleted;
       browser-package spec implemented as written, no delta).

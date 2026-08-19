@@ -35,7 +35,7 @@ Desktop v2 and VST v2 SHALL include a **full step sequencer** integrated with tr
 #### Scenario: VST sequencer host parameters
 - **WHEN** FroggersTigaPluginV2 is hosted
 - **THEN** BPM, play/record arm, and current step are exposed as host parameters with flat stable IDs
-- **THEN** grouped display names appear in DAW trees per `vst-v2-midi-modulation` dual-ID rules
+- **THEN** grouped display names appear in DAW trees per `froggers-v2-app-manifest`'s dual-identity rules (stable ID plus grouped display name; this scenario cited `vst-v2-midi-modulation` until that capability was retired with the untested v2 plugin wrapper, which owned no rule the manifest does not)
 
 #### Scenario: MIDI clock sync optional input
 - **WHEN** external MIDI clock is enabled in v2 MIDI settings

@@ -78,11 +78,36 @@ landing and the submodule pin moving. Groups 1, 2, 4 are independent.
 - [ ] 5.4 Operator smoke: route an input, confirm External Audio and
       External EF appear and modulate; unroute, confirm they go inert.
 
+## 5b. Carried over from the predecessor (not new work)
+
+- [ ] 5b.1 OPERATOR-COORDINATED, machine-local: rename the working
+      folder `~/Desktop/FroggersTiga` -> `~/Desktop/frogg3rs` at a
+      session boundary (it invalidates a running session's absolute
+      paths). Inherited unfinished from
+      `frogg3rs-browser-and-vst-hosts` so it is not lost at archive.
+      Afterwards the controller updates its own memory/ledger entries
+      that cite the old absolute path. Note: the plugin's compiled wasm
+      currently embeds the old folder name via local build paths, which
+      the renamed-origin gate reports as a WARN; this rename clears it.
+
 ## 6. Whole-change gate and operator acceptance
 
 - [ ] 6.1 Full suite green; browser build + e2e green; plugin builds
       VST3+AU; counts reported.
-- [ ] 6.2 OPERATOR GATE: DAW smoke — save a project with hand-edited
-      parameters, reload, confirm restoration; confirm the chosen
-      cross-bank behavior; confirm pre-Play legibility in both hosts.
+- [ ] 6.2 OPERATOR GATE: DAW smoke. Two parts.
+      (a) INHERITED from `frogg3rs-browser-and-vst-hosts` (moved here by
+      operator decision 2026-08-19 — that change shipped the plugin on
+      automated evidence alone and archived without a real-DAW run, so
+      this is the FIRST time the plugin is exercised in a DAW and any
+      finding lands against the predecessor's delivered behavior, not
+      this change's): load the VST3 or AU in a real DAW and confirm host
+      transport drives it, host tempo drives the clock with the BPM
+      control display-only, a parameter automates, a DAW-side MIDI
+      mapping moves a parameter, and the editor renders the surface with
+      Play/Stop/Record absent and Freeze labeled "FREEZE".
+      (b) THIS change: save a project with hand-edited parameters,
+      reload, confirm restoration; confirm the chosen cross-bank
+      behavior; confirm pre-Play legibility in both hosts; route an
+      input and confirm External Audio and External EF appear and
+      modulate, then unroute and confirm they go inert.
 - [ ] 6.3 Archive with spec sync (both ADDED deltas).

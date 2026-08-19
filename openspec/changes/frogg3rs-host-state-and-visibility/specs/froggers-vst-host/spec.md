@@ -27,11 +27,13 @@ patches as a side effect.
 - **THEN** the standalone application's saved patches are unmodified
 
 ### Requirement: Automation does not steal the operator's view
-WHEN the DAW automates parameters, THE plugin editor's visible page
-SHALL behave per the operator's chosen policy for view-follows-
-automation, consistently for a single lane and for simultaneous lanes
-across different banks; whatever the policy, the automated parameter's
-value SHALL reach the correct bank and slot.
+THE plugin SHALL deliver an automated parameter's value to that
+parameter's own bank and slot regardless of which bank the editor is
+currently showing, and SHALL NOT leave the editor's visible page
+oscillating when lanes in different banks are automated at once.
+Whether automation moves the visible page at all is this change's
+operator decision; whichever policy is chosen SHALL apply identically
+to a single lane and to simultaneous lanes.
 
 #### Scenario: Simultaneous cross-bank lanes
 - **WHEN** two automation lanes drive parameters in two different banks
