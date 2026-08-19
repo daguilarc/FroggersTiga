@@ -41,7 +41,23 @@ same way — NO Sheaf-side change required, per
   per `froggers-browser-package/spec.md:27-49`) + a build script that
   runs Sheaf's `browser` build (`npm run build` → tsc) then
   `node dist/src/build-browser-apps.mjs --manifest app/browser/... 
-  --allowed-source-root <repo>/app --output-root <repo>/app/browser/dist`.
+  --allowed-source-root <repo>/app --output-root <repo>/app/browser/dist`
+  (AUDIT CORRECTION 2026-08-19: this out-of-tree `--output-root` is not
+  actually reachable -- `build-browser-apps.mjs:147-152` unconditionally
+  resolves `wasmRoot` from Sheaf's own `browserRoot`
+  (`projects/synth/browser/dist/wasm`) regardless of the flag's value, and
+  rejects anything outside that tree with "outputRoot must be a dedicated
+  directory beneath dist/wasm"; the fixture precedent
+  (`browser/Makefile:41`, `--output-root dist/wasm/fixture-apps`) confirms
+  this, using only an in-tree path itself. `app/browser/build-browser.sh`
+  (the script that actually implements this task) instead invokes the
+  script with an IN-TREE `--output-root` inside the Sheaf submodule's own,
+  gitignored staging directory, then copies the two emitted artifacts plus
+  the emissions report out to `app/browser/dist/wasm/apps/frogg3rs/`
+  itself -- see that script's own header comment for the full trace and
+  its own disclosure of this deviation. The manifest and app core were
+  never the problem: with an in-tree `--output-root` this app compiles
+  cleanly under emscripten, as the next sentence already says).
   Memory-policy and ABI come from the generic pipeline (`sbap-2`).
   UNVERIFIED at write time: whether `FroggersApp`'s header set compiles
   under emscripten as-is (the core is JUCE-free and std-only by

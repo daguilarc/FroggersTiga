@@ -102,6 +102,14 @@ renderer, so surface improvements reach the plugin without a parallel UI.
 - **THEN** the plugin editor renders it without plugin-specific UI work
   beyond the DAW-owned exclusions
 
+## Out of scope (superseded 2026-08-19)
+
+Session persistence across a host project, and the policy question of
+whether DAW automation may move the editor's visible bank, are NOT
+requirements of this change: they are specified in
+`frogg3rs-host-state-and-visibility`. This change's automation surface
+is addressing and value semantics only.
+
 ## Removed capabilities
 
 The capabilities `juce-vst-cc-mod-gating` and `vst-v2-midi-modulation` are

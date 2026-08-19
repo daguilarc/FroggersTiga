@@ -99,3 +99,13 @@ while deleting the old, never-tested VST implementations.
   end and run together in one sitting (group 9 — the operator tests
   nothing until every group lands, instruction 2026-08-18); the
   site-cutover step is user-gated per the existing spec.
+- SUPERSEDED SCOPE (operator instruction 2026-08-19): the VST host's
+  remaining scope moves to `frogg3rs-host-state-and-visibility` — DAW
+  session persistence (`getStateInformation`/`setStateInformation` stay
+  no-ops here), the cross-bank automation view policy, pre-Play
+  parameter legibility (blocked on Sheaf's `ui-state-before-audio`),
+  and the site's visibility regression tests. This change's delivered
+  behavior is unaffected; it archives on its own gates.
+- Upstream fixes spun out of this change's execution (each its own
+  Sheaf branch + PR, operator-gated): per-element drag scaling
+  (`ui.ts`), `browser-slider-value-readout`, `ui-state-before-audio`.
