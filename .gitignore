@@ -7,9 +7,20 @@ desktop/build-v2-vst/
 desktop-v2/build/
 desktop/dist/
 web/dist/
+app/browser/dist/
 .DS_Store
 **/.DS_Store
+
+# Task 4.3 -- app/browser/e2e/'s own Playwright harness (own package.json,
+# not covered by any existing ignore). Same convention web/.gitignore
+# already uses for its own e2e node_modules/test-results/playwright-report,
+# scoped here since this file is the root .gitignore, not a nested one.
+app/browser/e2e/node_modules/
+app/browser/e2e/test-results/
+app/browser/e2e/playwright-report/
 
 # Local SDD execution ledger (scratch progress notes, not versioned;
 # see openspec/changes/desktop-v2-operator-truth-repair/tasks.md Packet R)
 .sdd/
+# Playwright scratch when a suite is run from the repo root rather than its own dir.
+/test-results/
