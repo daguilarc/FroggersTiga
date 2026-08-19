@@ -351,7 +351,7 @@ Links `src/core/` + `DesktopHostIO` only (no libDaisy). Transport bar: **Play/St
 
 **Clean rebuild check:** `scripts/verify_clean_rebuild.sh` — generator freshness, sim tests, web TypeScript, desktop build, and workspace hygiene.
 
-**Release packages:** See [`desktop/PACKAGING.md`](desktop/PACKAGING.md) for DMG / Windows installer commands. Move tag `froggerstiga-v1` on `main` (force-push) to trigger `.github/workflows/desktop-release.yml` and publish assets on [GitHub Releases](https://github.com/daguilarc/FroggersTiga/releases).
+**Release packages:** See [`desktop/PACKAGING.md`](desktop/PACKAGING.md) for DMG / Windows installer commands. Move tag `froggerstiga-v1` on `main` (force-push) to trigger `.github/workflows/desktop-release.yml` and publish assets on [GitHub Releases](https://github.com/daguilarc/frogg3rs/releases).
 
 Parameter and host UX reference for this frozen desktop-v1 surface: [`SIM_MANUAL.md`](SIM_MANUAL.md).
 `QUICK_DICT.md` now documents the current Sheaf app under `app/` rather than this surface's own

@@ -1,4 +1,4 @@
-# FroggersTiga Manual
+# Frogg3rs Manual
 
 Operator manual for **Frogg3rs — the Sheaf app** under [`app/`](app/), the current line of development.
 
