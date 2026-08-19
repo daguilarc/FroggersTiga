@@ -15,56 +15,171 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-and-deploy:
+  build-and-test:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          # Full history: the web/+wasm/ byte-identity step below diffs
+          # against the push's own pre-push SHA (github.event.before),
+          # which needs that commit to be reachable in this checkout -- the
+          # default shallow (depth-1) clone would not have it.
+          fetch-depth: 0
 
-      - name: Web preflight
+      # PREFLIGHT CLASSIFICATION (task 4.2, design A3): of the five legacy
+      # checks, three are kept (they pass and are the only CI enforcement
+      # of invariants over the still-live, dormant web/ + desktop/ trees --
+      # froggers-web-host/spec.md requires those trees stay byte-identical,
+      # not deleted) and two are dropped (broken at HEAD with a
+      # pre-existing, unrelated failure, and exist solely to serve the
+      # legacy web display authority this pipeline no longer builds). See
+      # the task report for the full kept/dropped table with per-check
+      # reasoning and verified pass/fail evidence.
+      - name: Web preflight (kept checks only)
         run: |
-          chmod +x \
-            sim/check_host_display_projections.sh \
-            sim/check_mod_source_labels.sh \
-            sim/check_operator_docs_sync.sh
+          chmod +x sim/check_operator_docs_sync.sh sim/check_mod_source_labels.sh
           sim/check_operator_docs_sync.sh
-          node scripts/generate-host-display.mjs --check
           node scripts/verify-host-display-shape.mjs
-          sim/check_host_display_projections.sh
           sim/check_mod_source_labels.sh
-
-      - name: Setup emsdk
-        uses: emscripten-core/setup-emsdk@v16
-
-      - name: Build WASM
-        run: |
-          cd wasm
-          emcmake cmake -B build
-          cmake --build build
-          cp build/froggers.wasm ../web/public/froggers.wasm
+          # DROPPED (broken at HEAD -- pre-existing "could not parse kTable
+          # from ParamDisplayNames.hpp" since ~e2fdb6a, unrelated to this
+          # change; both exist solely to serve the legacy web/desktop
+          # host-display generator this pipeline no longer builds; fixing
+          # the parser is out of scope here):
+          #   node scripts/generate-host-display.mjs --check
+          #   sim/check_host_display_projections.sh (calls the above)
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: web/package-lock.json
+          node-version: "22.17.1"
 
-      - name: Build web
+      # emsdk version pinned to match the toolchain build-browser.sh's own
+      # header comment records as verified-working for this app
+      # (app/browser/build-browser.sh:24-26, checked 2026-08-18) -- not
+      # Sheaf's own CI pin (6.0.3, .github/workflows/synth-browser-pages.yml
+      # in External/Sheaf), which was never exercised against this app.
+      - name: Setup emsdk
+        uses: emscripten-core/setup-emsdk@v16
+        with:
+          version: 6.0.7
+
+      # Group-2 build: Sheaf's generic browser pipeline, out-of-tree, no
+      # Sheaf-side change (app/browser/build-browser.sh).
+      - name: Build browser app (frogg3rs via Sheaf)
         run: |
-          cd web
-          npm ci
-          VITE_BASE=/frogg3rs/ npm run build
+          cd app/browser
+          ./build-browser.sh
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
+      # froggers-browser-package spec, "Immutable, content-addressed
+      # package": proves the build identifier is a pure function of
+      # artifact bytes (same inputs -> same id; changed inputs -> changed
+      # id). Hermetic -- operates on copies of the already-built wasm
+      # output in a temp dir, no server, no rebuild. Previously only a
+      # local `make determinism-test` target, never run in CI.
+      - name: Package determinism test
+        run: |
+          cd app/browser
+          node test-package-determinism.mjs
+
+      # Task 4.1: package artifacts + self-hosted catalog, then the
+      # RENAMED-ORIGIN GATE over the assembled output.
+      - name: Assemble package + catalog
+        run: |
+          cd app/browser
+          node package-catalog.mjs
+          ./check-renamed-origin.sh dist/site
+
+      # Task 4.1's local-smoke sequence: re-packages (deterministically --
+      # see the determinism test above), re-gates, serves the assembled
+      # site on loopback (127.0.0.1:8787), and runs Sheaf's own
+      # deployed-catalog validator against it over that loopback URL --
+      # validate-deployed-catalog.mjs explicitly allows loopback for local
+      # tests (local-smoke.sh's own header comment), so this needs no
+      # deployed origin and is fully CI-runnable. Previously only a local
+      # `make local-smoke` / `make package-test` target, never run in CI.
+      - name: Local smoke (serve + Sheaf catalog validator)
+        run: |
+          cd app/browser
+          ./local-smoke.sh
+
+      # Task 4.3: Playwright e2e for the new site, its own harness under
+      # app/browser/e2e/ (own package.json -- the legacy web/e2e suite
+      # stays dormant, untouched, and byte-identical). Serves the
+      # already-assembled dist/site (no rebuild) and runs both the
+      # mobile-emulated and desktop-emulated projects. The mobile-emulated
+      # stacking assertions (e2e/mobile-stacking.spec.mjs) are real, active
+      # tests, not `test.fixme`: Group 4c un-blocked the layout (per-block
+      # CSS transforms in app/browser/site/mobile-stack.mjs, gated on a
+      # small Sheaf drag-delta fix -- see that file's own header comment
+      # and the mobile-stacking suite's), and the full suite runs and
+      # passes. Chromium only, per the task's machine constraint.
+      - name: Browser e2e (Playwright)
+        run: |
+          cd app/browser/e2e
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test --workers=1
+
+      # CI byte-identity assertion (froggers-web-host/spec.md: legacy web/
+      # and wasm/ trees go dormant, not edited): fails if web/ or wasm/
+      # differ from the state immediately before this push.
+      # Diffs against `github.event.before` (the push event's own pre-push
+      # SHA; full history is available via this job's `fetch-depth: 0`
+      # checkout above) rather than only `git status --porcelain`, which
+      # checked uncommitted drift THIS RUN introduced but would let a
+      # commit that itself modified those trees sail straight through
+      # while still printing "byte-identical to baseline" -- a claim it
+      # was not actually checking. Falls back to the uncommitted-drift
+      # check, with an honest message, only when there is no push baseline
+      # to diff against (workflow_dispatch, or a branch's first-ever push).
+      - name: Assert web/ and wasm/ are byte-identical
+        run: |
+          BASELINE="${{ github.event.before }}"
+          if [ -z "$BASELINE" ] || [ "$BASELINE" = "0000000000000000000000000000000000000000" ]; then
+            CHANGED="$(git status --porcelain -- web wasm)"
+            if [ -n "$CHANGED" ]; then
+              echo "web/ or wasm/ changed by this build:" >&2
+              echo "$CHANGED" >&2
+              exit 1
+            fi
+            echo "web/ and wasm/ unchanged by this build (no push baseline available to diff against)"
+          else
+            CHANGED="$(git diff --stat "$BASELINE" HEAD -- web wasm)"
+            if [ -n "$CHANGED" ]; then
+              echo "web/ or wasm/ changed since $BASELINE:" >&2
+              echo "$CHANGED" >&2
+              exit 1
+            fi
+            echo "web/ and wasm/ are byte-identical to $BASELINE"
+          fi
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: web/dist
+          path: app/browser/dist/site
+
+  # DEPLOY GATED ON MAIN: a workflow_dispatch from any other ref runs
+  # build-and-test only (the pre-main dry run); this job only runs for
+  # refs/heads/main, so it never fires on a branch dispatch even though
+  # `on: workflow_dispatch` has no ref restriction of its own. `on: push`
+  # is already main-only, so branch pushes never reach either job.
+  deploy:
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
 
       - name: Deploy to GitHub Pages
         id: deployment

@@ -1,0 +1,30 @@
+<!doctype html>
+<!--
+  Task 4.1 -- manual operator smoke harness ONLY. Not part of the deployed
+  Pages artifact (never referenced by pages.yml / package-catalog.mjs's
+  dist/site output) and not the 4.3 site shell (a separate, not-yet-built
+  future task; this page intentionally has no styling/layout work).
+
+  This boots Sheaf's REAL, unmodified, generic SheafPatch catalog launcher
+  (External/Sheaf/projects/synth/browser/src/main.ts -- the same
+  `installSheafPatchLauncher` auto-boot path Sheaf's own
+  public/index.html uses, verbatim: a `#synth-root[data-synth-launcher]`
+  element with a `data-synth-catalog-sources` override) against catalog-
+  sources.json in this directory, which points at the frogg3rs catalog
+  server started separately (see app/browser/local-smoke.sh and the task
+  report's operator invocation). No Sheaf source is modified or
+  special-cased for frogg3rs (froggers-browser-package/spec.md:75-81,
+  sbac-8 "Miniapp is not special-cased").
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>frogg3rs dev harness (Sheaf launcher, local catalog)</title>
+    <link rel="stylesheet" href="/sheaf-public/synth-browser.css">
+  </head>
+  <body>
+    <main id="synth-root" data-synth-launcher="true" data-synth-catalog-sources="./catalog-sources.json"></main>
+    <script type="module" src="/sheaf-runtime/main.js"></script>
+  </body>
+</html>
