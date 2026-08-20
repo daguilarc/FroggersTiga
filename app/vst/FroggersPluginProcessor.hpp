@@ -21,10 +21,10 @@
 //     headless JUCE-free harness FroggersHeadlessTests.cpp/
 //     FroggersRandomizeAllRepro.cpp already drive FroggersApp through
 //     (SynthRig.hpp:60,93-94 constructor: Initialize() then Prepare() in
-//     that order; RunOneBlockAt :513-539 builds a synth::AudioBlock with
-//     inputs=nullptr/numInputChannels=0 -- FroggersAppCore::Config()
-//     requests zero audio inputs -- and calls engine_.ProcessBlock(block,
-//     timestamp); StartAt/StopAt :174-184 push synth::MessageIn::Start/Stop
+//     that order; RunOneBlockAt :513-539 builds a synth::AudioBlock sized
+//     from FroggersAppCore::Config()'s numAudioInputs and calls
+//     engine_.ProcessBlock(block, timestamp); StartAt/StopAt :174-184 push
+//     synth::MessageIn::Start/Stop
 //     on engine_.UiBus(), the exact message FroggersUiSurface::HandleAction's
 //     Play/Stop branches push (app/FroggersUiSurface.hpp:1838,1874), paired
 //     with FroggersApp::SetDesiredTransportRunning(true/false)
@@ -129,6 +129,9 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
+#include <optional>
+#include <string>
 #include <vector>
 
 namespace frogg3rs_vst {
@@ -191,18 +194,36 @@ public:
     const juce::String getProgramName(int) override { return {}; }
     void changeProgramName(int, const juce::String&) override {}
 
-    // Group 7 exposes every user parameter as a host-automatable
-    // juce::AudioProcessorParameter below (BuildHostParameterInventory()),
-    // but DAW SESSION state persistence (serializing current parameter/
-    // patch state into a host-saved MemoryBlock and restoring it) is a
-    // separate concern the group 7 brief does not ask for -- left as
-    // no-ops here, same as group 5/6. A host that automates/records this
-    // plugin's parameters within a live session works fully; a host that
-    // saves a project and reopens it will NOT recall this plugin's last
-    // parameter values (out of this group's scope, flagged for a future
-    // group rather than silently implied by the parameter surface below).
-    void getStateInformation(juce::MemoryBlock&) override {}
-    void setStateInformation(const void*, int) override {}
+    // DAW session-state persistence. Round-trips the same portable
+    // "sheaf.synth.patch" JSON representation the standalone app and the
+    // browser host already use for saved patches (BuildPatchJSON/
+    // LoadPatchJSON over ParameterManager::ParameterValuesToJSON/
+    // LoadParameterValuesFromJSON, synth/PatchPersistence.hpp) -- not a
+    // second, plugin-private format. Both directions apply through the
+    // parameter authority (ParameterManager, reached via
+    // engine_.Context().patchInputBus/patchOutputBus) rather than through
+    // this class's host-parameter bridge, and both stay purely in memory:
+    // neither direction reads or writes the shared "frogg3rs" patches
+    // directory this class's own data root points at (ProductionDataPaths(),
+    // FroggersPluginProcessor.cpp) or any other filesystem location. See
+    // PumpStatePersistence()'s own comment (in the .cpp) for the full
+    // mechanism, including why both directions are necessarily asynchronous
+    // and how getStateInformation() still returns synchronously despite
+    // that.
+    //
+    // The Freeze latch is not a ParameterManager parameter (see
+    // HostParamEntry::Kind::kFreeze's own comment) so it has no place in
+    // ParameterValuesToJSON -- Sheaf's own patch format has no concept of
+    // it. It is still user-visible, hand-toggled, host-automatable state, so
+    // it is carried as a sibling "sessionExtras" object next to
+    // "parameterValues" at the top of the same JSON document -- a key
+    // LoadPatchJSON simply never looks at, so this needs no Sheaf change and
+    // never disturbs a standalone-saved patch file (this plugin's session
+    // blob and a standalone patch file share the format, not a saved
+    // instance). PumpStatePersistence()'s own comment covers both
+    // directions.
+    void getStateInformation(juce::MemoryBlock& destData) override;
+    void setStateInformation(const void* data, int sizeInBytes) override;
 
     // --- 5.2 test seam (retained, carry-forward 3) -----------------------
     // Dispatches the exact same kPlay/kStop actions
@@ -514,6 +535,12 @@ private:
     // .cpp) for the full bidirectional trace and feedback-guard design.
     void PumpHostParameterBridge();
 
+    // Message-thread-only (called from timerCallback(), same discipline as
+    // PumpHostParameterBridge() above): both directions of DAW
+    // session-state persistence. See this method's own comment (in the
+    // .cpp) for the full trace.
+    void PumpStatePersistence();
+
     std::vector<HostParamEntry> hostParams_;
     // Message-thread-owned shadow of which bank this class itself last
     // selected on the shared BankSlot via a host-driven write (see
@@ -530,6 +557,45 @@ private:
     // editor is open -- the `if (editorRepaintHook_)` check in
     // timerCallback() then costs one branch and no repaint work.
     std::function<void()> editorRepaintHook_;
+
+    // -- DAW session-state persistence ---------------------------------------
+    // getStateInformation()/setStateInformation() carry no JUCE thread
+    // guarantee (juce_AudioProcessor.h's own declaration carries no thread
+    // annotation for either, unlike processBlock()'s explicit audio-thread
+    // contract -- the same asymmetry releaseResources() has, see that
+    // method's own comment above), so a host may call them from any thread,
+    // concurrently with timerCallback() (always the message thread).
+    // stateBlockMutex_ guards every field below that both a host-calling
+    // thread and the message thread could otherwise touch at once -- the
+    // same reason Engine.hpp's own audioDeviceStateMutex_ exists, for its
+    // own occasional, non-realtime, cross-thread fields.
+    std::mutex stateBlockMutex_;
+
+    // Guarded by stateBlockMutex_. The most recently completed full-fidelity
+    // session snapshot, already serialized to JSON text --
+    // getStateInformation() copies this out and returns immediately; it
+    // never blocks waiting for a fresh one. Seeded synchronously in the
+    // constructor (safe pre-audio, mirroring engine_.Initialize()'s own
+    // synchronous startup patch drain) and refreshed roughly once per
+    // PumpStatePersistence() pump thereafter, so it is never more than
+    // about one pump interval stale -- the same consistency bound
+    // PumpHostParameterBridge() already accepts for host-parameter
+    // readback.
+    std::string cachedStateJsonText_;
+
+    // Guarded by stateBlockMutex_. A restore setStateInformation() deposited
+    // but PumpStatePersistence() -- the sole legitimate
+    // engine_.Context().patchInputBus producer, see that method's own
+    // comment -- has not yet claimed. Cleared once claimed.
+    std::optional<std::string> pendingRestoreJsonText_;
+
+    // Message-thread-owned (PumpStatePersistence() only): tracks a
+    // SerializeToJSON request this class itself issued but has not yet
+    // consumed the response for, so a second one is never issued while one
+    // is outstanding. nextStateRequestId_ is this class's own monotonically
+    // increasing request-ID source for these requests.
+    std::optional<std::uint64_t> pendingStateSnapshotRequestId_;
+    std::uint64_t nextStateRequestId_ = 1;
 
     std::uint64_t NowMicros() const;
 

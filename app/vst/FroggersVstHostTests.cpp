@@ -72,6 +72,7 @@
 #include "FroggersPluginProcessor.hpp"
 
 #include "FroggersUiSurface.hpp"
+#include "synth/PatchPersistence.hpp"
 #include "synth/PortableUI.hpp"
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -79,8 +80,10 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <exception>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -1032,6 +1035,570 @@ TEST_CASE(production_processor_surface_is_plugin_mode_with_bpm_display_only_whil
     fixture.processor.setPlayHead(nullptr);
     std::cout << "  [8.2] production processor's surface: plugin-mode transport row + BPM StatusText \""
               << bpm->text << "\" while host-tempo-slaved.\n";
+}
+
+// -- DAW session-state persistence -------------------------------------------
+// Three properties, each its own TEST_CASE below:
+//   1. Round trip: host-automated values survive getStateInformation() ->
+//      setStateInformation() on a FRESH processor, at both the parameter
+//      authority and the host-parameter readback.
+//   2. Parameter-model growth: a stored document with fewer keys than the
+//      current model leaves the missing ones at default; a stored document
+//      with a key the current model does not recognize is tolerated, not
+//      rejected.
+//   3. No write-through: a save/restore cycle never touches the shared
+//      data root's patches directory, with a positive control proving the
+//      detector used below actually can see a write into that directory.
+
+// Drives `processor` through enough message-thread pumps and audio blocks
+// for a host-parameter write (or a session-state restore, which lands on
+// the SAME per-block patch-bus drain, DrainPatchInputBus() inside
+// engine_.ProcessBlock()) to fully apply and settle -- same budget as the
+// existing host_write_round_trips_through_the_core_parameter_authority
+// test above, reused rather than re-derived.
+void PumpAndSettle(frogg3rs_vst::FroggersPluginProcessor& processor, juce::AudioBuffer<float>& buffer,
+                   juce::MidiBuffer& midi) {
+    for (int i = 0; i < 45; ++i) {
+        processor.PumpMessageThreadForTest();
+        for (int b = 0; b < 7; ++b) {
+            buffer.clear();
+            processor.processBlock(buffer, midi);
+        }
+    }
+}
+
+// Parses `patchJsonText` (a full "sheaf.synth.patch" document, e.g. from
+// getStateInformation()) and returns a document with the SAME schema/
+// patchName whose parameterValues object carries only the keys named in
+// `keepNames` -- every other real parameter this build knows about is
+// simply absent, standing in for "a session saved before those parameters
+// existed." Each kept value is copied by reference from the original
+// document (both live in the same fresh arena here), so its internal shape
+// is exactly what a real save produces -- never hand-rolled.
+std::string BuildPatchTextWithOnlyTheseParameterKeys(const std::string& patchJsonText,
+                                                     const std::vector<std::string>& keepNames) {
+    synth::JsonArena arena(256 * 1024);
+    synth::JSON original = arena.Loads(patchJsonText.c_str());
+    REQUIRE_TRUE(!original.IsNull());
+    synth::JSON originalValues = original.Get("parameterValues");
+    REQUIRE_TRUE(!originalValues.IsNull());
+
+    synth::JSON trimmedValues = arena.Object();
+    for (const std::string& name : keepNames) {
+        synth::JSON value = originalValues.Get(name.c_str());
+        REQUIRE_TRUE(!value.IsNull());
+        trimmedValues.SetNew(name.c_str(), value);
+    }
+
+    // A fresh top-level object, not `original` with parameterValues
+    // overwritten in place: JSON::SetNew() always APPENDS a member
+    // (Json.hpp's own implementation -- no existing-key search), so
+    // calling it again for a key `original` already has (parameterValues
+    // itself) would leave TWO same-named members on one object rather than
+    // replacing the first -- and JSON::Get() returns the FIRST match, so
+    // the untrimmed original would keep winning silently. Every field
+    // below is set exactly once, so no such duplicate can arise here.
+    synth::JSON result = arena.Object();
+    result.SetNew("schema", original.Get("schema"));
+    result.SetNew("schemaVersion", original.Get("schemaVersion"));
+    result.SetNew("patchName", original.Get("patchName"));
+    result.SetNew("parameterValues", trimmedValues);
+
+    char* dumped = result.Dumps(JSON_ENCODE_ANY);
+    REQUIRE_TRUE(dumped != nullptr);
+    std::string text(dumped);
+    std::free(dumped);
+    return text;
+}
+
+// Parses `patchJsonText` and returns a document identical to it except for
+// one extra parameterValues key no real parameter is ever named --
+// standing in for "a session saved by a build with a bank/slot this one
+// predates." The extra value's shape does not matter: ParameterManager::
+// LoadParameterValuesFromJSON (ParameterModulation.cpp) looks a key up by
+// name first and, on a miss, skips straight to the next member without
+// ever reading the value.
+std::string BuildPatchTextWithAnExtraUnknownParameterKey(const std::string& patchJsonText) {
+    synth::JsonArena arena(256 * 1024);
+    synth::JSON root = arena.Loads(patchJsonText.c_str());
+    REQUIRE_TRUE(!root.IsNull());
+    synth::JSON values = root.Get("parameterValues");
+    REQUIRE_TRUE(!values.IsNull());
+    values.SetNew("Bank9000 Future Slot 99", arena.Object());
+
+    char* dumped = root.Dumps(JSON_ENCODE_ANY);
+    REQUIRE_TRUE(dumped != nullptr);
+    std::string result(dumped);
+    std::free(dumped);
+    return result;
+}
+
+// Parses `patchJsonText` and returns an equivalent document with no
+// "sessionExtras" key at all -- standing in for a session saved by a build
+// that predates that key, as opposed to one that has it. Built the same
+// "fresh top-level object, each field set exactly once" way as
+// BuildPatchTextWithOnlyTheseParameterKeys above, for the same reason (SetNew
+// always appends; overwriting an existing key in place would leave a
+// duplicate rather than replacing it).
+std::string BuildPatchTextWithoutSessionExtras(const std::string& patchJsonText) {
+    synth::JsonArena arena(256 * 1024);
+    synth::JSON original = arena.Loads(patchJsonText.c_str());
+    REQUIRE_TRUE(!original.IsNull());
+
+    synth::JSON result = arena.Object();
+    result.SetNew("schema", original.Get("schema"));
+    result.SetNew("schemaVersion", original.Get("schemaVersion"));
+    result.SetNew("patchName", original.Get("patchName"));
+    result.SetNew("parameterValues", original.Get("parameterValues"));
+
+    char* dumped = result.Dumps(JSON_ENCODE_ANY);
+    REQUIRE_TRUE(dumped != nullptr);
+    std::string text(dumped);
+    std::free(dumped);
+    return text;
+}
+
+// Builds a source processor on its own scratch root, moves one host
+// parameter to `target`, settles, saves, and returns the saved state with
+// "sessionExtras" stripped out -- shared setup for the two legacy-blob tests
+// below, which differ only in what the RESTORE target's Freeze latch starts
+// at. The caller already knows `hostParamId`/`target` (it chose them), so it
+// asserts the parameter round trip itself; this only builds the blob.
+std::string BuildLegacyBlobWithOneParameterMoved(const char* scratchName, const char* hostParamId, float target) {
+    frogg3rs_vst::FroggersPluginProcessor source(ScratchDataPaths(scratchName));
+    source.setRateAndBufferSizeDetails(48000.0, 256);
+    source.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> sourceBuffer(2, 256);
+    juce::MidiBuffer midi;
+
+    juce::AudioProcessorParameter* hostParam = FindHostParamById(source, hostParamId);
+    REQUIRE_TRUE(hostParam != nullptr);
+    hostParam->setValue(target);
+    PumpAndSettle(source, sourceBuffer, midi);
+
+    juce::MemoryBlock fullState;
+    source.getStateInformation(fullState);
+    source.releaseResources();
+    const std::string fullText(static_cast<const char*>(fullState.getData()), fullState.getSize());
+    return BuildPatchTextWithoutSessionExtras(fullText);
+}
+
+// Every regular file under `root`, as "path:size:mtime" lines, sorted and
+// joined -- two snapshots compare equal iff the tree is the same set of
+// files with the same content-relevant metadata (a content change without
+// a size change is not a case any code path under test here can produce:
+// every write in this file is a whole-file create, never an in-place
+// edit).
+std::string SnapshotDirectoryTree(const std::filesystem::path& root) {
+    std::vector<std::string> entries;
+    if (std::filesystem::exists(root)) {
+        for (const auto& entry : std::filesystem::recursive_directory_iterator(root)) {
+            if (!entry.is_regular_file()) {
+                continue;
+            }
+            // static_cast to long long: file_time_type's duration rep is a
+            // 128-bit integer on this platform (libc++), which has no
+            // operator<< overload -- a 64-bit truncation is exactly as
+            // sufficient here as the full width, since this value is only
+            // ever compared for equality within one test run, never parsed
+            // back or compared across runs.
+            std::ostringstream oss;
+            oss << entry.path().string() << ":" << entry.file_size() << ":"
+                << static_cast<long long>(entry.last_write_time().time_since_epoch().count());
+            entries.push_back(oss.str());
+        }
+    }
+    std::sort(entries.begin(), entries.end());
+    std::ostringstream combined;
+    for (const std::string& line : entries) {
+        combined << line << "\n";
+    }
+    return combined.str();
+}
+
+// -- 1. Round trip ------------------------------------------------------------
+TEST_CASE(state_information_round_trips_through_a_fresh_processor) {
+    frogg3rs_vst::FroggersPluginProcessor source(ScratchDataPaths("state_roundtrip_source"));
+    source.setRateAndBufferSizeDetails(48000.0, 256);
+    source.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> sourceBuffer(2, 256);
+    juce::MidiBuffer midi;
+
+    // Two distinct, non-default targets on two different banks, written
+    // through the SAME host-automation path a DAW would use (also
+    // exercises the SelectParamBank pre-step, like the existing
+    // host_write_round_trips_through_the_core_parameter_authority test
+    // above).
+    juce::AudioProcessorParameter* targetA = FindHostParamById(source, "bank1.slot4");
+    juce::AudioProcessorParameter* targetB = FindHostParamById(source, "bank4.crispy");
+    REQUIRE_TRUE(targetA != nullptr && targetB != nullptr);
+    constexpr float kTargetA = 0.85f;
+    constexpr float kTargetB = 0.2f;
+    targetA->setValue(kTargetA);
+    targetB->setValue(kTargetB);
+    PumpAndSettle(source, sourceBuffer, midi);
+
+    // Assert at the authority BEFORE saving -- so the restore assertion
+    // below is against a known, real value, not against the host write's
+    // own target (which would pass even if getStateInformation() captured
+    // something unrelated to the authority).
+    synth_froggers::FroggersParameterModel& sourceModel = source.ApplicationForTest().Parameters();
+    constexpr float kTolerance = 0.01f;
+    REQUIRE_TRUE(std::fabs(sourceModel.PageParameter(1, 4).UIDisplayCenter(0) - kTargetA) < kTolerance);
+    REQUIRE_TRUE(std::fabs(sourceModel.Crispy(4).UIDisplayCenter(0) - kTargetB) < kTolerance);
+
+    juce::MemoryBlock state;
+    source.getStateInformation(state);
+    REQUIRE_TRUE(state.getSize() > 0);
+    source.releaseResources();
+
+    // A FRESH processor, its own scratch root -- a restore must not depend
+    // on any process-wide state left behind by `source`.
+    frogg3rs_vst::FroggersPluginProcessor fresh(ScratchDataPaths("state_roundtrip_restore"));
+    fresh.setRateAndBufferSizeDetails(48000.0, 256);
+    fresh.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> freshBuffer(2, 256);
+    synth_froggers::FroggersParameterModel& freshModel = fresh.ApplicationForTest().Parameters();
+
+    // Defaults confirmed different from the saved targets FIRST, so the
+    // restore assertion below cannot pass by accident (e.g. a no-op
+    // setStateInformation() that leaves defaults in place).
+    REQUIRE_TRUE(std::fabs(freshModel.PageParameter(1, 4).UIDisplayCenter(0) - kTargetA) > 0.05f);
+
+    fresh.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
+    PumpAndSettle(fresh, freshBuffer, midi);
+
+    // The authority itself restored -- not this bridge's own shadow/uiState
+    // mirror (same "assert at the real Parameter, not the bridge" idiom the
+    // existing host-write round-trip test above uses).
+    REQUIRE_TRUE(std::fabs(freshModel.PageParameter(1, 4).UIDisplayCenter(0) - kTargetA) < kTolerance);
+    REQUIRE_TRUE(std::fabs(freshModel.Crispy(4).UIDisplayCenter(0) - kTargetB) < kTolerance);
+
+    // The host parameters read back the SAME restored values -- the bridge
+    // relays the restored authority (an ordinary core-side change, from its
+    // own point of view), it is never written directly (see
+    // PumpStatePersistence()'s own comment, FroggersPluginProcessor.cpp).
+    juce::AudioProcessorParameter* freshTargetA = FindHostParamById(fresh, "bank1.slot4");
+    juce::AudioProcessorParameter* freshTargetB = FindHostParamById(fresh, "bank4.crispy");
+    REQUIRE_TRUE(freshTargetA != nullptr && freshTargetB != nullptr);
+    REQUIRE_TRUE(std::fabs(freshTargetA->getValue() - kTargetA) < kTolerance);
+    REQUIRE_TRUE(std::fabs(freshTargetB->getValue() - kTargetB) < kTolerance);
+
+    fresh.releaseResources();
+
+    std::cout << "  [state] round trip: bank1.slot4=" << kTargetA << ", bank4.crispy=" << kTargetB
+              << " survived getStateInformation() -> setStateInformation() on a fresh processor, at the "
+                 "authority and the host readback.\n";
+}
+
+// -- 2. Parameter-model growth -------------------------------------------------
+TEST_CASE(state_information_restore_defaults_parameters_missing_from_a_smaller_stored_model) {
+    frogg3rs_vst::FroggersPluginProcessor source(ScratchDataPaths("state_smaller_source"));
+    source.setRateAndBufferSizeDetails(48000.0, 256);
+    source.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> sourceBuffer(2, 256);
+    juce::MidiBuffer midi;
+    PumpAndSettle(source, sourceBuffer, midi);  // let construction-time defaults fully mirror first.
+
+    synth_froggers::FroggersParameterModel& sourceModel = source.ApplicationForTest().Parameters();
+    const std::string keptName = sourceModel.PageParameter(0, 0).Name();
+    const float droppedDefault = sourceModel.PageParameter(0, 1).UIDisplayCenter(0);
+
+    juce::AudioProcessorParameter* keptHostParam = FindHostParamById(source, "bank0.slot0");
+    juce::AudioProcessorParameter* droppedHostParam = FindHostParamById(source, "bank0.slot1");
+    REQUIRE_TRUE(keptHostParam != nullptr && droppedHostParam != nullptr);
+    constexpr float kKeptTarget = 0.9f;
+    constexpr float kDroppedTarget = 0.1f;
+    keptHostParam->setValue(kKeptTarget);
+    droppedHostParam->setValue(kDroppedTarget);
+    PumpAndSettle(source, sourceBuffer, midi);
+    // Confirm the to-be-dropped parameter actually moved, so its later
+    // reversion to default is a real, observable change, not a no-op.
+    REQUIRE_TRUE(std::fabs(sourceModel.PageParameter(0, 1).UIDisplayCenter(0) - droppedDefault) > 0.05f);
+
+    juce::MemoryBlock fullState;
+    source.getStateInformation(fullState);
+    source.releaseResources();
+    const std::string fullText(static_cast<const char*>(fullState.getData()), fullState.getSize());
+    const std::string trimmedText = BuildPatchTextWithOnlyTheseParameterKeys(fullText, {keptName});
+
+    frogg3rs_vst::FroggersPluginProcessor fresh(ScratchDataPaths("state_smaller_restore"));
+    fresh.setRateAndBufferSizeDetails(48000.0, 256);
+    fresh.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> freshBuffer(2, 256);
+    fresh.setStateInformation(trimmedText.data(), static_cast<int>(trimmedText.size()));
+    PumpAndSettle(fresh, freshBuffer, midi);
+
+    synth_froggers::FroggersParameterModel& freshModel = fresh.ApplicationForTest().Parameters();
+    constexpr float kTolerance = 0.01f;
+    // The key present in the trimmed document restores...
+    REQUIRE_TRUE(std::fabs(freshModel.PageParameter(0, 0).UIDisplayCenter(0) - kKeptTarget) < kTolerance);
+    // ...the key ABSENT from it -- simulating a parameter that did not
+    // exist yet when this "session" was saved -- keeps its default rather
+    // than erroring or carrying over an unrelated value.
+    REQUIRE_TRUE(std::fabs(freshModel.PageParameter(0, 1).UIDisplayCenter(0) - droppedDefault) < kTolerance);
+
+    fresh.releaseResources();
+
+    std::cout << "  [state] stored model smaller than current: kept key restored to " << kKeptTarget
+              << ", key missing from the stored document defaulted to " << droppedDefault << ".\n";
+}
+
+TEST_CASE(state_information_restore_ignores_parameter_keys_the_current_model_does_not_know) {
+    frogg3rs_vst::FroggersPluginProcessor source(ScratchDataPaths("state_larger_source"));
+    source.setRateAndBufferSizeDetails(48000.0, 256);
+    source.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> sourceBuffer(2, 256);
+    juce::MidiBuffer midi;
+
+    juce::AudioProcessorParameter* hostParam = FindHostParamById(source, "bank2.slot9");
+    REQUIRE_TRUE(hostParam != nullptr);
+    constexpr float kTarget = 0.65f;
+    hostParam->setValue(kTarget);
+    PumpAndSettle(source, sourceBuffer, midi);
+
+    juce::MemoryBlock fullState;
+    source.getStateInformation(fullState);
+    source.releaseResources();
+    const std::string fullText(static_cast<const char*>(fullState.getData()), fullState.getSize());
+    const std::string augmentedText = BuildPatchTextWithAnExtraUnknownParameterKey(fullText);
+
+    frogg3rs_vst::FroggersPluginProcessor fresh(ScratchDataPaths("state_larger_restore"));
+    fresh.setRateAndBufferSizeDetails(48000.0, 256);
+    fresh.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> freshBuffer(2, 256);
+    fresh.setStateInformation(augmentedText.data(), static_cast<int>(augmentedText.size()));
+    PumpAndSettle(fresh, freshBuffer, midi);
+
+    // No crash, no rejected load -- and the real key restores correctly
+    // despite sitting alongside a key this build has never heard of.
+    synth_froggers::FroggersParameterModel& freshModel = fresh.ApplicationForTest().Parameters();
+    REQUIRE_TRUE(std::fabs(freshModel.PageParameter(2, 9).UIDisplayCenter(0) - kTarget) < 0.01f);
+
+    fresh.releaseResources();
+
+    std::cout << "  [state] stored model larger than current: unknown extra parameter key tolerated, known key "
+                 "still restored to "
+              << kTarget << ".\n";
+}
+
+// -- 3. No write-through -------------------------------------------------------
+TEST_CASE(state_information_save_and_restore_never_write_the_shared_data_root) {
+    const synth::RuntimeDataPaths paths = ScratchDataPaths("state_no_write_through");
+    frogg3rs_vst::FroggersPluginProcessor processor(paths);
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+    PumpAndSettle(processor, buffer, midi);
+
+    const std::string before = SnapshotDirectoryTree(paths.dataRoot);
+
+    juce::AudioProcessorParameter* target = FindHostParamById(processor, "bank3.slot6");
+    REQUIRE_TRUE(target != nullptr);
+    target->setValue(0.42f);
+    PumpAndSettle(processor, buffer, midi);
+
+    // Save and restore several times over, with many PumpStatePersistence()
+    // pumps along the way (each issues/consumes its own SerializeToJSON/
+    // LoadFromJSON round trip) -- the same repeated exercise a long DAW
+    // editing session produces.
+    juce::MemoryBlock state;
+    processor.getStateInformation(state);
+    for (int i = 0; i < 5; ++i) {
+        processor.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
+        PumpAndSettle(processor, buffer, midi);
+        processor.getStateInformation(state);
+    }
+
+    const std::string after = SnapshotDirectoryTree(paths.dataRoot);
+    REQUIRE_TRUE(before == after);
+
+    // Positive control: prove SnapshotDirectoryTree() could have detected
+    // a write, by deliberately writing a file into the SAME directory this
+    // test just proved untouched -- so "no difference" above is not simply
+    // because this detector cannot see writes at all.
+    {
+        std::ofstream control(paths.patchesRoot / "control-write.json", std::ios::binary);
+        control << "{}";
+        REQUIRE_TRUE(static_cast<bool>(control));
+    }
+    const std::string afterControlWrite = SnapshotDirectoryTree(paths.dataRoot);
+    REQUIRE_TRUE(afterControlWrite != after);
+
+    processor.releaseResources();
+
+    std::cout << "  [state] " << paths.dataRoot.string()
+              << " byte-for-byte unchanged across 6 save/restore cycles; the same detector DID flag a "
+                 "deliberate control write into it.\n";
+}
+
+// -- 4. Freeze latch persistence -----------------------------------------------
+// The Freeze latch is not a ParameterManager parameter (BuildHostParameterInventory()'s
+// own comment, FroggersPluginProcessor.cpp), so it takes no part in the three
+// tests above -- it is carried separately, as a "sessionExtras" sibling key,
+// restored through the Freeze host parameter and PumpHostParameterBridge()'s
+// own existing comparison rather than a second dispatch path (see
+// PumpStatePersistence()'s own comment). Proven here as two independent
+// properties: restoring an explicit target actually moves the latch, in
+// EITHER direction (a single always-true or always-false case cannot rule out
+// "coincidentally landed on it anyway"); and restoring a blob with no
+// sessionExtras key at all leaves whatever the latch already was alone,
+// whichever way that was.
+TEST_CASE(state_information_round_trips_the_freeze_latch_when_engaged) {
+    frogg3rs_vst::FroggersPluginProcessor source(ScratchDataPaths("state_freeze_engaged_source"));
+    source.setRateAndBufferSizeDetails(48000.0, 256);
+    source.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> sourceBuffer(2, 256);
+    juce::MidiBuffer midi;
+
+    // Engaged via the "freeze" host parameter -- the same host-automation
+    // door host_write_round_trips_through_the_core_parameter_authority above
+    // uses for an ordinary parameter -- rather than DispatchAction()
+    // directly, so this also proves the saved state reflects what a DAW's
+    // own generic parameter view would show.
+    juce::AudioProcessorParameter* sourceFreeze = FindHostParamById(source, "freeze");
+    REQUIRE_TRUE(sourceFreeze != nullptr);
+    sourceFreeze->setValue(1.0f);
+    PumpAndSettle(source, sourceBuffer, midi);
+    REQUIRE_TRUE(source.ApplicationForTest().FreezeLatched());
+
+    juce::MemoryBlock state;
+    source.getStateInformation(state);
+    REQUIRE_TRUE(state.getSize() > 0);
+    source.releaseResources();
+
+    // A FRESH processor, its own scratch root -- same discipline as the
+    // parameter round-trip test above.
+    frogg3rs_vst::FroggersPluginProcessor fresh(ScratchDataPaths("state_freeze_engaged_restore"));
+    fresh.setRateAndBufferSizeDetails(48000.0, 256);
+    fresh.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> freshBuffer(2, 256);
+
+    // Confirmed disengaged FIRST -- a fresh processor's own real default --
+    // so the restore assertion below cannot pass merely because disengaged
+    // happens to already be where it started.
+    REQUIRE_TRUE(!fresh.ApplicationForTest().FreezeLatched());
+
+    fresh.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
+    PumpAndSettle(fresh, freshBuffer, midi);
+
+    REQUIRE_TRUE(fresh.ApplicationForTest().FreezeLatched());
+    juce::AudioProcessorParameter* freshFreeze = FindHostParamById(fresh, "freeze");
+    REQUIRE_TRUE(freshFreeze != nullptr);
+    REQUIRE_TRUE(freshFreeze->getValue() >= 0.5f);
+
+    fresh.releaseResources();
+
+    std::cout << "  [state] freeze latch engaged: survived getStateInformation() -> setStateInformation() on a "
+                 "fresh processor, at the authority and the host readback.\n";
+}
+
+TEST_CASE(state_information_restore_disengages_the_latch_on_a_target_that_started_engaged) {
+    frogg3rs_vst::FroggersPluginProcessor source(ScratchDataPaths("state_freeze_disengaged_source"));
+    source.setRateAndBufferSizeDetails(48000.0, 256);
+    source.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> sourceBuffer(2, 256);
+    juce::MidiBuffer midi;
+    PumpAndSettle(source, sourceBuffer, midi);  // settle before saving, same discipline as the smaller-model test.
+    REQUIRE_TRUE(!source.ApplicationForTest().FreezeLatched());  // disengaged -- the state this test saves.
+
+    juce::MemoryBlock state;
+    source.getStateInformation(state);
+    REQUIRE_TRUE(state.getSize() > 0);
+    source.releaseResources();
+
+    frogg3rs_vst::FroggersPluginProcessor target(ScratchDataPaths("state_freeze_disengaged_restore"));
+    target.setRateAndBufferSizeDetails(48000.0, 256);
+    target.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> targetBuffer(2, 256);
+
+    // Bring the TARGET to the OPPOSITE state before restoring: this is what
+    // rules out "restored correctly" being indistinguishable from
+    // "coincidentally already there" for the disengaged case, the same way
+    // starting the target at its own true default already ruled it out for
+    // the engaged case above -- a fresh processor's own default is already
+    // disengaged, so proving THIS direction needs a target that starts
+    // engaged instead.
+    juce::AudioProcessorParameter* targetFreeze = FindHostParamById(target, "freeze");
+    REQUIRE_TRUE(targetFreeze != nullptr);
+    targetFreeze->setValue(1.0f);
+    PumpAndSettle(target, targetBuffer, midi);
+    REQUIRE_TRUE(target.ApplicationForTest().FreezeLatched());
+
+    target.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
+    PumpAndSettle(target, targetBuffer, midi);
+
+    REQUIRE_TRUE(!target.ApplicationForTest().FreezeLatched());
+    REQUIRE_TRUE(targetFreeze->getValue() < 0.5f);
+
+    target.releaseResources();
+
+    std::cout << "  [state] freeze latch disengaged: restoring into a processor whose latch was engaged actually "
+                 "moved it to disengaged, at the authority and the host readback.\n";
+}
+
+TEST_CASE(state_information_legacy_blob_without_session_extras_leaves_a_disengaged_latch_disengaged) {
+    constexpr float kTarget = 0.55f;
+    const std::string legacyText =
+        BuildLegacyBlobWithOneParameterMoved("state_freeze_legacy_source_a", "bank0.slot2", kTarget);
+    REQUIRE_TRUE(legacyText.find("sessionExtras") == std::string::npos);
+
+    frogg3rs_vst::FroggersPluginProcessor target(ScratchDataPaths("state_freeze_legacy_restore_a"));
+    target.setRateAndBufferSizeDetails(48000.0, 256);
+    target.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> targetBuffer(2, 256);
+    juce::MidiBuffer midi;
+
+    REQUIRE_TRUE(!target.ApplicationForTest().FreezeLatched());  // fresh processor's own default: disengaged.
+    target.setStateInformation(legacyText.data(), static_cast<int>(legacyText.size()));
+    PumpAndSettle(target, targetBuffer, midi);
+
+    // Still disengaged -- a blob with no sessionExtras key does not force it
+    // either way.
+    REQUIRE_TRUE(!target.ApplicationForTest().FreezeLatched());
+    // The parameter portion of a legacy blob still restores normally.
+    REQUIRE_TRUE(std::fabs(target.ApplicationForTest().Parameters().PageParameter(0, 2).UIDisplayCenter(0) - kTarget)
+                 < 0.01f);
+    target.releaseResources();
+
+    std::cout << "  [state] legacy blob (no sessionExtras), latch started disengaged: parameter restored to "
+              << kTarget << ", latch left disengaged.\n";
+}
+
+TEST_CASE(state_information_legacy_blob_without_session_extras_leaves_an_engaged_latch_engaged) {
+    constexpr float kTarget = 0.35f;
+    const std::string legacyText =
+        BuildLegacyBlobWithOneParameterMoved("state_freeze_legacy_source_b", "bank0.slot3", kTarget);
+    REQUIRE_TRUE(legacyText.find("sessionExtras") == std::string::npos);
+
+    frogg3rs_vst::FroggersPluginProcessor target(ScratchDataPaths("state_freeze_legacy_restore_b"));
+    target.setRateAndBufferSizeDetails(48000.0, 256);
+    target.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> targetBuffer(2, 256);
+    juce::MidiBuffer midi;
+
+    // Engage the latch on the TARGET first -- the case a naive "absent key
+    // means disengage" bug would get wrong while the test above (already
+    // disengaged) could not catch, since disengaged-stays-disengaged looks
+    // the same whether the restore truly does nothing or silently forces
+    // false.
+    juce::AudioProcessorParameter* targetFreeze = FindHostParamById(target, "freeze");
+    REQUIRE_TRUE(targetFreeze != nullptr);
+    targetFreeze->setValue(1.0f);
+    PumpAndSettle(target, targetBuffer, midi);
+    REQUIRE_TRUE(target.ApplicationForTest().FreezeLatched());
+
+    target.setStateInformation(legacyText.data(), static_cast<int>(legacyText.size()));
+    PumpAndSettle(target, targetBuffer, midi);
+
+    REQUIRE_TRUE(target.ApplicationForTest().FreezeLatched());  // still engaged -- undisturbed, not forced off.
+    REQUIRE_TRUE(std::fabs(target.ApplicationForTest().Parameters().PageParameter(0, 3).UIDisplayCenter(0) - kTarget)
+                 < 0.01f);
+    target.releaseResources();
+
+    std::cout << "  [state] legacy blob (no sessionExtras), latch started engaged: parameter restored to " << kTarget
+              << ", latch left engaged (not forced off).\n";
 }
 
 }  // namespace

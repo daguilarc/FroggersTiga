@@ -9,9 +9,18 @@
 // "frogg3rs") -- see ProductionDataPaths() below for why. JUCE-free itself
 // (that file's own header comment), so this adds no new dependency weight.
 #include "FroggersRegistration.hpp"
+// BuildPatchJSON/LoadPatchJSON, PatchMessageIn/MessageOut, JsonArena --
+// already transitively visible via synth/Engine.hpp's own include chain
+// (Engine.hpp includes synth/ParameterModulation.hpp, which includes
+// synth/Json.hpp, before its own synth/PatchPersistence.hpp include), named
+// explicitly here since PumpStatePersistence() below names these types
+// directly. See that method's own comment for why DAW session-state
+// persistence reuses this format rather than inventing one.
+#include "synth/PatchPersistence.hpp"
 
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <utility>
 
 namespace frogg3rs_vst {
@@ -70,6 +79,29 @@ juce::String HostParamStableIdCrispy(std::size_t bankIx) {
 constexpr const char* kHostParamStableIdCrunchy = "crunchy";
 constexpr const char* kHostParamStableIdFreeze = "freeze";
 
+// DAW session-state persistence (PumpStatePersistence()): the patchName
+// field of the shared "sheaf.synth.patch" envelope (BuildPatchJSON,
+// synth/PatchPersistence.hpp). LoadPatchJSON only requires this field to be
+// a string -- its content plays no role in whether a document loads -- so
+// one fixed, descriptive name is enough; it never becomes a filename (this
+// class never writes the snapshot to disk).
+constexpr const char* kSessionStatePatchName = "daw-session";
+
+// DAW session-state persistence: the Freeze latch sibling key (see
+// getStateInformation()'s own header comment, FroggersPluginProcessor.hpp,
+// for why it lives outside "parameterValues"). Named once here and reused
+// at every read/write site so the two never drift apart.
+constexpr const char* kSessionExtrasKey = "sessionExtras";
+constexpr const char* kFreezeLatchedKey = "freezeLatched";
+
+// A present-but-wrong-typed value is treated the same as an absent one
+// (left alone) rather than silently coerced to false -- IsNull() alone
+// cannot tell the two apart, since JSON::BooleanValue() already folds
+// "wrong type" into its own false fallback. Mirrors the strict, type-first
+// checking synth::PatchPersistence.cpp's own IsBoolean() does for the rest
+// of a patch document.
+bool IsJsonBoolean(synth::JSON json) { return json.m_node != nullptr && json.m_node->m_type == synth::JsonType::Boolean; }
+
 }  // namespace
 
 FroggersPluginProcessor::FroggersPluginProcessor()
@@ -77,8 +109,11 @@ FroggersPluginProcessor::FroggersPluginProcessor()
 
 FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPathsForTest)
     // No .withInput(...) call: bus posture is stereo OUTPUT ONLY, no audio
-    // input bus (group 5 brief, binding) -- matches FroggersAppCore::Config()
-    // requesting zero audio inputs (FroggersAppCore.hpp's Config() comment).
+    // input bus (group 5 brief, binding) -- a plugin-format bus layout
+    // decision, independent of FroggersAppCore::Config()'s numAudioInputs
+    // (that field governs the standalone app's own audio-device channel
+    // request, a different JUCE subsystem this plugin does not use; see
+    // processBlock()'s own comment on how the two are reconciled).
     : juce::AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true))
     , startTime_(std::chrono::steady_clock::now())
     , engine_([this] { return NowMicros(); }) {
@@ -133,6 +168,45 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
     // this file's header comment) -- so the host parameter inventory is
     // built HERE, once, immediately after, and nowhere else.
     BuildHostParameterInventory();
+
+    // Seed the session-state cache synchronously so getStateInformation()
+    // never returns empty state, even if a host calls it before this
+    // class's timer has pumped even once. Safe ONLY here: no audio thread
+    // is running yet at this point in construction, the same pre-audio,
+    // single-threaded window engine_.Initialize() itself already relies on
+    // for its own synchronous startup-patch drain (Engine.hpp's own
+    // Initialize() comment, step 8) -- PumpStatePersistence()'s own comment
+    // covers the steady-state, audio-thread-mediated refresh path this
+    // seed bypasses here.
+    {
+        constexpr std::size_t kInitialArenaCapacity = synth::PatchSerializationContext{}.initialArenaCapacity;
+        synth::JsonArena arena(kInitialArenaCapacity);
+        synth::JSON root =
+            synth::BuildPatchJSON(arena, kSessionStatePatchName, engine_.Manager(), synth::MidiInstrumentConfig{});
+        if (!root.IsNull() && !arena.Failed()) {
+            // Sibling key, attached after BuildPatchJSON returns (see
+            // getStateInformation()'s own header comment in the .hpp) --
+            // FreezeLatched() defaults false and no restore has happened
+            // yet at this point in construction, so this seeds the cache
+            // with the instrument's actual current latch state, the same
+            // way engine_.Manager() above supplies its actual current
+            // parameter values rather than assumed defaults. Arena
+            // exhaustion here is handled the same way BuildPatchJSON's own
+            // internal SetNew calls are (Json.hpp's own "null-tolerant"
+            // build contract): SetNew silently drops the key instead of
+            // corrupting the rest of the document, which degrades to
+            // exactly the "no sessionExtras key" case restore already has
+            // to handle.
+            synth::JSON sessionExtras = arena.Object();
+            sessionExtras.SetNew(kFreezeLatchedKey, arena.Boolean(engine_.Application().FreezeLatched()));
+            root.SetNew(kSessionExtrasKey, sessionExtras);
+            if (char* dumped = root.Dumps(JSON_ENCODE_ANY)) {
+                cachedStateJsonText_ = dumped;
+                std::free(dumped);
+            }
+        }
+    }
+
     // Carry-forward 2 (group 5 review): pump engine_.MessageThreadTick()
     // from a message-thread juce::Timer, same as Sheaf Runtime.hpp
     // (Runtime.hpp:343 starts it at `config.uiFrameHz > 0 ? ... : 30`; this
@@ -180,6 +254,28 @@ FroggersPluginProcessor::~FroggersPluginProcessor() {
 // most of FroggersVstHostTests.cpp) stays exactly as GUI-free to compile as
 // it was before this group.
 juce::AudioProcessorEditor* FroggersPluginProcessor::createEditor() { return new FroggersPluginEditor(*this); }
+
+void FroggersPluginProcessor::getStateInformation(juce::MemoryBlock& destData) {
+    std::string text;
+    {
+        const std::lock_guard<std::mutex> lock(stateBlockMutex_);
+        text = cachedStateJsonText_;
+    }
+    // Replaces destData wholesale rather than appending: JUCE's own
+    // getStateInformation() doc comment does not promise the host passes
+    // an empty block, and MemoryBlock::append() would silently corrupt any
+    // pre-existing content into invalid JSON instead of overwriting it.
+    destData = juce::MemoryBlock(text.data(), text.size());
+}
+
+void FroggersPluginProcessor::setStateInformation(const void* data, int sizeInBytes) {
+    if (data == nullptr || sizeInBytes <= 0) {
+        return;
+    }
+    std::string text(static_cast<const char*>(data), static_cast<std::size_t>(sizeInBytes));
+    const std::lock_guard<std::mutex> lock(stateBlockMutex_);
+    pendingRestoreJsonText_ = std::move(text);
+}
 
 std::uint64_t FroggersPluginProcessor::NowMicros() const {
     // Same derivation as Runtime.hpp's own NowMicros() (:986-990): a
@@ -325,21 +421,27 @@ void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
     const int numSamples = buffer.getNumSamples();
     std::array<float*, 2> outputPointers{buffer.getWritePointer(0), buffer.getWritePointer(1)};
 
-    // Same AudioBlock shape SynthRig::RunOneBlockAt builds
-    // (SynthRig.hpp:513-521) for zero input channels: inputs=nullptr,
-    // numInputChannels/numRequestedInputChannels=0 (matches
-    // FroggersAppCore::Config()'s numAudioInputs=0 -- Engine::ProcessBlock
-    // asserts block.numRequestedInputChannels == config_.numAudioInputs,
-    // Engine.hpp:410). startSample/clockPlan are OUT params the engine sets
-    // itself during ProcessBlock (Engine.hpp:402-405) -- left
-    // default-constructed here, exactly as SynthRig does.
+    // This plugin's BusesProperties declares no input bus (see
+    // isBusesLayoutSupported's own comment, above), so `buffer` never
+    // carries real input samples -- inputs stays null and numInputChannels
+    // stays 0, regardless of FroggersAppCore::Config()'s numAudioInputs.
+    // numRequestedInputChannels is a different field: AppContext.hpp
+    // documents it as "hosts set this explicitly from immutable
+    // RuntimeConfig" -- the requested CEILING, independent of how many
+    // channels this callback actually delivers -- and Engine::ProcessBlock
+    // asserts it equals config_.numAudioInputs exactly (Engine.hpp:410), so
+    // it is read from the engine's own already-negotiated config rather
+    // than a second, independent literal that could drift out of sync with
+    // it. startSample/clockPlan are OUT params the engine sets itself
+    // during ProcessBlock (Engine.hpp:402-405) -- left default-constructed
+    // here, exactly as SynthRig does.
     synth::AudioBlock block;
     block.inputs = nullptr;
     block.outputs = outputPointers.data();
     block.numInputChannels = 0;
     block.numOutputChannels = static_cast<int>(outputPointers.size());
     block.numFrames = static_cast<std::size_t>(numSamples);
-    block.numRequestedInputChannels = 0;
+    block.numRequestedInputChannels = engine_.Config().numAudioInputs;
 
     engine_.ProcessBlock(block, NowMicros());
 
@@ -577,6 +679,13 @@ void FroggersPluginProcessor::timerCallback() {
     // PumpHostParameterBridge()'s own comment for the full bidirectional
     // trace.
     PumpHostParameterBridge();
+
+    // DAW session-state persistence: independent of the host-parameter
+    // bridge above (a different pair of buses, drained independently
+    // inside engine_.ProcessBlock() -- see PumpStatePersistence()'s own
+    // comment), so its position here relative to PumpHostParameterBridge()
+    // does not affect correctness.
+    PumpStatePersistence();
 
     // Group 8: repaint the editor, if one is open, LAST -- after every other
     // state mutation this pump makes above (message tick, transport, tempo,
@@ -876,6 +985,11 @@ void FroggersPluginProcessor::PumpHostParameterBridge() {
 
     for (HostParamEntry& entry : hostParams_) {
         if (entry.kind == HostParamEntry::Kind::kFreeze) {
+            // Not only the host writes entry.juceParam between one pass of
+            // this loop and the next: PumpStatePersistence() also writes it
+            // directly, to feed a DAW session restore through this exact
+            // comparison instead of dispatching a second time on its own --
+            // see that method's own comment.
             const bool hostTarget = entry.juceParam->getValue() >= 0.5f;
             const bool shadowBool = entry.shadowNormalized >= 0.5f;
             if (hostTarget != shadowBool) {
@@ -930,6 +1044,191 @@ void FroggersPluginProcessor::PumpHostParameterBridge() {
         if (std::fabs(coreValue - entry.shadowNormalized) > kEpsilon) {
             entry.juceParam->setValueNotifyingHost(coreValue);
             entry.shadowNormalized = coreValue;
+        }
+    }
+}
+
+// PumpStatePersistence() -- message-thread-only (called from
+// timerCallback(), same discipline as PumpHostParameterBridge() above --
+// see this file's header comment on the audio-thread/message-thread
+// split). Both directions of DAW session-state persistence, pushed/popped
+// directly on engine_.Context().patchInputBus/patchOutputBus:
+// AppContext.hpp's own comment documents the contract ("producer: message
+// thread" / "consumer: audio thread" for the input bus, the reverse for
+// the output bus) -- the same buses PatchManager (engine_.Patches()) would
+// use for the standalone's on-disk Save/Load Patch feature, but this class
+// never calls PatchManager, and nothing else in this plugin does either
+// (Froggers' own portable UI exposes no patch save/load surface,
+// app/FroggersUiSurface.hpp has no such action) -- so PatchManager's own
+// ProcessResponses() (called unconditionally every
+// engine_.MessageThreadTick(), above) never has a pending save of its own
+// and therefore never touches patchOutputBus. This method is that bus's
+// only consumer, and this class is patchInputBus's only producer; sharing
+// either with PatchManager would let one side silently steal a response
+// meant for the other (MessageOutBus::Pop() is a plain dequeue -- whichever
+// side pops a message first is the only side that ever sees it).
+//
+// Restore: a JUCE host may call setStateInformation() from any thread (no
+// thread annotation on that declaration, juce_AudioProcessor.h -- the same
+// asymmetry releaseResources() has, see this file's header comment on
+// stateBlockMutex_), so it cannot safely push onto patchInputBus itself
+// (the single-producer contract every other push in this class already
+// honors). It deposits the raw bytes into pendingRestoreJsonText_ instead;
+// this method claims that deposit and is the one that actually parses and
+// pushes it, as a LoadFromJSON patch message -- applied by
+// DrainPatchInputBus() inside the next engine_.ProcessBlock() (audio
+// thread), exactly like every other host-driven core write in this class
+// (MessageIn::ParamSetAbsolute et al., PumpHostParameterBridge()). Applying
+// the restored values directly to the authority this way, rather than
+// writing this class's host-parameter juce::AudioProcessorParameters/
+// shadowNormalized shadows, is what keeps this from fighting
+// PumpHostParameterBridge()'s feedback guard: the restored values simply
+// look like an ordinary core-side change on a later pump (the exact case
+// that guard already discriminates and relays, see that method's own
+// comment) rather than a second, competing write path. A malformed deposit
+// (fails to parse) is dropped -- re-parsing the identical bytes next pump
+// could not succeed either; an incompatible-but-parseable one (fails
+// LoadPatchJSON's own schema/shape check, ValidPatchRoot in
+// PatchPersistence.cpp) is still pushed and applied by ApplyPatchMessage,
+// which reports InvalidJSON and leaves the authority untouched -- the same
+// "invalid document is a no-op" contract LoadPatchJSON documents. A push
+// that fails only because patchInputBus is momentarily full is transient,
+// so the deposit is put back for the next pump to retry rather than lost.
+//
+// Snapshot: ApplyPatchMessage's SerializeToJSON handler calls
+// BuildPatchJSON(..., manager, ...), reading the SAME ParameterManager the
+// audio thread mutates every sample. synth/Json.hpp's own header comment
+// is what makes building that JSON safe to run ON the audio thread (an
+// arena bump-allocator, no system allocator call) but explicitly reserves
+// Dumps() ("intended for non-realtime handoff code") for elsewhere -- so
+// this method requests a snapshot, and only turns the response into text
+// (Dumps()) once it comes back here, on the message thread. At most one
+// request is ever outstanding (pendingStateSnapshotRequestId_) -- required
+// because, unlike PatchManager's own single-pending-save gate
+// (PatchSerializationContext::arena's own doc comment), nothing else
+// enforces this for a direct bus producer, and the response's document
+// aliases engine_'s shared serialization arena non-owningly: a second
+// request before the first is fully consumed would let its arena Reset()
+// clobber the still-unread first response. cachedStateJsonText_ is
+// therefore never more than about one pump interval stale -- the same
+// bound PumpHostParameterBridge() already accepts for host-parameter
+// readback.
+//
+// Freeze latch, both directions (see getStateInformation()'s own header
+// comment in the .hpp for why this lives outside "parameterValues"):
+//   snapshot -- the sessionExtras object is attached directly to the
+//   response's own JSON tree, using its own aliased arena, strictly
+//   between popping the response and clearing
+//   pendingStateSnapshotRequestId_ -- i.e. the same window in which the
+//   single-outstanding-request gate above already guarantees the audio
+//   thread cannot be touching that arena (it will not process another
+//   SerializeToJSON, and so will not Reset() this arena again, until this
+//   method issues a new request, which only happens once this window has
+//   closed). FreezeLatched() is read fresh at attach time rather than
+//   threaded through the request/response round trip itself, which only
+//   widens the value's staleness bound from "current" to "current as of
+//   the last bus hop" -- already within the "about one pump interval
+//   stale" bound this whole cache accepts.
+//   restore -- deliberately does NOT call DispatchAction(kFreeze) itself.
+//   It writes the target into the Freeze host parameter's own JUCE value
+//   (setValueNotifyingHost(), the same call PumpHostParameterBridge()'s
+//   own core->host direction uses to reflect a non-host-originated change)
+//   without touching that entry's shadowNormalized -- so, from
+//   PumpHostParameterBridge()'s point of view on ITS next pass, this looks
+//   exactly like a host automation write that has not been relayed yet,
+//   and its existing kFreeze branch (compare against FreezeLatched(),
+//   DispatchAction(kFreeze) only on a real difference) does the actual
+//   dispatch. One extra pump of latency versus dispatching here directly,
+//   the same bound every other host-parameter round trip in this class
+//   already carries -- traded for not needing a second place that decides
+//   when Freeze should toggle.
+void FroggersPluginProcessor::PumpStatePersistence() {
+    std::optional<std::string> restoreText;
+    {
+        const std::lock_guard<std::mutex> lock(stateBlockMutex_);
+        restoreText = std::move(pendingRestoreJsonText_);
+        pendingRestoreJsonText_.reset();
+    }
+    if (restoreText.has_value()) {
+        constexpr std::size_t kInitialArenaCapacity = synth::PatchSerializationContext{}.initialArenaCapacity;
+        auto arena = std::make_shared<synth::JsonArena>(kInitialArenaCapacity);
+        synth::JSON root = arena->Loads(restoreText->c_str());
+        while (root.IsNull() && arena->Failed()) {
+            arena->GrowAndReset();
+            root = arena->Loads(restoreText->c_str());
+        }
+        if (!root.IsNull()) {
+            const bool pushed = engine_.Context().patchInputBus->Push(
+                synth::PatchMessageIn::LoadFromJSON(synth::JsonDocument{.arena = arena, .root = root}));
+            if (pushed) {
+                // Paired with the parameter-authority restore above rather
+                // than applied independently: if the push above had failed
+                // instead, this would retry next pump alongside it (the
+                // else branch below), so the two halves of one restore
+                // never land on different pumps. Reading root below, after
+                // handing a copy of it to the bus, is safe unconditionally
+                // (not just while the bus happens to still be unconsumed):
+                // Get()/BooleanValue() never write to the arena, and
+                // nothing else ever will either -- the audio thread only
+                // ever reads this same document too (LoadPatchJSON copies
+                // values out into ParameterManager, it never mutates the
+                // JSON tree it was handed) -- so this is two readers over
+                // already-built, henceforth-immutable nodes, never a
+                // reader racing a writer. A blob saved before this key
+                // existed has no "sessionExtras" object at all -- Get() on
+                // a missing key returns a null JSON, IsJsonBoolean() rejects
+                // it (both a missing key and a present-but-wrong-typed
+                // one), and the latch is left exactly as it was.
+                const synth::JSON freezeLatchedJson = root.Get(kSessionExtrasKey).Get(kFreezeLatchedKey);
+                if (IsJsonBoolean(freezeLatchedJson)) {
+                    const bool targetFreezeLatched = freezeLatchedJson.BooleanValue();
+                    for (HostParamEntry& entry : hostParams_) {
+                        if (entry.kind == HostParamEntry::Kind::kFreeze) {
+                            entry.juceParam->setValueNotifyingHost(targetFreezeLatched ? 1.0f : 0.0f);
+                            break;
+                        }
+                    }
+                }
+            } else {
+                const std::lock_guard<std::mutex> lock(stateBlockMutex_);
+                pendingRestoreJsonText_ = std::move(*restoreText);
+            }
+        }
+    }
+
+    synth::MessageOut response;
+    while (engine_.Context().patchOutputBus->Pop(response)) {
+        if (response.type != synth::MessageOut::Type::SerializedJSON || !pendingStateSnapshotRequestId_.has_value() ||
+            response.requestId != *pendingStateSnapshotRequestId_) {
+            continue;
+        }
+        // Sibling key, attached to the core's own response tree using its
+        // own (aliased) arena before dumping -- see this method's own
+        // header comment for why this specific window (after the pop,
+        // before pendingStateSnapshotRequestId_ is cleared below) is safe:
+        // the single-outstanding-request gate means the audio thread
+        // cannot be touching this arena again until this method itself
+        // issues a new request, which happens later, further down this
+        // function, only after this reset() below has run.
+        synth::JsonArena& responseArena = *response.document.arena;
+        synth::JSON sessionExtras = responseArena.Object();
+        sessionExtras.SetNew(kFreezeLatchedKey, responseArena.Boolean(engine_.Application().FreezeLatched()));
+        response.document.root.SetNew(kSessionExtrasKey, sessionExtras);
+
+        if (char* dumped = response.document.root.Dumps(JSON_ENCODE_ANY)) {
+            std::string text(dumped);
+            std::free(dumped);
+            const std::lock_guard<std::mutex> lock(stateBlockMutex_);
+            cachedStateJsonText_ = std::move(text);
+        }
+        pendingStateSnapshotRequestId_.reset();
+    }
+
+    if (!pendingStateSnapshotRequestId_.has_value()) {
+        const std::uint64_t requestId = nextStateRequestId_++;
+        if (engine_.Context().patchInputBus->Push(
+                synth::PatchMessageIn::SerializeToJSON(requestId, kSessionStatePatchName))) {
+            pendingStateSnapshotRequestId_ = requestId;
         }
     }
 }
