@@ -2,7 +2,6 @@
 
 ## Purpose
 The fixed fifteen-source modulation slate plus Target/Back cell, app-owned registration (not Sheaf's fixed-count standard-modulator aggregate), a two-level drill-in cap, external-audio sources that stay present-but-inert when unavailable, and the two context-sensitive randomize affordances (Randomize All, Randomize Page).
-
 ## Requirements
 ### Requirement: Fifteen modulation sources plus a Target/Back cell
 The app SHALL expose exactly fifteen modulation sources, filling the framework's fifteen modulator slots, with a sixteenth grid cell reserved for Target/Back. The slate SHALL be, **in this order**:
@@ -69,50 +68,48 @@ The app SHALL permit drilling from a top-level parameter into its modulation dep
 Note: a one-level pop is deliberately **not** provided. The framework's deselect returns to the parameter grid, and the call that would re-open an intermediate level is not part of its public surface, so synthesizing a pop would mean working around a private API. Full exit from any level is the accepted behavior (design D5).
 
 ### Requirement: External-audio sources stay present but inert when unavailable
-When no external audio input is available, the two external-audio modulation sources SHALL be
-marked **not connected**. They SHALL remain present in the slate, SHALL be inert, SHALL render as
+When no external audio input is routed, the two external-audio modulation sources SHALL be marked
+**not connected**. They SHALL remain present in the slate, SHALL be inert, SHALL render as
 disconnected, and SHALL NOT be randomized. They SHALL NOT be hidden, and the slate SHALL NOT change
 size.
 
-**Availability is defined narrowly, and a host-opened device is not enough.** A channel merely
-existing because the host opened some device — including a platform-default device the operator
-never chose — SHALL NOT by itself make a source "available". Availability requires a signal that the
-operator affirmatively routed audio in. Until the host exposes that signal to the app, the app SHALL
-request **zero** audio input channels, so that no device — default or otherwise — is ever opened
-without an explicit operator action, and the two sources are disconnected **by construction** rather
-than by a compensating flag that a future edit could silently invalidate.
+**Availability is defined by the host's affirmative routed signal, and a host-opened device is not
+enough.** The app SHALL request one audio input channel and SHALL derive the sources' connected
+state exclusively from the host's routed signal — which reports routed only when the operator
+affirmatively selected an input (device selection in the standalone and browser; explicit bus
+routing in a DAW) — never from a channel or device merely existing. A platform-default device the
+host opened unasked SHALL derive not-routed and SHALL NOT connect the sources. The connected state
+SHALL be written once per routing transition, from the host's change notification, never recomputed
+per sample from channel presence.
 
 #### Scenario: Disconnection is the inert state, not a removal
-- **WHEN** an external-audio source is unavailable
-- **THEN** it is marked not connected
-- **THEN** its grid cell is still present, carrying no depth parameter
-- **THEN** that cell renders in the framework's standard disconnected appearance
+- **WHEN** no input is routed
+- **THEN** both sources are marked not connected
+- **THEN** their grid cells are still present, carrying no depth parameter
+- **THEN** those cells render in the framework's standard disconnected appearance
 
-#### Scenario: A host-opened default device does not count as available
-- **WHEN** the app requests zero audio input channels
-- **THEN** no input device, default or otherwise, is opened by the host
-- **THEN** both external-audio sources are disconnected as a direct consequence of zero channels
-  existing, independent of any separate opt-out flag
+#### Scenario: A host-opened default device does not count as routed
+- **WHEN** the host has opened a platform-default input device without any operator selection
+- **THEN** the routed signal reports not routed
+- **THEN** both external-audio sources stay disconnected and contribute no modulation
 
-#### Scenario: Reconnection restores it in place
-- **WHEN** an external audio input becomes available — the host exposes a signal that the operator
-  affirmatively routed audio in, and the app requests at least one channel again
-- **THEN** the source is marked connected again
-- **THEN** its depth parameter materializes on next use, in the same cell position
+#### Scenario: Routing connects the sources in place
+- **WHEN** the operator affirmatively routes an input and the host's routed signal reports routed
+- **THEN** both sources are marked connected
+- **THEN** their depth parameters materialize on next use, in the same cell positions
 
-#### Scenario: No external input connected
-- **WHEN** no external audio input is available
-- **THEN** both external-audio cells are still shown, rendered as disconnected
-- **THEN** they contribute no modulation
-- **THEN** the slate still contains fifteen sources in the same order
+#### Scenario: Unrouting disconnects them again
+- **WHEN** the routed input is removed and the routed signal reports not routed
+- **THEN** both sources return to the inert, disconnected state
+- **THEN** existing depth assignments keep their targets for the next connection
 
 #### Scenario: Slate size never changes with cabling
-- **WHEN** an external input becomes available or unavailable
+- **WHEN** an input is routed or unrouted
 - **THEN** no modulation cell changes position
-- **THEN** existing depth assignments keep their targets
+- **THEN** the slate still contains fifteen sources in the same order
 
 #### Scenario: Randomization skips them
-- **WHEN** randomization assigns modulation depths and no external input is available
+- **WHEN** randomization assigns modulation depths and no input is routed
 - **THEN** neither external-audio source receives depth
 - **THEN** this follows from their disconnected state, with no separate randomization rule
 
@@ -158,3 +155,4 @@ The framework's randomizer SHALL affect zero modulation sources on about half of
 - **WHEN** a randomize affordance is pressed repeatedly against the same target
 - **THEN** the number of allocated depth parameters for a given source does not increase across presses
 - **THEN** only the depth values change
+

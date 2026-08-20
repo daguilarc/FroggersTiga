@@ -1,40 +1,12 @@
 # Delta — `froggers-vst-host`
 
-**Added 2026-08-19**, superseding the remaining VST-host scope of
-`frogg3rs-browser-and-vst-hosts` (which delivered the plugin, its
-transport, tempo, parameter surface, and editor; the two ADDED
-requirements were deliberately outside its automation-surface scope,
-and the MODIFIED bus requirement is the "separate change" its own text
-reserved for the day the core gained inputs — which this change is).
+**Added 2026-08-20.** Both requirements were written for the predecessor
+change and never satisfied: cross-bank automation was decided but not
+implemented, and the input bus was reserved for the day the core gained
+inputs, which has now happened. They move here rather than syncing as
+promises the code does not keep.
 
 ## ADDED Requirements
-
-### Requirement: Session state survives the host project
-THE plugin SHALL persist its full user-visible state through the host's
-own state calls and restore it on reload, so that a project saved and
-reopened presents the instrument exactly as it was left — including
-parameter values the operator changed by hand, which no automation lane
-would rewrite. Restoration SHALL go through the app's single parameter
-authority, and SHALL NOT mutate the standalone application's own saved
-patches as a side effect. The stored representation SHALL survive
-parameter-model growth: a session saved before a bank or slot is added
-SHALL still restore, without corruption, after it is.
-
-#### Scenario: A saved project reopens unchanged
-- **WHEN** the operator edits parameters by hand, saves the DAW project,
-  closes it, and reopens it
-- **THEN** the instrument's parameter values are the edited ones
-- **AND** the host parameters read back those same values
-
-#### Scenario: Project state is not the standalone's patch store
-- **WHEN** a project restores plugin state
-- **THEN** the standalone application's saved patches are unmodified
-
-#### Scenario: An old session outlives model growth
-- **WHEN** a session stored against a smaller parameter model is
-  restored into a build whose model has grown
-- **THEN** every stored parameter restores to its saved value
-- **AND** parameters the stored session never knew keep their defaults
 
 ### Requirement: Automation does not steal the operator's view
 THE plugin SHALL deliver an automated parameter's value to that

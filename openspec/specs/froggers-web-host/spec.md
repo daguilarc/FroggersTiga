@@ -2,7 +2,6 @@
 
 ## Purpose
 The same Sheaf app browser build replaces the public Froggers website; the legacy web and wasm trees go dormant (unmodified, no longer built or deployed); publication is gated on the repository rename, which does not affect operator-visible product naming.
-
 ## Requirements
 ### Requirement: The new app is the public web build
 The published Froggers website SHALL be served by the new Sheaf app's browser build. The previously deployed web application SHALL no longer be built or deployed. The same app type SHALL serve the desktop host, the Sheaf launcher package, and the public site, with no host-specific branching in the app core.
@@ -99,3 +98,28 @@ while the live site stays untouched until merge.
 - **THEN** the site builds and its tests run
 - **THEN** the deploy step does not execute and the live site is
   unchanged
+
+### Requirement: Parameter controls are legible before audio starts
+WHEN the published site loads, THE parameter controls SHALL show their
+names and current values without requiring the visitor to press Play or
+interact at all, matching the guarantee the predecessor site made
+(`web-mobile-knob-labels`). Audio SHALL still not start without a user
+gesture.
+
+#### Scenario: Knobs are readable on arrival
+- **WHEN** a visitor loads the site and does nothing
+- **THEN** every encoder cell shows its parameter name and value
+- **AND** no audio has started
+
+### Requirement: Automated checks assert rendered visibility
+THE site's automated checks SHALL assert that the surface is actually
+VISIBLE — non-zero rendered extent and painted content — and SHALL NOT
+rely on element geometry alone, which reports full bounding boxes for
+content clipped to invisibility. Each such assertion SHALL be
+demonstrated to fail against a build carrying the defect it guards.
+
+#### Scenario: A blank page fails the suite
+- **WHEN** a regression clips or blanks the rendered surface while
+  leaving element geometry intact
+- **THEN** the automated checks fail
+
