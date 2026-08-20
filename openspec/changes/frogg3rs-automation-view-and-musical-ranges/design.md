@@ -17,11 +17,37 @@ for `SelectParamBank`. `ParameterManager::HandleSetAbsolute` resolves through
 `BankSlot::ResolvePosition` and requires `BankSlot::Owns`, so a cross-bank
 write needs the shared slot pointed at the target bank first.
 
-**The primitive already exists.** `Bank::HandleSetAbsolute(PhysicalEncoderId,
-const SceneState&, float)` is public and operates only on that `Bank`'s own
-cells, never touching `BankSlot` or `selectedBank_`, and
-`ParameterManager::BankAt(std::size_t)` is public. What is missing is a
-slot-agnostic wrapper.
+**The primitive is close, but it addresses the wrong page.**
+`Bank::HandleSetAbsolute(PhysicalEncoderId, const SceneState&, float)` is
+public and never touches `BankSlot` or `selectedBank_`, and
+`ParameterManager::BankAt(std::size_t)` is public. But that write resolves
+through `FindVisibleCell`, which walks the bank's `visible_` cells — and
+`visible_` is the modulation drill-down page whenever that bank is drilled in
+(`Bank::OpenModulationView` clears `visible_` and refills it with depth
+parameters plus the selected parameter on the last encoder). It is `topLevel_`
+only when the bank is not drilled in, which `AddMapping`, `RegisterParameters`
+and `Deselect` each restore.
+
+**Consequence, and it is this change's to prevent.** Today the bridge's
+`SelectParamBank` push calls `Deselect()` on the outgoing bank, forcing
+`visible_ = topLevel_` before the write, so an automated value lands on the
+top-level parameter. Remove that push (task 2.1) and a lane automating a
+parameter in the bank the operator has drilled into resolves against the
+drill-down page instead: the value lands on a MODULATION DEPTH cell, not the
+automated parameter. The narrow form of this already exists — when the target
+bank is the one the bridge last automated, no `SelectParamBank` is pushed and
+the slot path resolves against the same drill-down page — but the change turns
+a narrow case into every case, and it is the same defect class the change
+exists to fix, inverted: the automated value's destination would depend on
+what the operator is looking at.
+
+**So the new write addresses the bank's top-level mapping, not its visible
+page.** That is what an automation lane means by "this parameter": a fixed
+destination that no view state can move. `Bank` exposes no top-level-addressed
+write today (`ApplyModifierToTopLevel` is a bulk modifier op, not a set), so
+the framework half is a small new `Bank` primitive plus the wrapper, not a
+wrapper alone. Trace `Bank`'s private `topLevel_` cell lookup before writing
+it; `FindVisibleCell`'s shape is the model.
 
 **Why the app-side route was rejected.** select→write→restore works
 mechanically — `Engine::DrainMessageBus` applies non-realtime messages in
@@ -37,7 +63,22 @@ automation over a shared `BankSlot` hits this gap. So: additive only (a new
 `MessageIn` type and a new `ParameterManager` method alongside the existing
 slot-addressed path), no frogg3rs in the name or rationale, its own tests in
 Sheaf's own suite. Adding an enumerator to `MessageIn::Type` means auditing
-exhaustive switches over it in both repositories.
+every surface that enumerates message types in both repositories — not only
+exhaustive switches. There is at least one parallel enum, `UISystemMessage`
+(`projects/synth/include/synth/MidiConfigViewModel.hpp`), and a documented
+arg1/arg2 encoding for system messages (`MidiConfigBlocks.hpp`). Classify each
+as needing the new type or deliberately not carrying it; do not assume either.
+
+**Two behaviors the existing path performs that the new one must decide.**
+`ParameterManager::HandleSetAbsolute(slotIx, position, ...)` gates the write on
+`GetCurrentModifier() == Modifier::None` and then calls
+`BankSlot::RecordProcessedAbsoluteEpoch(position, absoluteEpoch)`; the
+`MessageInBus::Apply` case carries a comment saying both are deliberately
+downstream of the apply-or-reject decision. The bank-addressed path inherits
+neither by construction. Decide each explicitly and record the reasoning: a
+held modifier is operator state, and the epoch acknowledgement is per-slot
+bookkeeping the plugin bridge does not currently populate (it pushes
+`ParamSetAbsolute` with the default epoch 0).
 
 Also required: `RandomizePage`/`ResetPage` must target the operator's bank,
 not the last automated one; and the existing test asserting the old behavior
@@ -107,18 +148,42 @@ where the top tenth of draws still exceed 269 ms even after C — halving it to
 250 ms moves that to 144 ms. Comb drive floors at 0.25 but its median is
 unity and it is symmetric in log space; probably leave it.
 
-**Bounds producing inert draws** — all floor at 20 Hz, where the effect sits
+**Bounds producing inert draws** — floored at 20 Hz, where the effect sits
 below audibility and randomization visibly does nothing: Peak freq (Filter
 slot 1, drives a `ResonantBump` — traced, it is a peak, not a cutoff, so a low
 draw idles rather than mutes), Scoop freq (Filter slot 10, an independent
 knob), and Comb delay (Filter slot 4). Raising these to about 100 Hz moves
-the bottom decile from 40 Hz to 170 Hz.
+peak's and scoop's bottom decile from 40 Hz to 170 Hz; comb's ceiling is
+10 kHz rather than 20 kHz, so its own decile moves from 37 Hz to 159 Hz.
+
+**A fourth 20 Hz floor exists and is not one of the three.** VCO pitch
+(`app/dsp/Vco.hpp`, `ExpMapCompute(20/sr, 20000/sr, pitchKnob01)`) has the same
+floor and the same bottom decile. It is listed here because an enumeration that
+stops at three sites and reads as complete is the failure this project has
+already paid for once. Pitch is NOT proposed for change: a low oscillator is a
+sub-bass or a slow pulse, which is a musical setting rather than an inert one,
+where a 25 Hz resonant peak is neither. Classified and kept, not missed.
+
+**Raising the comb floor moves a second control's range.** The comb low-pass
+cutoff derives its own floor from the comb frequency —
+`ExpMapCompute(4.0f * combFreq, 20000/sr, knob(Filter, 6))` — so a comb floor
+of 100 Hz raises that knob's floor from 80 Hz to 400 Hz whenever comb frequency
+sits at minimum. That is acceptable on the same reasoning (an 80 Hz low-pass on
+a comb is inaudible), but it is a range change to a control nobody asked to
+change, so it is stated rather than discovered later.
 
 **Bounds that must not move — the zero is meaningful:** Peak gain (floor 1.0,
 no boost), Fold, Scoop depth, phase-modulation depth, ring-mod depth, Grace.
 
 Every number here is derived, not heard. The floors and the attack ceiling
 are what operator smoke is for.
+
+**The requirement is universal; this list is not yet.** The spec delta says
+every control's bounds sit where the control still does something. The five
+bounds above are the ones traced so far, found by reading the filter and
+envelope mapping blocks — not by enumerating every `ExpMapCompute` bound in the
+tree. Task 5 carries that enumeration, and it reports found versus changed:
+a bound deliberately kept is a result, a bound never looked at is not.
 
 ## E — Comment sweep, remaining scope
 
@@ -143,9 +208,39 @@ from both versions and diffing.
 Three documents exist where two should. `MANUAL.md` is already the current
 app's manual. `DAISY_MANUAL.md` covers the frozen Daisy Field firmware.
 `SIM_MANUAL.md` documents the frozen web and desktop simulators and is the
-redundant one; the branch merge makes the current app the only app, and the
-only history worth keeping is the Daisy Field hardware, which has its own
-manual and stays untouched.
+redundant one by content; the branch merge makes the current app the only app,
+and the only history worth keeping is the Daisy Field hardware, which has its
+own manual and stays untouched.
+
+**Redundant by content is not the same as removable, and here it is not.**
+`SIM_MANUAL.md` is a build and CI input, not just prose. Traced:
+
+- **Release notes are rendered from it.** `desktop/scripts/render-release-notes.sh`
+  reads it, `.github/workflows/desktop-release.yml` runs that, and `AGENTS.md`
+  makes it the mandatory desktop release path.
+- **A CI check fails without it.** `desktop/scripts/verify-release-metadata.sh`
+  greps it for the current-release heading and fails the build when absent.
+- **It is the source of four generated mirrors.** `scripts/sync-help-docs.sh`
+  copies it to `docs/sim-manual.md` and `web/public/sim-manual.md`;
+  `sim/check_operator_docs_sync.sh` enforces the pair; `scripts/hooks/pre-commit`
+  re-syncs and re-stages them on every commit.
+- **Two CMake targets embed it as a resource.** `desktop/CMakeLists.txt` and
+  `desktop-v2/CMakeLists.txt` — trees this change declares out of scope, so
+  deleting the file either breaks them or breaks the scope boundary.
+- **The public site links to it.** `web/index.html` points at its GitHub blob.
+- **Three LIVE specs require it by name.** `sim-operator-doc-parity` is built
+  entirely on it and its mirrors; `froggers-host-master` names it as the
+  operator-doc mirror and in its baseline index; `global-strip-marbles-label`
+  requires a labelled row inside it. None of the three has a delta in this
+  change.
+
+So the deletion is not a documentation edit. Either this change adds deltas
+retiring or re-pointing those three capabilities and moves the release-notes
+and mirror-sync inputs to `MANUAL.md`, or the deletion waits for the merge in
+§G, where the frozen trees are already being opened. That is an operator
+decision, not an executor's. What this change can do unconditionally is the
+rest of §F: `MANUAL.md`'s coverage, the audio and MIDI configuration section,
+and `QUICK_DICT.md`'s false external-audio claim.
 
 `MANUAL.md` must cover exactly: what frogg3rs is and what it runs in
 (standalone, browser build, VST3 and AU); every global control **including
@@ -165,7 +260,17 @@ reader arriving from it needs to know which features are absent here.
 
 `cd app && nice make -j2 test`; plugin builds VST3 + AU; browser build and
 e2e green; Sheaf's own suite for the framework change. Never above `-j2`,
-always `nice`. Baseline at this change's open: 290/290.
+always `nice`. Baseline at this change's open: 290/290 for the app suite,
+verified from the predecessor's own close-out record.
+
+**Sheaf's suite has no recorded baseline here, and it is not all-green on this
+machine.** `braid4_meets_96000hz_256_frame_deadline_and_continuity` and
+`braid4_sparse_modulation_meets_96000hz_256_frame_deadline`
+(`projects/synth/tests/braid4_deadline_tests.cpp`) fail deterministically on
+this hardware and are not this change's to fix. Record the Sheaf baseline
+BEFORE the first Sheaf edit, so the framework work is judged against a known
+starting count rather than against an assumed green — a gate with no baseline
+either stalls on a pre-existing red or launders one.
 
 ## G — For the post-testing merge into main
 

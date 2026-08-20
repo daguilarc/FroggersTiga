@@ -21,9 +21,12 @@ operator raised while it was closing.
   `Bank::Deselect()`, which resets the outgoing bank to top level and closes
   any modulation drill-down the operator has open, while
   `FroggersModulationDrillIn`'s cached level counter goes stale. Under the new
-  behavior that damage is silent. `Bank::HandleSetAbsolute` is already a
-  public bank-direct primitive and `ParameterManager::BankAt` already exists;
-  the framework simply never exposed a slot-agnostic wrapper over them.
+  behavior that damage is silent. `ParameterManager::BankAt` already exists and
+  `Bank::HandleSetAbsolute` is already a public bank-direct write, but it
+  resolves through the bank's VISIBLE cells, which are the modulation
+  drill-down page when that bank is drilled in — so the framework half is a
+  page-independent bank write plus the slot-agnostic wrapper, not the wrapper
+  alone.
 - **The plugin declares no audio input bus.** The predecessor's own bus
   requirement reserved external audio for the day the core gained inputs. The
   core now requests a channel and the standalone connects the external
@@ -49,7 +52,10 @@ operator raised while it was closing.
   `SIM_MANUAL.md` documents the frozen web and desktop simulators.
   `QUICK_DICT.md` states the external-audio sources are permanently
   unavailable, which the predecessor change made false. No document explains
-  audio or MIDI configuration at all.
+  audio or MIDI configuration at all. Retiring `SIM_MANUAL.md` is the one part
+  that is not a documentation edit: it is a release-notes and CI input, a
+  generated-mirror source, an embedded resource in two out-of-scope trees, and
+  a named requirement in three live specs — see design F.
 
 ## What Changes
 
@@ -67,7 +73,12 @@ operator raised while it was closing.
 
 ## Impact
 
-- Affected specs: `froggers-vst-host`, `froggers-vco-topology`.
+- Affected specs: `froggers-vst-host`, `froggers-vco-topology`. Deleting
+  `SIM_MANUAL.md` would additionally affect `sim-operator-doc-parity`,
+  `froggers-host-master` and `global-strip-marbles-label`, which name it in
+  their requirements; that deletion is gated on an operator decision (task
+  7.1) precisely because taking it on means taking on those deltas and
+  editing trees listed as out of scope below.
 - Upstream: this is the first change to edit `External/Sheaf`. Its commits
   append to the existing open pull request on the pinned branch. Push Sheaf
   before the superproject — the superproject records only the pin, and CI

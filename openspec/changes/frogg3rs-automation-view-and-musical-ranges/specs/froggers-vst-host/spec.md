@@ -11,18 +11,26 @@ promises the code does not keep.
 ### Requirement: Automation does not steal the operator's view
 THE plugin SHALL deliver an automated parameter's value to that
 parameter's own bank and slot regardless of which bank the editor is
-currently showing, and SHALL NOT leave the editor's visible page
-oscillating when lanes in different banks are automated at once.
-Whether automation moves the visible page at all is this change's
-operator decision; whichever policy is chosen SHALL apply identically
-to a single lane and to simultaneous lanes.
+currently showing, and regardless of what page that bank is displaying.
+The editor's visible page SHALL follow operator selection only:
+automation SHALL NOT move it, for a single lane or for simultaneous
+lanes, and SHALL NOT close a modulation view the operator has open.
 
 #### Scenario: Simultaneous cross-bank lanes
 - **WHEN** two automation lanes drive parameters in two different banks
   at once
 - **THEN** each value lands on its own bank's parameter
-- **AND** the editor's visible page follows the chosen policy without
-  oscillating between banks
+- **AND** the editor's visible page does not move
+
+#### Scenario: The operator is drilled into an automated bank
+- **WHEN** the operator has a modulation view open on a bank and a lane
+  automates a parameter in that same bank
+- **THEN** the value lands on that parameter
+- **AND** the open modulation view is neither closed nor written to
+
+#### Scenario: Operator selection still moves the page
+- **WHEN** the operator selects a different bank
+- **THEN** the editor's visible page follows that selection
 
 ## MODIFIED Requirements
 
