@@ -166,3 +166,40 @@ reader arriving from it needs to know which features are absent here.
 `cd app && nice make -j2 test`; plugin builds VST3 + AU; browser build and
 e2e green; Sheaf's own suite for the framework change. Never above `-j2`,
 always `nice`. Baseline at this change's open: 290/290.
+
+## G — Known defect, NOT in this change's scope
+
+Found while tracing a dangling comment citation during the predecessor's
+close-out. Recorded here because this is the live change someone will read
+next, and because the fix belongs to work that has not been opened yet.
+
+**`sim/Fuegoize.hpp` invokes undefined behavior at full fuego.** It computes
+the modulo divisor as `static_cast<uint8_t>((mask + 1u) ? (mask + 1u) : 1u)`.
+The mask is `(1u << round(fuegKnob * 8)) - 1`, so a fuego knob at maximum
+gives 255; `mask + 1u` is then 256, and the `uint8_t` cast wraps it to zero.
+The next expression divides by it.
+
+Verified unaffected:
+
+- **The Daisy firmware.** `src/core/Parameter.hpp`'s inline fuegoize casts
+  the RESULT rather than the divisor, so `mask + 1` keeps int width and the
+  division is defined. There is no other fuegoize implementation anywhere
+  under `src/`, and the firmware includes neither `sim/` nor anything that
+  reaches it.
+- **The current app.** `app/dsp/Fuegoize.hpp` uses a `uint32_t` divisor, and
+  its header already documents this discrepancy — it deliberately ported the
+  firmware's formula rather than the simulator's.
+
+Reachable from the wasm build: `wasm/CMakeLists.txt` puts `sim/` on the
+include path, and `bindings.cpp` reaches `Fuegoize.hpp` through
+`WasmSimHost.hpp` and `DelayState.hpp`. The code path is traced; a crash has
+not been observed.
+
+**Disposition: fix it when the v2 branch merges into main**, since desktop
+and wasm are updated as part of that work. Nothing in the specs prevents
+editing those trees — `froggers-web-host`'s "superseded, not edited"
+requirement is scoped to the change that introduced it, not standing. The
+fix is to move the cast off the divisor, matching the firmware, and to add a
+test that drives fuego to maximum: nothing exercises that path today, because
+the app's parity tests cover `app/dsp/Fuegoize.hpp` rather than the
+simulator's copy.
