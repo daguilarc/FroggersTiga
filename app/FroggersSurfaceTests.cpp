@@ -172,13 +172,13 @@ std::optional<std::size_t> DrillBadgeTextIndex(const synth::ui::NodeTree& tree, 
     return lastTextIndex;
 }
 
-// S5.2: returns the WHOLE command, not just `.text`, so a caller can also
+// Returns the WHOLE command, not just `.text`, so a caller can also
 // assert on the resolved TextStyle (size/colour) -- the operator's actual
 // complaint was that the label rendered but did not READ as a header, so a
 // content-only check can't cover the fix. `DrillBadgeText` below is the
-// pre-existing `.text`-only accessor, rewritten in terms of this one (OMNI
-// §8/§14: a second use of "find a node's Kind::Text command" must not
-// become a second scan of the same list).
+// pre-existing `.text`-only accessor, rewritten in terms of this one so a
+// second use of "find a node's Kind::Text command" does not become a
+// second scan of the same list.
 std::optional<synth::ui::DrawCommand> DrillBadgeTextCommand(const synth::ui::NodeTree& tree,
                                                             const std::string& nodeId) {
     const std::optional<std::size_t> index = DrillBadgeTextIndex(tree, nodeId);
@@ -189,10 +189,9 @@ std::optional<synth::ui::DrawCommand> DrillBadgeTextCommand(const synth::ui::Nod
     return node != nullptr ? std::optional<synth::ui::DrawCommand>(node->drawCommands[*index]) : std::nullopt;
 }
 
-// Reused across every level checked by
-// modulation_header_shown_only_while_drilled_in_and_matches_the_level below
-// (OMNI §6: 2+ uses, isolates a distinct read from the raw draw-command
-// list).
+// Reused (2+ call sites) across every level checked by
+// modulation_header_shown_only_while_drilled_in_and_matches_the_level below;
+// isolates a distinct read from the raw draw-command list.
 std::optional<std::string> DrillBadgeText(const synth::ui::NodeTree& tree, const std::string& nodeId) {
     const std::optional<synth::ui::DrawCommand> command = DrillBadgeTextCommand(tree, nodeId);
     return command.has_value() ? std::optional<std::string>(command->text) : std::nullopt;
@@ -207,7 +206,7 @@ std::optional<std::string> DrillBadgeText(const synth::ui::NodeTree& tree, const
 // cannot assert "this node has no Text command at all"; it has to check
 // the CONTENT of whatever Text commands do exist. One low-level scan
 // (CommandsContainText) shared by both the whole-tree and single-node
-// forms below (OMNI §8: two callers must not duplicate the same loop).
+// forms below, so two callers do not duplicate the same loop.
 bool CommandsContainText(const std::vector<synth::ui::DrawCommand>& commands, const std::string& needle) {
     for (const synth::ui::DrawCommand& command : commands) {
         if (command.kind == synth::ui::DrawCommand::Kind::Text && command.text.find(needle) != std::string::npos) {
@@ -242,7 +241,7 @@ bool AnyDrawnTextContains(const synth::ui::NodeTree& tree, const std::string& ne
 // bounds are relative to its parent's origin," and a backend's rendered
 // position is that node's own bounds "folded over the accumulated origins of
 // its ancestor chain" (PortableUI.hpp:44-46; the JUCE backend's own fold is
-// `PortableJuceBackend.hpp:737-753`'s `resolve()`). Task F.3's rewritten
+// `PortableJuceBackend.hpp:737-753`'s `resolve()`). The rewritten
 // geometry tests below compare nodes that do not share an immediate parent
 // (e.g. an encoder cell several containers deep vs. the scope, or two
 // encoder cells in different grid rows), so they need the SAME fold this
@@ -287,18 +286,17 @@ std::optional<std::size_t> FindNodeIndexById(const synth::ui::NodeTree& tree, co
     return std::nullopt;
 }
 
-// --- F.3: layout bounds, no overlap, cell containment -----------------------
+// --- layout bounds, no overlap, cell containment -----------------------
 //
-// Task F.3 (openspec/changes/archive/2026-08-05-frogg3rs-audio-safety-and-ui-rework/tasks.md)
-// replaced `FroggersPageLayout`'s hand-computed pixel `Bounds` (ContentArea/
+// This replaced `FroggersPageLayout`'s hand-computed pixel `Bounds` (ContentArea/
 // ScopeArea/GridArea, `FroggersEncoderGridLayout::BoundsForIndex`) with a
 // declarative grid resolved by Sheaf's own layout engine. Every test below
 // that used to call those functions directly now builds the REAL tree
 // through a bare `FroggersUiSurface` (same convention `BuildBraid4TreeAt`
 // uses in `External/Sheaf/projects/synth/tests/portable_ui_tests.cpp`) and
 // reads the RESOLVED node bounds instead -- each test still pins its
-// ORIGINAL property (§0: a pin is rewritten, never deleted), just against
-// the new mechanism.
+// ORIGINAL property, just rewritten against the new mechanism instead of
+// deleted.
 
 // A context-free surface build at an arbitrary size: the layout claims below
 // are about the resolver, not about any particular engine/parameter state
@@ -337,7 +335,7 @@ TEST_CASE(root_and_content_bounds_match_default_config_size) {
     REQUIRE_TRUE(root.width == synth_froggers::FroggersPageLayout::kDefaultWidth);
     REQUIRE_TRUE(root.height == synth_froggers::FroggersPageLayout::kDefaultHeight);
 
-    // REWRITE (task F.3): `ContentArea()` (a computed pixel Bounds) is gone
+    // `ContentArea()` (a computed pixel Bounds) is gone
     // along with the auto-flow model it served -- what survives is the
     // property it existed to guarantee, that real content is inset from the
     // window edge by a nonzero margin. The left/right blocks (children of
@@ -362,7 +360,7 @@ TEST_CASE(root_and_content_bounds_match_default_config_size) {
 }
 
 TEST_CASE(scope_and_grid_regions_do_not_overlap_at_target_window_size) {
-    // REWRITE (task F.3): the invariant survives verbatim (scope and every
+    // the invariant survives verbatim (scope and every
     // encoder cell occupy disjoint regions, all inside the window); the
     // mechanism moves from computed pixel rectangles to the RESOLVED,
     // absolute-folded node bounds of the real tree.
@@ -380,10 +378,9 @@ TEST_CASE(scope_and_grid_regions_do_not_overlap_at_target_window_size) {
     }
 }
 
-// UI-rework ITEM 1 (design.md A3a, tasks.md B.1, 2026-07-29, the operator's
-// strongest complaint, verbatim: "it is taller than it is wide, which is to
+// (The operator's strongest complaint, verbatim: "it is taller than it is wide, which is to
 // put it mildly, fucking stupid for visual UI. it should be at most a third
-// of its current size."). REWRITE (task F.3): pins the two hard requirements
+// of its current size."). pins the two hard requirements
 // directly against the RESOLVED scope node -- wider than tall, and at most
 // 1/3 of the OLD panel's area (340 wide x 528 tall -- the portrait column
 // this replaced, long before this file's own `ScopeArea()` existed; the
@@ -398,7 +395,7 @@ TEST_CASE(scope_area_is_wider_than_tall_and_at_most_a_third_of_its_old_area) {
     REQUIRE_TRUE(scope.width > 0.0f && scope.height > 0.0f);
     REQUIRE_TRUE(scope.width > scope.height);
 
-    constexpr float kOldFullContentHeight = 528.0f;  // historical: the pre-F.3 content area's height.
+    constexpr float kOldFullContentHeight = 528.0f;  // historical: the pre-rewrite content area's height.
     const float oldScopeArea = synth_froggers::FroggersPageLayout::kScopeWidth * kOldFullContentHeight;
     const float newScopeArea = scope.width * scope.height;
     REQUIRE_TRUE(newScopeArea <= oldScopeArea / 3.0f);
@@ -408,7 +405,7 @@ TEST_CASE(scope_area_is_wider_than_tall_and_at_most_a_third_of_its_old_area) {
 // LOCATION, so a change asked to shrink it also moved it -- from a left-hand
 // column to a full-width band across the top -- and every existing assertion
 // still passed. Operator: "WHEN DID I ASK FOR YOU TO CHANGE THE LOCATION OF
-// IT? i said just the height should change." REWRITE (task F.3): the single
+// IT? i said just the height should change." the single
 // most important guard in this file -- still pins scope-left/grid-right/
 // grid-full-height, now against the resolved left/right block nodes.
 TEST_CASE(scope_sits_in_a_left_column_with_the_grid_to_its_right) {
@@ -437,7 +434,7 @@ TEST_CASE(scope_sits_in_a_left_column_with_the_grid_to_its_right) {
 }
 
 TEST_CASE(every_encoder_cell_lies_fully_inside_the_grid_region) {
-    // REWRITE (task F.3): "grid region" is now the right block (bank tabs,
+    // "grid region" is now the right block (bank tabs,
     // the 16-slot grid, and Randomize share it per the CELL MAP), a superset
     // of the old grid-only region but still a meaningful containment check;
     // the harder property -- no two cells overlap -- is unchanged and still
@@ -462,21 +459,21 @@ TEST_CASE(every_encoder_cell_lies_fully_inside_the_grid_region) {
     }
 }
 
-// --- F.3: fit guards, replacing the deleted height cross-check --------------
+// --- fit guards, replacing the deleted height cross-check --------------
 //
 // `declared_ui_height_matches_the_derived_required_extent` DIES WITH ITS
-// SUBJECT (task F.3): `FroggersAutoFlowedChromeModel`/`RequiredHeight()` are
-// deleted, so there is nothing left to cross-check, and per task F.3's own
+// `FroggersAutoFlowedChromeModel`/`RequiredHeight()` are
+// deleted, so there is nothing left to cross-check, and per its own
 // finding that test could never actually fail even when its assumptions were
 // already wrong (`FroggersAutoFlowedChromeModel::FlowedControls()` hardcoded
 // a control list it never checked against the real tree). Its FUNCTION --
 // proving the surface fits -- is taken over by these three, a strictly
 // stronger guarantee: they resolve the real declarative grid and let
 // `RequireContainerHoldsItsChildren` (PortableUILayout.hpp:267-316) itself
-// report any overflow, at the three sizes task F.3's preflight gate pinned
+// report any overflow, at the three sizes the preflight gate pinned
 // (900x632 default, 640x480 small, 1440x900 large) -- not an invented check.
 
-// T4.2 (operator ruling 2026-08-17): the default size literal here tracks
+// The default size literal here tracks
 // `FroggersPageLayout::kDefaultHeight`/`FroggersAppCore::Config().uiHeight`
 // BY HAND (a plain literal, same convention those two use with each other --
 // see their own comments for why no cross-check test exists for that pair).
@@ -503,9 +500,9 @@ TEST_CASE(surface_resolves_without_overflow_at_a_large_window_size) {
     REQUIRE_TRUE(diagnostic.empty());
 }
 
-// --- F.6: the two labelled sliders resolve to the same width ----------------
+// --- the two labelled sliders resolve to the same width ----------------
 
-// The guard for the defect task F.6 fixed. Operator, on the F.3 build: "the
+// The guard for that defect. Operator, on the rebuilt layout: "the
 // scene slider is too wide and the bpm slider is too narrow. grid design
 // fail." Neither slider declared a width at all, so each inherited whatever
 // its container implied -- scene-blend filled a Column's cross axis while BPM
@@ -514,7 +511,7 @@ TEST_CASE(surface_resolves_without_overflow_at_a_large_window_size) {
 //
 // This asserts the two sliders against EACH OTHER, never against a pixel
 // literal. A hardcoded expected width would be two numbers kept in agreement
-// by hand -- the exact defect F.3 deleted when it removed
+// by hand -- the exact defect that rewrite deleted when it removed
 // `uiHeight == RequiredHeight()`, and it would keep passing if both sliders
 // drifted together. Comparing them to each other is what actually pins
 // "equal by construction."
@@ -546,13 +543,13 @@ TEST_CASE(scene_blend_and_bpm_sliders_resolve_to_the_same_width) {
     }
 }
 
-// --- 6.3-test: bank buttons are Button nodes again --------------------------
+// --- bank buttons are Button nodes again --------------------------
 
-// Task 6.3 (operator 2026-07-28 revert): at the pinned Sheaf version,
+// At the pinned Sheaf version,
 // Draw/DrawInteractive nodes dispatch only on double-click
 // (RetainedDrawComponent, PortableJuceBackend.hpp:549-555 -- no plain-click
 // path), which cost single-click bank switching when bank buttons were
-// briefly Draw nodes (design E3a, task 3.1). Reverted back to plain
+// briefly Draw nodes. Reverted back to plain
 // `Button` nodes: this replaces the former
 // bank_selection_renders_as_true_color_inversion_with_no_marker_character
 // (which asserted Draw-node fill/text colour inversion, no longer
@@ -723,8 +720,7 @@ TEST_CASE(clicking_the_active_bank_while_drilled_in_exits_to_the_top_level_grid)
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().BankRef().SelectedParameter() == nullptr);
 }
 
-// F7 (operator request, openspec/changes/frogg3rs-blowout-and-drilldown-
-// repair/tasks.md): "when we are in modulation drilldown levels ... headers
+// The operator's request, verbatim: "when we are in modulation drilldown levels ... headers
 // ... 'Modulation Level 1' then 2 then 3." Level 0 shows no indicator; each
 // deeper level shows the matching text, sourced from
 // FroggersModulationDrillIn::Level() (never a hardcoded per-level string).
@@ -735,7 +731,7 @@ TEST_CASE(clicking_the_active_bank_while_drilled_in_exits_to_the_top_level_grid)
 // fourth_level_drill_in_is_refused (FroggersModulationTests.cpp) uses to
 // reach the same depth, so this is a proven-valid path, not a guess.
 //
-// S5.2 (operator regression report, 2026-08-07: "i still don't see a header
+// Operator regression report: "i still don't see a header
 // label counting the drilldown levels") extended this same test rather than
 // adding a parallel one: once drilled to level 1, also asserts the resolved
 // TextStyle is an explicit, deliberate choice (not TextStyle{}'s own
@@ -745,14 +741,14 @@ TEST_CASE(clicking_the_active_bank_while_drilled_in_exits_to_the_top_level_grid)
 //
 // RELOCATED TWICE since (see AppendScopeCell's and AppendModulationHeaderRow's
 // own comments, FroggersUiSurface.hpp, for the full investigation): first to
-// kVcoScope (F7's original placement -- unreachable, the operator never
+// kVcoScope (its original placement -- unreachable, the operator never
 // looks there while drilled in), then to the Target/Back grid cell
-// (S5.2/relocation-1, 2026-08-08, as a "BACK L<N>" badge) -- reachable, but
+// (as a "BACK L<N>" badge) -- reachable, but
 // rejected on SUBSTANCE, not visibility: "i don't know why you thought i
 // wanted the header to be 'Back' and by the back button... nothing needs to
 // be labeled 'back' there, that implementation sucks." STEP 1 (2026-08-09)
 // moves it a second time, to its own dedicated, non-interactive header row
-// (`FroggersNodeIds::kModulationHeader`). Same F7/S5.2 content/styling
+// (`FroggersNodeIds::kModulationHeader`). Same content/styling
 // properties, same test identity (renamed to match), new carrying node --
 // plus a new removal guard proving the Target/Back cell no longer carries
 // this text either.
@@ -769,15 +765,15 @@ TEST_CASE(modulation_header_shown_only_while_drilled_in_and_matches_the_level) {
     // itself any more -- see kModulationHeaderTitle's own comment,
     // FroggersUiSurface.hpp. headerId itself is still used below for the
     // level-0 "row draws nothing of its own" check and is untouched by the
-    // structural change (design.md "Placement": outer geometry unchanged).
+    // structural change -- its outer geometry is unchanged.
     const std::string titleId = synth_froggers::FroggersNodeIds::kModulationHeaderTitle;
     // Not the carrying node any more, but still the specific site the
-    // rejected S5.2 attempt mislabelled "BACK" -- this test's own removal
+    // rejected earlier attempt mislabelled "BACK" -- this test's own removal
     // guard below needs it.
     const std::string backId = synth_froggers::FroggersNodeIds::Encoder(
         synth_froggers::FroggersEncoderGridLayout::kEncoderCount - 1);
 
-    // OMNI §9.1 positive control: print the level actually observed so an
+    // Positive control: print the level actually observed so an
     // "absent at level 0" pass can never be mistaken for a rig that simply
     // never drilled -- the level itself comes from the same real getter
     // (ActiveDrillIn().Level()) the levels-1/2/3 checks below rely on.
@@ -823,7 +819,7 @@ TEST_CASE(modulation_header_shown_only_while_drilled_in_and_matches_the_level) {
     REQUIRE_TRUE(!DrillBadgeText(drilledTree, synth_froggers::FroggersNodeIds::kVcoScope).has_value());
     REQUIRE_TRUE(!NodeDrawnTextContains(drilledTree, backId, "BACK"));
 
-    // S5.2 styling assertions, carried over to the new location -- the text
+    // Styling assertions, carried over to the new location -- the text
     // must not be a bare, default-styled DrawCommand::Text. The drawing
     // branch (AppendModulationHeaderRow, FroggersUiSurface.hpp) is
     // identical at every level > 0 (only the interpolated number changes,
@@ -867,7 +863,7 @@ TEST_CASE(modulation_header_shown_only_while_drilled_in_and_matches_the_level) {
 
 // STEP 1 (operator, 2026-08-09, fourth session on the same complaint -- see
 // AppendModulationHeaderRow's own comment, FroggersUiSurface.hpp, for the
-// full history: F7 put the header on kVcoScope, unreachable; S5.2/
+// full history: the header first sat on kVcoScope, unreachable; a later attempt
 // relocation-1 moved it to the Target/Back cell as a "BACK L<N>" badge,
 // which the operator rejected on SUBSTANCE, not visibility -- "i don't know
 // why you thought i wanted the header to be 'Back' and by the back button,
@@ -876,14 +872,14 @@ TEST_CASE(modulation_header_shown_only_while_drilled_in_and_matches_the_level) {
 // unambiguous and geometric: a header BAR spanning the grid's width, BELOW
 // the bank tabs row, ABOVE the first row of parameter cells. This test
 // computes (not eyeballs) exactly that claim against the real resolved
-// tree, replacing the previous packet's containment-only guard
+// tree, replacing the previous containment-only guard
 // (drill_back_badge_resolves_inside_the_grid_region_the_operator_actually_sees,
 // which only proved the old badge was somewhere inside the right block --
 // true of the rejected Target/Back placement too, and therefore
 // insufficient on its own to distinguish an accepted fix from a rejected
 // one).
 //
-// OMNI §9.1 positive controls, three of them, so this cannot pass against
+// Three positive controls, so this cannot pass against
 // coincidentally-empty geometry: the bank tabs row and a populated
 // parameter cell (kModSlotRandomSh6, "Random S&H 6" -- the one modulation
 // source registered `/*connected=*/true` unconditionally,
@@ -926,9 +922,9 @@ TEST_CASE(modulation_header_sits_below_bank_row_and_above_parameter_cells) {
     REQUIRE_TRUE(FullyInside(sourceBounds, gridRegion));
 
     // The header itself, folded to ABSOLUTE (screen) coordinates. Bounds are
-    // still pinned by the OUTER row's own id (kModulationHeader) -- design.md
-    // "Placement" guarantees this id's geometry is unchanged by the
-    // frogg3rs-bank-carousel-arrows restructure. Its title TEXT, however, now
+    // still pinned by the OUTER row's own id (kModulationHeader) -- this id's
+    // geometry is unchanged by the frogg3rs-bank-carousel-arrows restructure.
+    // Its title TEXT, however, now
     // lives on the child kModulationHeaderTitle (the row's own draw commands
     // are empty; it is a container), so the content check below is
     // re-anchored there.
@@ -978,10 +974,10 @@ TEST_CASE(modulation_header_sits_below_bank_row_and_above_parameter_cells) {
     REQUIRE_TRUE(!AnyDrawnTextContains(tree, "BACK"));
 }
 
-// frogg3rs-bank-carousel-arrows task 1.3 (design.md "Testing"): at drill
+// At drill
 // level 0 the modulation-header band emits a centered back/forward arrow
 // pair instead of drawing nothing. This is the STRUCTURE/geometry half only
-// -- task group 2 wires the actions up to actual bank switching; this test
+// -- a separate mechanism wires the actions up to actual bank switching; this test
 // pins that the pair renders, carries the right action names, and sits
 // centered and fully inside the band, all independent of whatever
 // HandleAction eventually does with those actions.
@@ -991,7 +987,7 @@ TEST_CASE(bank_carousel_arrows_are_centered_in_the_modulation_header_band_at_top
     rig.RunBlocks(4);
 
     synth::ui::Surface& surface = rig.Application().PortableSurface();
-    // OMNI §9.1 positive control: confirm we are genuinely at the top level
+    // Positive control: confirm we are genuinely at the top level
     // (arrows are only specified there), not assuming a fresh rig's default.
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 0);
 
@@ -1031,9 +1027,8 @@ TEST_CASE(bank_carousel_arrows_are_centered_in_the_modulation_header_band_at_top
     REQUIRE_TRUE(std::fabs(pairMidpoint - bandMidpoint) <= kTolerance);
 }
 
-// frogg3rs-bank-carousel-arrows task 1.3: the band's own outer geometry
-// (design.md "Placement": "outer geometry identical in both drill states")
-// must not move by even a pixel between drill states, and the child
+// The band's own outer geometry -- "outer geometry identical in both drill
+// states" -- must not move by even a pixel between drill states, and the child
 // structure genuinely SWITCHES (arrows only at level 0, the title only while
 // drilled) rather than merely hiding one side. Complements the existing
 // modulation_header_shown_only_while_drilled_in_and_matches_the_level /
@@ -1075,8 +1070,8 @@ TEST_CASE(modulation_header_band_bounds_are_identical_across_drill_states_and_ar
     REQUIRE_TRUE(std::fabs(bandAtLevel0.height - bandAtLevel1.height) <= kTolerance);
 
     // While drilled, neither arrow node exists at all -- no hit target, no
-    // draw commands, nothing for a synthetic dispatch to even find (task
-    // group 2's HandleAction gate is a second, independent layer this test
+    // draw commands, nothing for a synthetic dispatch to even find
+    // (HandleAction's own gate is a second, independent layer this test
     // does not exercise).
     REQUIRE_TRUE(FindNodeById(drilledTree, synth_froggers::FroggersNodeIds::kBankPrevArrow) == nullptr);
     REQUIRE_TRUE(FindNodeById(drilledTree, synth_froggers::FroggersNodeIds::kBankNextArrow) == nullptr);
@@ -1093,10 +1088,9 @@ TEST_CASE(modulation_header_band_bounds_are_identical_across_drill_states_and_ar
     REQUIRE_TRUE(titleNode->drawCommands[1].kind == synth::ui::DrawCommand::Kind::Text);
 }
 
-// frogg3rs-bank-carousel-arrows task 2.2 (design.md "Testing" / "Behavior
-// decisions"): wires the arrow actions through the same single selection
-// authority (RequestBankSelect) the bank buttons use, so the highlight must
-// follow an arrow-driven step identically to a button-driven one -- same
+// Wires the arrow actions through the same single selection authority
+// (RequestBankSelect) the bank buttons use, so the highlight must follow
+// an arrow-driven step identically to a button-driven one -- same
 // checkAllBanksAndReturnSelectedIx idiom as
 // bank_buttons_are_button_kind_with_selected_flag_and_no_marker_character
 // above (:565-612), reused here as a local lambda since that one is scoped
@@ -1149,12 +1143,11 @@ TEST_CASE(bank_carousel_next_arrow_action_steps_the_active_bank_with_wrap_and_hi
     REQUIRE_TRUE(checkAllBanksAndReturnSelectedIx() == 0);
 }
 
-// frogg3rs-bank-carousel-arrows task 2.2: the back arrow's own wrap direction
-// (design.md "Behavior decisions": "previous from 0 -> 5"), a separate
-// TEST_CASE from the forward-stepping one above since it exercises the OTHER
-// action name and the OTHER wrap edge -- one kBankPrevious click from the
-// default bank (0) must land on the LAST bank (5), with exactly one bank
-// highlighted.
+// The back arrow's own wrap direction -- "previous from 0 -> 5" -- gets a
+// separate TEST_CASE from the forward-stepping one above since it exercises
+// the OTHER action name and the OTHER wrap edge -- one kBankPrevious click
+// from the default bank (0) must land on the LAST bank (5), with exactly
+// one bank highlighted.
 TEST_CASE(bank_carousel_previous_arrow_action_wraps_from_first_bank_to_last) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
         /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("bank_carousel_previous_wraps"));
@@ -1185,8 +1178,7 @@ TEST_CASE(bank_carousel_previous_arrow_action_wraps_from_first_bank_to_last) {
     REQUIRE_TRUE(rig.Application().ActiveBankIndex() == synth_froggers::kFroggersBankCount - 1);
 }
 
-// frogg3rs-bank-carousel-arrows task 2.2 (design.md "Behavior decisions",
-// MANDATORY preflight finding): pins the 2.1 drill-level-0 gate itself, not
+// MANDATORY preflight finding: pins the 2.1 drill-level-0 gate itself, not
 // just the arrow nodes' absence. `HandleAction` matches on action NAME with
 // no node-presence check (design's own citation, `:787-792`), so hiding the
 // arrow nodes while drilled (already covered by
@@ -1222,7 +1214,7 @@ TEST_CASE(bank_carousel_arrow_actions_are_rejected_while_drilled_in) {
 
     // The gate itself: a SYNTHETIC dispatch (surface.DispatchAction called
     // directly, not routed through any node/hit-test) of kBankNext must
-    // change neither the active bank nor the drill level -- per design.md,
+    // change neither the active bank nor the drill level --
     // an ungated branch would accept this and, via the ProcessFrame drain's
     // reconstruct-drillIn_-on-bank-change behaviour
     // (FroggersAppCore.hpp:627-641), silently exit the drill.
@@ -1283,7 +1275,7 @@ TEST_CASE(pressing_target_back_cell_through_the_surface_pops_exactly_one_drill_l
         std::to_string(static_cast<std::size_t>(synth_froggers::kModSlotVco2Audio))));
     rig.RunBlocks(4);
 
-    // OMNI §9.1 positive control: prove the descent actually REACHED level 3
+    // Positive control: prove the descent actually REACHED level 3
     // before testing that a Target/Back press pops from it -- a pop that
     // starts from a level the rig never reached would prove nothing.
     const std::size_t reachedLevel = rig.Application().ActiveDrillIn().Level();
@@ -1338,7 +1330,7 @@ TEST_CASE(encoder_ring_renders_fuegoized_value_not_raw_scene_center) {
     // Move Crunchy and the page parameter through the surface's own action
     // routing -- both via the generic encoder-drag message path now (the
     // chrome-band Crunchy slider/action was removed operator 2026-07-27,
-    // see design.md D11/Resolved-decisions and tasks.md 10.2; Crunchy is
+    // Crunchy is
     // reachable only via grid slot 15 now, addressed exactly like any other
     // bank parameter) -- both end-to-end through FroggersUiSurface, not by
     // calling FroggersParameterModel directly.
@@ -1353,7 +1345,7 @@ TEST_CASE(encoder_ring_renders_fuegoized_value_not_raw_scene_center) {
         synth_froggers::FroggersActions::kEncoderDrag,
         synth_froggers::FormatFroggersEncoderDrag(kPageParamPosition, 0.6f)));
 
-    // Task 5.5/9.4-style convergence pump: enough blocks for
+    // Convergence pump: enough blocks for
     // ProcessLitePhase2's UIDisplayCenter slew to catch up to the fuegoized
     // cached value (see FroggersParameterModelTests.cpp's own
     // fuego_seam_transform_reaches_cached_knob_value_matching_dsp_stack for
@@ -1486,7 +1478,7 @@ TEST_CASE(encoder_cell_never_emits_a_frame_draw_command) {
         }
     }
 
-    // OMNI §9.1 positive control: prove this cell is genuinely connected and
+    // Positive control: prove this cell is genuinely connected and
     // populated (body + ring commands actually present) so the "no frame"
     // assertion below cannot pass by accident against an empty/disconnected
     // command list -- AppendEncoderCell's own `hidden` branch DOES
@@ -1498,7 +1490,7 @@ TEST_CASE(encoder_cell_never_emits_a_frame_draw_command) {
     REQUIRE_TRUE(sawBody);
     REQUIRE_TRUE(sawRing);
 
-    // Second OMNI §9.1 positive control, specific to the size-based split
+    // Second positive control, specific to the size-based split
     // above: the default patch wires modulators onto this cell (Audio
     // bank's VCO1 pitch), so this cell DOES emit badge-chip
     // StrokeRoundedRect commands every run. Without this, "no frame" below
@@ -1514,7 +1506,7 @@ TEST_CASE(encoder_cell_never_emits_a_frame_draw_command) {
     REQUIRE_TRUE(!sawFrame);
 }
 
-// --- T4 (labels.md, operator-approved 2026-08-17): single-row labels, ------
+// --- Single-row labels, ------
 // --- never over the ring -----------------------------------------------
 
 // Recomputes AppendEncoderCell's own label-band geometry
@@ -1526,7 +1518,7 @@ TEST_CASE(encoder_cell_never_emits_a_frame_draw_command) {
 // approved label by calling the SAME public helper
 // (`BuildEncoderLabelRowCommands`) production calls -- so what follows is a
 // comparison against production's own code path, not a second
-// hand-written copy of its arithmetic (OMNI §8).
+// hand-written copy of its arithmetic.
 std::vector<synth::ui::DrawCommand> ExpectedEncoderLabelBandCommands(synth::Color bankBaseColor,
                                                                      const std::string& approvedLabel,
                                                                      float cellWidth, float cellHeight) {
@@ -1591,7 +1583,7 @@ bool TrailingCommandsMatch(const std::vector<synth::ui::DrawCommand>& actual,
     return true;
 }
 
-// T4.3(a): Envelope-bank cells emit exactly the single-row short-name
+// Envelope-bank cells emit exactly the single-row short-name
 // block; a truncation-class cell (Filter slot 0, "Comb offset") emits its
 // approved long label in full -- both checked by command count/geometry
 // (dpDotCount, and a full trailing-command match against
@@ -1642,7 +1634,7 @@ TEST_CASE(envelope_short_forms_and_filter_slot0_long_label_render_single_row_ver
     checkCell(2, 0, "Comb offset");
 }
 
-// T4.3(b): no label draw command's bounds intersect the ring's drawn arc,
+// No label draw command's bounds intersect the ring's drawn arc,
 // in ANY cell of ALL SIX banks -- computable from the command list. This is
 // the property the predecessor's rejected work violated (measured: ~95% of
 // the lower semicircle covered).
@@ -1776,14 +1768,14 @@ TEST_CASE(no_label_command_intersects_the_ring_in_any_cell_of_any_bank) {
                  synth_froggers::kFroggersBankCount * synth_froggers::FroggersEncoderGridLayout::kEncoderCount);
 }
 
-// T4.3(c): every rendered label matches labels.md VERBATIM, so a later
+// Every rendered label matches the approved label table VERBATIM, so a later
 // rename cannot silently reintroduce a truncation. Covers all 86 entries.
-// Deliberately an INDEPENDENT copy of labels.md's table (not a read of
+// Deliberately an INDEPENDENT copy of the approved label table (not a read of
 // `FroggersApprovedLabels()`, production's own copy) -- comparing
 // production's rendering against production's own table would not catch
 // production reading the WRONG source (e.g. reverting to
 // `FroggersParamSpec::name`, which is exactly what the predecessor did)
-// or a typo in that table; this is the independent oracle labels.md itself
+// or a typo in that table; this is the independent oracle that table itself
 // is.
 TEST_CASE(every_rendered_label_matches_the_approved_list_verbatim) {
     static const std::array<std::array<const char*, synth_froggers::kFroggersParamsPerBank>,
@@ -1850,7 +1842,7 @@ TEST_CASE(every_rendered_label_matches_the_approved_list_verbatim) {
                  synth_froggers::kFroggersBankCount * synth_froggers::kFroggersSlotsPerBank);
 }
 
-// Structural guard against a future labels.md edit silently overflowing the
+// Structural guard against a future label-table edit silently overflowing the
 // single-row grid: proves the thing that isn't structurally guaranteed --
 // that no approved label is longer than `kApprovedLabelGridColumns` -- over
 // every one of the 86 entries, not a hand-picked sample. Supersedes
@@ -1932,22 +1924,20 @@ TEST_CASE(scene_buttons_push_scene_blend_to_the_correct_extremes) {
     REQUIRE_TRUE(std::fabs(rig.UIState().sceneBlend.load() - 0.0f) < 0.001f);
 }
 
-// Label-visibility fix (2026-07-28), updated F.2d (2026-08-03, Sheaf pin
-// 77a3019e), REWRITTEN AGAIN by task F.3's CELL MAP amendment (2026-08-04):
-// "the Scene blend label sits BELOW its slider. This supersedes the F.2d
-// caption for scene-blend (a `ControlStyle::caption` can only lead, so
-// scene-blend returns to a hand-rolled label, now placed under the slider)."
+// The Scene blend label sits BELOW its slider. This supersedes an earlier
+// caption for scene-blend: a `ControlStyle::caption` can only lead, so
+// scene-blend uses a hand-rolled label, placed under the slider.
 //
 // `NodeKind::Slider` routes `node.label` to `juce::Slider::setName()` only
 // (PortableJuceBackend.hpp:1229-1232) -- no `juce::Label` is attached, so
 // nothing ever draws it; some adjacent Label node is required regardless of
-// which mechanism produces it. F.2d had made that mechanism
-// `ControlStyle::caption` (a sibling Label BEFORE the control); the CELL MAP
-// amendment reverts scene-blend specifically to a hand-rolled Label node
+// which mechanism produces it. That mechanism was once
+// `ControlStyle::caption` (a sibling Label BEFORE the control); scene-blend
+// now uses a hand-rolled Label node
 // (`FroggersNodeIds::kSceneBlendLabel`) placed AFTER the slider, because a
 // caption can only lead and the operator wants it below/trailing here.
 //
-// NOTE: task F.3's own test enumeration table classified this test as
+// NOTE: an earlier test enumeration classified this test as
 // UNAFFECTED, which does not hold once the CELL MAP amendment is applied --
 // see FroggersUiSurface.hpp's `AppendSceneBlendGroup()` comment for the same
 // note. The amendment is the more specific, more recently affirmed
@@ -1980,8 +1970,8 @@ TEST_CASE(scene_blend_slider_has_an_adjacent_label_node_carrying_its_text) {
     REQUIRE_TRUE(labelIx.has_value());
     REQUIRE_TRUE(sliderIx.has_value());
     // The label FOLLOWS its slider in node order, which in the Column both
-    // rows now use (AppendLabelledSlider(), task F.6) renders it BELOW the
-    // slider -- the opposite order from the retired F.2d caption, which
+    // rows now use (AppendLabelledSlider()) renders it BELOW the
+    // slider -- the opposite order from the retired caption, which
     // always led. Row 6 asserts the identical relationship; the two rows are
     // deliberately the same shape now.
     REQUIRE_TRUE(*labelIx == *sliderIx + 1);
@@ -2093,7 +2083,7 @@ TEST_CASE(bpm_slider_is_read_only_and_shows_recovered_tempo_while_externally_clo
     rig.RunBlocks(4);
     REQUIRE_TRUE(rig.Application().TempoExternallyClocked());
 
-    // Task 10.6: SetTempoBpm returns false and does nothing while slaved
+    // SetTempoBpm returns false and does nothing while slaved
     // (src/MasterClock.cpp:963-965) -- attempting to set 222 must not move
     // the active tempo, and the surface must not even forward the request
     // (FroggersUiSurface's own belt-and-suspenders guard).
@@ -2116,11 +2106,11 @@ TEST_CASE(bpm_slider_is_read_only_and_shows_recovered_tempo_while_externally_clo
     REQUIRE_TRUE(foundStatusText);
 }
 
-// UI-rework ITEM 5 (design.md A3f, tasks.md B.5, 2026-07-29): this test used
+// This test used
 // to be `bpm_label_indicates_no_effect_while_transport_is_stopped`, pinning
 // a "BPM (no effect while stopped)" annotation that switched in and out with
-// transport state. That annotation was never requested (design.md's process
-// note: an agent invented it "to improve discoverability") and, because
+// transport state. That annotation was never requested -- an agent invented
+// it "to improve discoverability" -- and, because
 // chrome is auto-flowed by control width (FroggersAutoFlowedChromeModel),
 // it re-flowed every neighbouring control on every Play/Stop -- operator:
 // "a really stupid feature I never asked for, and it changes the alignment
@@ -2176,32 +2166,32 @@ TEST_CASE(bpm_label_is_constant_across_transport_state) {
 // comment for the full trace of why the Slider's own label never draws and
 // what an adjacent Label node does/doesn't prove. This asserts the caption
 // Label node exists and reads the constant "BPM" text in both transport
-// states (UI-rework ITEM 5, design.md A3f -- the "(no effect while stopped)"
+// states (the "(no effect while stopped)"
 // annotation this test used to track is gone, see
 // `bpm_label_is_constant_across_transport_state`'s comment for why).
 //
 // NEITHER this pair NOR its scene-blend neighbour is a `ControlStyle::
 // caption`, and for the same single reason: `Builder::FinishControl`
 // (PortableUIBuilders.hpp:428-465) always emits a caption BEFORE its control
-// with no option to place it after, and since task F.6 (2026-08-05) BOTH
-// labels sit BELOW their slider. Filed as upstream ask 14 (caption
+// with no option to place it after, and since that change BOTH
+// labels sit BELOW their slider. Filed upstream (caption
 // placement); when it lands, both collapse into captions together.
 //
 // THE HISTORY HERE IS THE POINT, because this comment has twice asserted the
-// opposite. F.2d converted scene-blend to a caption and left this one
-// hand-rolled, citing B12's trailing-label instruction as a second live
-// cause; an implementer following F.2d's brief literally flipped this
-// label's order and flagged it rather than absorbing it, and the flip was
-// reverted. Then F.3's CELL MAP moved scene-blend's label BELOW its slider,
-// and F.6 moved this one below to match -- which retired B12 outright.
+// opposite. An earlier change converted scene-blend to a caption and left
+// this one hand-rolled, citing the standing trailing-label instruction as a
+// second live cause; an implementer following that change literally flipped
+// this label's order and flagged it rather than absorbing it, and the flip
+// was reverted. Then the cell-map rewrite moved scene-blend's label BELOW its slider,
+// and a later change moved this one below to match, retiring it outright.
 //
-// B12's stated reason was that a LEADING label sat between the two sliders
+// That instruction's stated reason was that a LEADING label sat between the two sliders
 // and read as labelling the wrong control; trailing was merely the only
 // alternative available while both labels shared a horizontal band. A label
 // directly beneath its own control cannot be misread that way, so both-below
-// serves B12's concern better than trailing did. The asymmetry B12 protected
-// was a means, not the goal -- and an earlier draft of F.6 missed exactly
-// that, keeping trailing and inventing a placement parameter to honour B12's
+// serves that concern better than trailing did. The asymmetry it protected
+// was a means, not the goal -- and an earlier draft of that change missed exactly
+// that, keeping trailing and inventing a placement parameter to honour its
 // literal words. An instruction's rationale is part of the instruction: when
 // the rationale dies, the instruction is up for re-derivation rather than
 // mechanical preservation.
@@ -2230,7 +2220,7 @@ TEST_CASE(bpm_slider_has_an_adjacent_label_node_with_the_constant_bpm_text) {
         // AppendLabelledSlider() emits renders it BELOW the slider -- the
         // same relationship the scene-blend row asserts. Keep this pinned to
         // the ORDER, not merely to the label's existence: an ordering
-        // assertion is what caught F.2d silently moving this label once
+        // assertion is what caught an earlier change silently moving this label once
         // already, and order is what distinguishes "labels its own control"
         // from "labels its neighbour's."
         REQUIRE_TRUE(*labelIx == *sliderIx + 1);
@@ -2374,7 +2364,7 @@ TEST_CASE(exactly_two_randomize_controls_and_no_retired_controls_anywhere) {
     REQUIRE_TRUE(HasButtonLabeled(tree, "Randomize All"));
     REQUIRE_TRUE(HasButtonLabeled(tree, "Randomize Page"));
 
-    // Retired controls (design D14): "Rand waveforms" and "Rand Resample"
+    // Retired controls: "Rand waveforms" and "Rand Resample"
     // must not appear anywhere.
     REQUIRE_TRUE(!HasButtonLabeled(tree, "Rand waveforms"));
     REQUIRE_TRUE(!HasButtonLabeled(tree, "Rand Resample"));
@@ -2434,7 +2424,7 @@ TEST_CASE(play_and_stop_controls_exist_and_gate_the_transport) {
                  stopNode->action->name == synth_froggers::FroggersActions::kStop);
     REQUIRE_TRUE(!stopNode->doubleClickAction.has_value());
 
-    // Non-default patch (task 6.12's default patch is already applied at
+    // Non-default patch (the default patch is already applied at
     // Init()) + transport stopped (the rig's own default state) -> silent,
     // matching FroggersAudioRoutingTests.cpp's own
     // silent_while_transport_is_stopped -- re-asserted here specifically
@@ -2465,7 +2455,7 @@ TEST_CASE(play_and_stop_controls_exist_and_gate_the_transport) {
     rig.RunBlocks(4);
 }
 
-// --- T5.2: Freeze button (proposal.md §6.4b-ii/§8.2, tasks.md T5.2) --------
+// --- T5.2: Freeze button ----------------------------------------------------
 //
 // A third Draw node beside Stop. Latching it OVERRIDES the Freeze encoder's
 // own clamp (T3.1a) rather than merely shortcutting the encoder to its
@@ -2525,7 +2515,7 @@ TEST_CASE(freeze_action_toggles_the_latch_and_a_second_click_releases_it) {
 // A pure function of (bounds, latched) -- no rig needed. Asserts the
 // EXCHANGE, not merely that the two command lists differ (a brightness
 // tweak would also satisfy "differ", which is exactly the thing this
-// control exists to avoid -- proposal.md §8.2).
+// control exists to avoid).
 TEST_CASE(freeze_draw_commands_genuinely_invert_plate_and_glyph_colours) {
     const synth::ui::Bounds bounds{0.0f, 0.0f, synth_froggers::kTransportPlateSize,
                                     synth_froggers::kTransportPlateSize};
@@ -2551,7 +2541,7 @@ TEST_CASE(freeze_draw_commands_genuinely_invert_plate_and_glyph_colours) {
 }
 
 // Reused by freeze_latched_grows_the_recirculating_level_beyond_unlatched_end_to_end
-// below at every measurement point (OMNI §6 helper rule: called repeatedly,
+// below at every measurement point (called repeatedly,
 // isolates a distinct transformation stage, prevents repeating the same
 // per-block sampling loop). Deliberately NOT dsp::StereoDelay::StateMagnitude()
 // (used elsewhere in this file): that scans the WHOLE lineL/lineR buffers
@@ -2580,11 +2570,11 @@ float PeakDelayWetMagnitude(synth_rig::SynthRig<synth_froggers::FroggersApp>& ri
 }
 
 // Reused by freeze_latched_grows_the_recirculating_level_beyond_unlatched_end_to_end
-// below for BOTH its rigs (OMNI §6 helper rule: 2 uses, isolates the "apply
+// below for BOTH its rigs (2 uses, isolates the "apply
 // a real patch and build up real recirculating energy" transformation stage)
 // -- so the only thing that can differ between the two rigs afterward is
 // whether SetFreezeLatched(true) was ever called on one of them. Returns
-// the peak wet level reached during priming (OMNI §9.1 positive control for
+// the peak wet level reached during priming (a positive control for
 // the caller: proof the instrument was actually live before divergence).
 float ApplyFreezeEndToEndPatchAndPrime(synth_rig::SynthRig<synth_froggers::FroggersApp>& rig) {
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
@@ -2620,8 +2610,8 @@ float ApplyFreezeEndToEndPatchAndPrime(synth_rig::SynthRig<synth_froggers::Frogg
 }
 
 // "This is the test that proves the override reached the DSP through the
-// real path rather than the DSP behaving correctly in isolation" (packet
-// brief, verbatim) -- unlike FroggersDspParityTests.cpp's own T3.1b tests
+// real path rather than the DSP behaving correctly in isolation"
+// -- unlike FroggersDspParityTests.cpp's own T3.1b tests
 // (e.g. stereo_delay_freeze_latched_grows_the_loop_measurably_beyond_unlatched_full_freeze,
 // which drives a bare dsp::StereoDelay/DelayParams by hand), this drives
 // audio through the real FroggersAppCore::ProcessBlock/RouteAudioSample
@@ -2633,7 +2623,7 @@ TEST_CASE(freeze_latched_grows_the_recirculating_level_beyond_unlatched_end_to_e
     synth_rig::SynthRig<synth_froggers::FroggersApp> unlatchedRig(
         /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("freeze_e2e_unlatched"));
 
-    // OMNI §9.1 positive control: confirm priming actually put a real,
+    // Positive control: confirm priming actually put a real,
     // non-negligible level into both delay lines before trusting anything
     // measured after divergence -- a null result out of a dead instrument
     // would be void, not negative.
@@ -2644,7 +2634,7 @@ TEST_CASE(freeze_latched_grows_the_recirculating_level_beyond_unlatched_end_to_e
 
     // Divergence: BOTH rigs get the SAME driving quantities -- Feedback
     // Drive above centre and the Freeze encoder at maximum (this test's own
-    // required setting, packet brief verbatim) -- applied identically to
+    // required setting) -- applied identically to
     // both. Only the BUTTON differs: latchedRig's is pressed, unlatchedRig's
     // never is (stays false, the default).
     synth_froggers::FroggersParameterModel& latchedModel = latchedRig.Application().Parameters();
@@ -2669,7 +2659,7 @@ TEST_CASE(freeze_latched_grows_the_recirculating_level_beyond_unlatched_end_to_e
     REQUIRE_TRUE(!unlatchedRig.SawNaN());
     REQUIRE_TRUE(std::isfinite(latchedLevel) && std::isfinite(unlatchedLevel));
 
-    std::cout << "  [T5.2 end-to-end] Feedback Drive knob=1.0 (fbDrive=4.0), Freeze encoder=1.0 (max) in both "
+    std::cout << "  [OBSERVED] Feedback Drive knob=1.0 (fbDrive=4.0), Freeze encoder=1.0 (max) in both "
                  "rigs; primed recirculating level latched-rig="
               << primedLatched << " unlatched-rig=" << primedUnlatched << "; swept to, after " << kMeasureBlocks
               << " post-divergence blocks: latched=" << latchedLevel << " unlatched=" << unlatchedLevel << "\n";
@@ -2688,7 +2678,7 @@ TEST_CASE(freeze_latched_grows_the_recirculating_level_beyond_unlatched_end_to_e
     // the measured blocks, so the margin is comfortably above float noise
     // without pinning a ratio the operator may retune by ear.
     REQUIRE_TRUE(latchedLevel > unlatchedLevel);
-    std::cout << "  [T5.2 end-to-end] latched/unlatched level ratio="
+    std::cout << "  [OBSERVED] latched/unlatched level ratio="
               << (latchedLevel / unlatchedLevel) << "\n";
 }
 
@@ -2796,11 +2786,11 @@ TEST_CASE(transport_survives_audio_device_reprepare_after_play) {
     REQUIRE_TRUE(rig.Engine().Clock().TransportState() == synth::ClockTransportState::Stopped);
 }
 
-// --- T5.3a/T5.3b: record capture, app core only (packet P7a) --------------
+// --- T5.3a/T5.3b: record capture, app core only -----------------------------
 //
 // FroggersAppCore's own bounded mono capture buffer -- arm/stop API, refusal
 // with a reason while the transport is stopped, truncation at capacity. No
-// UI/JUCE/file-writing involved (that is packet P7b); these tests drive the
+// UI/JUCE/file-writing involved (covered separately below); these tests drive the
 // core's public API directly through rig.Application(), same convention as
 // the other runtime tests in this file.
 
@@ -2892,7 +2882,7 @@ TEST_CASE(record_truncates_at_capacity_and_stops_growing) {
     rig.RunBlocks(4);
 }
 
-// --- T5.3b/T5.3c: Record button + WAV export (packet P7b) -----------------
+// --- T5.3b/T5.3c: Record button + WAV export --------------------------------
 //
 // The transport-row Record button (fourth Draw child beside Play/Stop/
 // Freeze), its HandleAction wiring to ArmRecording()/StopRecording() plus

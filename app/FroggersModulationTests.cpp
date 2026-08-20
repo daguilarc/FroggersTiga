@@ -80,8 +80,8 @@ struct Register {
 
 // Small fixture: manager + model + slate, ready to Step(). `extraDepthCapacity`
 // lets a test deliberately shrink storage to exercise the CanAllocate()
-// exhaustion / partial-randomize path (task 6.8's requirement, exercised
-// indirectly here via the ceiling test below).
+// exhaustion / partial-randomize path, exercised indirectly here via the
+// ceiling test below.
 struct Fixture {
     synth::ParameterManager manager;
     FroggersParameterModel model;
@@ -93,13 +93,12 @@ struct Fixture {
         slate.Prepare(48000.0);
     }
 
-    // T6 (openspec/changes/archive/2026-08-10-frogg3rs-external-audio-phantom-input/tasks.md):
-    // Step() itself no longer takes an external-audio-sample/-connected
-    // pair (production's only caller always fed a compile-time `0.0f`/
-    // `false`, so that per-sample plumbing was dead weight -- see Step()'s
-    // own comment). This fixture still wants per-call control over
+    // Step() itself does not take an external-audio-sample/-connected pair
+    // (production's only caller always fed a compile-time `0.0f`/`false`,
+    // so that per-sample plumbing was dead weight -- see Step()'s own
+    // comment). This fixture still wants per-call control over
     // connectedness for the tests below that toggle it (e.g. the "flip
-    // connected back to true" scenario), so it now calls the standalone
+    // connected back to true" scenario), so it calls the standalone
     // SetExternalAudioConnected(bool) setter directly instead of routing
     // the value through Step()'s argument list -- same observable effect
     // on Metadata(...).connected, same call-site shape for every one of
@@ -107,12 +106,12 @@ struct Fixture {
     void StepOnce(bool externalConnected = false) {
         FroggersModulationSlate::VcoDrive drive{0.5f, 0.5f, 0.0f};
         slate.SetExternalAudioConnected(externalConnected);
-        // Packet 8 (design D8/D8a) added a trailing transportQuarterNotes
-        // parameter to Step(); std::nullopt here reproduces this file's
-        // original packet-6 behavior exactly (no clock plan -> no tick -> no
-        // RandomShLane::Increment() call -- see StepClockDrivenLanes's own
-        // has_value() guard), since this file is not about clock-driven
-        // advance at all (that is FroggersMarblesClockTests.cpp, packet 8).
+        // Step() takes a trailing transportQuarterNotes parameter;
+        // std::nullopt here reproduces this file's original behavior exactly
+        // (no clock plan -> no tick -> no RandomShLane::Increment() call --
+        // see StepClockDrivenLanes's own has_value() guard), since this file
+        // is not about clock-driven advance at all (that is
+        // FroggersMarblesClockTests.cpp).
         slate.Step(drive, drive, drive, std::nullopt);
     }
 };
@@ -129,10 +128,10 @@ void ForEachTopLevelParameter(FroggersParameterModel& model, const std::function
 }
 
 // ============================================================================
-// task 6.1/6.2/6.6 -- 15 sources registered, in order, BY IDENTITY
+// 15 sources registered, in order, BY IDENTITY
 // ============================================================================
 
-TEST_CASE(slate_registers_fifteen_sources_in_design_d5_order_by_name) {
+TEST_CASE(slate_registers_fifteen_sources_in_the_expected_order_by_name) {
     Fixture fx;
     const std::array<const char*, 15> expectedNames{
         "Random S&H 1", "Random S&H 2", "Random S&H 3", "Random S&H 4", "Random S&H 5", "Random S&H 6",
@@ -146,7 +145,7 @@ TEST_CASE(slate_registers_fifteen_sources_in_design_d5_order_by_name) {
     }
     // All 15 names distinct -- catches a copy-paste bug that silently
     // overwrote one slot's metadata with another's (SetModulationSource
-    // bounds-checks only, task 6.2's "load-bearing order" warning).
+    // bounds-checks only, so order is load-bearing).
     for (std::size_t i = 0; i < expectedNames.size(); ++i) {
         for (std::size_t j = i + 1; j < expectedNames.size(); ++j) {
             REQUIRE_TRUE(fx.slate.Metadata(i).name != fx.slate.Metadata(j).name);
@@ -154,11 +153,11 @@ TEST_CASE(slate_registers_fifteen_sources_in_design_d5_order_by_name) {
     }
 }
 
-// "By identity, not by count" (task 6.2/6.6): prove each VCO-audio/EF slot is
-// wired to ITS OWN VCO, not aliased to a sibling's, by varying only ONE VCO's
-// drive and confirming ONLY that VCO's audio+EF sources (and none of the
-// other ten non-VCO sources) move away from the neutral baseline they'd
-// otherwise settle at.
+// "By identity, not by count": prove each VCO-audio/EF slot is wired to ITS
+// OWN VCO, not aliased to a sibling's, by varying only ONE VCO's drive and
+// confirming ONLY that VCO's audio+EF sources (and none of the other ten
+// non-VCO sources) move away from the neutral baseline they'd otherwise
+// settle at.
 TEST_CASE(vco_audio_and_ef_sources_are_wired_to_the_correct_identity_not_just_present) {
     Fixture fx;
     FroggersModulationSlate::VcoDrive silent{0.5f, 0.5f, 0.0f};  // pitch=mid, shape=mid, no PM
@@ -191,7 +190,7 @@ TEST_CASE(vco_audio_and_ef_sources_are_wired_to_the_correct_identity_not_just_pr
     }
     REQUIRE_TRUE(vco1Moved);
     // VCO2/VCO3 audio sources must be UNAFFECTED by VCO1's drive change
-    // (design D7: zero cross-VCO terms) -- their inputs never changed, so
+    // (zero cross-VCO terms) -- their inputs never changed, so
     // their periodic (already-oscillating) values should still land within
     // the same excursion range as the baseline, not systematically shifted.
     // A precise no-op check: re-running the identical silent/silent inputs
@@ -204,7 +203,7 @@ TEST_CASE(vco_audio_and_ef_sources_are_wired_to_the_correct_identity_not_just_pr
 }
 
 // ============================================================================
-// task 6.4/6.6 -- drill-in level cap and depth materialization
+// drill-in level cap and depth materialization
 // ============================================================================
 
 TEST_CASE(depth_cells_materialize_on_level_one_open_for_connected_sources) {
@@ -223,16 +222,13 @@ TEST_CASE(depth_cells_materialize_on_level_one_open_for_connected_sources) {
     }
 }
 
-// F5.3 (frogg3rs-blowout-and-drilldown-repair) retargeted this from "third
-// level refused" to "fourth level refused": kMaxDrillLevel moved from 2 to
-// 3, so the exact press sequence this test used to pin at level 2 now
-// legitimately succeeds and reaches level 3 (see
+// This test pins "fourth level refused," not "third": kMaxDrillLevel moved
+// from 2 to 3, so the exact press sequence this test used to pin at level 2
+// now legitimately succeeds and reaches level 3 (see
 // drill_in_reaches_level_three_with_genuinely_open_views_then_back_unwinds_one_level_at_a_time).
 // The cap-refusal behavior itself is unchanged -- only the depth it applies
 // at moved by exactly the same one level the cap itself moved by -- so this
-// keeps pinning "one press past the cap is refused" at the new boundary
-// rather than leaving a now-incorrect assertion red for a reason the F5.3
-// task packet did not call out by name.
+// keeps pinning "one press past the cap is refused" at the new boundary.
 TEST_CASE(fourth_level_drill_in_is_refused) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);
@@ -264,13 +260,11 @@ TEST_CASE(back_exits_to_parameter_grid_from_level_one) {
     REQUIRE_TRUE(!drillIn.BankRef().ShowingModulation());
 }
 
-// E.2 (design A7a, operator override 2026-07-29): REVISED from this file's
-// old "back exits to the parameter grid from any level" claim, which the
-// operator has now overruled for level 2 specifically -- from level 2, Back
-// must step to level 1 (the level-1 parameter's own modulation-source view),
-// landing on the SAME parameter that was open before the level-2 press, not
-// a full exit to the parameter grid. A second Back() from that level-1 state
-// still goes all the way to level 0 (level 1's Back is unchanged).
+// From level 2, Back() must step to level 1 (the level-1 parameter's own
+// modulation-source view), landing on the SAME parameter that was open
+// before the level-2 press, not a full exit to the parameter grid. A second
+// Back() from that level-1 state still goes all the way to level 0 (level
+// 1's Back is unchanged).
 TEST_CASE(back_from_level_two_returns_to_the_same_level_one_parameter_then_back_again_exits_to_grid) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);
@@ -296,17 +290,14 @@ TEST_CASE(back_from_level_two_returns_to_the_same_level_one_parameter_then_back_
     REQUIRE_TRUE(!drillIn.BankRef().ShowingModulation());
 }
 
-// F5.3 (frogg3rs-blowout-and-drilldown-repair): kMaxDrillLevel raised from 2
-// to 3. F4.3 traced the real level-3 risk -- Bank::OpenModulationView
-// returns early WITHOUT opening the view when parameter storage is short, so
-// a naive Level()-only check would pass even on a silent no-op. This test
-// therefore checks BankRef().ShowingModulation() at every step of the
-// descent, not just the level counter, then walks Back() down one level at a
-// time, and confirms the new cap refuses a fourth level exactly the way the
-// old cap refused a third (see fourth_level_drill_in_is_refused above). The
-// peak materialized-depth-parameter count is recorded as a reported
-// observation only -- F4.3 retracted the old "~105 vs 3615" allocation
-// target, its mechanism was measured wrong -- never as a pass condition.
+// kMaxDrillLevel is 3. Bank::OpenModulationView returns early WITHOUT
+// opening the view when parameter storage is short, so a naive Level()-only
+// check would pass even on a silent no-op. This test therefore checks
+// BankRef().ShowingModulation() at every step of the descent, not just the
+// level counter, then walks Back() down one level at a time, and confirms
+// one press past the cap is refused (see fourth_level_drill_in_is_refused
+// above). The peak materialized-depth-parameter count is recorded as a
+// reported observation only, never as a pass condition.
 TEST_CASE(drill_in_reaches_level_three_with_genuinely_open_views_then_back_unwinds_one_level_at_a_time) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);
@@ -326,7 +317,7 @@ TEST_CASE(drill_in_reaches_level_three_with_genuinely_open_views_then_back_unwin
     synth::Parameter* const levelTwoParam = drillIn.BankRef().SelectedParameter();
     REQUIRE_TRUE(levelTwoParam != nullptr);
 
-    drillIn.PressEncoder(static_cast<synth::PhysicalEncoderId>(kModSlotVco2Audio));  // -> level 3 (only reachable since F5.3)
+    drillIn.PressEncoder(static_cast<synth::PhysicalEncoderId>(kModSlotVco2Audio));  // -> level 3
     REQUIRE_TRUE(drillIn.Level() == 3);
     REQUIRE_TRUE(drillIn.BankRef().ShowingModulation());
     synth::Parameter* const levelThreeParam = drillIn.BankRef().SelectedParameter();
@@ -377,7 +368,7 @@ TEST_CASE(drill_in_reaches_level_three_with_genuinely_open_views_then_back_unwin
 }
 
 // ============================================================================
-// task 6.5/6.6/6.7 -- external audio: present but inert with no input
+// external audio: present but inert with no input
 // ============================================================================
 
 TEST_CASE(external_audio_cells_present_and_inert_with_no_input) {
@@ -401,9 +392,9 @@ TEST_CASE(external_audio_cells_present_and_inert_with_no_input) {
     }
     drillIn.Back();
 
-    // OMNI 9.1 positive control: flip an input on and watch the SAME two
-    // kinds of assertion -- the metadata bit, AND the surface-level depth
-    // cell a real operator press would see -- go the other way in this same
+    // Positive control: flip an input on and watch the SAME two kinds of
+    // assertion -- the metadata bit, AND the surface-level depth cell a
+    // real operator press would see -- go the other way in this same
     // fixture, same run, not just a flipped internal bool.
     fx.StepOnce(/*externalConnected=*/true);
     REQUIRE_TRUE(fx.slate.Metadata(kModSlotExternalAudio).connected);
@@ -482,7 +473,7 @@ TEST_CASE(disconnected_external_audio_never_receives_randomized_depth) {
 }
 
 // ============================================================================
-// task 6.11 -- randomize semantics (design D14)
+// randomize semantics
 // ============================================================================
 
 TEST_CASE(randomize_all_on_parameter_page_never_creates_level_two_depths) {
@@ -570,12 +561,11 @@ TEST_CASE(randomize_all_on_level_one_grid_materializes_that_parameters_own_level
     }
 }
 
-// F4.2 (frogg3rs-blowout-and-drilldown-repair; operator: "randomize all in
-// level 1 shouldn't navigate me out wtf"): F4.1 deleted the PressEncoder/
-// Back round trips that used to eject the operator back to level 0 by the
-// end of a level-1 Randomize All. This pins the fix directly: the level must
-// not move, and the deeper (level-2) randomization must still happen even
-// though no view is ever opened to reach it.
+// This test guards against a real regression: a level-1 Randomize All used
+// to eject the operator back to level 0 (by round-tripping through
+// PressEncoder/Back). The level must not move, and the deeper (level-2)
+// randomization must still happen even though no view is ever opened to
+// reach it.
 TEST_CASE(randomize_all_on_level_one_grid_never_ejects_and_still_reaches_level_two) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);
@@ -585,21 +575,19 @@ TEST_CASE(randomize_all_on_level_one_grid_never_ejects_and_still_reaches_level_t
     drillIn.PressEncoder(0);  // -> level 1 on `focused`
     REQUIRE_TRUE(drillIn.Level() == 1);
 
-    // NOTE (brief/code contradiction -- reported, not silently resolved):
-    // the F4.2 task brief asked this assertion to read `LastRandomizePartial()`.
-    // That accessor lives on FroggersApp (FroggersAppCore.hpp:420), published
-    // from ProcessFrame() and reachable only via a SynthRig/rig.Application()
-    // fixture (as FroggersHeadlessTests.cpp uses) -- it does not exist on
-    // this file's bare manager+model+slate Fixture, and the same brief item
-    // separately says not to invent a new harness here. `result.partial`
-    // below is the exact underlying signal LastRandomizePartial() publishes
-    // (that accessor's own comment: true when "the MOST RECENT Randomize
-    // All/Page operation left FroggersRandomizeResult.partial true"), and is
-    // this file's own established idiom for the same check -- see the
-    // 793-ceiling test above.
+    // `LastRandomizePartial()` is not usable here: that accessor lives on
+    // FroggersApp (FroggersAppCore.hpp), published from ProcessFrame() and
+    // reachable only via a SynthRig/rig.Application() fixture (as
+    // FroggersHeadlessTests.cpp uses) -- it does not exist on this file's
+    // bare manager+model+slate Fixture. `result.partial` below is the exact
+    // underlying signal LastRandomizePartial() publishes (that accessor's
+    // own comment: true when "the MOST RECENT Randomize All/Page operation
+    // left FroggersRandomizeResult.partial true"), and is this file's own
+    // established idiom for the same check -- see the 793-ceiling test
+    // above.
     const auto result = RandomizeAll(fx.manager, drillIn, fx.model);
 
-    // 1) Still at level 1 -- the whole point of F4: no navigation out.
+    // 1) Still at level 1: a level-1 Randomize All must not navigate out.
     REQUIRE_TRUE(drillIn.Level() == 1);
 
     // 2) The deeper randomization still happened even though no view was
@@ -639,11 +627,10 @@ TEST_CASE(crunchy_is_never_randomized_by_either_button_in_any_view) {
     REQUIRE_TRUE(crunchy.SceneCenter(0) == before);
 }
 
-// REVISED 2026-07-29 (operator): the two buttons must now DIFFER on Crispy.
-// This test previously asserted only that *at least one of them* moved it,
-// which both the old behaviour (both randomize it) and the new one (only Page
-// does) satisfy -- so it could not tell them apart. It now pins each
-// separately.
+// The two buttons must DIFFER on Crispy. A weaker assertion that only checks
+// whether *at least one of them* moved it cannot tell "both buttons
+// randomize it" apart from "only Page does" -- both satisfy it -- so this
+// pins each button's effect separately.
 //
 // Why Randomize All must leave it alone: local Crispy exists on all six pages,
 // so randomizing it six times over is effectively randomizing global Crunchy,
@@ -717,53 +704,45 @@ TEST_CASE(randomize_page_on_mod_detail_grid_changes_only_that_parameters_own_dep
 }
 
 // ============================================================================
-// E.1 (design A6) -- randomize-depth count distribution
+// randomize-depth count distribution
 // ============================================================================
 // Sheaf's own private Bank::RandomizeModulationDepths coin loop is geometric
 // FROM ZERO (P(0)=50%), so a single RandomizePage call at drill-in level 1/2
 // used to be a no-op half the time. detail::RandomizeParameterModulationDepths
-// (FroggersModulation.hpp) replaces the count/source selection app-side
-// (design D14's split -- Sheaf still performs every write). All three
-// properties below are statistical, not single-sample: a probability
-// distribution cannot be verified from one draw.
+// (FroggersModulation.hpp) replaces the count/source selection app-side --
+// Sheaf still performs every write. All three properties below are
+// statistical, not single-sample: a probability distribution cannot be
+// verified from one draw.
 
-// W1.2/A2 (design A6, REVISED from this test's original
-// "randomize_page_mod_detail_is_never_a_no_op_across_500_trials"): the
-// sixth green-while-wrong guard (tasks.md W1.0's own citation of THIS test,
-// FroggersModulationTests.cpp:524-624 in the pre-fix file) pinned only
-// `SceneCenter(0)` -- the raw commanded value RandomizeVisibleValue writes
-// directly and immediately -- and so stayed green while the drill-in knob
-// (which reads `UIDisplayCenter`, populated only by a smoothed one-shot
-// nudge inside RandomizeVisibleValue itself, never ticked again for a
-// parameter that is never in `topLevelParameters_`) stayed visually stuck at
-// center. This rewrite pins `UIDisplayCenter` instead -- the property that
-// was actually wrong (W1.0/W1.1a) -- while keeping the original "never a
-// no-op" property alive too, since A1's zero-then-draw still guarantees at
-// least one source is always drawn (`count` is never 0 in
-// RandomizeParameterModulationDepths's weighted table).
+// The drill-in knob's display value (`UIDisplayCenter`) is populated only
+// by a smoothed one-shot nudge inside RandomizeVisibleValue itself, and is
+// never ticked again for a parameter that is never in `topLevelParameters_`
+// -- so a check that pins only the raw commanded value (`SceneCenter(0)`,
+// which RandomizeVisibleValue writes directly and immediately) can stay
+// green while the displayed knob is visually stuck at center. This test
+// pins `UIDisplayCenter` to catch that, while also keeping the original
+// "never a no-op" property alive: `count` is never 0 in
+// RandomizeParameterModulationDepths's weighted table, so at least one
+// source is always drawn.
 //
-// `fx.manager.ComputeAllParameters()` is still called per trial, but for a
-// DIFFERENT reason than the pre-fix version of this test used it for (see
-// the median-count test below, where the old reason -- settling
-// cross-call SceneCenter drift -- no longer applies and the call was
-// removed entirely). Here it stands in for A2's fix, which in the real app
-// lives in `FroggersAppCore::ProcessFrame()` (the audio-thread drain) and
-// is therefore NOT exercised by this file's bare-ParameterManager fixture at
-// all -- without this call, `UIDisplayCenter` would stay stale by
-// construction, exactly reproducing W1.0's S2 symptom.
+// `fx.manager.ComputeAllParameters()` is called per trial to stand in for
+// the real app's fix, which lives in `FroggersAppCore::ProcessFrame()` (the
+// audio-thread drain) and is therefore NOT exercised by this file's
+// bare-ParameterManager fixture at all -- without this call,
+// `UIDisplayCenter` would stay stale by construction.
 TEST_CASE(randomize_page_mod_detail_is_never_a_no_op_and_updates_the_display_across_500_trials) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);  // 15 connected sources
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
     drillIn.PressEncoder(0);  // -> level 1; eagerly materializes all 15 depth cells (Bank::OpenModulationView)
     synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
-    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;  // F3: single named constant
+    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;  // single named constant
     constexpr float kTolerance = 1e-4f;
 
     constexpr int kTrials = 500;
     for (int trial = 0; trial < kTrials; ++trial) {
         RandomizePage(fx.manager, drillIn);
-        fx.manager.ComputeAllParameters();  // A2's reseed -- see this test's header comment.
+        fx.manager.ComputeAllParameters();  // reseed -- see this test's header comment.
 
         bool anyDisplayMoved = false;
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
@@ -773,7 +752,7 @@ TEST_CASE(randomize_page_mod_detail_is_never_a_no_op_and_updates_the_display_acr
             }
         }
         // ZERO no-ops across all 500 trials, and the DISPLAY (not just the
-        // commanded value) reflects it -- W1.2's own requirement.
+        // commanded value) reflects it.
         REQUIRE_TRUE(anyDisplayMoved);
     }
 }
@@ -789,21 +768,19 @@ TEST_CASE(randomize_depth_helper_draws_distinct_sources_even_from_an_adversarial
     }
     synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
 
-    // Force count = 4 (a single NextRandomCoin() landing in F1.2's mode-2
-    // table's [0.92,0.98) bucket -- retargeted 2026-08-07, was [0.70,0.90)
-    // under A6's superseded 10/30/30/20; see FroggersModulation.hpp's own
-    // table comment) and feed an ADVERSARIAL NextRandomIndex that always
-    // returns the LAST valid index of whatever range it's asked -- a "draw
-    // with replacement, no exclusion" loop (Sheaf's own private
-    // Bank::RandomizeModulationDepths, design A6's "two properties... the
-    // replacement should not inherit") would pick a fixed relative position
+    // Force count = 4 (a single NextRandomCoin() landing in the mode-2
+    // table's [0.92,0.98) bucket -- see FroggersModulation.hpp's own table
+    // comment) and feed an ADVERSARIAL NextRandomIndex that always returns
+    // the LAST valid index of whatever range it's asked -- a "draw with
+    // replacement, no exclusion" loop (Sheaf's own private
+    // Bank::RandomizeModulationDepths) would pick a fixed relative position
     // on every one of its independent draws under a feed like this; a
     // correct partial Fisher-Yates cannot, because each pick's search window
     // shrinks and is offset by the picks already made, so it is forced to
     // exercise real swaps here rather than degenerating to a no-op permutation.
     fx.manager.SetRandomSource(
         []() { return 0.3f; },                                       // NextRandomValue (irrelevant to selection)
-        []() { return 0.95f; },                                      // NextRandomCoin -> count=4 (F1.2 table)
+        []() { return 0.95f; },                                      // NextRandomCoin -> count=4 (mode-2 table)
         [](std::size_t exclusiveMax) { return exclusiveMax - 1; });  // NextRandomIndex: always top-of-range
 
     detail::RandomizeParameterModulationDepths(fx.manager, focused);
@@ -818,8 +795,8 @@ TEST_CASE(randomize_depth_helper_draws_distinct_sources_even_from_an_adversarial
     REQUIRE_TRUE(touchedCount == 4);
 }
 
-// A1 (non-additive randomize) is why either histogram test below can measure
-// a call's draw count as "how many depths are non-neutral immediately after
+// Non-additive randomize is why either histogram test below can measure a
+// call's draw count as "how many depths are non-neutral immediately after
 // it," with no round-to-round diffing: RandomizeParameterModulationDepths
 // zeroes the target's existing depths (both scene poles) BEFORE every draw,
 // so each call starts from a known, exact baseline (`SceneCenter(0) == 0.5`)
@@ -827,17 +804,17 @@ TEST_CASE(randomize_depth_helper_draws_distinct_sources_even_from_an_adversarial
 // is needed here for the same reason (contrast the no-op/display test above,
 // which needs it for `UIDisplayCenter`, not `SceneCenter`).
 //
-// F1.2/F1.3 (frogg3rs-blowout-and-drilldown-repair, 2026-08-07): shared
-// assertions for a count histogram against the mode-2 table -- reused by the
-// level-0 test and the level-1/level-2 regression pin below, so the three
-// properties (mode, rare 4+, never zero) are pinned exactly once rather than
-// duplicated per level. Asserts on the resulting COUNT DISTRIBUTION, not on
-// call counts -- the predecessor's version of this test (median-based, one
-// vector of samples) is the sixth green-while-wrong guard on record for
-// pinning the wrong layer; this one pins the actual observable shape.
+// Shared assertions for a count histogram against the mode-2 table -- reused
+// by the level-0 test and the level-1/level-2 regression pin below, so the
+// three properties (mode, rare 4+, never zero) are pinned exactly once
+// rather than duplicated per level. Asserts on the resulting COUNT
+// DISTRIBUTION, not on call counts -- the predecessor's version of this test
+// (median-based, one vector of samples) is the sixth green-while-wrong guard
+// on record for pinning the wrong layer; this one pins the actual observable
+// shape.
 void RequireModeTwoCountDistribution(const std::array<int, FroggersParameterModel::kNumModulators + 1>& histogram,
                                       int trials, const char* label) {
-    REQUIRE_TRUE(histogram[0] == 0);  // F1.2: count is never 0.
+    REQUIRE_TRUE(histogram[0] == 0);  // count is never 0.
 
     std::size_t mode = 1;
     for (std::size_t count = 2; count < histogram.size(); ++count) {
@@ -845,7 +822,7 @@ void RequireModeTwoCountDistribution(const std::array<int, FroggersParameterMode
             mode = count;
         }
     }
-    REQUIRE_TRUE(mode == 2);  // F1.2: 46% > 26% > 20% > 6% > 2%, strictly.
+    REQUIRE_TRUE(mode == 2);  // 46% > 26% > 20% > 6% > 2%, strictly.
 
     int atLeastFour = 0;
     int atLeastSeven = 0;
@@ -859,17 +836,17 @@ void RequireModeTwoCountDistribution(const std::array<int, FroggersParameterMode
         }
         sum += static_cast<double>(count) * static_cast<double>(histogram[count]);
     }
-    // F1.2 puts P(>=4) at 8%, against A6's old 30%. "Materially below 15%"
-    // (this task's own bar) leaves a wide, sample-size-appropriate margin
-    // rather than one tightened until it happens to pass: even at `trials`
-    // as low as 200 the binomial standard error at p=0.08 is ~1.9 points, so
-    // 15% sits roughly 3.7 standard errors above the true rate.
+    // P(>=4) is 8% under the mode-2 table. "Materially below 15%" leaves a
+    // wide, sample-size-appropriate margin rather than one tightened until
+    // it happens to pass: even at `trials` as low as 200 the binomial
+    // standard error at p=0.08 is ~1.9 points, so 15% sits roughly 3.7
+    // standard errors above the true rate.
     REQUIRE_TRUE(atLeastFour < trials * 0.15);
 
     // [OBSERVED] -- not a pass condition (matches this file's own convention
     // for recording a measurement alongside its pass condition, e.g. the
     // level-three drill-in test's own peak-count print): the actual sampled
-    // shape, for a human to compare against F1.2's table in
+    // shape, for a human to compare against the mode-2 table in
     // FroggersModulation.hpp.
     std::cout << "[OBSERVED] " << label << " count histogram over " << trials << " trials:";
     for (std::size_t count = 1; count <= 4 && count < histogram.size(); ++count) {
@@ -889,7 +866,7 @@ TEST_CASE(randomize_depth_helper_level_zero_count_distribution_has_mode_two_acro
     constexpr int kTrials = 1000;
     std::array<int, FroggersParameterModel::kNumModulators + 1> histogram{};
     for (int trial = 0; trial < kTrials; ++trial) {
-        RandomizeAll(fx.manager, drillIn, fx.model);  // Level()==0: the level-0 draw (F1.3 item 1).
+        RandomizeAll(fx.manager, drillIn, fx.model);  // Level()==0: the level-0 draw.
         int nonNeutral = 0;
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
             synth::Parameter* depth = focused.ModulationDepthParameter(modIx);
@@ -903,9 +880,9 @@ TEST_CASE(randomize_depth_helper_level_zero_count_distribution_has_mode_two_acro
     RequireModeTwoCountDistribution(histogram, kTrials, "level-0");
 }
 
-// F1.3 item 2 (frogg3rs-blowout-and-drilldown-repair): "the same distribution
-// must apply at EVERY level, not just level 0" -- a REGRESSION PIN, not a
-// fix, since all four RandomMod dispatch sites already share the one
+// "The same distribution must apply at EVERY level, not just level 0" -- a
+// REGRESSION PIN, not a fix, since all four RandomMod dispatch sites already
+// share the one
 // `detail::RandomizeParameterModulationDepths` definition (retuning the table
 // changes every level by construction). Traced structurally in
 // FroggersModulation.hpp: RandomizeAll's Level()==1 branch calls that shared
@@ -938,14 +915,12 @@ TEST_CASE(randomize_all_level_one_press_gives_its_own_depths_and_each_depths_sub
     for (int trial = 0; trial < kTrials; ++trial) {
         RandomizeAll(fx.manager, drillIn, fx.model);  // Level()==1: own depths + each depth's own sub-depths.
         ++level1Histogram[static_cast<std::size_t>(countNonNeutral(focused))];
-        // RETARGETED 2026-08-07: the descent now visits only depths that are
-        // ACTUALLY MODULATING, not every materialized one. This loop used to
-        // sample all materialized depths and assert the mode-2 shape over that
-        // whole population, which is why it went red -- a neutral depth now
-        // correctly carries ZERO sub-depths, so it contributed to
-        // `histogram[0]`, which the shared "count is never 0" assertion
-        // rejects. That is the fix working, not a regression: sampling a
-        // population the code deliberately no longer touches is measuring the
+        // The descent visits only depths that are ACTUALLY MODULATING, not
+        // every materialized one: a neutral depth must carry ZERO
+        // sub-depths, so a loop that samples all materialized depths
+        // (including neutral ones) would feed `histogram[0]`, which the
+        // shared "count is never 0" assertion rejects -- sampling a
+        // population the code deliberately does not touch measures the
         // wrong thing.
         //
         // So: modulating depths feed the distribution histogram, and neutral
@@ -954,8 +929,7 @@ TEST_CASE(randomize_all_level_one_press_gives_its_own_depths_and_each_depths_sub
         // ModulatorsAffectingMask counts a depth that merely HAS sub-modulation
         // (ParameterModulation.cpp:2356-2365 via HasNonZeroState), so a neutral
         // depth with sub-depths would light up as a badge for a source that is
-        // modulating nothing -- measured at 13 badges against 1 live source
-        // before this landed.
+        // modulating nothing -- measured at 13 badges against 1 live source.
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
             synth::Parameter* depthParam = focused.ModulationDepthParameter(modIx);
             if (depthParam == nullptr) {
@@ -979,16 +953,14 @@ TEST_CASE(randomize_all_level_one_press_gives_its_own_depths_and_each_depths_sub
 }
 
 // ============================================================================
-// A1/A3 (tasks.md CONSOLIDATED PUSH) -- non-additivity and scene-pair
-// semantics
+// non-additivity and scene-pair semantics
 // ============================================================================
 
-// A1: pins non-additivity directly (not just "never a no-op," which A1
-// itself does not change) -- two successive Randomize All presses must NOT
-// exhibit the old bug's signature, where the nonzero-source count for a
-// given parameter can only ever grow (nothing ever zeroed a previously-
-// randomized source, tasks.md W1.0's S1). Checked at BOTH scene poles
-// (A3's own non-additivity requirement -- "non-additive in both scenes").
+// This test pins non-additivity directly (not just "never a no-op") -- two
+// successive Randomize All presses must NOT exhibit the old bug's signature,
+// where the nonzero-source count for a given parameter could only ever grow
+// (nothing ever zeroed a previously-randomized source). Checked at BOTH
+// scene poles ("non-additive in both scenes").
 TEST_CASE(randomize_all_is_non_additive_two_successive_presses_can_decrease_the_count) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);
@@ -1006,12 +978,12 @@ TEST_CASE(randomize_all_is_non_additive_two_successive_presses_can_decrease_the_
         return count;
     };
 
-    // Under the pre-A1 additive bug, `count2 < count1` could never happen --
-    // a previously-drawn source is never zeroed, so the set (and therefore
-    // the count) can only grow or stay the same across repeated presses.
-    // Under the A1 fix, each press draws an independent fresh set, so a
-    // strictly smaller count on the second press must eventually be
-    // observed across enough trial pairs if the fix is real.
+    // Under the old additive bug, `count2 < count1` could never happen -- a
+    // previously-drawn source is never zeroed, so the set (and therefore the
+    // count) can only grow or stay the same across repeated presses. Under
+    // the fix, each press draws an independent fresh set, so a strictly
+    // smaller count on the second press must eventually be observed across
+    // enough trial pairs if the fix is real.
     bool sawDecreaseScene0 = false;
     bool sawDecreaseScene1 = false;
     constexpr int kTrialPairs = 200;
@@ -1038,12 +1010,11 @@ TEST_CASE(randomize_all_is_non_additive_two_successive_presses_can_decrease_the_
     REQUIRE_TRUE(sawDecreaseScene1);
 }
 
-// A3: for each parameter Randomize All touches, the SET of nonzero-depth
-// sources must be IDENTICAL in both scene poles (so the badge, which is
-// true if ANY scene is nonzero, never disagrees with what a specific scene
-// actually holds), while the VALUES differ per pole (so blending between
-// scenes is audible). tasks.md's own A3 decision, taken from the operator's
-// proposal.
+// For each parameter Randomize All touches, the SET of nonzero-depth sources
+// must be IDENTICAL in both scene poles (so the badge, which is true if ANY
+// scene is nonzero, never disagrees with what a specific scene actually
+// holds), while the VALUES differ per pole (so blending between scenes is
+// audible).
 TEST_CASE(randomize_all_scene_pair_has_identical_source_membership_but_different_values) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);
@@ -1064,9 +1035,8 @@ TEST_CASE(randomize_all_scene_pair_has_identical_source_membership_but_different
             const bool nonzeroScene1 = detail::DepthIsModulatingInScene(*depth, 1);
             // Identical source membership: a materialized depth that was
             // actually drawn this operation must be nonzero in BOTH poles,
-            // never just one (that mismatch is exactly W1.0's badge/depth
-            // symptom: "randomizing only scene 0 therefore lights the badge
-            // in both scenes while scene 1 reads zero").
+            // never just one -- otherwise randomizing only scene 0 lights
+            // the badge in both scenes while scene 1 reads zero.
             REQUIRE_TRUE(nonzeroScene0 == nonzeroScene1);
             if (nonzeroScene0 && depth->SceneCenter(0) != depth->SceneCenter(1)) {
                 foundAValueDifference = true;
@@ -1080,23 +1050,23 @@ TEST_CASE(randomize_all_scene_pair_has_identical_source_membership_but_different
 }
 
 // ============================================================================
-// task 6.12 -- default patch (design D16)
+// default patch
 // ============================================================================
 
 // NOTE on GetRaw() vs SceneCenter(): a Parameter's GetRaw()/currentCenter_ is
 // a per-SAMPLE-processed, smoothed value (Parameter::ProcessLitePhase1's
 // `currentCenter_ += alpha*(targetCenter_-currentCenter_)`) that only
 // updates via ParameterGroup::ProcessSamplePhase1 -- and that group-level
-// call iterates ONLY topLevelParameters_ (ParameterModulation.cpp:867-874),
-// never recursing into modulation-depth parameters. HandleSetAbsolute/
+// call iterates ONLY topLevelParameters_ (ParameterModulation.cpp), never
+// recursing into modulation-depth parameters. HandleSetAbsolute/
 // HandleIncDec (both used by ApplyFroggersDefaultPatch) write directly into
 // `sceneCenters_`, which SceneCenter(sceneIx) (public) reads back exactly,
 // with no smoothing and no dependency on ProcessSample ever having run.
 // These tests check the actual COMMANDED value via SceneCenter(0) (scene
 // 0 == both leftScene and rightScene at the model's default blend=0), which
-// is the precise, unambiguous assertion task 6.12 wants -- not a
-// slewed display value that would need an arbitrary "settled enough"
-// convergence budget to test reliably.
+// is the precise, unambiguous assertion this file wants -- not a slewed
+// display value that would need an arbitrary "settled enough" convergence
+// budget to test reliably.
 TEST_CASE(default_patch_shape_defaults_are_exact) {
     Fixture fx;
     ApplyFroggersDefaultPatch(fx.model);
@@ -1144,11 +1114,11 @@ TEST_CASE(default_patch_cross_vco_pitch_depths_have_correct_sign_and_source) {
     REQUIRE_NEAR(vco2Pitch.ModulationDepthParameter(kModSlotVco1Audio)->SceneCenter(0), kNeutral - kDetent, 1e-5f);
 }
 
-// C1a (tasks.md CONSOLIDATED PUSH item C1): scene 2 (SceneCenter(1)) must be
-// the MIRROR of scene 1 (SceneCenter(0)) for each of the three VCO shapes --
-// asserted as the computed relationship `scene2 == 1.0 - scene1`, not as
-// three more hardcoded literals, so this test actually pins the mirror
-// property rather than merely re-stating two independent lists of numbers.
+// Scene 2 (SceneCenter(1)) must be the MIRROR of scene 1 (SceneCenter(0))
+// for each of the three VCO shapes -- asserted as the computed relationship
+// `scene2 == 1.0 - scene1`, not as three more hardcoded literals, so this
+// test actually pins the mirror property rather than merely re-stating two
+// independent lists of numbers.
 TEST_CASE(default_patch_scene2_vco_shapes_are_the_mirror_of_scene1) {
     Fixture fx;
     ApplyFroggersDefaultPatch(fx.model);
@@ -1167,10 +1137,9 @@ TEST_CASE(default_patch_scene2_vco_shapes_are_the_mirror_of_scene1) {
     REQUIRE_NEAR(fx.model.PageParameter(FroggersBankId::Audio, 5).SceneCenter(0), 1.0f, 1e-6f);
 }
 
-// C1b (tasks.md CONSOLIDATED PUSH item C1 + A3 scene-pair semantics): the
-// light cross-VCO pitch-modulation depths must be PRESENT and EQUAL in both
-// scene poles -- same source set (already covered by the sign/source test
-// above via SceneCenter(0)), same magnitude in scene 2 as in scene 1.
+// The light cross-VCO pitch-modulation depths must be PRESENT and EQUAL in
+// both scene poles -- same source set (already covered by the sign/source
+// test above via SceneCenter(0)), same magnitude in scene 2 as in scene 1.
 TEST_CASE(default_patch_cross_vco_pitch_depths_equal_in_both_scene_poles) {
     Fixture fx;
     ApplyFroggersDefaultPatch(fx.model);
@@ -1240,7 +1209,7 @@ TEST_CASE(default_patch_touches_no_parameter_outside_the_enumerated_set) {
 }
 
 // ============================================================================
-// Packet P6a -- ResetPage/ResetAll (model layer)
+// ResetPage/ResetAll (model layer)
 // ============================================================================
 
 // Snapshot of one top-level parameter's own value (both scene poles) plus,
@@ -1389,10 +1358,10 @@ TEST_CASE(reset_page_clears_only_current_bank_values_and_depths) {
 
     const auto before = SnapshotAllTopLevelParameters(fx.model);
 
-    // Positive control (OMNI Sec 9.1): confirm the setup above actually
-    // moved Reverb's own page away from the default patch -- a materialized
-    // non-neutral depth, and at least one value -- before trusting "matches
-    // the default patch after" as meaningful.
+    // Positive control: confirm the setup above actually moved Reverb's own
+    // page away from the default patch -- a materialized non-neutral depth,
+    // and at least one value -- before trusting "matches the default patch
+    // after" as meaningful.
     bool reverbHadNonNeutralDepthBefore = false;
     bool reverbValueMovedBefore = false;
     for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
@@ -1451,9 +1420,9 @@ TEST_CASE(reset_page_on_audio_restores_shapes_and_pitch_detents_while_other_bank
     Fixture reference;
     ApplyFroggersDefaultPatch(reference.model);
 
-    // Positive control (OMNI Sec 9.1): the randomize above genuinely moved
-    // Audio's own page (shapes and/or pitch detents included) away from the
-    // default patch.
+    // Positive control: the randomize above genuinely moved Audio's own
+    // page (shapes and/or pitch detents included) away from the default
+    // patch.
     bool audioMovedBefore = false;
     for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
         if (ParameterDiffersFromDefaultPatch(fx.model.PageParameter(FroggersBankId::Audio, paramIx),
@@ -1497,9 +1466,9 @@ TEST_CASE(reset_all_matches_a_freshly_constructed_default_patch_instance_field_f
         FroggersModulationDrillIn pageDrill(fx.model.BankAt(static_cast<FroggersBankId>(bankIx)));
         RandomizePage(fx.manager, pageDrill);  // Crispy on every bank -- Randomize All itself excludes it
     }
-    // RandomizeAll/RandomizePage never touch Crunchy (unchanged by this
-    // packet) -- perturb it by hand so Reset All's own "Crunchy is global
-    // too" behaviour has something real to prove.
+    // RandomizeAll/RandomizePage never touch Crunchy -- perturb it by hand
+    // so Reset All's own "Crunchy is global too" behaviour has something
+    // real to prove.
     constexpr float kPerturbedCrunchy = 0.73f;
     fx.model.Crunchy().SceneCenter(0) = kPerturbedCrunchy;
     fx.model.Crunchy().SceneCenter(1) = kPerturbedCrunchy;
@@ -1507,10 +1476,10 @@ TEST_CASE(reset_all_matches_a_freshly_constructed_default_patch_instance_field_f
     Fixture reference;
     ApplyFroggersDefaultPatch(reference.model);
 
-    // Positive control (OMNI Sec 9.1): confirm the setup above genuinely
-    // moved every bank's own page, every bank's Crispy, and Crunchy away
-    // from the default patch -- a reset that "matches" a patch that never
-    // moved would be void, not passing.
+    // Positive control: confirm the setup above genuinely moved every
+    // bank's own page, every bank's Crispy, and Crunchy away from the
+    // default patch -- a reset that "matches" a patch that never moved
+    // would be void, not passing.
     for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
         const auto bankId = static_cast<FroggersBankId>(bankIx);
         bool bankMoved = false;
@@ -1594,8 +1563,8 @@ TEST_CASE(reset_depths_read_neutral_not_zero_the_trap_is_not_reintroduced) {
 
     RandomizePage(fx.manager, drillIn);  // give the depths real, non-neutral values first
 
-    // Positive control (OMNI Sec 9.1): confirm at least one depth is
-    // genuinely non-neutral before reset.
+    // Positive control: confirm at least one depth is genuinely non-neutral
+    // before reset.
     bool anyNonNeutralBefore = false;
     for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
         synth::Parameter* depth = focused.ModulationDepthParameter(modIx);
@@ -1731,8 +1700,8 @@ TEST_CASE(reset_page_drilled_into_audio_pitch_restores_its_default_patch_detent_
     detentFromVco3->SceneCenter(0) = kPerturbed;
     detentFromVco3->SceneCenter(1) = kPerturbed;
 
-    // Positive control (OMNI Sec 9.1): the perturbation above genuinely
-    // moved both depths away from their default-patch detent value.
+    // Positive control: the perturbation above genuinely moved both depths
+    // away from their default-patch detent value.
     synth::Parameter* referenceDetentFromVco2 = referenceVco1Pitch.ModulationDepthParameter(kModSlotVco2Audio);
     synth::Parameter* referenceDetentFromVco3 = referenceVco1Pitch.ModulationDepthParameter(kModSlotVco3Audio);
     REQUIRE_TRUE(referenceDetentFromVco2 != nullptr);
@@ -1770,7 +1739,7 @@ TEST_CASE(reset_all_drilled_into_audio_pitch_restores_its_default_patch_detent_n
     detentFromVco1->SceneCenter(0) = kPerturbed;
     detentFromVco1->SceneCenter(1) = kPerturbed;
 
-    // Positive control (OMNI Sec 9.1).
+    // Positive control.
     synth::Parameter* referenceDetentFromVco1 = referenceVco2Pitch.ModulationDepthParameter(kModSlotVco1Audio);
     REQUIRE_TRUE(referenceDetentFromVco1 != nullptr);
     REQUIRE_TRUE(std::fabs(detentFromVco1->SceneCenter(0) - referenceDetentFromVco1->SceneCenter(0)) > 0.05f);
@@ -1781,31 +1750,28 @@ TEST_CASE(reset_all_drilled_into_audio_pitch_restores_its_default_patch_detent_n
 }
 
 // ============================================================================
-// T3.1/T3.2 (frogg3rs-stop-isolation-and-legible-labels, packet 3) --
 // randomize lands the drawn value even under live modulation
 // ============================================================================
-// PRE-FIX MEASUREMENT (proposal §1b, before this packet's fix): Sheaf's own
-// `Parameter::RandomizeVisibleValue` (External/Sheaf/projects/synth/src/
-// ParameterModulation.cpp:1723-1731) computes `delta = target -
-// TargetValue(0)` -- a delta against the MODULATION-RESOLVED value -- so
-// under live audio-rate modulation each press's delta is measured against a
-// modulated snapshot; repeated presses ratchet the commanded value into the
-// [0,1] clamp. Measured on the running instrument: the commanded value
-// landed at EXACTLY 1.0000 in 20/20 independent trials after 5 presses
-// each. T3.1's fix (FroggersModulation.hpp's `PressBankWithRandomValue`) no
-// longer routes the VALUE write through that function at all: it draws its
-// own uniform value and commits it directly via `HandleSetAbsolute`
-// (`sceneCenters_`, no dependency on resolved/modulated state), to both
-// scene poles. Filed upstream as `UPSTREAM-SHEAF-ASK.md` ask #16; Sheaf is
-// pinned and untouched, so this app-side fix does not wait on it.
+// Sheaf's own `Parameter::RandomizeVisibleValue`
+// (External/Sheaf/projects/synth/src/ParameterModulation.cpp) computes
+// `delta = target - TargetValue(0)` -- a delta against the
+// MODULATION-RESOLVED value -- so under live audio-rate modulation each
+// press's delta is measured against a modulated snapshot; repeated presses
+// ratchet the commanded value into the [0,1] clamp. Measured on the running
+// instrument: the commanded value landed at EXACTLY 1.0000 in 20/20
+// independent trials after 5 presses each. The fix (FroggersModulation.hpp's
+// `PressBankWithRandomValue`) no longer routes the VALUE write through that
+// function at all: it draws its own uniform value and commits it directly
+// via `HandleSetAbsolute` (`sceneCenters_`, no dependency on
+// resolved/modulated state), to both scene poles. Filed upstream as
+// `UPSTREAM-SHEAF-ASK.md` ask #16; Sheaf is pinned and untouched, so this
+// app-side fix does not wait on it.
 //
-// §9.1 (verified, not asserted here -- see this packet's own report):
-// temporarily restoring the OLD press-with-RandomHeld body in
-// `PressBankWithRandomValue` and rebuilding this exact binary reproduces the
-// ratchet against the harness below and fails the assertions that follow;
-// restoring the fix and rebuilding turns it green again. That swap is not
-// left in this file (Sheaf-adjacent app code stays on the real fix at rest);
-// the red/green transcript lives in the packet report instead.
+// Verified (not asserted here): temporarily restoring the OLD
+// press-with-RandomHeld body in `PressBankWithRandomValue` and rebuilding
+// this exact binary reproduces the ratchet against the harness below and
+// fails the assertions that follow; restoring the fix and rebuilding turns
+// it green again.
 
 // Attaches a FULL-POSITIVE (SceneCenter == 1.0 -> ModulationDepthTargetFromKnob
 // == +1.0 bipolar) modulation route from VCO1 Audio to `parameter`, so
@@ -1860,9 +1826,9 @@ TEST_CASE(randomize_lands_the_drawn_value_under_full_positive_audio_rate_modulat
     }
 
     const double mean = sum / kPresses;
-    // T3.2's own pass bar: a draw lands the drawn value, so the resulting
-    // sequence is an i.i.d. sample of NextRandomValue()'s uniform draw, not
-    // a biased walk toward the clamp.
+    // A draw lands the drawn value, so the resulting sequence is an i.i.d.
+    // sample of NextRandomValue()'s uniform draw, not a biased walk toward
+    // the clamp.
     REQUIRE_TRUE(mean >= 0.35 && mean <= 0.65);
     REQUIRE_TRUE(atClamp < static_cast<int>(kPresses * 0.05));  // <5% at the exact 1.0 clamp
 

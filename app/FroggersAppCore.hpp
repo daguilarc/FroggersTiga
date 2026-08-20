@@ -1,23 +1,21 @@
 #pragma once
 
-// synth_froggers::FroggersAppCore -- packet 10 of the froggers-sheaf-app
-// change (openspec/changes/froggers-sheaf-app/tasks.md, section "10. Surface
-// layout (ported v2 design)"; design D11, following Braid 4's own
-// Core/UI/outer-composition split, apps/braid-4/Braid4Core.hpp +
+// synth_froggers::FroggersAppCore -- the app's Core/UI/outer-composition
+// split, following Braid 4's own shape (apps/braid-4/Braid4Core.hpp +
 // Braid4UI.hpp + Braid4.hpp).
 //
-// This is packets 1-9's `FroggersApp` class (Config/Init/PrepareToPlay/
-// ProcessBlock/RouteAudioSample and every existing accessor), renamed and
-// UNCHANGED in substance, PLUS the packet-10 UI-thread -> audio-thread
-// request bridge described below. The composed `synth_froggers::FroggersApp`
-// (still that exact name, so every existing test TU's
-// `#include "Froggers.hpp"` / `synth_froggers::FroggersApp` keeps working
-// unchanged) now lives in Froggers.hpp as a thin wrapper: `class FroggersApp
-// : public FroggersAppCore` that adds only the `FroggersUiSurface` member and
-// `PortableSurface()` -- exactly Braid4.hpp's own shape.
+// This class contains the `FroggersApp` state (Config/Init/PrepareToPlay/
+// ProcessBlock/RouteAudioSample and every existing accessor) plus the
+// UI-thread -> audio-thread request bridge described below. The composed
+// `synth_froggers::FroggersApp` (still that exact name, so every existing
+// test TU's `#include "Froggers.hpp"` / `synth_froggers::FroggersApp` keeps
+// working unchanged) lives in Froggers.hpp as a thin wrapper: `class
+// FroggersApp : public FroggersAppCore` that adds only the
+// `FroggersUiSurface` member and `PortableSurface()` -- exactly Braid4.hpp's
+// own shape.
 //
 // ============================================================================
-// Why a request bridge exists (design D11/D14, task 10.1-10.7)
+// Why a request bridge exists
 // ============================================================================
 // `synth::AppContext` documents `parameterManager`/`masterClock` as
 // audio-thread-owned once the engine is running (AppContext.hpp's own
@@ -37,7 +35,7 @@
 // It is NOT right for an encoder PRESS (drill-in), Randomize All/Page, or
 // the BPM slider, for two different reasons:
 //   - Encoder press MUST go through `FroggersModulationDrillIn::PressEncoder`
-//     (FroggersModulation.hpp, packet 6) rather than a generic
+//     (FroggersModulation.hpp) rather than a generic
 //     `MessageIn::ParamPush`, because that class is the ONLY thing enforcing
 //     this app's 2-level drill-in cap -- Sheaf's own `Bank` has no level
 //     concept at all (FroggersModulation.hpp's own header comment) and would
@@ -51,17 +49,18 @@
 // Crunchy no longer routes through this bridge (operator 2026-07-27): the
 // chrome-band Crunchy slider that used to call `RequestCrunchy()` here is
 // removed (it duplicated the real control at bank slot 15 -- see
-// FroggersUiSurface.hpp's own header comment/tasks.md 10.2). Crunchy is a
+// FroggersUiSurface.hpp's own header comment). Crunchy is a
 // `Parameter` shared across all six banks, but at slot 15 it is addressed
 // exactly like any other bank parameter (generic encoder press/drag over
 // `context_->uiBus`), so it never needed a pending-atomic request of its
 // own -- the chrome slider was the only thing that did, purely because it
 // bypassed the bank/slot addressing scheme entirely.
 //
-// The fix used throughout this file is the same one packet 8's clock-driven
-// Marbles already established for "audio-thread state written once per
-// block, safely observed cross-thread": small, single-slot pending-request
-// atomics that the UI/message thread WRITES (`Request*` methods below) and
+// The fix used throughout this file is the same one already established by
+// this app's clock-driven Marbles source for "audio-thread state written
+// once per block, safely observed cross-thread": small, single-slot
+// pending-request atomics that the UI/message thread WRITES (`Request*`
+// methods below) and
 // that `ProcessFrame()` (detected via `AppConcepts.hpp`'s `HasProcessFrame`
 // concept, invoked by `synth::Engine` once per block, after message drains
 // and before `ProcessBlock()` -- i.e. on the audio thread) DRAINS and
@@ -114,24 +113,23 @@ namespace synth_froggers {
 
 class FroggersAppCore {
 public:
-    // Tasks 7.2/9.2 (design D7/D10): the ONLY hand-written constructor work
-    // this class needs -- everything else is default member initializers.
-    // Reserves the VCO scope's three channels (one per VCO) and wires each
-    // VCO's ScopeWriterHolder/color, then constructs the two transfer-function
-    // Visualizers over this instance's own peakUiState_/combUiState_ (task
-    // 9.1's UIState members, populated once per block in ProcessBlock()).
+    // The ONLY hand-written constructor work this class needs -- everything
+    // else is default member initializers. Reserves the VCO scope's three
+    // channels (one per VCO) and wires each VCO's ScopeWriterHolder/color,
+    // then constructs the two transfer-function Visualizers over this
+    // instance's own peakUiState_/combUiState_ (UIState members, populated
+    // once per block in ProcessBlock()).
     // `synth::ui::ScopeVisualizer`/`synth_froggers::TransferFunctionVisualizer`
     // have no default constructor, so this class cannot rely on implicit
-    // default construction the way it did before packets 7/9.
+    // default construction.
     FroggersAppCore()
         : vco1ScopeHolder_(vcoScopeWriter_.ReserveChans(1)),
           vco2ScopeHolder_(vcoScopeWriter_.ReserveChans(1)),
           vco3ScopeHolder_(vcoScopeWriter_.ReserveChans(1)),
           vcoScopeVisualizer_(
               std::array<dsp::Vco::UIState*, 3>{&vco1ScopeUiState_, &vco2ScopeUiState_, &vco3ScopeUiState_},
-              // D.2 sizing decision, recorded 2026-07-29 (open since the
-              // predecessor's task 1.2 and never written down). Verdict:
-              // the defaults are correct for this app; no change.
+              // Sizing verdict: the defaults below are correct for this app;
+              // no change needed.
               //   - Read window 512 samples across a 340px-wide panel
               //     (FroggersUiSurface's kScopeWidth) is ~1.5 samples per
               //     pixel -- slightly oversampled, which is the right side to
@@ -152,9 +150,8 @@ public:
         audioVcos_[0].SetScopeWriterHolder(&vco1ScopeHolder_);
         audioVcos_[1].SetScopeWriterHolder(&vco2ScopeHolder_);
         audioVcos_[2].SetScopeWriterHolder(&vco3ScopeHolder_);
-        // UI-rework ITEM 2 (design.md A3b, tasks.md B.2, 2026-07-29): was
-        // Red/Orange/Yellow -- three hues that collapse together under
-        // red-green colour blindness (protanopia/deuteranopia), an operator
+        // These were previously Red/Orange/Yellow -- three hues that collapse
+        // together under red-green colour blindness (protanopia/deuteranopia), an operator
         // report from the running build. `synth::Color` has `Cyan` and
         // `Yellow` (External/Sheaf/projects/synth/include/synth/Color.hpp)
         // but no `Pink`/`Magenta` (verified by grep of that file), so pink
@@ -199,40 +196,36 @@ public:
         config.preferredSampleRate = 48000.0;
         config.preferredBlockSize = 256;
         config.uiWidth = 900;
-        // DEMOTED by task F.3 (openspec/changes/archive/
-        // 2026-08-05-frogg3rs-audio-safety-and-ui-rework/tasks.md,
-        // 2026-08-04/05): this literal is now just the
-        // window's INITIAL size, not a derived cross-check. Before F.3 it
-        // was required to equal `FroggersPageLayout::RequiredHeight()`
-        // (hand-maintained in sync, verified by a dedicated test) because
-        // `FroggersUiSurface.hpp`'s hand-rolled auto-flow model
-        // (`FroggersAutoFlowedChromeModel`) needed the app to reserve
-        // exactly the right amount of vertical space for its own chrome
-        // band ahead of time. F.3 replaced that band with one declarative
-        // grid whose regions are resolved by Sheaf's own layout engine
-        // against whatever root extent it is given (`FroggersPageLayout::
-        // RootBounds()`), so there is nothing left for this literal to be
-        // derived FROM, and the circular-include workaround that comment
-        // used to describe (`FroggersUiSurface.hpp` cannot call back into
-        // this file) no longer applies because there is no call to make.
-        // T4.2 (operator ruling 2026-08-17, "do not shrink the encoder
-        // ring" / "space you should have ADDED below each encoder"):
+        // This literal is just the window's INITIAL size, not a derived
+        // cross-check. It used to be required to equal
+        // `FroggersPageLayout::RequiredHeight()` (hand-maintained in sync,
+        // verified by a dedicated test) because `FroggersUiSurface.hpp`'s
+        // hand-rolled auto-flow model (`FroggersAutoFlowedChromeModel`)
+        // needed the app to reserve exactly the right amount of vertical
+        // space for its own chrome band ahead of time. That band was
+        // replaced by one declarative grid whose regions are resolved by
+        // Sheaf's own layout engine against whatever root extent it is given
+        // (`FroggersPageLayout::RootBounds()`), so there is nothing left for
+        // this literal to be derived FROM, and the circular-include
+        // workaround that comment used to describe (`FroggersUiSurface.hpp`
+        // cannot call back into this file) no longer applies because there
+        // is no call to make.
         // 632 -> 712, +80px (4 encoder rows x
         // `synth_froggers::FroggersEncoderGridLayout::kLabelBandHeight`,
-        // 20px each -- FroggersUiSurface.hpp), so the label band added
-        // below each encoder ring has somewhere to live without shrinking
-        // the ring or the window's other rows. Otherwise unchanged from
-        // before this task -- still simply a plain, hand-picked initial
-        // window size, matching `synth_froggers::FroggersPageLayout::
-        // kDefaultHeight` (FroggersUiSurface.hpp) by hand, not derivation
-        // (that file's own comment explains why no cross-check test
-        // exists for this pair -- task F.3's finding that such a test can
-        // pass even when both sides are already wrong).
+        // 20px each -- FroggersUiSurface.hpp), so the label band added below
+        // each encoder ring has somewhere to live without shrinking the ring
+        // or the window's other rows -- the operator's own ruling was "do
+        // not shrink the encoder ring" / "space you should have ADDED below
+        // each encoder". Otherwise unchanged: still simply a plain,
+        // hand-picked initial window size, matching
+        // `synth_froggers::FroggersPageLayout::kDefaultHeight`
+        // (FroggersUiSurface.hpp) by hand, not derivation (that file's own
+        // comment explains why no cross-check test exists for this pair --
+        // such a test can pass even when both sides are already wrong).
         // `FroggersSurfaceTests.cpp`'s fit-guard tests assert the surface
-        // actually fits its declared grid at this size (and at a smaller
-        // and a larger one), which is a stronger guarantee than a
-        // cross-check ever was (see task F.3's report for why the old test
-        // could never fail even when wrong).
+        // actually fits its declared grid at this size (and at a smaller and
+        // a larger one), which is a stronger guarantee than a cross-check
+        // ever was -- the old test could never fail even when wrong.
         config.uiHeight = 712;
         config.uiFrameHz = 30;
         return config;
@@ -243,18 +236,17 @@ public:
             throw std::invalid_argument("FroggersApp requires a valid app context");
         }
         context_ = context;
-        // Packet 4 (tasks.md section 4): build the six 16-slot parameter
-        // banks (Crispy@14/Crunchy@15 in every bank), the shared BankSlot,
-        // and the mono ParameterGroup + scenes. See FroggersParameters.hpp.
-        // Task 9.3 (design D10): peakVisualizer_/combVisualizer_ are
-        // constructed by this class's own constructor (see its comment),
-        // ahead of Init() always running -- passed in so
-        // FroggersParameterModel can attach them as the Filter bank's
-        // Peak/Comb parameter underlays.
+        // Builds the six 16-slot parameter banks (Crispy@14/Crunchy@15 in
+        // every bank), the shared BankSlot, and the mono ParameterGroup +
+        // scenes. See FroggersParameters.hpp.
+        // peakVisualizer_/combVisualizer_ are constructed by this class's own
+        // constructor (see its comment), ahead of Init() always running --
+        // passed in so FroggersParameterModel can attach them as the Filter
+        // bank's Peak/Comb parameter underlays.
         parameters_.Init(*context->parameterManager, &peakVisualizer_, &combVisualizer_);
 
-        // Packet 6 (tasks.md section 6, tasks 6.1/6.2): register all 15
-        // modulation sources, in design D5's order. See FroggersModulation.hpp.
+        // Registers all 15 modulation sources -- see FroggersModulation.hpp
+        // for the full list and ordering.
         modulation_.Init(parameters_.Group());
 
         // Drives the external-audio modulation sources' connected state from
@@ -277,32 +269,30 @@ public:
         // here, once, without racing anything.
         modulation_.SetExternalAudioConnected(context_->InputRouted());
 
-        // Task 6.12 (design D16): apply the default patch once, on first
-        // start, now that slate indices 6-8 (VCO audio sources) exist.
+        // Applies the default patch once, on first start, now that slate
+        // indices 6-8 (VCO audio sources) exist.
         ApplyFroggersDefaultPatch(parameters_);
 
-        // Packet 10 (design D11): the single active-bank authority (D14's
-        // "single selection authority" requirement) plus its own drill-in
-        // level tracker, constructed against bank 0 -- the same default
-        // active selection FroggersParameterModel::Init() already made via
+        // The single active-bank authority plus its own drill-in level
+        // tracker, constructed against bank 0 -- the same default active
+        // selection FroggersParameterModel::Init() already made via
         // `slot_->SelectBank(banks_[0])`.
         drillIn_.emplace(parameters_.BankAt(activeBankIx_));
     }
 
-    // Sample-rate-dependent modulation-slate setup (packet 6): detected and
-    // called automatically by synth::Engine via the optional HasPrepareToPlay
-    // hook (AppConcepts.hpp:26-28) once the host negotiates a real sample
-    // rate. Everything else in this class is sample-rate-independent at
-    // Init() time.
-    // C1 (openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md
-    // F8.1): the fallback used when the host hands this hook a non-positive
-    // sample rate. See PrepareToPlay()'s own comment for why that is a real
-    // possibility, not a hypothetical -- this is now the ONE place that
+    // Sample-rate-dependent modulation-slate setup: detected and called
+    // automatically by synth::Engine via the optional HasPrepareToPlay hook
+    // (AppConcepts.hpp:26-28) once the host negotiates a real sample rate.
+    // Everything else in this class is sample-rate-independent at Init()
+    // time.
+    // The fallback used when the host hands this hook a non-positive sample
+    // rate. See PrepareToPlay()'s own comment for why that is a real
+    // possibility, not a hypothetical -- this is the ONE place that
     // possibility is handled.
     static constexpr double kFallbackSampleRateHz = 44100.0;
 
     void PrepareToPlay(double sampleRate, int /*blockSize*/) {
-        // C1 (§12 trace): `synth::Engine::Prepare()` (External/Sheaf/
+        // `synth::Engine::Prepare()` (External/Sheaf/
         // projects/synth/include/synth/Engine.hpp:280-301) guards
         // `sampleRate > 0.0 && blockSize > 0` before its OWN two uses
         // (MasterClock::Prepare, the uiPublishInterval_ computation) but
@@ -332,7 +322,7 @@ public:
         }
         modulation_.Prepare(sampleRate);
 
-        // Task 6a.1 (design D15): the audio-path DSP units below are a
+        // The audio-path DSP units below are a
         // SEPARATE set of instances from modulation_'s own private VCOs
         // (FroggersModulation.hpp's vco1_/vco2_/vco3_, which exist solely to
         // produce the six VCO-audio-rate modulation-source values and are
@@ -371,8 +361,7 @@ public:
             .uiDisplaySpreadAlpha =
                 synth::ConvertOnePoleAlpha(synth::kDefaultUiDisplaySpreadAlpha, 48000.0, sampleRate),
         });
-        // Task 6b (design D17, revised 2026-07-27): the ASR gate is no
-        // longer forced permanently on -- it is driven per-sample in
+        // The ASR gate is not forced permanently on -- it is driven per-sample in
         // ProcessBlock() from the master clock's transport quarter-note
         // pulse (see TransportQuarterNotesAt()/the gate computation there).
         // audioAdsr_.init() above already leaves the gate low
@@ -433,10 +422,10 @@ public:
         }
     }
 
-    // Packet 10 follow-up (D17 robustness fix, see PrepareToPlay()'s own
-    // comment): records the surface's last explicit Play/Stop request so
+    // Records the surface's last explicit Play/Stop request so
     // PrepareToPlay() can re-assert it across a `MasterClock::Prepare()`
-    // reset triggered by an audio-device renegotiation. Called from
+    // reset triggered by an audio-device renegotiation (see
+    // PrepareToPlay()'s own comment). Called from
     // `FroggersUiSurface::HandleAction` alongside its existing `uiBus` push
     // -- this does not change Play/Stop's own behavior, it only lets a LATER
     // renegotiation event recover it.
@@ -444,8 +433,7 @@ public:
         desiredTransportRunning_.store(running, std::memory_order_release);
     }
 
-    // T5.2 (openspec/changes/frogg3rs-post-expansion-consolidation,
-    // proposal.md §6.4b-ii / tasks.md T5.2): the Freeze transport button's
+    // The Freeze transport button's
     // latch -- toggled by FroggersUiSurface::HandleAction's kFreeze branch
     // (UI/message thread) and read every sample inside RouteAudioSample()
     // (audio thread, below) to set DelayParams::dfrzLatched before it
@@ -459,12 +447,12 @@ public:
     }
     bool FreezeLatched() const { return freezeLatched_.load(std::memory_order_acquire); }
 
-    // T6.1 (tasks.md, REOPENED 2026-08-17): the ONE gate every stop-edge
+    // The ONE gate every stop-edge
     // teardown site reads -- ForceReleaseAll(), the six `stoppedKnob`
     // overrides (all through ONE lambda instance, RouteAudioSample() below),
     // and both the immediate and deferred `ForEachStatefulUnit(Reset)`
     // clears (ProcessBlock() below) -- instead of each re-deriving its own
-    // `!running`/`!FreezeLatched()` check (OMNI SS8). `running` is the
+    // `!running`/`!FreezeLatched()` check. `running` is the
     // transport's ACTUAL state at the call site: pass the freshly computed
     // local where the edge-detect block below has one (it reads this BEFORE
     // updating `wasTransportRunning_`, so the member would still be stale),
@@ -474,13 +462,12 @@ public:
     // Stopped-and-unlatched is the only condition the teardown runs under;
     // while FreezeLatched() is true the instrument holds its sounding state
     // instead of tearing down. This is the operator's deliberate route to
-    // the sustained-drive drone the Freeze button exists to reproduce (see
-    // this task's "Why this exists" in tasks.md) -- the effect only ever
-    // existed with the transport stopped, so suppressing the teardown here
+    // the sustained-drive drone the Freeze button exists to reproduce -- the
+    // effect only ever existed with the transport stopped, so suppressing the teardown here
     // is what makes it reachable again, not a bug being reintroduced.
     bool TransportTeardownActive(bool running) const { return !running && !FreezeLatched(); }
 
-    // T5.3a/T5.3b (packet P7a, tasks.md): arm/stop a bounded mono capture of
+    // Arms/stops a bounded mono capture of
     // what the operator hears. UI-thread call. Refuses while the transport
     // is stopped -- v1 precedent for the wording (desktop/Source/
     // MainComponent.cpp:201, reference only, not ported): exactly "Press
@@ -524,15 +511,14 @@ public:
     bool RecordingTruncated() const { return recordTruncated_.load(std::memory_order_acquire); }
     float RecordSampleRate() const { return sampleRate_; }
 
-    // P7b (tasks.md T5.3b): whether a capture is currently armed -- the
+    // Whether a capture is currently armed -- the
     // surface's transport-row Record glyph and HandleAction both need this
     // (BuildRecordDrawCommands' colour swap, and the toggle branch's
     // arm-vs-stop decision), same one-line-acquire-load shape as
     // FreezeLatched() above.
     bool RecordArmed() const { return recordArmed_.load(std::memory_order_acquire); }
 
-    // T5.3c (tasks.md, "the WAV encoding itself could live either side"):
-    // host-facing seams -- registered by the host (FroggersMain.cpp) on the
+    // Host-facing seams -- registered by the host (FroggersMain.cpp) on the
     // message thread once, after launch. Both are plain std::function; JUCE
     // stays on the other side of this boundary (this class only stores,
     // null-checks, and invokes -- see check-no-juce, this file's own header
@@ -557,7 +543,7 @@ public:
         }
     }
 
-    // Packet 10 (design D11/D14, tasks 10.2-10.7): the surface's request API
+    // The surface's request API
     // -- called from FroggersUiSurface::DispatchAction (UI/message thread).
     // Each is a single-slot pending request; a later write before the audio
     // thread drains the previous one simply coalesces (acceptable: these are
@@ -576,7 +562,7 @@ public:
     // idiom as the two Randomize flags above, deliberately not a new one.
     void RequestResetAll() { pendingResetAll_.store(true, std::memory_order_release); }
     void RequestResetPage() { pendingResetPage_.store(true, std::memory_order_release); }
-    // Task 10.6 (design D17's citation chain): a negative sentinel means "no
+    // A negative sentinel means "no
     // pending request." `MasterClock::SetTempoBpm` itself already no-ops
     // (returns false) while slaved to external MIDI clock
     // (src/MasterClock.cpp:963-965) -- ProcessFrame() below still calls it
@@ -586,12 +572,12 @@ public:
     // sole guard.
     void RequestTempoBpm(double bpm) { pendingTempoBpmRequest_.store(bpm, std::memory_order_release); }
 
-    // Packet 10: display-direction reads for the surface (UI/message
+    // Display-direction reads for the surface (UI/message
     // thread), published once per block from ProcessBlock()'s existing
     // end-of-block section below.
     double DisplayTempoBpm() const { return tempoDisplayBpm_.load(std::memory_order_acquire); }
     bool TempoExternallyClocked() const { return tempoExternallyClocked_.load(std::memory_order_acquire); }
-    // Task 3.6 (design E3e): published alongside tempoDisplayBpm_/
+    // Published alongside tempoDisplayBpm_/
     // tempoExternallyClocked_ below, same cross-thread contract -- lets the
     // surface (message thread) know whether the transport is currently
     // running without reading `context_->masterClock` directly (audio-
@@ -601,8 +587,7 @@ public:
     // change, this is a read-only discoverability aid.
     bool TransportRunning() const { return transportRunningDisplay_.load(std::memory_order_acquire); }
 
-    // F7 (openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md,
-    // operator request): published once per block alongside
+    // Published once per block alongside
     // transportRunningDisplay_ above, same cross-thread contract -- lets the
     // surface (message thread) read the current modulation drill-in level
     // (FroggersModulationDrillIn::Level(), audio-thread-owned via drillIn_)
@@ -610,7 +595,7 @@ public:
     // from the wrong thread.
     std::size_t DrillLevel() const { return drillLevelDisplay_.load(std::memory_order_acquire); }
 
-    // A4 (tasks.md CONSOLIDATED PUSH, "surface partial randomize"): true when
+    // True when
     // the MOST RECENT Randomize All/Page operation left
     // `FroggersRandomizeResult.partial` true -- i.e. `EnsureModulationDepth`
     // hit `!group_.CanAllocate()` (Sheaf, ParameterModulation.cpp:2790-2792)
@@ -620,11 +605,11 @@ public:
     // TransportRunning() above -- makes a silent partial randomize
     // observable to tests, without inventing any new UI element the operator
     // did not ask for. Any operator-visible logging must read this atomic
-    // from the UI thread -- ProcessFrame() itself never logs (F1: fprintf on
+    // from the UI thread -- ProcessFrame() itself never logs (fprintf on
     // the audio thread can allocate/lock/block, which is a dropout risk).
     bool LastRandomizePartial() const { return lastRandomizePartial_.load(std::memory_order_acquire); }
 
-    // Packet 10 (design D11/D14): detected via AppConcepts.hpp's
+    // Detected via AppConcepts.hpp's
     // HasProcessFrame concept; synth::Engine invokes this once per block,
     // after message drains and before ProcessBlock() (AppConcepts.hpp's own
     // comment on the hook's placement) -- exactly the audio-thread window
@@ -658,17 +643,16 @@ public:
                 // persistent per-bank instances would risk.
                 drillIn_.emplace(parameters_.BankAt(activeBankIx_));
             } else if (drillIn_->Level() > 0) {
-                // E.3 (design A7b, operator override 2026-07-29): clicking
-                // the bank you are ALREADY viewing must still be able to
-                // back a modulation drilldown all the way out to that bank's
-                // top-level parameter grid -- "clicking on the page bank for
-                // the page we are on is the way the user should always be
-                // able to get to that page, even when they are in a
-                // modulation drilldown for a parameter on that page."
-                // Back()-until-zero reaches the same "full Deselect(),
-                // level 0" state a genuine bank switch produces above,
-                // without reconstructing drillIn_ (same Bank&, no need) --
-                // bounded to at most 2 iterations (design D5's level cap).
+                // Clicking the bank you are ALREADY viewing must still be
+                // able to back a modulation drilldown all the way out to
+                // that bank's top-level parameter grid -- "clicking on the
+                // page bank for the page we are on is the way the user
+                // should always be able to get to that page, even when they
+                // are in a modulation drilldown for a parameter on that
+                // page." Back()-until-zero reaches the same "full
+                // Deselect(), level 0" state a genuine bank switch produces
+                // above, without reconstructing drillIn_ (same Bank&, no
+                // need) -- bounded to at most 2 iterations (the level cap).
                 // The `Level() > 0` guard is what keeps the pre-existing
                 // no-op preserved for a same-bank click that is ALREADY at
                 // level 0: nothing in this branch runs, so activeBankIx_/
@@ -687,10 +671,9 @@ public:
         }
 
         if (context_ != nullptr && context_->parameterManager != nullptr) {
-            // A1/A2/A4 (tasks.md CONSOLIDATED PUSH): both branches below now
+            // Both branches below
             // return a `FroggersRandomizeResult` whose `.partial` flag used
-            // to be discarded entirely (W1.0 S3's "left un-surfaced" citation
-            // of this exact call site) -- captured into `anyPartial` and
+            // to be discarded entirely -- captured into `anyPartial` and
             // published below instead.
             bool randomizeRan = false;
             bool anyPartial = false;
@@ -726,30 +709,29 @@ public:
                 ResetPage(*context_->parameterManager, *drillIn_, parameters_);
             }
             if (randomizeRan) {
-                // A4: surface a partial randomize -- observable to tests via
+                // Surfaces a partial randomize -- observable to tests via
                 // LastRandomizePartial(). Not a per-parameter/per-press
-                // signal (design D14's own randomize helper can be called
-                // dozens of times per operation); one publish per Randomize
-                // All/Page press that actually ran short. F1: no log is
-                // emitted here -- ProcessFrame() runs on the audio thread
-                // (this method's own header comment), and any operator-
-                // visible logging must instead read this atomic from the UI
-                // thread.
+                // signal (the randomize helper can be called dozens of times
+                // per operation); one publish per Randomize All/Page press
+                // that actually ran short. No log is emitted here --
+                // ProcessFrame() runs on the audio thread (this method's own
+                // header comment), and any operator-visible logging must
+                // instead read this atomic from the UI thread.
                 lastRandomizePartial_.store(anyPartial, std::memory_order_release);
-                // A2 (W1.1a/W1.1d): the display-staleness fix. `Parameter::
+                // The display-staleness fix. `Parameter::
                 // RandomizeVisibleValue` writes `sceneCenters_` (the commanded
                 // value) directly and immediately, but the drill-in knob
                 // reads `uiDisplayCenters_`, which a depth parameter only
                 // ever gets seeded into via a smoothed, one-shot nudge inside
-                // RandomizeVisibleValue itself (Sheaf, pinned; see tasks.md
-                // W1.0/W1.1a for the full trace) -- it is never touched again
-                // by the per-sample loop, because depth parameters are not in
-                // `topLevelParameters_`. `ComputeAllParameters()` (public,
+                // RandomizeVisibleValue itself (Sheaf, pinned) -- it is never
+                // touched again by the per-sample loop, because depth
+                // parameters are not in `topLevelParameters_`.
+                // `ComputeAllParameters()` (public,
                 // ParameterModulation.hpp:796) is the one call that reseeds
                 // it exactly, for every parameter including depth children
                 // (ComputeAtDepth's recursionDepth_>0 branch takes the
-                // instant snap-and-seed path, not the smoothed one -- see
-                // W1.1a's derivation). Called ONCE here, after both branches
+                // instant snap-and-seed path, not the smoothed one). Called
+                // ONCE here, after both branches
                 // above have made every write for this frame's request(s),
                 // never per-parameter and never from the UI thread:
                 // ProcessFrame() itself only ever runs on the audio thread
@@ -768,14 +750,13 @@ public:
         }
     }
 
-    // Packet 4 drives the per-sample parameter-model (scene-blend, fuego).
-    // Packet 6 (this class's modulation_ member) steps the DSP behind the 15
-    // modulation sources every sample, BEFORE parameters_.ProcessSample() so
-    // its group_->UpdateModValues() call reads freshly-updated values through
-    // the pointers registered in FroggersModulationSlate::Init. Task 6a
-    // (design D15) then routes the now-resolved (post-fuego, post-modulation)
-    // parameter values into the real DSP chain and sums it to the stereo
-    // output bus, replacing task 2.1's silent placeholder.
+    // Drives the per-sample parameter-model (scene-blend, fuego), then steps
+    // the DSP behind the 15 modulation sources every sample (this class's
+    // modulation_ member) BEFORE parameters_.ProcessSample() so its
+    // group_->UpdateModValues() call reads freshly-updated values through
+    // the pointers registered in FroggersModulationSlate::Init. Routes the
+    // now-resolved (post-fuego, post-modulation) parameter values into the
+    // real DSP chain and sums it to the stereo output bus.
     void ProcessBlock(synth::AudioBlock& block) {
         // External audio (slots 13/14) is disconnected by construction, not
         // by a flag layered on top of a channel-exists check: whether a
@@ -786,9 +767,8 @@ public:
         // and ProcessFrame()'s own comments, above) -- this method does not
         // read `block.inputs`/`block.numInputChannels` for that purpose.
 
-        // Task 8.1 (design D8/D8a): source #6's tempo-following recompute
-        // happens ONCE PER BLOCK, not per sample (design D8's own wording),
-        // from the block's clock-plan rate (independent of transport
+        // Source #6's tempo-following recompute
+        // happens ONCE PER BLOCK, not per sample, from the block's clock-plan rate (independent of transport
         // running/stopped -- a rate, not a position). A null clock plan
         // falls back to a safe default inside PrepareBlockClock() itself.
         std::optional<double> quarterNotesPerSample;
@@ -797,8 +777,7 @@ public:
         }
         modulation_.PrepareBlockClock(quarterNotesPerSample);
 
-        // C3 (openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/
-        // tasks.md F8.1): `block.outputs` is `AudioBlock`'s own field
+        // `block.outputs` is `AudioBlock`'s own field
         // (External/Sheaf/projects/synth/include/synth/AppContext.hpp:70-85)
         // -- set once for the whole callback, never reassigned inside this
         // function -- so re-testing it every frame below was re-evaluating a
@@ -808,7 +787,7 @@ public:
         for (std::size_t frame = 0; frame < block.numFrames; ++frame) {
             const std::uint64_t absoluteOutputSample = block.startSample + frame;
 
-            // Task 6b (design D17, revised 2026-07-27): the ASR gate follows
+            // The ASR gate follows
             // the master clock's transport quarter-note pulse -- see
             // TransportQuarterNotesAt()'s own comment for the citation chain
             // (apps/miniapp/MiniAppCore.hpp's gate idiom, adapted to the
@@ -823,10 +802,10 @@ public:
                 const double phase = *transportQuarterNotes - std::floor(*transportQuarterNotes);
                 gateOpen = phase >= 0.0 && phase < 0.5;
             }
-            // T7.6 (operator 2026-08-17, measured in the built app: the drone
-            // "lasts only a few seconds"). Suppressing the stop-edge teardown
-            // is NOT sufficient to hold the drone, and this line is why: the
-            // gate closes whenever the transport is not running, so engaging
+            // Measured in the built app: the drone "lasts only a few
+            // seconds" if only the stop-edge teardown is suppressed -- that
+            // alone is NOT sufficient to hold the drone, and this line is
+            // why: the gate closes whenever the transport is not running, so engaging
             // Freeze -- which stops the transport (HandleAction's kFreeze
             // branch) -- let every voice release NATURALLY and reach Idle
             // within its release time, leaving only a decaying delay/reverb
@@ -835,9 +814,9 @@ public:
             // touched this.
             //
             // The accidental state this button reproduces was sustained by
-            // voices that never reached Idle (curve~1 stuck envelopes,
-            // proposal §1a) CONTINUOUSLY exciting the chain -- that is what
-            // made it a drone rather than a tail. T1.1's ramp bound removed
+            // voices that never reached Idle (curve~1 stuck envelopes)
+            // CONTINUOUSLY exciting the chain -- that is what
+            // made it a drone rather than a tail. A ramp bound elsewhere removed
             // that mechanism deliberately and permanently, so the latch has
             // to hold the voices open itself: while Freeze is engaged the
             // gate stays OPEN, voices sit at their sustain level, and the
@@ -859,13 +838,12 @@ public:
             // caller of both), so there is no data race with the UI thread's
             // kStop handler (FroggersUiSurface.hpp's HandleAction), which
             // only pushes a MessageIn::Stop and never touches DSP state
-            // directly. F3.3 (openspec/changes/
-            // archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md): resets every
+            // directly. Resets every
             // unit ForEachStatefulUnit() enumerates (all 14 -- see that
             // method's own comment), not just delay_/reverb_. The comment
             // this replaces claimed "VCOs/filters/drive do not [self-
-            // sustain]" as the reason to skip them; F3.1's own measurement
-            // (this task's own tasks.md) found that claim false for the
+            // sustain]" as the reason to skip them; a direct measurement
+            // found that claim false for the
             // comb (a recirculating delay line, 6.7s T60 at its longest
             // delay) and driveBlendPhase_ (a recursive allpass) -- both are
             // upstream of delay_/reverb_ and both have Reset(). The tag each
@@ -888,7 +866,7 @@ public:
             if (stopDiagEnabled_ && wasTransportRunning_ && !transportRunningNow) {
                 stopDiagBlocks_ = kStopDiagBlocks;
             }
-            // T6.2 (tasks.md, REOPENED 2026-08-17): releasing the Freeze
+            // Releasing the Freeze
             // latch while the transport is already stopped is a SECOND
             // "stop edge" -- symmetric to the running->stopped edge just
             // below, keyed on the latch's own transition instead of the
@@ -901,14 +879,14 @@ public:
             const bool freezeLatchedNow = FreezeLatched();
             const bool latchReleasedWhileStopped =
                 wasFreezeLatched_ && !freezeLatchedNow && !transportRunningNow;
-            // T6.1/T6.2 (tasks.md, REOPENED 2026-08-17): the stop-edge
+            // The stop-edge
             // teardown action itself, shared by BOTH edges capable of
             // firing it below (the running->stopped edge, and the latch-
             // released-while-stopped edge) so the two can never drift apart
             // in what "teardown" means. One lambda instance per sample,
             // cheap (no heap capture; `this` only).
             const auto runStopTeardown = [this]() {
-                // T2.1 (proposal.md SS2 W2, AUDIT-ADDED 2026-08-17): force
+                // Forces
                 // every non-idle voice into Release right at the edge,
                 // BEFORE the AllIdle() check below reads its post-edge
                 // state. `setGate(gateOpen)` above already ran for this
@@ -918,9 +896,9 @@ public:
                 // Attack/Decay at the stop instant would sit there through
                 // the Grace minimum-hold and/or stage completion (up to
                 // ~9s at kMaxAttack/Decay/GraceSeconds each) before ever
-                // reaching Release, let alone Idle -- exactly the pre-W1
-                // "Stop doesn't stop" symptom this packet's proposal.md
-                // SS1 measured. ForceReleaseAll() (VoiceEnvelope.hpp) is
+                // reaching Release, let alone Idle -- exactly the
+                // "Stop doesn't stop" symptom this app used to have.
+                // ForceReleaseAll() (VoiceEnvelope.hpp) is
                 // idempotent on an already-idle voice (leaves it Idle), so
                 // this is safe to call unconditionally on every edge here,
                 // including the "gate already closed, every voice already
@@ -934,10 +912,10 @@ public:
                 // = true) arms -- a forced-Release voice is NOT idle at the
                 // edge, so it still needs its (now ~50ms, kStopFadeReleaseKnob
                 // below) release tail to finish before delay_/reverb_ can be
-                // cleared; that ordering is unchanged by this task.
+                // cleared; that ordering is unchanged.
                 audioAdsr_.ForceReleaseAll();
-                // ITEM 1 (revised, superseding the old "clear every block
-                // while releasing" policy): a releasing voice is still
+                // Revised from an old "clear every block
+                // while releasing" policy: a releasing voice is still
                 // musically live and still feeding delay_/reverb_
                 // (RouteAudioSample(), below, runs every sample regardless
                 // of transport) -- it is supposed to keep ringing through
@@ -946,7 +924,7 @@ public:
                 // `audioAdsr_.setGate(gateOpen)` above already ran for this
                 // sample, so AllIdle() here already reflects the post-edge
                 // stage: false if that gate transition just occurred on a
-                // live voice (Grace/slot 13 packet: setGate(false) no longer
+                // live voice (setGate(false) no longer
                 // forces Stage::Release synchronously -- it marks
                 // m_releasePending and stepVoice() resolves it, see
                 // VoiceEnvelope.hpp's own comments -- but a voice that was
@@ -1027,13 +1005,13 @@ public:
             wasTransportRunning_ = transportRunningNow;
             wasFreezeLatched_ = freezeLatchedNow;
 
-            // VCO audio-rate modulation sources (design D5 slots 6-8) are
+            // VCO audio-rate modulation sources (slots 6-8) are
             // driven from each VCO's own Audio-bank pitch/shape/PM knobs --
             // the PREVIOUS sample's post-fuego cached value (this Step()
             // call runs before this sample's own fuego/modulation resolve;
             // see FroggersModulationSlate::Step's comment on the resulting
             // one-sample latency, standard for any modulation graph with a
-            // cycle -- e.g. task 6.12's cross-VCO pitch default).
+            // cycle -- e.g. the cross-VCO pitch default).
             const auto vcoDrive = [this](std::size_t paramIx) {
                 return FroggersModulationSlate::VcoDrive{
                     parameters_.PageParameter(FroggersBankId::Audio, paramIx).CachedKnobValue(0),
@@ -1041,13 +1019,12 @@ public:
                     parameters_.PageParameter(FroggersBankId::Audio, paramIx + 6).CachedKnobValue(0),
                 };
             };
-            // S1a.2 (openspec/changes/archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-
-            // cause/tasks.md, section S1a): operator-ordered, and NOT the F3
+            // Operator-ordered, and NOT the F3
             // fix -- kept labelled accurately on purpose. F3 was a static DC
             // seed inside DigitalReorganizer, a pure function of frozen knob
-            // state (fixed at its source by S1.3); freezing modulation could
+            // state (fixed separately); freezing modulation could
             // never have removed it. This gate is the operator's own ruling
-            // instead (S1a.1, verbatim): "no, modulation should not free-run
+            // instead, verbatim: "no, modulation should not free-run
             // while stopped lol. come on."
             //
             // Gated on `transportRunningNow`, already computed above (this
@@ -1080,8 +1057,8 @@ public:
             // per block after this loop, republishes that same held state,
             // so a visualizer shows a held value, not darkness.
             //
-            // `transportQuarterNotes` is still passed into Step() below
-            // (Task 8.1/6b.3, unchanged): reused from the ASR gate's own
+            // `transportQuarterNotes` is still passed into Step() below --
+            // reused from the ASR gate's own
             // already-computed value rather than re-derived a second time,
             // for StepClockDrivenLanes's own tick-phase arithmetic -- see
             // Step()'s own comment.
@@ -1091,9 +1068,9 @@ public:
 
             parameters_.ProcessSample(absoluteOutputSample);
 
-            // Task 6a.1/6a.2: route this sample's post-fuego, post-modulation
-            // parameter values into the ported DSP chain and sum the (mono,
-            // per D4's kNumVoices==1 model) result to every output channel --
+            // Routes this sample's post-fuego, post-modulation
+            // parameter values into the ported DSP chain and sums the (mono,
+            // per the kNumVoices==1 model) result to every output channel --
             // matching FroggersEngine::ProcessSample's own float-in/float-out
             // shape (FroggersEngine.hpp:850-874), which this app's own stereo
             // bus duplicates identically on both channels.
@@ -1120,7 +1097,7 @@ public:
             }
 
             if (hasOutputs) {
-                // C3 (§12 trace on the inner check): unlike `block.outputs`
+                // Unlike `block.outputs`
                 // above, an individual `block.outputs[channelIx]` is NOT
                 // provably non-null by contract. `AudioBlock::outputs` is
                 // `float* const*` -- "Channel counts are the device's actual
@@ -1144,10 +1121,10 @@ public:
                 }
             }
 
-            // Task 1.1 (design E1): move the scope ring-buffer cursor once
+            // Moves the scope ring-buffer cursor once
             // per sample -- Sheaf's ScopeWriter needs both Write() (called
             // per-sample inside RouteAudioSample(), above, on the POST-gate
-            // values -- UI-rework ITEM 3, design.md A3d, moved this off
+            // values -- moved off
             // dsp::Vco::Process() itself, see that struct's own comment) and
             // AdvanceIndex() (index_ += amount, DspScope.hpp:126-128).
             // Mirrors Braid 4's own placement: AdvanceIndex() runs at the
@@ -1197,7 +1174,7 @@ public:
             stopDiagPeak_ = 0.0f;
         }
 
-        // Task 7.2/8.3/9.3: publish this block's UI-facing state, once per
+        // Publishes this block's UI-facing state, once per
         // block after the per-sample loop -- the same end-of-ProcessBlock
         // placement apps/braid-4's own ProcessBlock uses for its
         // scopeWriter_.Publish()/PopulateUIState()/PublishUiState() sequence
@@ -1210,7 +1187,7 @@ public:
         filterChain_.comb.PopulateUIState(combUiState_);
         modulation_.PublishUiState();
 
-        // F7: publish the current drill-in level for the surface's header --
+        // Publish the current drill-in level for the surface's header --
         // same once-per-block cross-thread publish shape as every other
         // display atomic in this section (see DrillLevel()'s own comment).
         // drillIn_ always holds a value once Init() has run (constructed
@@ -1218,14 +1195,14 @@ public:
         // has_value() check is defensive rather than a reachable fallback.
         drillLevelDisplay_.store(drillIn_.has_value() ? drillIn_->Level() : 0, std::memory_order_release);
 
-        // Packet 10: publish the master clock's active tempo/external-slave
+        // Publishes the master clock's active tempo/external-slave
         // state for the surface to read cross-thread (see this file's
         // header comment).
         if (context_ != nullptr && context_->masterClock != nullptr) {
             tempoDisplayBpm_.store(context_->masterClock->TempoBpm(), std::memory_order_release);
             tempoExternallyClocked_.store(context_->masterClock->SyncConfiguration().receiveClock,
                                           std::memory_order_release);
-            // Task 3.6 (design E3e): same publish-once-per-block pattern as
+            // Same publish-once-per-block pattern as
             // the two stores above, for TransportRunning()'s cross-thread read.
             transportRunningDisplay_.store(
                 context_->masterClock->TransportState() == synth::ClockTransportState::Running,
@@ -1233,7 +1210,7 @@ public:
         }
     }
 
-    // Test/inspection access to the packet-7 VCO scope plumbing (task 7.4).
+    // Test/inspection access to the VCO scope plumbing.
     synth::ui::Visualizer& VcoScopeVisualizer() { return vcoScopeVisualizer_; }
     const dsp::Vco::UIState& VcoScopeUiState(std::size_t vcoIx) const {
         switch (vcoIx) {
@@ -1243,18 +1220,18 @@ public:
         }
     }
 
-    // Test/inspection access to the packet-9 transfer-function visualizers.
+    // Test/inspection access to the transfer-function visualizers.
     synth::ui::Visualizer& PeakVisualizer() { return peakVisualizer_; }
     synth::ui::Visualizer& CombVisualizer() { return combVisualizer_; }
 
-    // Test/inspection access to the packet-4 parameter/bank model (also used
-    // by later packets to wire fuego/modulation/UI).
+    // Test/inspection access to the parameter/bank model (also used
+    // to wire fuego/modulation/UI).
     FroggersParameterModel& Parameters() { return parameters_; }
 
-    // Test/inspection access to the packet-6 modulation slate.
+    // Test/inspection access to the modulation slate.
     FroggersModulationSlate& Modulation() { return modulation_; }
 
-    // Test/inspection access to packet 10's own bookkeeping.
+    // Test/inspection access to this class's own bank/drill-in bookkeeping.
     std::size_t ActiveBankIndex() const { return activeBankIx_; }
     FroggersModulationDrillIn& ActiveDrillIn() { return *drillIn_; }
 
@@ -1278,9 +1255,8 @@ public:
     // repro for the same reason -- measurement, not control).
     const dsp::VcoAdsrState& TestAudioAdsr() const { return audioAdsr_; }
     dsp::Oversampler2x& TestDriveOversampler() { return drive_.oversampler; }
-    // S1.2 (openspec/changes/archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/
-    // tasks.md): same convention as the accessors above -- added because the
-    // F3-from-silent-chain measurement case needs to read the live `flip`/
+    // Same convention as the accessors above -- added because a
+    // silent-chain measurement case needs to read the live `flip`/
     // `hashBits` SetFlip()/SetHash() actually resolved to (Drive.hpp's
     // truncating/rounding casts), not assume the SceneCenter knob argument
     // maps the way the caller expects. Read-only; does not change behaviour.
@@ -1335,14 +1311,13 @@ public:
     // directly instead of adding parallel accessors here.
     float TestLastDelayFreezeKnobEffective() const { return lastDelayFreezeKnobEffective_; }
     float TestLastReverbTankDriveKnobEffective() const { return lastReverbTankDriveKnobEffective_; }
-    // T2.5 (proposal.md SS2 W2b, tasks.md T2.5; MEASURED third mechanism,
-    // packet 2b): same rationale as TestLastReverbTankDriveKnobEffective()
+    // Same rationale as TestLastReverbTankDriveKnobEffective()
     // immediately above -- Reverb::Process computes `gritKnob01`'s use
     // (DigitalReorganizer::Mangle) as a purely local, no member to read
     // back after the fact.
     float TestLastReverbGritKnobEffective() const { return lastReverbGritKnobEffective_; }
 
-    // T5.2: test/inspection access to the actual `DelayParams::dfrzLatched`
+    // Test/inspection access to the actual `DelayParams::dfrzLatched`
     // value RouteAudioSample() (below) last handed to `delay_.Process()` --
     // same "TestXxx() convention" as the accessors above. `delayParams`
     // itself is a RouteAudioSample()-local (constructed fresh every sample),
@@ -1362,7 +1337,7 @@ public:
 private:
     synth::AppContext* context_ = nullptr;
 
-    // Task 6b (design D17, revised 2026-07-27): the single clock-read call
+    // The single clock-read call
     // site for this class. Returns the transport quarter-note position at
     // `absoluteOutputSample`, or nullopt when the transport isn't running or
     // the committed plan doesn't contain the sample. Null-checking
@@ -1375,8 +1350,8 @@ private:
     // `:323-324`, phase derivation `:325-327`, duty-cycle assignment `:328`),
     // substituting the Try accessor for miniapp's unchecked one. Factored
     // into its own method (rather than inlined at the gate's one call site in
-    // ProcessBlock) so packet 8's master-clock-driven Marbles advance (design
-    // D8/D8a) can share this exact read instead of re-deriving the
+    // ProcessBlock) so the master-clock-driven Marbles advance
+    // can share this exact read instead of re-deriving the
     // null-check/guard/Try-call sequence a second time.
     static std::optional<double> TransportQuarterNotesAt(const synth::AudioBlock& block,
                                                           std::uint64_t absoluteOutputSample) {
@@ -1387,11 +1362,11 @@ private:
         return block.clockPlan->TryTransportQuarterNotesAt(static_cast<double>(absoluteOutputSample));
     }
 
-    // Task 6a.1-6a.3 (design D15): the real audio path -- Audio/Envelope
-    // banks -> 3x dsp::Vco + dsp::MixOscVoices (packet 3 tasks 3.1/3.2) ->
-    // Drive bank -> dsp::FrogBlock + dsp::DriveBlendPhase (task 3.9) ->
-    // Filter bank -> dsp::FilterFxChain (task 3.6) -> Delay bank ->
-    // dsp::StereoDelay (task 3.10) -> Reverb bank -> dsp::Reverb (task 3.8).
+    // The real audio path -- Audio/Envelope
+    // banks -> 3x dsp::Vco + dsp::MixOscVoices ->
+    // Drive bank -> dsp::FrogBlock + dsp::DriveBlendPhase ->
+    // Filter bank -> dsp::FilterFxChain -> Delay bank ->
+    // dsp::StereoDelay -> Reverb bank -> dsp::Reverb.
     //
     // Ordering proof (verified by reading the cited source, not assumed):
     // `Parameter::GetRaw()` (External/Sheaf's
@@ -1409,21 +1384,21 @@ private:
     // `currentKnobValues_` and never rewrites the latter, so the cache is
     // unaffected by Phase2. Every `CachedKnobValue()` read below -- taken
     // after `parameters_.ProcessSample()` has returned for this sample -- is
-    // therefore post-modulation AND post-fuego, exactly as design D15
-    // requires; if this were not achievable as structured, this packet's
-    // brief called for stopping and reporting rather than reading raw
-    // values, which is why this citation chain exists.
+    // therefore post-modulation AND post-fuego, exactly as required; if this
+    // were not achievable as structured, the fallback was to stop and report
+    // rather than reading raw values, which is why this citation chain
+    // exists.
     float RouteAudioSample() {
         auto knob = [this](FroggersBankId bank, std::size_t ix) -> float {
             return parameters_.PageParameter(bank, ix).CachedKnobValue(0);
         };
 
-        // -- Audio bank -> 3x dsp::Vco (task 3.1) ---------------------------
+        // -- Audio bank -> 3x dsp::Vco ---------------------------
         // Slots: VCO pitch 0-2, Shape (morph) 3-5, Phase mod 6-8 -- same
         // (paramIx, +3, +6) grouping ProcessBlock's own vcoDrive lambda uses
         // above for the modulation slate's separate VCO instances.
         //
-        // S3.1: collapsed from three structurally identical statements
+        // Collapsed from three structurally identical statements
         // (audioVco1_/2_/3_, differing only by index 0,3,6 / 1,4,7 / 2,5,8)
         // into a loop over audioVcos_. Per-index order is preserved exactly
         // (i=0 is the old audioVco1_/slots 0,3,6; i=1 is audioVco2_/slots
@@ -1432,9 +1407,9 @@ private:
         // (carrierPhase/pmLfoPhase) plus this call's own arguments -- no
         // cross-VCO term exists (Vco.hpp's own header comment) -- so the
         // iteration order across i cannot change any instance's output.
-        // Strict-executor packet (Ring Mod slots 9-11 + PM rate slot 12):
+        // Ring Mod slots 9-11 + PM rate slot 12:
         // slot 12 (PMrt) is read ONCE here and passed identically to all
-        // three Process() calls -- task B's explicit "ONE knob shared
+        // three Process() calls -- deliberately "ONE knob shared
         // across all three VCOs' StepPmLfo calls, not three per-VCO rates".
         // Slot i+9 (RM1/RM2/RM3) stays per-VCO, same (paramIx, +9) grouping
         // the existing +3/+6 groups already use.
@@ -1449,17 +1424,16 @@ private:
                                                sampleRate_);
         }
 
-        // -- Envelope bank -> ASR + voice mix (task 3.2) --------------------
+        // -- Envelope bank -> ASR + voice mix --------------------
         // Slots: Attack/Sustain/Release x VCO1-3, 0-8 in that order --
         // matches dsp::MixOscVoices's parameter order exactly.
         //
-        // UI-rework ITEM 3 (design.md A3d, tasks.md B.3, 2026-07-29):
         // `gatedVoices` receives the POST-gate per-voice values via
         // MixOscVoices's out-parameter (VoiceEnvelope.hpp) -- written to the
         // scope just below instead of the pre-gate raw VCO output
         // Vco::Process() used to write (see that struct's own comment for
         // why). This is the single call site the out-parameter was added
-        // for; do not re-apply `adsr.apply` anywhere else (OMNI §8).
+        // for; do not re-apply `adsr.apply` anywhere else.
         // Stop-must-stop fix (operator bug report 2026-07-29: "the stop button
         // doesnt actually stop all audio in all circumstances"). Closing the
         // transport gate puts every voice into Stage::Release honouring the
@@ -1486,7 +1460,7 @@ private:
         constexpr float kStopFadeReleaseKnob =
             (kStopFadeSeconds - dsp::VcoAdsrState::kMinTimeSeconds) /
             (dsp::VcoAdsrState::kMaxReleaseSeconds - dsp::VcoAdsrState::kMinTimeSeconds);
-        // T2.2 (proposal.md SS2 W2, tasks.md T2.2): while the transport is
+        // While the transport is
         // STOPPED, override effective knob values for the release knob
         // (releaseKnob, below -- already existed) PLUS the three drive
         // pre-gains (Delay slot 9 "Feedback drive", Reverb slot 10 "Tank
@@ -1501,9 +1475,9 @@ private:
         // instant `wasTransportRunning_` is true again, `stoppedKnob` below
         // just returns `knob(bank, slot)` unchanged.
         //
-        // T2.5 (proposal.md SS2 W2b, tasks.md T2.5; MEASURED third
-        // mechanism, packet 2b 2026-08-17): Reverb's Grit (slot 11) joins
-        // the same list. With W1+W2 in place the pass-D 20-trial repro
+        // Reverb's Grit (slot 11) joins
+        // the same list -- a third mechanism found by direct measurement.
+        // With W1+W2 in place the pass-D 20-trial repro
         // still reproduced 20/20 -- measured cause: Grit's stage
         // (dsp::DigitalReorganizer::Mangle, dsp/Drive.hpp:363-382) sits
         // INSIDE the tank feedback path ahead of the loop's own
@@ -1519,7 +1493,7 @@ private:
         // dsp/Reverb.hpp:534-538), so this override is silent by
         // construction too, same as the others.
         //
-        // OMNI SS8: one shared lookup, not a sixth independent ternary --
+        // One shared lookup, not a sixth independent ternary --
         // `stoppedKnob(bank, slot, stoppedValue)` generalizes the
         // `wasTransportRunning_ ? knob(...) : override` shape the old
         // inlined `releaseKnob` used to hardcode to any (bank, slot,
@@ -1529,7 +1503,7 @@ private:
         // argument], the three drive pre-gains, Freeze, Grit) render
         // through this ONE lambda instance.
         //
-        // T6.1 (tasks.md, REOPENED 2026-08-17): the condition below reads
+        // The condition below reads
         // TransportTeardownActive(wasTransportRunning_) -- the SAME gate
         // ForceReleaseAll() and both ForEachStatefulUnit(Reset) clears read
         // in ProcessBlock() above -- instead of the bare `wasTransportRunning_`
@@ -1572,14 +1546,14 @@ private:
             knob(FroggersBankId::Envelope, 12), knob(FroggersBankId::Envelope, 13),
             knob(FroggersBankId::Audio, 13), &gatedVoices);
 
-        // Post-gate scope tap (design.md A3d): write the GATED values, not
+        // Post-gate scope tap: writes the GATED values, not
         // the raw pre-gate VCO output -- so the scope stays flat until the
         // transport's ASR gate has actually opened at least one voice.
         vco1ScopeHolder_.Write(gatedVoices.v1);
         vco2ScopeHolder_.Write(gatedVoices.v2);
         vco3ScopeHolder_.Write(gatedVoices.v3);
 
-        // -- Drive bank -> dsp::FrogBlock + DriveBlendPhase (task 3.9) ------
+        // -- Drive bank -> dsp::FrogBlock + DriveBlendPhase ------
         // FroggersEngine.hpp:483-490 order: Drive (SetGain) before Shape
         // (SetCoefs, which reads the just-set gain target -- Drive.hpp's own
         // comment), then SRR1/SRR2/XOR/BitDepth/Fuzz; Blend/Phase (slots 7-8)
@@ -1596,7 +1570,7 @@ private:
         drive_.digitalReorganizer.SetFlip(knob(FroggersBankId::Drive, 4));
         drive_.digitalReorganizer.SetHash(knob(FroggersBankId::Drive, 5));
         drive_.fuzz = knob(FroggersBankId::Drive, 6);
-        // -- Drive slots 9, 11-13 (D1/D3/D4/D5, strict-executor packet) -----
+        // -- Drive slots 9, 11-13 -----
         drive_.oversampler.SetAntiAliasBrightness(knob(FroggersBankId::Drive, 9));
         drive_.SetFold(knob(FroggersBankId::Drive, 11));
         drive_.SetTone(knob(FroggersBankId::Drive, 12));
@@ -1605,7 +1579,7 @@ private:
         const float driveOut = driveBlendPhase_.Process(
             chainIn, driveWet, knob(FroggersBankId::Drive, 7), knob(FroggersBankId::Drive, 8));
 
-        // -- Filter bank -> dsp::FilterFxChain (task 3.6) -------------------
+        // -- Filter bank -> dsp::FilterFxChain -------------------
         // FroggersEngine.hpp:463,465-481 mapping (Comb offset -> pureDelay,
         // Peak freq/gain/Q -> ResonantBump, Comb delay/feedback/LP -> Comb,
         // Comb/Peak -> blend, Scoop -> scoopMix). The old `useParallel` bool
@@ -1615,7 +1589,7 @@ private:
         // morph -- see FilterFxChain::Process's own comment (FilterFx.hpp).
         // Clamped to `PureDelay::kSize` so a very high host sample rate
         // cannot push `SetDelaySeconds` past the ported unit's fixed-size
-        // ring buffer (defensive; PureDelay itself, packet 3, is not
+        // ring buffer (defensive; PureDelay itself is not
         // modified).
         const float combOffsetSeconds = std::min(
             dsp::ExpMapCompute(0.001f, 0.1f, knob(FroggersBankId::Filter, 0)),
@@ -1628,18 +1602,18 @@ private:
             dsp::ExpMapCompute(20.0f / sampleRate_, 20000.0f / sampleRate_, knob(FroggersBankId::Filter, 1));
         const float bumpWidth = dsp::ExpMapCompute(0.1f, 10.0f, knob(FroggersBankId::Filter, 3));
         filterChain_.peak.SetFreq(bumpFreq);
-        // ITEM 2 (design.md A2, 2026-07-29, deliberate parity divergence --
-        // same treatment as Fuegoize.hpp's own D6 note): ceiling lowered
-        // from 10x (+20 dB) to 4x (+12 dB). An audible resonant peak does
+        // Ceiling lowered
+        // from 10x (+20 dB) to 4x (+12 dB) (same treatment as Fuegoize.hpp's
+        // own D6 note). An audible resonant peak does
         // not need a 20 dB multiplier sitting on top of a comb that (post
         // item 1) can still ring for seconds -- 10x was the primary gain
-        // offender in the operator's blowout (design.md A1: stage 5 of 10,
-        // multiplying the comb's saturator-pinned output before the
+        // offender in the operator's blowout (multiplying the comb's
+        // saturator-pinned output before the
         // limiter). scoopNotch (below) has its own independent freq/width
-        // knobs (Task B, Filter slots 10/11) but its own height is a DIP
+        // knobs (Filter slots 10/11) but its own height is a DIP
         // (max(0.05, 1-0.95*scoop)), not a gain, so it is unaffected and
         // untouched.
-        // Item 2 (design A2): ceiling 4.0f (+12 dB), NOT the frozen firmware's 10.0f
+        // Ceiling 4.0f (+12 dB), NOT the frozen firmware's 10.0f
         // (+20 dB). A pinned self-oscillating comb through a 20 dB peak is what put
         // ~20x full scale into the output stage. Deliberate divergence from the port
         // source -- parity deprioritised by operator decision 2026-07-28.
@@ -1677,7 +1651,7 @@ private:
         // processes unconditionally, so a poisoned state reaches the output
         // even at `scoopMix == 0` -- IEEE `NaN * 0` is `NaN`.
         // Height is a DIP, not a gain: max(0.05, 1 - 0.95 * scoop).
-        // Task B (packet -- Filter slots 10/11, "Scoop freq"/"Scoop width",
+        // Filter slots 10/11 ("Scoop freq"/"Scoop width",
         // "ScFq"/"ScWd"): the scoop notch used to share the peak bump's
         // freq/width verbatim (bumpFreq/bumpWidth above); it now gets its
         // own independent knobs, mapped with the SAME shape (same
@@ -1724,7 +1698,7 @@ private:
             filterChain_.Process(driveOut, knob(FroggersBankId::Filter, 9), knob(FroggersBankId::Filter, 7),
                                   knob(FroggersBankId::Filter, 13));
 
-        // -- Delay bank -> dsp::StereoDelay (task 3.10) ---------------------
+        // -- Delay bank -> dsp::StereoDelay ---------------------
         // Positioned exactly where the frozen engine's `m_simFxInsert` hook
         // sits: FroggersEngine.hpp:840-843, between the filter chain
         // (:824-839) and Reverb (:844-847) -- confirmed by
@@ -1753,17 +1727,16 @@ private:
             knob(FroggersBankId::Delay, 0), knob(FroggersBankId::Delay, 1), knob(FroggersBankId::Delay, 2),
             knob(FroggersBankId::Delay, 3), delayFreezeKnobEffective, knob(FroggersBankId::Delay, 5),
             knob(FroggersBankId::Delay, 6), knob(FroggersBankId::Delay, 7), knob(FroggersBankId::Delay, 8));
-        // T5.2 (proposal.md §6.4b-ii's own binding implementation
-        // constraint): the Freeze BUTTON's override, applied where the
+        // The Freeze BUTTON's override, applied where the
         // freeze mapping resolves the encoder's value -- MapRowsToDelayParams
         // just above sets `dfrz` from the clamped (T3.1a) encoder alone and
         // never touches `dfrzLatched`, which dsp::StereoDelay::Process()
-        // (dsp/Delay.hpp) already honours as a SINK (packet P4) but nothing
-        // until this packet ever sets as a SOURCE. Not folded into
+        // (dsp/Delay.hpp) already honours as a SINK but nothing
+        // else ever sets as a SOURCE. Not folded into
         // MapRowsToDelayParams itself: dfrzLatched is not a row (this
         // file's own DelayParams::dfrzLatched comment).
         delayParams.dfrzLatched = FreezeLatched();
-        // -- Delay slots 9-13 (D6-D10, strict-executor packet) ---------------
+        // -- Delay slots 9-13 ---------------
         // T2.2: stoppedKnob overrides Feedback drive to kStopUnityDriveKnob
         // while stopped, same idiom as the Filter comb drive above.
         delay_.SetFeedbackDrive(stoppedKnob(FroggersBankId::Delay, 9, kStopUnityDriveKnob));
@@ -1774,7 +1747,7 @@ private:
         const dsp::DelayWetPair delayWet = delay_.Process(filterOut, delayParams);
         const float delayOut = delay_.ToReverbMono(filterOut, delayWet, delayParams.dmix);
 
-        // -- Reverb bank -> dsp::Reverb (task 3.8) --------------------------
+        // -- Reverb bank -> dsp::Reverb --------------------------
         // Last stage, matching FroggersEngine.hpp:844-847's wet/dry blend
         // (folded into Reverb::Process's own return -- see that struct's
         // header comment).
@@ -1797,10 +1770,10 @@ private:
         // knob value passed in here for TestLastReverbTankDriveKnobEffective().
         const float reverbTankDriveKnobEffective = stoppedKnob(FroggersBankId::Reverb, 10, kStopUnityDriveKnob);
         lastReverbTankDriveKnobEffective_ = reverbTankDriveKnobEffective;
-        // T2.5: stoppedKnob overrides Grit (slot 11) to kStopGritKnob
+        // stoppedKnob overrides Grit (slot 11) to kStopGritKnob
         // (0.0f) while stopped, same idiom as the Tank drive override
-        // immediately above -- see this method's own T2.5 comment (beside
-        // kStopFadeReleaseKnob) for why (measured, packet 2b: Grit is the
+        // immediately above -- see the comment above
+        // kStopFadeReleaseKnob for why (measured: Grit is the
         // third mechanism keeping the tank sustained after Stop).
         // lastReverbGritKnobEffective_ records the resolved knob value for
         // TestLastReverbGritKnobEffective(), same convention as
@@ -1808,7 +1781,7 @@ private:
         // Process has no member to read gritKnob01's use back from either).
         const float reverbGritKnobEffective = stoppedKnob(FroggersBankId::Reverb, 11, kStopGritKnob);
         lastReverbGritKnobEffective_ = reverbGritKnobEffective;
-        // Reverb slots 9-13 (R1-R5, strict-executor packet: Mod rate/Tank
+        // Reverb slots 9-13 (R1-R5: Mod rate/Tank
         // drive/Grit/Tilt/Tuned) -- passed as Process()'s own trailing
         // arguments, mirroring how slots 7-8 (Mod depth/Hold) are already
         // wired here, rather than via separate Set*() calls (dsp::Reverb's
@@ -1828,10 +1801,10 @@ private:
         return SanitizeOutputSample(reverbOut);
     }
 
-    // ITEM 3 (design.md A2/A2a, 2026-07-29): output-stage limiter.
-    // Supersedes task 2.8's unconditional hard clamp (2026-07-28 revision,
-    // below in `SanitizeOutputSample`'s own comment for the historical
-    // record) -- design.md A4 records the clamp as superseded, and the
+    // Output-stage limiter.
+    // Supersedes the old unconditional hard clamp (see
+    // `SanitizeOutputSample`'s own comment for the historical
+    // record) -- the
     // `frogg3rs-dsp-recovery` spec requirement forbidding soft-knee
     // limiting is superseded along with it.
     //
@@ -1845,12 +1818,11 @@ private:
     // 1.0f (its `Reset()`/initial value, never disturbed while every sample
     // stays under threshold, per the Sterbenz-lemma argument in the
     // struct's own `Process()` comment), passthrough is bit-identical. That
-    // is this stage's own acceptance test (design.md A2a).
+    // is this stage's own acceptance test.
     //
-    // B5 (openspec/changes/archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/tasks.md):
-    // the struct itself now lives in `dsp::OutputLimiter`
+    // The struct itself now lives in `dsp::OutputLimiter`
     // (`dsp/Limiter.hpp`), not here -- it was a PRIVATE nested type until
-    // B5 needed a SECOND, independently-tuned instance on the Filter bank's
+    // a SECOND, independently-tuned instance was needed on the Filter bank's
     // peak branch (`FilterFxChain::peakLimiter`, `dsp/FilterFx.hpp`), which
     // needed the type reachable from a header below this one in the include
     // graph (this class includes `dsp/FilterFx.hpp`, never the reverse --
@@ -1862,14 +1834,14 @@ private:
     // `dsp/Limiter.hpp`'s own header comment) -- this move is behaviour-
     // neutral, not a retune.
 
-    // Task 2.8 (revised 2026-07-28; SUPERSEDED 2026-07-29 by the
-    // `OutputLimiter` above -- item 3, design.md A2/A2a/A4): this was the
+    // This was the
     // final, unconditional hard clamp before a sample reached
     // `synth::AudioBlock::outputs`. In float audio, 1.0 IS full scale
     // (0 dBFS) -- the original 8.0f ceiling let this app hand the output
     // device a signal at +18 dBFS, which the device then hard-clipped into
     // a square wave (the operator-reported "blows the audio out"). Kept
-    // here as the historical record of that fix; the clamp itself no longer
+    // here as the historical record of that fix (superseded by the
+    // `OutputLimiter` above); the clamp itself no longer
     // runs -- `SanitizeOutputSample()` below now hands off to
     // `outputLimiter_.Process()` instead of `std::clamp`.
     //
@@ -1878,12 +1850,12 @@ private:
     // recursive state upstream (e.g. a biquad or comb whose state went
     // non-finite or diverged) kept producing bad values underneath it.
     // Genuine recovery -- detecting and resetting the poisoned unit itself
-    // -- is `RecoverPoisonedUnitState()` below (tasks 2.2-2.5), which the
+    // -- is `RecoverPoisonedUnitState()` below, which the
     // limiter cooperates with but does not replace: the Filter bank's Comb
     // can self-oscillate (its feedback curve is asymmetric +-0.95 as of
     // item 1, `dsp::Comb::GetFeedback` in FilterFx.hpp -- see that
     // function's own divergence-note comment) and the Reverb bank's
-    // authored Hold control (task 3.8) pushes its internal feedback
+    // authored Hold control pushes its internal feedback
     // coefficient toward, but strictly below, 1.0, so both are ordinarily
     // bounded by construction -- the limiter is the safety net for when
     // "ordinarily" stops holding, not the primary defense (items 1/2 are).
@@ -1894,8 +1866,8 @@ private:
         if (x != 0.0f && std::fabs(x) < std::numeric_limits<float>::min()) {
             return 0.0f;  // flush subnormal/denormal to zero.
         }
-        // Limiter, then a hard bound (design.md A2/A2a/A4; spec
-        // "Output is limited, then bounded"). `outputLimiter_` is a
+        // Limiter, then a hard bound: output is limited, then bounded.
+        // `outputLimiter_` is a
         // feed-forward one-pole gain rider with no lookahead: its gain
         // reduction is computed from the signal it has already passed, so
         // it necessarily lags a fast-changing input and cannot itself
@@ -1929,10 +1901,10 @@ private:
         return std::clamp(outputLimiter_.Process(x) * kMakeUpGain, -1.0f, 1.0f);
     }
 
-    // Tasks 2.4/2.5 (Tier 2, magnitude recovery) -- the ceiling is DERIVED,
+    // The ceiling is DERIVED,
     // not measured, and re-derived here rather than re-tuned by feel.
-    // Re-derived 2026-07-29 after items 1/2 tightened both inputs below
-    // (design.md A2); the ceiling constant itself is UNCHANGED (100.0 was
+    // Re-derived 2026-07-29 after items 1/2 tightened both inputs below;
+    // the ceiling constant itself is UNCHANGED (100.0 was
     // already comfortably above the tighter figures too, so there was
     // nothing to retune):
     //   - The filter chain's input is bounded to +-1.0 by
@@ -1959,7 +1931,7 @@ private:
     // DO NOT retune this constant without re-deriving it from the above.
     static constexpr float kMaxUnitStateMagnitude = 100.0f;
 
-    // "Sustained" (task 2.5's own explicit ask): a unit's state magnitude
+    // "Sustained": a unit's state magnitude
     // must stay above kMaxUnitStateMagnitude for at least this much REAL
     // TIME, not merely "the last block-end snapshot", before it is treated
     // as a genuine divergence rather than a transient. Tracked in seconds
@@ -2014,7 +1986,7 @@ private:
         }
     }
 
-    // Task 2.3 (Tier 1 ONLY -- no magnitude/Tier 2 counter). Used for
+    // Tier 1 ONLY -- no magnitude/Tier 2 counter. Used for
     // `delay_`/`reverb_`: both are exposed to the exact same "a poisoned
     // sample from an upstream unit permanently latches this unit's own
     // state non-finite" failure Tier 1 exists to fix (see
@@ -2044,8 +2016,7 @@ private:
     // time accounting, hence taking it as a parameter rather than being
     // folded into the per-sample loop itself).
     //
-    // F3.3 SPEC CORRECTED 2026-08-07 (openspec/changes/
-    // archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md): the unit set this
+    // The unit set this
     // watches is no longer listed here directly -- it walks
     // ForEachStatefulUnit() below, the single definition site (see that
     // method's own comment). Tier 2's per-unit sustained-over-ceiling
@@ -2073,8 +2044,8 @@ private:
     // `reverb_`/`outputLimiter_`/`filterChain_.peakLimiter`, reusing their
     // EXISTING Reset()/ClearBuffers() (StereoDelay::Reset() is a thin alias
     // for ClearBuffers(), added so the same generic call works uniformly --
-    // see that method's own comment) rather than adding duplicates, per
-    // task 2.2's explicit instruction. For `delay_`/`reverb_`, this is IN
+    // see that method's own comment) rather than adding duplicates. For
+    // `delay_`/`reverb_`, this is IN
     // ADDITION to their existing, separate, transport-edge-gated reset
     // (`wasTransportRunning_`/`delayReverbClearPending_` above, which exists
     // for a different reason -- silencing self-sustaining feedback on Stop,
@@ -2102,13 +2073,12 @@ private:
     FroggersParameterModel parameters_;
     FroggersModulationSlate modulation_;
 
-    // Task 6a: the real audio path's own DSP state (sample-rate-dependent
+    // The real audio path's own DSP state (sample-rate-dependent
     // members are (re)initialized in PrepareToPlay()). Deliberately separate
     // instances from modulation_'s private VCOs -- see this class's
     // PrepareToPlay() comment.
     float sampleRate_ = 48000.0f;
-    // S3.1 (openspec/changes/archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/
-    // tasks.md): collapsed from three separately-named dsp::Vco audioVco1_/
+    // Collapsed from three separately-named dsp::Vco audioVco1_/
     // audioVco2_/audioVco3_ members into one std::array -- dsp::Vco is
     // trivially copy/move constructible/assignable (all members are float,
     // a trivially-copyable synth::Color, and a raw pointer; verified by a
@@ -2137,37 +2107,35 @@ private:
     float lastDelayFreezeKnobEffective_ = 0.0f;
     float lastReverbTankDriveKnobEffective_ = 0.5f;
     float lastReverbGritKnobEffective_ = 0.0f;
-    // Item 3 (design.md A2/A2a): the output-stage limiter's own per-sample
+    // The output-stage limiter's own per-sample
     // gain-envelope state -- see the comment above `SanitizeOutputSample()`
     // for the full design rationale, and `dsp::OutputLimiter`'s own
-    // definition (`dsp/Limiter.hpp`, moved out by B5) for the struct itself.
+    // definition (`dsp/Limiter.hpp`, moved out separately) for the struct itself.
     dsp::OutputLimiter outputLimiter_;
 
-    // F3.3 (openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md,
-    // OMNI Sec1/Sec8): this class's own contribution to the "every stateful
+    // This class's own contribution to the "every stateful
     // unit in the audio path" enumeration, COMPOSED from the members
     // declared above rather than re-listing dsp::FrogBlock's/
     // dsp::FilterFxChain's own sub-units here a second time (see those
     // structs' own ForEachStatefulUnit, dsp/Drive.hpp, dsp/FilterFx.hpp).
-    // This is now the SINGLE definition site both RecoverPoisonedUnitState
-    // (below) and the Stop flush (ProcessBlock, above) call -- the defect
-    // this task fixes is that the Stop flush used to be a SECOND,
+    // This is the SINGLE definition site both RecoverPoisonedUnitState
+    // (below) and the Stop flush (ProcessBlock, above) call -- the fix here
+    // was that the Stop flush used to be a SECOND,
     // independent, truncated definition of this same concept (2 units, only
     // delay_/reverb_) instead of calling this one. The tier passed to
     // `visit` is DECLARED here, never inferred from the unit's interface
     // (dsp::FiniteOnly's/dsp::Magnitude's own comment, dsp/RecoveryTier.hpp,
-    // explains why). SPEC CORRECTED 2026-08-07: these are compile-time tag
+    // explains why). These are compile-time tag
     // TYPES, not a runtime enum value -- see RecoverPoisonedUnitState()'s
     // own comment below for why that distinction is load-bearing. Per-unit
-    // Tier-2 sustained-over-ceiling bookkeeping (task 2.4/2.5's original
-    // ask) now lives ON each Magnitude-tagged unit itself
+    // Tier-2 sustained-over-ceiling bookkeeping now lives ON each Magnitude-tagged unit itself
     // (`unit.overCeilingSeconds`) rather than as ten parallel members here,
     // so unlike the first version of this method there is nothing else this
     // class needs to own alongside the unit references themselves.
     template <typename Visitor>
     void ForEachStatefulUnit(Visitor&& visit)
     {
-        // S3.1: collapsed from three visit(audioVcoN_, ...) lines into a
+        // Collapsed from three visit(audioVcoN_, ...) lines into a
         // loop over audioVcos_ -- same 3 dsp::Vco instances, same order
         // (index 0/1/2 == old audioVco1_/2_/3_), same dsp::Magnitude tag,
         // same visitor. Count/order/tag of every OTHER unit this method
@@ -2195,7 +2163,7 @@ private:
     // handler (FroggersUiSurface.hpp's HandleAction) instead.
     bool wasTransportRunning_ = false;
 
-    // T6.2 (tasks.md, REOPENED 2026-08-17): the PREVIOUS sample's Freeze-
+    // The PREVIOUS sample's Freeze-
     // latch state, same idiom as `wasTransportRunning_` just above --
     // remembered so ProcessBlock can detect the latch's own
     // latched->unlatched edge while the transport is already stopped (the
@@ -2214,7 +2182,7 @@ private:
     // detected, for the full logic.
     bool delayReverbClearPending_ = false;
 
-    // Task 7.2 (design D7): one ScopeWriter, ReserveChans(1) per VCO
+    // One ScopeWriter, ReserveChans(1) per VCO
     // returning a ScopeWriterHolder -- declared before the holders below
     // since the constructor's init list calls vcoScopeWriter_.ReserveChans()
     // to construct them (member init order follows declaration order, not
@@ -2223,29 +2191,29 @@ private:
     synth::ScopeWriterHolder vco1ScopeHolder_;
     synth::ScopeWriterHolder vco2ScopeHolder_;
     synth::ScopeWriterHolder vco3ScopeHolder_;
-    // Task 7.1: populated once per block (ProcessBlock(), after the
+    // Populated once per block (ProcessBlock(), after the
     // per-sample loop) via dsp::Vco::PopulateUIState().
     dsp::Vco::UIState vco1ScopeUiState_;
     dsp::Vco::UIState vco2ScopeUiState_;
     dsp::Vco::UIState vco3ScopeUiState_;
-    // Task 7.3: the ScopeVisualizer<UIState> instance itself -- this is the
-    // "no app-level drawing code" half of D7 (VcoScopeVisualizer() above
-    // exposes it for packet 10 to place).
+    // The ScopeVisualizer<UIState> instance itself -- this is the
+    // "no app-level drawing code" half (VcoScopeVisualizer() above
+    // exposes it for the surface to place).
     synth::ui::ScopeVisualizer<dsp::Vco::UIState> vcoScopeVisualizer_;
 
-    // Task 9.1 (design D10): populated once per block from filterChain_'s
+    // Populated once per block from filterChain_'s
     // live peak/comb, same convention as the VCO UIStates above.
     dsp::ResonantBump::UIState peakUiState_;
     dsp::Comb::UIState combUiState_;
-    // Task 9.2/9.3: one TransferFunctionVisualizer per filter, attached as
+    // One TransferFunctionVisualizer per filter, attached as
     // the Filter bank's Peak/Comb parameter underlays via
-    // parameters_.Init()'s peakVisualizer_/combVisualizer_ arguments (task
-    // 9.3) -- rendered automatically as grid-cell underlays (D9b), not
+    // parameters_.Init()'s peakVisualizer_/combVisualizer_ arguments --
+    // rendered automatically as grid-cell underlays, not
     // placed into the surface's own tree directly.
     TransferFunctionVisualizer peakVisualizer_;
     TransferFunctionVisualizer combVisualizer_;
 
-    // Packet 10 (design D11/D14): the UI-thread -> audio-thread request
+    // The UI-thread -> audio-thread request
     // bridge (see this file's header comment) plus the audio-thread-only
     // active-bank/drill-in bookkeeping it drives.
     std::atomic<int> pendingBankSelect_{-1};
@@ -2264,29 +2232,29 @@ private:
 
     std::atomic<double> tempoDisplayBpm_{synth::MasterClock::kDefaultTempoBpm};
     std::atomic<bool> tempoExternallyClocked_{false};
-    // Task 3.6 (design E3e): published once per block, same contract as the
+    // Published once per block, same contract as the
     // two atomics above -- see TransportRunning()'s own comment.
     std::atomic<bool> transportRunningDisplay_{false};
-    // F7: published once per block from ProcessBlock() -- see DrillLevel()'s
+    // Published once per block from ProcessBlock() -- see DrillLevel()'s
     // own comment.
     std::atomic<std::size_t> drillLevelDisplay_{0};
-    // A4: published once per Randomize All/Page press from ProcessFrame() --
+    // Published once per Randomize All/Page press from ProcessFrame() --
     // see LastRandomizePartial()'s own comment.
     std::atomic<bool> lastRandomizePartial_{false};
 
-    // D17 robustness fix (see PrepareToPlay()'s own comment): the surface's
+    // Robustness measure (see PrepareToPlay()'s own comment): the surface's
     // last explicit Play(true)/Stop(false) request, independent of
     // `MasterClock::TransportState()` -- defaults false so a fresh app (or a
     // headless rig that never presses Play) stays silent exactly as before.
     std::atomic<bool> desiredTransportRunning_{false};
 
-    // T5.2: the Freeze transport button's latch (see SetFreezeLatched()/
+    // The Freeze transport button's latch (see SetFreezeLatched()/
     // FreezeLatched() above) -- defaults false so a fresh app's Delay stays
     // on the ordinary clamped-encoder path (T3.1a) until the operator
     // latches it.
     std::atomic<bool> freezeLatched_{false};
 
-    // T5.3a/T5.3b (packet P7a): a bounded mono capture buffer of what the
+    // A bounded mono capture buffer of what the
     // operator hears (post-limiter, pre-channel-fanout -- see the capture
     // hook inside ProcessBlock()'s per-sample loop below). recordArmed_ is a
     // direct UI-thread-write, audio-thread-read (and audio-thread-
@@ -2334,8 +2302,7 @@ private:
     std::optional<FroggersModulationDrillIn> drillIn_;
 };
 
-// T5.3c (tasks.md, "the WAV encoding itself could live either side"): a
-// pure std:: WAV encoder, kept in the no-JUCE core (check-no-juce, this
+// A pure std:: WAV encoder, kept in the no-JUCE core (check-no-juce, this
 // file's own header comment) so it is testable headlessly -- no test binary
 // compiles FroggersMain.cpp, the only place a juce::AudioFormatWriter could
 // otherwise have done this -- and so the host stays a thin

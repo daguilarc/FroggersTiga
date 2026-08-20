@@ -1,21 +1,20 @@
-// FroggersAudioRoutingTests.cpp -- tasks.md 6a.5/6a.6 (design D15) and 6b
-// (design D17, revised 2026-07-27): the real audio path. Proves
+// FroggersAudioRoutingTests.cpp -- the real audio path. Proves
 // FroggersApp::ProcessBlock produces non-silent, finite stereo output for
 // (a) a deliberately non-default patch and (b) the D16 default patch
 // untouched, while the master clock's transport is running -- explicitly
-// stronger than task 2.3's finiteness check (FroggersHeadlessTests.cpp),
+// stronger than the finiteness check in FroggersHeadlessTests.cpp,
 // which silence also satisfies -- and produces silence while the transport
 // is stopped, including immediately after Init()/PrepareToPlay() with the
-// transport never started (D17: the ASR gate follows the transport's
+// transport never started (the ASR gate follows the transport's
 // quarter-note pulse, not any note-on/off or permanently-held gate). Also
-// exercises task 6a.4's output-safety requirement directly: the Filter
+// exercises the output-safety requirement directly: the Filter
 // bank's Comb pushed to its self-oscillating feedback extreme, plus the
 // Reverb bank's Hold pushed to its ceiling, must still leave the output
 // finite and bounded.
 //
 // Runs via synth_rig::SynthRig<FroggersApp> (External/Sheaf's
 // tests/support/SynthRig.hpp), same JUCE-free headless harness as
-// FroggersHeadlessTests.cpp (task 2.3) and FroggersParameterModelTests.cpp;
+// FroggersHeadlessTests.cpp and FroggersParameterModelTests.cpp;
 // wired into app/Makefile's `test` target (nice make -j2 test). The rig's
 // transport starts Stopped by default (synth::ClockTransportState::Stopped)
 // until `rig.StartAt(...)` is called, which is exactly the state this file's
@@ -105,9 +104,9 @@ inline void ApplyPatchNow(Rig& rig) {
     rig.Application().TestParameterManager().ComputeAllParameters();
 }
 
-// Peak absolute magnitude across every captured channel sample -- task
-// 6a.5's "assert some output sample exceeds a small epsilon in magnitude",
-// which plain finiteness (task 2.3) does not require.
+// Peak absolute magnitude across every captured channel sample -- asserts
+// some output sample exceeds a small epsilon in magnitude, which plain
+// finiteness alone does not require.
 float PeakAbs(const std::vector<Rig::OutputFrame>& frames) {
     float peak = 0.0f;
     for (const auto& frame : frames) {
@@ -118,10 +117,10 @@ float PeakAbs(const std::vector<Rig::OutputFrame>& frames) {
     return peak;
 }
 
-// Task 6b.4/8.2 -- counts rising "gate opened" edges (channel 0's magnitude
-// crossing above a small threshold from below) across captured output --
-// used to prove the ASR gate's cycle rate tracks tempo without needing to
-// decode the exact envelope shape.
+// Counts rising "gate opened" edges (channel 0's magnitude crossing above
+// a small threshold from below) across captured output -- used to prove
+// the ASR gate's cycle rate tracks tempo without needing to decode the
+// exact envelope shape.
 std::size_t CountRisingEdges(const std::vector<Rig::OutputFrame>& frames) {
     constexpr float kThreshold = 1.0e-3f;
     std::size_t count = 0;
@@ -223,12 +222,11 @@ std::vector<float> ExtractChannel(const std::vector<Rig::OutputFrame>& frames, s
 }
 
 // -----------------------------------------------------------------------
-// 6a (operator brief) -- "assert the default patch (design D16) produces
-// audio... a freshly started app should make sound with no user input."
-// D16 sets three VCO Shapes, six cross-VCO modulation depths (task 6.12),
-// and Drive to 20% -- all applied once from FroggersApp::Init() via
-// ApplyFroggersDefaultPatch(), with no test-side parameter mutation here at
-// all.
+// The default patch (D16) must produce audio: a freshly started app
+// should make sound with no user input. D16 sets three VCO Shapes, six
+// cross-VCO modulation depths, and Drive to 20% -- all applied once from
+// FroggersApp::Init() via ApplyFroggersDefaultPatch(), with no test-side
+// parameter mutation here at all.
 // -----------------------------------------------------------------------
 TEST_CASE(default_patch_produces_non_silent_finite_audio) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("default_patch"));
@@ -237,16 +235,16 @@ TEST_CASE(default_patch_produces_non_silent_finite_audio) {
     // Confirm this really is D16's default patch before trusting the
     // energy assertion below to mean anything -- Drive (Drive bank, slot 0)
     // reads 20% of range, and at least one cross-VCO modulation depth is
-    // materialized (task 6.12's own citation: ApplyFroggersDefaultPatch,
-    // called unconditionally from FroggersApp::Init()).
+    // materialized (ApplyFroggersDefaultPatch is called unconditionally
+    // from FroggersApp::Init()).
     const synth::Parameter& driveParam = model.PageParameter(synth_froggers::FroggersBankId::Drive, 0);
     REQUIRE_TRUE(std::fabs(driveParam.SceneCenter(0) - 0.2f) < 1e-5f);
     const synth::Parameter& vco1Pitch = model.PageParameter(synth_froggers::FroggersBankId::Audio, 0);
     REQUIRE_TRUE(vco1Pitch.ModulationDepthParameter(synth_froggers::kModSlotVco2Audio) != nullptr);
 
-    // Task 6b (design D17, revised): the ASR gate follows the transport's
-    // quarter-note pulse, so the transport must actually be running for any
-    // of this test's energy assertions to mean anything.
+    // The ASR gate follows the transport's quarter-note pulse, so the
+    // transport must actually be running for any of this test's energy
+    // assertions to mean anything.
     rig.StartAt(0);
 
     // Let scene-blend/fuego/modulation settle (kDefaultProcessLiteAlpha is a
@@ -282,8 +280,8 @@ TEST_CASE(default_patch_produces_non_silent_finite_audio) {
 TEST_CASE(default_patch_has_audible_band_energy_above_150hz) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("default_patch_band_energy"));
 
-    // Task 6b (design D17): the ASR gate only opens while the transport
-    // runs, so the transport must be started for this to measure anything.
+    // The ASR gate only opens while the transport runs, so the transport
+    // must be started for this to measure anything.
     rig.StartAt(0);
 
     // Let scene-blend/fuego/modulation settle, then capture a fresh window
@@ -306,8 +304,7 @@ TEST_CASE(default_patch_has_audible_band_energy_above_150hz) {
     // (SynthRig.hpp:68-70).
     constexpr double kSampleRateHz = 48000.0;
 
-    // Task 6.12 (resolves the task 6.2-review KNOWN FRAGILITY previously
-    // recorded here): the prior version summed Goertzel power over a
+    // The prior version summed Goertzel power over a
     // 150 Hz-2000 Hz sweep and compared it to a calibrated constant
     // (1.0e5, ~5x margin from measured pre-fix/post-fix runs of ~2.0e4/
     // ~5.1e5) -- fragile because a future change to the Shape/Drive
@@ -348,7 +345,7 @@ TEST_CASE(default_patch_has_audible_band_energy_above_150hz) {
 }
 
 // -----------------------------------------------------------------------
-// Task 6a.5 -- a deliberately non-default patch: nonzero Drive (well past
+// A deliberately non-default patch: nonzero Drive (well past
 // D16's own 20%), a nonzero VCO level (D16 leaves VCO pitch itself
 // untouched, only Shape), and at least one active modulation depth. Also
 // pushes the Filter/Reverb/Delay banks (which D16 never touches) away from
@@ -361,7 +358,7 @@ TEST_CASE(non_default_patch_produces_non_silent_finite_audio) {
 
     synth::Parameter& vco1Pitch = model.PageParameter(synth_froggers::FroggersBankId::Audio, 0);
     // "At least one modulation depth active" -- the six cross-VCO depths
-    // D16's default patch already materializes (task 6.12) satisfy this
+    // D16's default patch already materializes satisfy this
     // without any drill-in machinery here; asserted explicitly rather than
     // assumed.
     REQUIRE_TRUE(vco1Pitch.ModulationDepthParameter(synth_froggers::kModSlotVco2Audio) != nullptr);
@@ -373,8 +370,8 @@ TEST_CASE(non_default_patch_produces_non_silent_finite_audio) {
     model.PageParameter(synth_froggers::FroggersBankId::Delay, 1).SceneCenter(0) = 0.4f;    // Send.
     model.PageParameter(synth_froggers::FroggersBankId::Delay, 6).SceneCenter(0) = 0.4f;    // Wet mix.
 
-    // Task 6b (design D17, revised): same as the default-patch test above --
-    // the ASR gate only opens while the transport runs.
+    // Same as the default-patch test above -- the ASR gate only opens
+    // while the transport runs.
     rig.StartAt(0);
 
     rig.RunBlocks(8);
@@ -390,13 +387,13 @@ TEST_CASE(non_default_patch_produces_non_silent_finite_audio) {
 }
 
 // -----------------------------------------------------------------------
-// Task 6a.4 -- push the Filter bank's Comb feedback to its self-oscillating
-// extreme (knob=1.0 -> dsp::Comb::GetFeedback's +0.95 branch -- item 1,
-// design.md A2, deliberately below the frozen firmware's +1.1,
-// Comb.hpp:66-76) with the Comb/Peak blend turned fully toward Comb, and
-// the Reverb bank's authored Hold control (task 3.8) pushed to its ceiling
-// -- the exact "self-oscillating comb... reachable by design" scenario
-// task 6a.4 calls for -- and confirm the output stays finite and bounded.
+// Push the Filter bank's Comb feedback to its self-oscillating extreme
+// (knob=1.0 -> dsp::Comb::GetFeedback's +0.95 branch -- item 1,
+// deliberately below the frozen firmware's +1.1, Comb.hpp:66-76) with the
+// Comb/Peak blend turned fully toward Comb, and the Reverb bank's
+// authored Hold control pushed to its ceiling -- the exact
+// self-oscillating-comb scenario reachable by design -- and confirm the
+// output stays finite and bounded.
 // -----------------------------------------------------------------------
 TEST_CASE(self_oscillating_comb_and_near_unity_reverb_hold_stays_finite_and_bounded) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("comb_self_oscillation"));
@@ -408,9 +405,9 @@ TEST_CASE(self_oscillating_comb_and_near_unity_reverb_hold_stays_finite_and_boun
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;  // Wet/dry fully wet.
     model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 1.0f;   // maximum Drive.
 
-    // Task 6b (design D17, revised): the transport must be running, or the
-    // ASR gate stays closed and this scenario never actually drives the
-    // self-oscillating comb with real signal.
+    // The transport must be running, or the ASR gate stays closed and this
+    // scenario never actually drives the self-oscillating comb with real
+    // signal.
     rig.StartAt(0);
 
     rig.RunBlocks(64);  // run long enough for any runaway growth to show up.
@@ -419,10 +416,10 @@ TEST_CASE(self_oscillating_comb_and_near_unity_reverb_hold_stays_finite_and_boun
     const auto& output = rig.Output();
     RequireFiniteStereo(output);
 
-    // Matches FroggersApp::SanitizeOutputSample's final clamp (task 2.8:
-    // 1.0f == float full scale; +1e-3 headroom for float rounding at the
-    // exact boundary) -- the point of this test is that output stays
-    // *bounded*, not that it stays quiet.
+    // Matches FroggersApp::SanitizeOutputSample's final clamp (1.0f ==
+    // float full scale; +1e-3 headroom for float rounding at the exact
+    // boundary) -- the point of this test is that output stays *bounded*,
+    // not that it stays quiet.
     for (const auto& frame : output) {
         for (const float sample : frame.channels) {
             REQUIRE_TRUE(std::fabs(sample) <= 1.0f + 1.0e-3f);
@@ -431,7 +428,7 @@ TEST_CASE(self_oscillating_comb_and_near_unity_reverb_hold_stays_finite_and_boun
 }
 
 // -----------------------------------------------------------------------
-// Task 2.8 -- failing-test-first for the output clamp fix: the old ceiling
+// The output clamp fix: the old ceiling
 // (kMaxOutputMagnitude == 8.0f, +18 dBFS) let the device hard-clip into a
 // square wave; the new ceiling (1.0f, float full scale) must never be
 // exceeded even under the same deliberately overdriven patch the test above
@@ -488,15 +485,15 @@ TEST_CASE(output_clamp_never_engages_for_normal_level_default_patch) {
 }
 
 // -----------------------------------------------------------------------
-// ITEM 3 failing-test-first (design.md A2/A2a): the acceptance test for
-// "gain reduction, not per-sample waveshaping" -- a signal entirely below
-// OutputLimiter's 0.9 threshold must pass through Process() BIT-IDENTICAL
-// (exact float `==`, not REQUIRE_NEAR). Drives the real per-app limiter
-// instance directly via TestOutputLimiter() (item 3's own test accessor),
-// including values right at the threshold boundary and a long run, proving
-// `envelope` never drifts off exactly 1.0f one sample at a time (see
-// OutputLimiter::Process's own Sterbenz-lemma comment for why this must
-// hold exactly, not just approximately).
+// The acceptance test for "gain reduction, not per-sample waveshaping" --
+// a signal entirely below OutputLimiter's 0.9 threshold must pass through
+// Process() BIT-IDENTICAL (exact float `==`, not REQUIRE_NEAR). Drives the
+// real per-app limiter instance directly via TestOutputLimiter() (this
+// limiter's own test accessor), including values right at the threshold
+// boundary and a long run, proving `envelope` never drifts off exactly
+// 1.0f one sample at a time (see OutputLimiter::Process's own
+// Sterbenz-lemma comment for why this must hold exactly, not just
+// approximately).
 // -----------------------------------------------------------------------
 TEST_CASE(limiter_passes_below_threshold_signal_bit_identical) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("limiter_bit_identical"));
@@ -536,8 +533,8 @@ TEST_CASE(limiter_passes_below_threshold_signal_bit_identical) {
 // version of this test asserted `peak < 1.0f` directly against
 // OutputLimiter output, which is what the ~1.0274 measurement contradicts;
 // that assertion was wrong for what it exercises, not the limiter.
-// design.md A2a assigns the ceiling to SanitizeOutputSample's hard bound
-// and gain reduction to this limiter -- this test now asserts exactly the
+// The ceiling belongs to SanitizeOutputSample's hard bound, and gain
+// reduction to this limiter -- this test now asserts exactly the
 // gain-reduction claim: (1) the limited peak sits meaningfully below the
 // unlimited input peak (kAmplitude, 1.5x) -- gain reduction actually
 // happened; (2) consecutive near-peak output samples differ rather than
@@ -673,11 +670,11 @@ TEST_CASE(overdriven_patch_stays_bounded) {
 }
 
 // -----------------------------------------------------------------------
-// B7.5 (proposal.md, "the acceptance criterion that governs everything"): the
-// master limiter is the BACKSTOP, not the gain-staging mechanism. With every
-// stage bounded to C, a hostile patch must not engage it at all. This test is
-// the only end-to-end proof of that; every other limiter test in this file
-// measures one stage under synthetic input (M3).
+// B7.5: the master limiter is the BACKSTOP, not the gain-staging
+// mechanism. With every stage bounded to C, a hostile patch must not
+// engage it at all. This test is the only end-to-end proof of that; every
+// other limiter test in this file measures one stage under synthetic
+// input (M3).
 TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("b7_5_hostile"));
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
@@ -818,10 +815,10 @@ TEST_CASE(master_limiter_stays_at_unity_under_live_modulation) {
 }
 
 // -----------------------------------------------------------------------
-// ITEM 5 -- the randomize storm test (design.md/tasks.md §A.5): the
-// predecessor's failure rate was roughly 1 in 7 Randomize All draws
-// (permanent silence or a full-scale-exceeding blowout); this must show
-// ZERO across at least 200 draws through the REAL engine path --
+// The randomize storm test: the predecessor's failure rate was roughly 1
+// in 7 Randomize All draws (permanent silence or a full-scale-exceeding
+// blowout); this must show ZERO across at least 200 draws through the
+// REAL engine path --
 // `rig.Application().RequestRandomizeAll()` is the exact method
 // `FroggersUiSurface::HandleAction` calls for the Randomize All button
 // (FroggersUiSurface.hpp), consumed on the very next audio-thread
@@ -907,8 +904,8 @@ TEST_CASE(randomize_all_storm_test_never_blows_out_or_permanently_silences) {
 }
 
 // -----------------------------------------------------------------------
-// Task 2.3 (Tier 1, finiteness recovery) -- this IS the mechanism that
-// fixes the operator's "audio never comes back": before RecoverPoisonedUnitState()
+// This IS the mechanism that fixes the operator's "audio never comes
+// back": before RecoverPoisonedUnitState()
 // existed, nothing anywhere in FroggersAppCore.hpp ever cleared a unit's
 // recursive state once poisoned (see RecoverPoisonedUnitState()'s own
 // header comment for the full trace), so it persisted across every future
@@ -1030,12 +1027,12 @@ TEST_CASE(magnitude_recovery_resets_after_sustained_over_ceiling_window) {
 }
 
 // -----------------------------------------------------------------------
-// Task 2.7 -- full-range endpoint sweep. No existing test drives every
-// parameter to its endpoints; this drives every named parameter (slots
-// 0-8, kFroggersParamsPerBank) plus each bank's own Crispy (slot 14,
+// Full-range endpoint sweep. No existing test drives every parameter to
+// its endpoints; this drives every named parameter (slots 0-8,
+// kFroggersParamsPerBank) plus each bank's own Crispy (slot 14,
 // kFroggersCrispySlot) in all six banks, plus the shared Crunchy (slot 15,
 // kFroggersCrunchySlot -- the SAME synth::Parameter object in every bank,
-// FroggersParameters.hpp:79-80, so swept once, not six times), to 0.0, to
+// so swept once, not six times), to 0.0, to
 // 1.0, and back to a neutral 0.5, through the REAL engine path
 // (rig.RunBlocks -- FroggersApp::ProcessBlock/RouteAudioSample, not a
 // shadow/copy), asserting output stays finite at every single endpoint AND
@@ -1090,8 +1087,8 @@ TEST_CASE(full_range_endpoint_sweep_stays_finite_and_not_permanently_silenced) {
 }
 
 // -----------------------------------------------------------------------
-// Task 6b (design D17, revised 2026-07-27) -- the app is silent while the
-// transport is stopped, regardless of any parameter setting, including
+// The app is silent while the transport is stopped, regardless of any
+// parameter setting, including
 // immediately after Init()/PrepareToPlay() with the transport never
 // started. Uses the same non-default patch as the test above (nonzero
 // Drive, nonzero VCO level, an active modulation depth) specifically to
@@ -1121,14 +1118,13 @@ TEST_CASE(silent_while_transport_is_stopped) {
 }
 
 // -----------------------------------------------------------------------
-// Task 6b.4 (flagged as unwritten by the previous packet, covered here per
-// this packet's brief) -- "a tempo-change-tracking test (gate/advance
-// period follows a SetTempoBpm change)." A high base tempo (6000 BPM ->
-// quarter note = 480 samples @ 48kHz) keeps the test fast while still
-// giving the ASR's fast (ExpMap-floor) attack/release plenty of headroom
-// to reach a clean silent floor every half-quarter-note. Doubling tempo
-// halves the quarter-note period, so the number of gate-open cycles
-// observed over the SAME sample window should roughly double.
+// A tempo-change-tracking test: gate/advance period follows a
+// SetTempoBpm change. A high base tempo (6000 BPM -> quarter note = 480
+// samples @ 48kHz) keeps the test fast while still giving the ASR's fast
+// (ExpMap-floor) attack/release plenty of headroom to reach a clean
+// silent floor every half-quarter-note. Doubling tempo halves the
+// quarter-note period, so the number of gate-open cycles observed over
+// the SAME sample window should roughly double.
 // -----------------------------------------------------------------------
 TEST_CASE(gate_period_tracks_tempo_change) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("tempo_tracks_gate"));
@@ -1157,9 +1153,9 @@ TEST_CASE(gate_period_tracks_tempo_change) {
 }
 
 // -----------------------------------------------------------------------
-// Task 6b.4 -- "a dedicated missing-clock-plan test (a zero-frame or
-// rejected-commit callback, block.clockPlan == nullptr, does not fault and
-// leaves the gate closed)." Hand-builds a synth::AudioBlock with
+// A dedicated missing-clock-plan test: a zero-frame or rejected-commit
+// callback (block.clockPlan == nullptr) does not fault and leaves the
+// gate closed. Hand-builds a synth::AudioBlock with
 // clockPlan == nullptr and calls FroggersApp::ProcessBlock directly
 // (bypassing SynthRig's own per-block orchestration, which this one check
 // does not need) -- output buffers are poisoned with a nonzero value first,
@@ -1200,7 +1196,7 @@ TEST_CASE(missing_clock_plan_does_not_fault_and_leaves_gate_closed) {
 
 // -----------------------------------------------------------------------
 // Operator report: "Stop doesn't work" -- pressing Stop closes the ASR gate
-// (task 6b's silent_while_transport_is_stopped above) but the delay and
+// (silent_while_transport_is_stopped above) but the delay and
 // reverb are feedback structures that keep ringing on their own: the Delay
 // bank's feedback runs up to 0.98 (dsp::StereoDelay::Process's own clamp,
 // Delay.hpp:135) and the Reverb bank's Hold control pushes its internal
@@ -1483,8 +1479,7 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
 }
 
 // =========================================================================
-// T2.3(a) (frogg3rs-stop-isolation-and-legible-labels tasks.md): pins T2.2
-// (proposal.md SS2 W2) directly -- while the transport is stopped, the
+// T2.3(a) pins T2.2 directly -- while the transport is stopped, the
 // three drive pre-gains (Delay slot 9 "Feedback drive", Reverb slot 10
 // "Tank drive", Filter slot 12 "Comb drive") and Freeze (Delay slot 4)
 // resolve to their unity/zero effective values regardless of the commanded
@@ -1501,13 +1496,11 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
 // T2.2 added TestLastReverbTankDriveKnobEffective()/
 // TestLastDelayFreezeKnobEffective() (FroggersAppCore.hpp) for this test.
 //
-// T2.5 (proposal.md SS2 W2b, tasks.md T2.5; MEASURED third mechanism,
-// packet 2b 2026-08-17) extends this SAME test rather than adding a new
-// one (brief's own instruction): Grit (Reverb slot 11) joins the override,
-// resolving to 0.0f (its exact bit-identical bypass by construction,
-// dsp/Reverb.hpp:534-538) -- same "no member to read back" situation as
-// Tank drive/Freeze, so TestLastReverbGritKnobEffective() was added the
-// same way.
+// T2.5 extends this SAME test rather than adding a new one: Grit (Reverb
+// slot 11) joins the override, resolving to 0.0f (its exact bit-identical
+// bypass by construction -- dsp::DigitalReorganizer at default, Reverb.hpp)
+// -- same "no member to read back" situation as Tank drive/Freeze, so
+// TestLastReverbGritKnobEffective() was added the same way.
 // =========================================================================
 TEST_CASE(stopped_transport_overrides_drive_and_freeze_to_unity_zero_and_resumes_bit_exact) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("stop_overrides_drive_freeze"));
@@ -1518,8 +1511,7 @@ TEST_CASE(stopped_transport_overrides_drive_and_freeze_to_unity_zero_and_resumes
     model.PageParameter(FroggersBankId::Delay, 9).SceneCenter(0) = 1.0f;    // Feedback drive commanded MAX.
     model.PageParameter(FroggersBankId::Reverb, 10).SceneCenter(0) = 1.0f;  // Tank drive commanded MAX.
     model.PageParameter(FroggersBankId::Delay, 4).SceneCenter(0) = 1.0f;    // Freeze commanded MAX.
-    // T2.5 (proposal.md SS2 W2b, tasks.md T2.5; MEASURED third mechanism,
-    // packet 2b): Grit (Reverb slot 11) commanded MAX -- joins the same
+    // T2.5: Grit (Reverb slot 11) commanded MAX -- joins the same
     // stopped-state override this test already pins for the other four.
     model.PageParameter(FroggersBankId::Reverb, 11).SceneCenter(0) = 1.0f;  // Grit commanded MAX.
     ApplyPatchNow(rig);
@@ -1534,10 +1526,10 @@ TEST_CASE(stopped_transport_overrides_drive_and_freeze_to_unity_zero_and_resumes
 
     // Effective values: unity/zero, not the commanded max. dsp::Reverb::
     // TankDriveFromKnob is the SAME public static map Reverb::Process
-    // itself calls (dsp/Reverb.hpp:392,553) -- reused here rather than
-    // re-derived, so this assertion cannot silently drift from the real
-    // mapping if that range is ever retuned (OMNI: a test that retypes a
-    // production formula is a second definition site of it).
+    // itself calls -- reused here rather than re-derived, so this
+    // assertion cannot silently drift from the real mapping if that range
+    // is ever retuned (a test that retypes a production formula is a
+    // second definition site of it).
     REQUIRE_TRUE(rig.Application().TestFilterComb().combDrive == 1.0f);
     REQUIRE_TRUE(rig.Application().TestDelay().fbDrive == 1.0f);
     REQUIRE_TRUE(rig.Application().TestLastReverbTankDriveKnobEffective() == 0.5f);
@@ -1580,8 +1572,8 @@ TEST_CASE(stopped_transport_overrides_drive_and_freeze_to_unity_zero_and_resumes
 }
 
 // =========================================================================
-// T2.3(b) (tasks.md): pins T2.1 (proposal.md SS2 W2's forced-release
-// addition) directly, isolated from T1.1's ramp bound -- Curve (Envelope
+// T2.3(b) pins T2.1's forced-release addition directly, isolated from
+// T1.1's ramp bound -- Curve (Envelope
 // slot 12) stays at its default 0.0f (the untouched linear ComputeRampStep
 // path, no ramp-progress-floor arithmetic even runs), so a pass here can
 // only be T2.1's doing. Attack VCO1 (slot 0) is pinned near its own
@@ -1643,20 +1635,19 @@ TEST_CASE(stop_forces_release_from_mid_attack_bypassing_grace_and_stage_completi
 }
 
 // =========================================================================
-// T6 (tasks.md, REOPENED 2026-08-17): T2.4's claim above -- "latching the
+// T6: T2.4's claim above -- "latching the
 // Freeze button while stopped is a no-op on the audio" -- is SUPERSEDED and
-// exactly backwards (operator report, "Why this exists" in tasks.md's own
-// T6 preamble): the sustained-drive drone the button exists to reproduce
-// only ever existed with the transport stopped, and T2.1/T2.2/T2.4 together
-// made it unreachable. The old test above (deleted) proved the latch was a
-// no-op by engaging it AFTER Stop, onto an already-silenced instrument --
+// exactly backwards: the sustained-drive drone the button exists to
+// reproduce only ever existed with the transport stopped, and
+// T2.1/T2.2/T2.4 together made it unreachable. The old test above
+// (deleted) proved the latch was a no-op by engaging it AFTER Stop, onto
+// an already-silenced instrument --
 // which is still true (nothing to hold once already torn down) but was
 // never the operator's scenario and does not exercise T6.1/T6.2 at all.
 // spec.md's own scenario order is latch-THEN-Stop; the three tests below
 // (T6.4 a/b/c) follow that order instead.
 //
-// T7 (tasks.md, REOPENED AGAIN 2026-08-17, operator ruling after testing
-// T6): T6 reached the drone only via Freeze+Stop, and left the latch armed
+// T7: T6 reached the drone only via Freeze+Stop, and left the latch armed
 // through Stop -- so a button labelled Stop could conditionally sustain
 // instead of silence. Freeze is now SELF-CONTAINED: engaging it stops the
 // transport itself (FroggersUiSurface.hpp's kFreeze branch pushes
@@ -1744,8 +1735,8 @@ std::uint64_t BuildLatchedRingHeldAcrossStop(Rig& rig) {
     return timestamp;
 }
 
-// T7.3(a) (tasks.md; was T6.4(a), UPDATED under T7 rather than duplicated):
-// Freeze pressed while playing, with NO Stop press -- the transport reads
+// T7.3(a): Freeze pressed while playing, with NO Stop press -- the
+// transport reads
 // stopped (TransportRunning() false) AND output stays above an audible
 // floor PAST the bound an unlatched Stop must meet (stopping_transport_
 // silences_self_sustaining_delay_and_reverb's own 0.25s settle window), the
@@ -1787,11 +1778,11 @@ TEST_CASE(freeze_alone_holds_the_ring_above_an_audible_floor_and_stops_the_trans
     REQUIRE_TRUE(!rig.Application().TransportRunning());  // still stopped -- nothing restarted it.
 }
 
-// T6.4(b) (tasks.md, T6.2) -- STILL a live scenario under T7 ("Freeze
-// pressed again -> teardown runs, silence. Transport stays stopped", p7-
-// brief.md's target-behaviour list): a second Freeze press, releasing the
-// latch while stopped, is the escape hatch out of the drone -- it must
-// silence within the SAME bound an unlatched Stop guarantees. Now driven
+// T6.4(b) is still a live scenario under T7: Freeze pressed again tears
+// down and silences, with the transport staying stopped. A second Freeze
+// press, releasing the latch while stopped, is the escape hatch out of the
+// drone -- it must silence within the SAME bound an unlatched Stop
+// guarantees. Now driven
 // through PressFreeze() (DispatchAction -> HandleAction) rather than a
 // direct SetFreezeLatched(false) call, per this task's rule that these
 // tests exercise the real handler, not the flag.
@@ -1804,8 +1795,8 @@ TEST_CASE(freeze_latch_release_while_stopped_silences_within_the_bound) {
 
     // Confirm the drone is genuinely still held immediately before
     // releasing the latch -- the positive control this test's silence
-    // claim below needs (OMNI SS9.1): a "silences" result means nothing if
-    // there was nothing sounding to silence.
+    // claim below needs: a "silences" result means nothing if there was
+    // nothing sounding to silence.
     rig.RunBlocks(settleLeadBlocks);
     rig.ClearOutput();
     rig.RunBlocks(checkWindowBlocks);
@@ -1826,13 +1817,12 @@ TEST_CASE(freeze_latch_release_while_stopped_silences_within_the_bound) {
     REQUIRE_TRUE(!rig.Application().TransportRunning());  // T7.1: release never starts the transport.
 }
 
-// T7.3(b) (tasks.md): the NEW behaviour T6 got backwards -- Stop, pressed
-// while Freeze is engaged and the drone is sustaining, must disarm the
-// latch AND silence within the bound, exactly as any other Stop
-// (spec.md's "Stop always means stop" scenario). Under T6 this used to
-// SUSTAIN instead (the bug this whole packet exists to fix); this is the
-// direct regression test for that fix, distinct from T6.4(b) above (which
-// exits the drone via a second Freeze press, not Stop).
+// T7.3(b): the NEW behaviour T6 got backwards -- Stop, pressed while
+// Freeze is engaged and the drone is sustaining, must disarm the latch AND
+// silence within the bound, exactly as any other Stop (spec.md's "Stop
+// always means stop" scenario). Under T6 this used to SUSTAIN instead;
+// this is the direct regression test for that bug, distinct from T6.4(b)
+// above (which exits the drone via a second Freeze press, not Stop).
 TEST_CASE(stop_disarms_the_latch_and_silences_the_held_drone_within_the_bound) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("stop_disarms_latch_silences_drone"));
     BuildLatchedRingHeldAcrossStop(rig);
@@ -1840,8 +1830,8 @@ TEST_CASE(stop_disarms_the_latch_and_silences_the_held_drone_within_the_bound) {
     const auto [settleLeadBlocks, checkWindowBlocks, kSilenceFloorLinear] =
         ComputeSilenceSettleWindow(/*settleSeconds=*/0.25);
 
-    // Positive control (OMNI SS9.1): the drone is genuinely live immediately
-    // before Stop.
+    // Positive control: the drone is genuinely live immediately before
+    // Stop.
     rig.RunBlocks(settleLeadBlocks);
     rig.ClearOutput();
     rig.RunBlocks(checkWindowBlocks);
@@ -1862,7 +1852,7 @@ TEST_CASE(stop_disarms_the_latch_and_silences_the_held_drone_within_the_bound) {
     REQUIRE_TRUE(!rig.Application().TransportRunning());
 }
 
-// T7.3(c) (tasks.md): no sequence of Freeze/Stop presses may leave the
+// T7.3(c): no sequence of Freeze/Stop presses may leave the
 // instrument sounding after a Stop -- exercises the three sequences the
 // task names at minimum, each on a fresh rig with the same self-sustaining
 // recipe BuildLatchedRingHeldAcrossStop's ring uses (inlined here rather
@@ -1941,7 +1931,7 @@ TEST_CASE(no_freeze_stop_press_sequence_leaves_the_instrument_sounding_after_sto
     }
 }
 
-// T7.3(d) (tasks.md): releasing Freeze must NOT restart the transport --
+// T7.3(d): releasing Freeze must NOT restart the transport --
 // the operator resumes with Play, not by releasing the latch.
 // T7.7 (operator 2026-08-17, found in the built app: "why does clicking play
 // not de-select freeze"). Play disarms the latch for the same reason Stop
@@ -1952,7 +1942,7 @@ TEST_CASE(no_freeze_stop_press_sequence_leaves_the_instrument_sounding_after_sto
 // still at its latch overdrive, so Play would not actually return the
 // instrument to playing.
 //
-// This was the single behaviour the T7 packet's own tests did not pin: the
+// This was the single behaviour T7's own tests did not pin: the
 // Play branch was written last, by hand, and every other Freeze/Stop
 // sequence had a test while this one did not. Without this case, deleting
 // `SetFreezeLatched(false)` from the kPlay handler leaves the whole suite
@@ -1962,8 +1952,8 @@ TEST_CASE(play_disarms_the_freeze_latch_and_returns_the_voice_gate_to_the_transp
     BuildLatchedRingHeldAcrossStop(rig);
 
     rig.RunBlocks(4);
-    // Positive control (OMNI SS9.1): the preconditions this test needs must
-    // actually hold before Play is pressed, or "the latch cleared" would be
+    // Positive control: the preconditions this test needs must actually
+    // hold before Play is pressed, or "the latch cleared" would be
     // provable by an instrument that was never latched in the first place.
     REQUIRE_TRUE(rig.Application().FreezeLatched());
     REQUIRE_TRUE(!rig.Application().TransportRunning());
@@ -1989,11 +1979,11 @@ TEST_CASE(releasing_freeze_does_not_restart_the_transport) {
     REQUIRE_TRUE(!rig.Application().TransportRunning());  // still stopped -- release did not restart it.
 }
 
-// T6.4(c) (tasks.md, T6.3): parameter edits stay live while frozen -- an
-// encoder edit made while the drone is held must change the output
-// measurably, with a positive control proving the drone was live
-// immediately before the edit (OMNI SS9.1 -- a null result from an
-// already-dead instrument would be void). Edits Delay Mix (bank Delay slot
+// T6.4(c): parameter edits stay live while frozen -- an encoder edit made
+// while the drone is held must change the output measurably, with a
+// positive control proving the drone was live immediately before the edit
+// (a null result from an already-dead instrument would be void). Edits
+// Delay Mix (bank Delay slot
 // 6, "6=Mix" per MapRowsToDelayParams's own comment) from fully wet to
 // fully dry -- a post-gain crossfade applied every sample to the delay's
 // own (already self-sustaining) output, so its effect on an ALREADY-
@@ -2014,9 +2004,9 @@ TEST_CASE(encoder_edit_while_frozen_changes_the_output_measurably) {
     rig.RunBlocks(checkWindowBlocks);
     REQUIRE_TRUE(!rig.SawNaN());
     const float peakBeforeEdit = PeakAbs(rig.Output());
-    // Positive control (OMNI SS9.1): the drone must be genuinely audible
-    // right here, immediately before the edit below, or a measured change
-    // (or lack of one) proves nothing.
+    // Positive control: the drone must be genuinely audible right here,
+    // immediately before the edit below, or a measured change (or lack of
+    // one) proves nothing.
     REQUIRE_TRUE(peakBeforeEdit > kFrozenRingFloorLinear);
 
     // The "encoder edit" -- still latched, still stopped, no Play in
@@ -2065,8 +2055,7 @@ TEST_CASE(encoder_edit_while_frozen_changes_the_output_measurably) {
 }
 
 // =========================================================================
-// S1a.2 (openspec/changes/archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/
-// tasks.md, section S1a): operator-ordered gate on modulation_.Step() --
+// S1a.2: operator-ordered gate on modulation_.Step() --
 // NOT the F3 fix (see FroggersAppCore.hpp's own comment at the call site for
 // why a static DC seed could never have been removed by freezing
 // modulation; that is S1.3). This proves the actual behaviour change: with
@@ -2089,10 +2078,10 @@ TEST_CASE(encoder_edit_while_frozen_changes_the_output_measurably) {
 // REQUIRE_TRUE convention FroggersModulationTests.cpp also uses (each test
 // file in this directory defines its own copy; there is no shared header).
 //
-// OMNI §9.1: a negative result (holds while stopped) requires a positive
-// control (the SAME rig, SAME source, proven to move while running) in the
-// SAME test, or the held-value read is meaningless. Both numbers are
-// printed, not just asserted.
+// A negative result (holds while stopped) requires a positive control
+// (the SAME rig, SAME source, proven to move while running) in the SAME
+// test, or the held-value read is meaningless. Both numbers are printed,
+// not just asserted.
 TEST_CASE(free_running_modulation_source_holds_while_stopped_with_positive_control) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("s1a2_source_holds_while_stopped"));
     const auto noiseValue = [&] {

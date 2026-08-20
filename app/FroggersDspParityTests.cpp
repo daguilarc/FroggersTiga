@@ -1,10 +1,9 @@
-// FroggersDspParityTests.cpp -- tasks.md 3.7: parity test suite for packet
-// 3's DSP port (tasks 3.1-3.6). Each TEST_CASE pins one ported unit to its
-// cited Froggers formula. This TU includes ONLY app/dsp/*.hpp (no Sheaf, no
-// JUCE, no frozen-tree headers) -- the DSP port is dependency-free per
-// design D3, and check_no_frozen_includes.sh mechanically enforces that no
-// file under app/ includes src/, sim/, desktop-v2/, wasm/, vcv/, web/, or
-// desktop/.
+// FroggersDspParityTests.cpp -- parity test suite for the DSP port. Each
+// TEST_CASE pins one ported unit to its cited Froggers formula. This TU
+// includes ONLY app/dsp/*.hpp (no Sheaf, no JUCE, no frozen-tree headers) --
+// the DSP port is dependency-free, and check_no_frozen_includes.sh
+// mechanically enforces that no file under app/ includes src/, sim/,
+// desktop-v2/, wasm/, vcv/, web/, or desktop/.
 //
 // Harness mirrors FroggersHeadlessTests.cpp's self-registering TEST_CASE /
 // REQUIRE_TRUE macros (no external test framework).
@@ -213,13 +212,13 @@ TEST_CASE(vco_adsr_state_attacks_holds_and_releases) {
     dsp::VcoAdsrState adsr;
     adsr.init(1000.0f);  // 1 kHz for easy-to-reason step counts
     adsr.setGate(true);
-    // Strict-executor packet (Decay): the old per-sample monotonic-rise
-    // assertion no longer holds bit-for-bit -- Attack now ramps to 1.0f (not
-    // sustainLevel) and a new Decay stage then falls from there down to
-    // sustainLevel, so the trace genuinely dips partway through. What still
-    // must hold, and is checked below instead: the level reaches (very
-    // close to) 1.0f during Attack, then settles at MapSustain(0.8f) once
-    // Attack+Decay have had time to complete.
+    // The old per-sample monotonic-rise assertion no longer holds
+    // bit-for-bit -- Attack now ramps to 1.0f (not sustainLevel) and a new
+    // Decay stage then falls from there down to sustainLevel, so the trace
+    // genuinely dips partway through. What still must hold, and is checked
+    // below instead: the level reaches (very close to) 1.0f during Attack,
+    // then settles at MapSustain(0.8f) once Attack+Decay have had time to
+    // complete.
     float peak = 0.0f;
     for (int i = 0; i < 2000; ++i) {
         const float level = adsr.apply(0, 1.0f, /*attack=*/0.5f, /*decay=*/0.5f, /*sustain=*/0.8f, /*release=*/0.5f);
@@ -244,15 +243,12 @@ TEST_CASE(vco_adsr_state_attacks_holds_and_releases) {
 }
 
 // -----------------------------------------------------------------------
-// ITEM 4 failing-test-first (design.md A2): kMaxAttackSeconds lowered from
-// 2.5s to 1.0s (VoiceEnvelope.hpp -- private, so this drives the same
-// observable surface the test above does). W5 (proposal
-// frogg3rs-stop-isolation-and-legible-labels SS2, operator ruling
-// 2026-08-17, verbatim: "that max attack is also way too long. half a
-// second at most") lowered it again, 1.0s -> 0.5f -- the citations below are
-// updated to that current value; the assertion itself was already keyed to
-// the constant via `dsp::VcoAdsrState::MapSustain` and needed no code
-// change, only this prose. stepVoice()'s attack ramp is LINEAR
+// kMaxAttackSeconds was lowered from 2.5s to 1.0s (VoiceEnvelope.hpp --
+// private, so this drives the same observable surface the test above
+// does), then lowered again to 0.5f: even a 1.0s max attack was judged too
+// long musically -- half a second at most. The assertion itself is already
+// keyed to the constant via `dsp::VcoAdsrState::MapSustain`, so only this
+// prose needed updating, not the code. stepVoice()'s attack ramp is LINEAR
 // (`attackStep = sustainLevel / (mapAttack(knob)*sampleRate)`), and
 // `mapAttack(1.0) == kMinTimeSeconds + 1.0*(kMaxAttackSeconds -
 // kMinTimeSeconds) == kMaxAttackSeconds` exactly (the kMinTimeSeconds terms
@@ -260,10 +256,9 @@ TEST_CASE(vco_adsr_state_attacks_holds_and_releases) {
 // in EXACTLY kMaxAttackSeconds worth of samples, no time-constant fuzz to
 // account for. At 2.0s of held-gate samples: under the ORIGINAL 2.5s
 // ceiling the level would still be mid-ramp (2.0/2.5 == 80% of the way
-// there, NOT at sustain -- this is what made the test fail against the
-// pre-item-4 code); under the CURRENT 0.5f ceiling the ramp finished at
-// 0.5s and Hold has been clamping the level at sustain for a further 1.5s
-// since.
+// there, NOT at sustain -- a 2.5s ceiling would fail this assertion);
+// under the CURRENT 0.5f ceiling the ramp finished at 0.5s and Hold has
+// been clamping the level at sustain for a further 1.5s since.
 // -----------------------------------------------------------------------
 TEST_CASE(max_attack_knob_reaches_sustain_within_the_current_half_second_ceiling) {
     constexpr float kSampleRate = 48000.0f;
@@ -274,12 +269,12 @@ TEST_CASE(max_attack_knob_reaches_sustain_within_the_current_half_second_ceiling
 
     float level = 0.0f;
     const int samplesAt2s = static_cast<int>(2.0f * kSampleRate);
-    // Strict-executor packet (Decay): decayKnob=0.0f (the fastest mapped
-    // decay time, kMinTimeSeconds) isolates THIS test's own concern --
-    // attack's ceiling/timing -- from decay's, which is not what this test
-    // is about. At 0.0f decay, Decay completes in well under a millisecond
-    // once Attack's 1.0s finishes, so it cannot meaningfully eat into the
-    // 2.0s budget this test measures against.
+    // decayKnob=0.0f (the fastest mapped decay time, kMinTimeSeconds)
+    // isolates THIS test's own concern -- attack's ceiling/timing -- from
+    // decay's, which is not what this test is about. At 0.0f decay, Decay
+    // completes in well under a millisecond once Attack's 1.0s finishes,
+    // so it cannot meaningfully eat into the 2.0s budget this test
+    // measures against.
     for (int i = 0; i < samplesAt2s; ++i) {
         level = adsr.apply(0, 1.0f, /*attack=*/1.0f, /*decay=*/0.0f, /*sustain=*/kSustain, /*release=*/0.0f);
     }
@@ -314,13 +309,12 @@ TEST_CASE(mix_osc_voices_applies_asr_per_voice_then_averages) {
 }
 
 // =========================================================================
-// T1 (openspec/changes/frogg3rs-stop-isolation-and-legible-labels/tasks.md
-// T1.1-T1.3) -- ComputeRampStep's progress floor (root cause SS1a: at
-// curveAmount==1.0 the pre-fix ramp's per-sample progress was
-// stepMagnitude^2/absRemaining, unbounded -- a "1-second" attack at 48kHz
-// measured ~6.7 hours) and its interaction with the Grace ladder
-// (VoiceEnvelope.hpp:332-370, UNCHANGED by this packet -- T1.2 is
-// TEST-ONLY, see that task's own tasks.md note).
+// ComputeRampStep's progress floor (root cause: at curveAmount==1.0 the
+// pre-fix ramp's per-sample progress was stepMagnitude^2/absRemaining,
+// unbounded -- a "1-second" attack at 48kHz measured ~6.7 hours) and its
+// interaction with the Grace ladder (stepVoice()'s own Grace-resolution
+// block, VoiceEnvelope.hpp, UNCHANGED by this fix -- the ladder itself
+// needed no code change, only new test coverage).
 // =========================================================================
 
 namespace {
@@ -342,9 +336,8 @@ struct StageResult {
 // below infers stage completion purely from the level trajectory -- exact,
 // because ComputeRampStep's finishing-step early return (`absRemaining <=
 // stepMagnitude -> return target`, untouched by T1.1) always snaps exactly
-// to target regardless of curve. `capSamples` turns an UNBOUNDED pre-T1.1
-// ramp into a clean test FAILURE instead of a multi-hour hang (OMNI SS9.1's
-// RED pass, per this packet's report, relies on this).
+// to target regardless of curve. `capSamples` turns an UNBOUNDED pre-fix
+// ramp into a clean test FAILURE instead of a multi-hour hang.
 // `graceKnob` defaults to 0.0f (inactive, apply()'s own default) so callers
 // that don't care about Grace -- most of this helper's call sites -- don't
 // have to name it; T1.2(a) passes it explicitly because that test's whole
@@ -541,16 +534,15 @@ TEST_CASE(compute_ramp_step_curve_zero_is_bit_identical_to_the_untouched_linear_
 }
 
 // -----------------------------------------------------------------------
-// T1.3(a) -- duration-bound sweep. T1.1's floor guarantees per-sample
-// progress magnitude >= kCurveMinProgress (VoiceEnvelope.hpp) of the linear
-// step at every curveAmount, so every stage's worst-case duration is
-// bounded at roughly 1/kCurveMinProgress times its plain-linear (curve==0)
-// duration -- this sweep proves that bound holds across a curve x knob grid
-// INCLUDING curve == 1.0 exactly (the value that made the pre-fix ramp
-// unbounded), at both 48k and 96k, and reports the worst multiple actually
-// observed (see this packet's own report for that number -- not asserted
-// here as a literal value, since it is a measured OUTCOME of the fix, not a
-// separate spec).
+// Duration-bound sweep. The progress floor guarantees per-sample progress
+// magnitude >= kCurveMinProgress (VoiceEnvelope.hpp) of the linear step at
+// every curveAmount, so every stage's worst-case duration is bounded at
+// roughly 1/kCurveMinProgress times its plain-linear (curve==0) duration --
+// this sweep proves that bound holds across a curve x knob grid INCLUDING
+// curve == 1.0 exactly (the value that made the pre-fix ramp unbounded), at
+// both 48k and 96k. The worst multiple actually observed is not asserted
+// here as a literal value, since it is a measured outcome of the fix, not a
+// separate spec.
 // -----------------------------------------------------------------------
 TEST_CASE(compute_ramp_step_bounds_every_stage_duration_across_curve_and_knob_grid_at_multiple_sample_rates) {
     const float curves[] = {0.0f, 0.5f, 0.9f, 0.999f, 1.0f};
@@ -662,8 +654,9 @@ TEST_CASE(compute_ramp_step_bounds_every_stage_duration_across_curve_and_knob_gr
 }
 
 // -----------------------------------------------------------------------
-// T1.2 -- Grace semantics preserved and bounded (TEST-ONLY; the ladder
-// itself, VoiceEnvelope.hpp:332-370, is UNCHANGED by this packet).
+// Grace semantics preserved and bounded (TEST-ONLY; the ladder itself,
+// stepVoice()'s own Grace-resolution block in VoiceEnvelope.hpp, is
+// unchanged).
 // -----------------------------------------------------------------------
 
 // (a) With T1.1's floor in, a pending release under active Grace reaches
@@ -915,11 +908,10 @@ TEST_CASE(envelope_followers_track_abs_value_with_attack_release_asymmetry) {
     REQUIRE_TRUE(out[0] < ef.attackCoeff);  // moved back down, not up
 }
 
-// Packet 6 addition (design D5 slot 14, external audio EF): SingleEnvelopeFollower
-// is VcoEnvelopeFollowers's identical per-tap formula generalized to one
-// channel -- pinned here against a VcoEnvelopeFollowers instance fed the same
-// signal on all three lanes, which must match exactly (same coefficients,
-// same target/attack/release formula).
+// SingleEnvelopeFollower is VcoEnvelopeFollowers's identical per-tap formula
+// generalized to one channel -- pinned here against a VcoEnvelopeFollowers
+// instance fed the same signal on all three lanes, which must match exactly
+// (same coefficients, same target/attack/release formula).
 TEST_CASE(single_envelope_follower_matches_vco_envelope_followers_per_tap_formula) {
     dsp::SingleEnvelopeFollower single;
     dsp::VcoEnvelopeFollowers triple;
@@ -952,10 +944,10 @@ TEST_CASE(rgen_same_seed_is_deterministic) {
 }
 
 TEST_CASE(rgen_distinct_seeds_produce_independent_streams) {
-    // This is the guarantee tasks.md 3.4 asks to "verify in a test": with
-    // the frozen RGen's shared-static state, this would be meaningless (all
-    // instances share one cursor); this port's instance-level state makes
-    // distinct seeds actually matter.
+    // This guarantee matters because, with the frozen RGen's shared-static
+    // state, it would be meaningless (all instances share one cursor);
+    // this port's instance-level state makes distinct seeds actually
+    // matter.
     dsp::RGen a(1u);
     dsp::RGen b(2u);
     bool sawDifference = false;
@@ -1077,8 +1069,8 @@ uint8_t ReferenceShAt256(uint8_t row) {
 }
 }  // namespace
 
-// Rows exercised below are the app's REAL domain (design D5a/D6: fuego row
-// == a parameter's 0-based slot index in its 16-slot bank, so 0-15, with
+// Rows exercised below are the app's REAL domain (fuego row == a
+// parameter's 0-based slot index in its 16-slot bank, so 0-15, with
 // crispyRow fixed at 14) -- not the full uint8_t range. This matters
 // because the algorithm shifts `lowerBits` (widened to `int` by the usual
 // arithmetic conversions) by `sh` bits, and `sh` is unbounded by `row` in
@@ -1110,7 +1102,7 @@ TEST_CASE(fuegoize_knob_1_0_is_finite_deterministic_and_matches_firmware_sh) {
 TEST_CASE(fuegoize_knob_0_9375_also_rounds_mask_to_255_and_matches) {
     // round(0.9375 * 8) == round(7.5) == 8 (round-half-away-from-zero) ->
     // mask = (1<<8)-1 = 255, same divisor-256 case as knob 1.0. row=14 is
-    // the app's real crispyRow (design D5a/D6).
+    // the app's real crispyRow.
     const uint8_t row = 14;
     const float value = 0.3f;
     const float outAt1_0 = dsp::Fuegoize(value, 1.0f, row);
@@ -1182,7 +1174,7 @@ TEST_CASE(resonant_bump_coefficients_match_rbj_peaking_formula) {
 }
 
 // -----------------------------------------------------------------------
-// ITEM 2 failing-test-first (design.md A2): the Filter bank wires
+// The Filter bank wires
 // `filterChain_.peak.SetHeight(dsp::ExpMapCompute(1.0f, 10.0f, knob))`
 // (FroggersAppCore.hpp's RouteAudioSample). Ceiling history: 10x (+20 dB,
 // frozen-firmware parity) -> 4x -> 2x (+6 dB), the last on the operator
@@ -1224,20 +1216,19 @@ TEST_CASE(resonant_bump_max_knob_settles_at_the_apps_configured_ceiling) {
     REQUIRE_TRUE(measuredPeak < 5.0f);
 }
 
-// DELIBERATE PARITY DIVERGENCE (design.md A2/A2a, 2026-07-29, operator-
-// approved -- same treatment as Fuegoize.hpp's own D6 divergence note):
-// the frozen firmware's Comb::GetFeedback (src/core/Comb.hpp:66-76) returns
-// an asymmetric +-1.1 ceiling. |fb| > 1 does NOT diverge -- PadeSaturator
-// sits INSIDE the feedback path (FilterFx.hpp:294), so the fed-back term is
-// always bounded to |fb|*1.0 regardless of |fb| -- but it DOES drive the
-// loop into permanent, undecaying self-oscillation held at the saturator's
-// limit, which the downstream resonant peak (item 2) then turns into
-// an audible blowout (design.md A1/A1a). |fb| < 1 is the definition of a
-// loop that decays once its input stops, so this port's own GetFeedback
-// caps the magnitude at 0.95 instead of 1.1 -- still close enough to unity
-// to ring for a long, musical time, but no longer able to sustain forever.
-// This is intentionally NOT what the frozen firmware does; parity was
-// explicitly deprioritized here by the operator ("parity is stupid").
+// DELIBERATE PARITY DIVERGENCE: the frozen firmware's Comb::GetFeedback
+// (src/core/Comb.hpp:66-76) returns an asymmetric +-1.1 ceiling. |fb| > 1
+// does NOT diverge -- PadeSaturator sits INSIDE the feedback path
+// (Comb::Process, FilterFx.hpp), so the fed-back term is always bounded to
+// |fb|*1.0 regardless of |fb| -- but it DOES drive the loop into permanent,
+// undecaying self-oscillation held at the saturator's limit, which the
+// downstream resonant peak then turns into an audible blowout. |fb| < 1 is
+// the definition of a loop that decays once its input stops, so this
+// port's own GetFeedback caps the magnitude at 0.95 instead of 1.1 -- still
+// close enough to unity to ring for a long, musical time, but no longer
+// able to sustain forever. This is intentionally NOT what the frozen
+// firmware does; parity was explicitly deprioritized here in favor of a
+// loop that actually decays.
 TEST_CASE(comb_get_delay_samples_and_asymmetric_feedback) {
     REQUIRE_NEAR(dsp::Comb::GetDelaySamples(100.0f), 1.0f / 100.0f, 1e-9);
 
@@ -1256,17 +1247,17 @@ TEST_CASE(comb_get_delay_samples_and_asymmetric_feedback) {
 }
 
 // -----------------------------------------------------------------------
-// ITEM 1 failing-test-first (design.md A1a): the predecessor's claim that
-// the comb "diverges exponentially" at |fb| > 1 was false -- it self-
-// oscillates FOREVER at the saturator's limit instead (PadeSaturator is
-// INSIDE the feedback path, FilterFx.hpp:294, so the fed-back term can
-// never exceed |fb|*1.0 regardless of |fb|'s own magnitude). The old +-1.1
-// ceiling fails this test: drive the comb hard, stop the input entirely
-// (feed 0.0f), and the tap that fed the loop just keeps recirculating
-// near the saturator ceiling instead of decaying. A loop gain strictly
-// below unity (item 1's fix, |fb| <= 0.95) is what makes "stop the input"
-// actually mean "the output goes to silence" rather than "the output
-// keeps ringing at the saturator's limit indefinitely."
+// The comb does not "diverge exponentially" at |fb| > 1 as a predecessor
+// test claimed -- it self-oscillates FOREVER at the saturator's limit
+// instead (PadeSaturator is INSIDE the feedback path, Comb::Process in
+// FilterFx.hpp, so the fed-back term can never exceed |fb|*1.0 regardless
+// of |fb|'s own magnitude). The old +-1.1 ceiling fails this test: drive
+// the comb hard, stop the input entirely (feed 0.0f), and the tap that fed
+// the loop just keeps recirculating near the saturator ceiling instead of
+// decaying. A loop gain strictly below unity (the fix, |fb| <= 0.95) is
+// what makes "stop the input" actually mean "the output goes to silence"
+// rather than "the output keeps ringing at the saturator's limit
+// indefinitely."
 // -----------------------------------------------------------------------
 TEST_CASE(comb_feedback_at_both_knob_extremes_decays_to_silence_once_input_stops) {
     constexpr float kDrivenSamples = 4000;  // several hundred delay periods' worth of excitation.
@@ -1365,17 +1356,16 @@ TEST_CASE(filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend) {
     const float combPeakBlend = 0.4f;
     const float scoopMix = 0.6f;
 
-    // W2.2a (openspec/changes/archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/
-    // tasks.md): the comb branch now carries an exact output trim
-    // `1/(1+|fb|)`, smoothed by a one-pole (FilterFxChain::combTrimSmoother,
+    // The comb branch now carries an exact output trim `1/(1+|fb|)`,
+    // smoothed by a one-pole (FilterFxChain::combTrimSmoother,
     // FilterFx.hpp) before the blend below. OLD expectation: `combPath =
     // refComb.Process(...)`, untrimmed. NEW expectation: `combPath =
     // refComb.Process(...) * trimState`, where `trimState` comes from
-    // `refTrimSmoother`, an actual `dsp::OnePoleLowPass` instance (R2, OMNI
-    // REVIEW W2.2a -- REVISED from re-implementing the one-pole recurrence
-    // by hand here, which made the recurrence exist twice and risked
-    // silently desyncing from `OnePoleLowPass::Process` on a future change
-    // to it). Seeded identically to production: `alpha` copied from
+    // `refTrimSmoother`, an actual `dsp::OnePoleLowPass` instance (rather
+    // than re-implementing the one-pole recurrence by hand here, which
+    // would make the recurrence exist twice and risk silently desyncing
+    // from `OnePoleLowPass::Process` on a future change to it). Seeded
+    // identically to production: `alpha` copied from
     // `chain.combTrimSmoother.alpha` (public field, set once by
     // FilterFxChain's own constructor -- read, never re-hardcoded a second
     // time here) and `output` at 1.0 (combTrimSmoother's construction-time
@@ -1385,24 +1375,23 @@ TEST_CASE(filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend) {
     // otherwise stays independent of production (refComb/refPureDelay/
     // refPeak/refScoop below are all separate instances) -- a parity test's
     // job is to be an independent check, so only the recurrence itself
-    // (which W2.2a introduced and which must exist exactly once on the
-    // production side, not be re-derived here too) is shared via the same
-    // reusable `dsp::OnePoleLowPass` type, not shared state.
+    // (which must exist exactly once on the production side, not be
+    // re-derived here too) is shared via the same reusable
+    // `dsp::OnePoleLowPass` type, not shared state.
     dsp::OnePoleLowPass refTrimSmoother;
     refTrimSmoother.alpha = chain.combTrimSmoother.alpha;
     refTrimSmoother.output = 1.0f;
     const float rawCombTrim = 1.0f / (1.0f + std::fabs(0.3f));
 
-    // B1 (tasks.md CONSOLIDATED PUSH table): the peak branch now carries
-    // its own exact output trim `1/height`, smoothed the identical way the
-    // comb trim above is (same `dsp::OnePoleLowPass` type, own instance,
-    // `alpha` read from production's `chain.peakTrimSmoother.alpha` rather
-    // than re-hardcoded, `output` seeded at 1.0 matching the untrimmed
-    // branch -- R2's precedent applied to the new trim rather than
-    // reproduced ad hoc). `height` is fixed at 1.5 for this whole test
-    // (never changes), so `rawPeakTrim` is likewise a constant target.
+    // The peak branch now carries its own exact output trim `1/height`,
+    // smoothed the identical way the comb trim above is (same
+    // `dsp::OnePoleLowPass` type, own instance, `alpha` read from
+    // production's `chain.peakTrimSmoother.alpha` rather than
+    // re-hardcoded, `output` seeded at 1.0 matching the untrimmed branch).
+    // `height` is fixed at 1.5 for this whole test (never changes), so
+    // `rawPeakTrim` is likewise a constant target.
     // OLD expectation: `peakPath = refPeak.Process(input)`, untrimmed
-    // (0.0905098 at this test's fixed inputs before B1). NEW: `peakPath =
+    // (0.0905098 at this test's fixed inputs before the trim existed). NEW: `peakPath =
     // refPeak.Process(input) * trimState`, where `trimState` converges to
     // `1/1.5 ~= 0.6667` -- the ~33% reduction the arithmetic (0.0905098 *
     // 0.6667 ~= 0.0603) does NOT land on the measured 0.0717059 above only
@@ -1415,11 +1404,11 @@ TEST_CASE(filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend) {
     refPeakTrimSmoother.output = 1.0f;
     const float rawPeakTrim = 1.0f / 1.5f;
 
-    // B5 (tasks.md CONSOLIDATED PUSH table): the peak branch now runs its
-    // own `OutputLimiter` (`chain.peakLimiter`) AFTER the trim above, before
-    // the blend below. Copied wholesale from `chain.peakLimiter` (R2's own
-    // precedent: share the reusable TYPE/STATE, not re-derive the tuning) --
-    // taken here, before any `chain.Process()` call, so it captures exactly
+    // The peak branch now runs its own `OutputLimiter` (`chain.peakLimiter`)
+    // AFTER the trim above, before the blend below. Copied wholesale from
+    // `chain.peakLimiter` -- sharing the reusable type/state rather than
+    // re-deriving the tuning -- taken here, before any `chain.Process()`
+    // call, so it captures exactly
     // the state the production instance starts this test in (its
     // constructor's assumed-48kHz `Configure()` call, FilterFx.hpp; this
     // test never calls `chain.Configure()` itself, so production and
@@ -1453,14 +1442,12 @@ TEST_CASE(filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend) {
 }
 
 // -----------------------------------------------------------------------
-// W2.2a (openspec/changes/archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/tasks.md):
-// pins the fix itself. With comb feedback pinned at its maximum magnitude
+// Pins the fix itself. With comb feedback pinned at its maximum magnitude
 // (kMaxFeedbackMagnitude, 0.95) and a sustained full-scale input, the comb
 // branch must never exceed the computed bound `(A + fb) / (1 + fb)` -- the
 // exact worst case the trim was designed to normalize to 1.0. The bound is
-// COMPUTED from A and fb, never a hardcoded literal (W2 standing
-// constraint: a pin asserts the property that broke, not a typed-in
-// number). combPeakBlend=1.0/scoopMix=0.0 isolate the comb branch through
+// COMPUTED from A and fb, never a hardcoded literal -- a pin asserts the
+// property that broke, not a typed-in number. combPeakBlend=1.0/scoopMix=0.0 isolate the comb branch through
 // the real FilterFxChain::Process code path: mixed = peakPath*(1-1) +
 // combPath*1 == combPath, and the return is mixed*(1-0) + scooped*0 ==
 // mixed -- so chain.Process's return value IS combPath. A settle period
@@ -1496,11 +1483,11 @@ TEST_CASE(comb_branch_output_stays_at_or_below_computed_bound_at_max_feedback) {
 }
 
 // -----------------------------------------------------------------------
-// R1 (OMNI REVIEW W2.2a, tasks.md "OMNI REVIEW -- W2.2a"): the test above
-// holds `fb` STATIC and settles for 2000 samples before asserting, so it
+// The test above holds `fb` STATIC and settles for 2000 samples before
+// asserting, so it
 // cannot see the trim smoother's lag -- and in the real app `fb` is NOT
 // static: `Comb::SetFeedback` is called from `RouteAudioSample()` once per
-// SAMPLE (FroggersAppCore.hpp:521,647), so a fast modulation source (audio-
+// SAMPLE, so a fast modulation source (audio-
 // rate noise being the extreme case -- `NoiseModulatorProcessor` draws a
 // fresh independent value every sample, DspNoise.hpp) can swing `fb` across
 // its whole range sample-to-sample, and an abrupt scramble (Crispy,
@@ -1592,13 +1579,13 @@ TEST_CASE(comb_branch_output_stays_at_or_below_computed_bound_under_audio_rate_f
 }
 
 // -----------------------------------------------------------------------
-// B1 (tasks.md CONSOLIDATED PUSH table; W2.1-MATH's peak bound `|peak| <=
-// A * height`): mirrors the comb bound test above -- static height held at
-// the app's own ceiling, driven with a full-scale sine at the bump's own
-// resonant frequency (the peak's worst case, matching
+// Mirrors the comb bound test above, pinning the peak bound `|peak| <= A *
+// height`: static height held at the app's own ceiling, driven with a
+// full-scale sine at the bump's own resonant frequency (the peak's worst
+// case, matching
 // resonant_bump_max_knob_settles_at_the_apps_configured_ceiling's own
 // excitation shape), and asserts the TRIMMED branch output never exceeds
-// A (== A * height / height, B1's exact target) once warmed up.
+// A (== A * height / height, the exact target) once warmed up.
 // `combPeakBlend=0` isolates the peak branch exactly as
 // `combPeakBlend=1` isolated the comb branch above.
 // -----------------------------------------------------------------------
@@ -1630,8 +1617,8 @@ TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_at_max_height) {
 }
 
 // -----------------------------------------------------------------------
-// R1's peak-branch analogue (tasks.md CONSOLIDATED PUSH table): the static
-// test above holds `height` fixed and settles for 4000 samples first, so it
+// The peak-branch analogue of the test above: the static test above holds
+// `height` fixed and settles for 4000 samples first, so it
 // cannot see the trim smoother's lag against a fast-moving `height` -- and
 // in the real app `height` is not static: `ResonantBump::SetHeight` is
 // called from `RouteAudioSample()` once per SAMPLE, same cadence as the
@@ -1640,7 +1627,7 @@ TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_at_max_height) {
 // rate_feedback_modulation's own comment for the production call-site
 // citation). Same two adversarial patterns, same glide constant under test
 // (peakTrimSmoother shares kTrimGlideCyclesPerSample with combTrimSmoother,
-// FilterFx.hpp) -- reused here rather than re-derived, per B1's brief.
+// FilterFx.hpp) -- reused here rather than re-derived.
 //
 // FINDING (measured, not fixed -- out of B1's scope, which is "mirror
 // W2.2a's mechanism exactly"): pattern 1 (hard step) settles to ~0
@@ -1743,13 +1730,13 @@ TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_under_audio_rate_h
 }
 
 // -----------------------------------------------------------------------
-// B5 (tasks.md CONSOLIDATED PUSH table; "Group B outcomes" B1 finding):
-// FAILING-FIRST for the property B1 could not close -- the peak branch
-// respects its own computed bound `A` (not the looser untrimmed ceiling
-// `A * kMaxResonantBumpHeight` the test above settles for) under the exact
-// same adversarial per-sample-random height modulation that measured B1's
-// own 1.669. B1's own header comment (above) traced WHY the trim alone
-// cannot do this: the peak is a stateful 2-pole biquad whose stored energy
+// FAILING-FIRST for the property the trim alone could not close -- the
+// peak branch respects its own computed bound `A` (not the looser
+// untrimmed ceiling `A * kMaxResonantBumpHeight` the test above settles
+// for) under the exact same adversarial per-sample-random height
+// modulation that measured a trim-only worst case of 1.669. The trim-only
+// test above traced WHY the trim alone cannot do this: the peak is a
+// stateful 2-pole biquad whose stored energy
 // survives a height DROP, so a same-instant scalar cannot retroactively
 // remove energy already in its state -- what corrects that is something
 // with its own release, i.e. `FilterFxChain::peakLimiter`
@@ -1766,7 +1753,7 @@ TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_under_audio_rate_h
 //
 // MEASURED (this exact seed/sample count, a scratch harness reproducing
 // this file's own production math bit-for-bit before this test existed):
-// worst-case overshoot with B1's trim only (no limiter) = 1.615898 against
+// worst-case overshoot with the trim only (no limiter) = 1.615898 against
 // bound 1.0 (this single seed does not reach the full 500k-trial/10-seed
 // worst case of 1.669, but is comfortably past the bound this test pins,
 // which is what makes it a valid failing-first repro). With
@@ -1805,24 +1792,24 @@ TEST_CASE(peak_branch_output_respects_computed_bound_under_audio_rate_height_mod
     }
 }
 
-// filter_fx_chain_serial_matches_delay_then_comb_then_peak DELETED (Task A,
-// this packet): it pinned the `useParallel == false` series branch
-// (`pureDelay -> comb -> peak`, no trims/limiter/blend, ignoring
-// combPeakBlend/scoopMix) that FilterFxChain::Process no longer has --
-// dead code, confirmed by grep, deleted rather than kept beside the new
-// `topology` morph per this packet's brief. No replacement test: there is
+// filter_fx_chain_serial_matches_delay_then_comb_then_peak DELETED: it
+// pinned the `useParallel == false` series branch (`pureDelay -> comb ->
+// peak`, no trims/limiter/blend, ignoring combPeakBlend/scoopMix) that
+// FilterFxChain::Process no longer has -- dead code, confirmed by grep,
+// deleted rather than kept beside the new `topology` morph. No replacement
+// test: there is
 // no longer a distinct series code path to pin, and topology's behaviour
 // across [0,1] is covered by Task F's headroom sweep test below plus
 // filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend at
 // topology==0.
 
 // -----------------------------------------------------------------------
-// Task F (packet -- Filter slot 9 "Topology"): at high topology the peak
-// biquad's input is `combPath` (the comb branch's OWN output,
-// FilterFxChain::Process, FilterFx.hpp) instead of the raw chain input -- a
-// new operating point for a stage whose ceiling this codebase has already
-// had to lower (kMaxResonantBumpHeight's own history, FilterFx.hpp; the
-// peak-branch limiter's own B5 history, this file above). Sweeps topology
+// Filter slot 9 ("Topology"): at high topology the peak biquad's input is
+// `combPath` (the comb branch's OWN output, FilterFxChain::Process,
+// FilterFx.hpp) instead of the raw chain input -- a new operating point
+// for a stage whose ceiling this codebase has already had to lower
+// (kMaxResonantBumpHeight's own history, FilterFx.hpp; the peak-branch
+// limiter's own history, this file above). Sweeps topology
 // across the WHOLE [0,1] range -- not just the endpoints; the midpoint
 // genuinely mixes both paths and is its own case -- drives the peak branch
 // (isolated via combPeakBlend=0/scoopMix=0, this file's own established
@@ -1893,7 +1880,7 @@ TEST_CASE(topology_morph_peak_branch_headroom_across_full_range) {
 // =========================================================================
 // 3.8 -- Reverb (FroggersEngine.hpp:493-534 ProcessReverb, :455-461 wiring,
 // :844-846 Wet/dry blend). Mod depth and Hold are newly authored (no
-// Froggers original -- GetParam(7)/(8) unread) -- design D15.
+// Froggers original -- GetParam(7)/(8) unread).
 // =========================================================================
 
 TEST_CASE(reverb_room_size_decay_predelay_damp_match_expmap_formulas) {
@@ -2066,35 +2053,33 @@ TEST_CASE(reverb_authored_mod_depth_alters_output_and_stays_finite) {
 }
 
 // -----------------------------------------------------------------------
-// B6b (openspec/changes/archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/tasks.md,
-// "Group B outcomes" / operator: "why can't we just have limiters for
-// reverb and delay?"): FAILING-FIRST for the property nothing upstream of
-// the master output limiter used to bound -- W2.1-MATH-2's own finding:
-// Hold pushes `fb` to ~0.99998 (Reverb.hpp:238), ~50,000x steady-state
-// gain, "the master limiter is the only thing between Hold-at-max and the
-// output." This test pins the STAGE's own escape bound instead:
+// FAILING-FIRST for the property that nothing upstream of the master
+// output limiter used to bound -- this stage's own finding: Hold pushes
+// `fb` to ~0.99998 (Reverb.hpp:494), ~50,000x steady-state gain, so the
+// master limiter was the only thing standing between Hold-at-max and the
+// output. This test pins the STAGE's own escape bound instead:
 // `wetLimiter` (dsp/Reverb.hpp), applied to the fully mixed dry/wet output
 // AFTER both tanks, so what actually leaves `Process()` never exceeds
 // `dsp::OutputLimiter::kDefaultCeiling` (1.0 -- `Reverb.hpp`'s own
 // `kReverbWetLimiterCeiling` is defined equal to it).
 //
-// Smallest room size (shortest tank round trip -- B6b's own measured worst
-// case; see dsp/Reverb.hpp's header comment for the full sweep), decay and
-// Hold both at their ceiling, fully wet (mix=1.0, isolates the tank's own
-// bound from any diluting dry floor), sustained full-scale input, run long
+// Smallest room size (shortest tank round trip -- the measured worst case;
+// see dsp/Reverb.hpp's header comment for the full sweep), decay and Hold
+// both at their ceiling, fully wet (mix=1.0, isolates the tank's own bound
+// from any diluting dry floor), sustained full-scale input, run long
 // enough (20000 samples, ~0.42s) to comfortably clear the transient window
 // the measurement found the worst-case overshoot inside.
 //
 // MEASURED (scratch harness, this exact scenario, run against the code
-// before this task existed): WITHOUT `wetLimiter`, worst case over this
-// run = 66.555695 -- clears the 1.0 ceiling by nearly two orders of
-// magnitude, the failing case this test pins (and this is still far short
-// of the ~50,000x steady state W2.1-MATH-2 computed -- reaching that
-// would take vastly longer than any bounded test can run, which is exactly
-// why nothing upstream could ever bound it by construction). WITH
-// `wetLimiter` at its measured tuning (threshold 0.9, attack 2
-// microseconds, release 100ms -- dsp/Reverb.hpp's own
-// `kReverbWetLimiter*` constants): worst case = 1.000000, at the ceiling.
+// before this fix existed): WITHOUT `wetLimiter`, worst case over this run
+// = 66.555695 -- clears the 1.0 ceiling by nearly two orders of magnitude,
+// the failing case this test pins (and this is still far short of the
+// ~50,000x steady state computed above -- reaching that would take vastly
+// longer than any bounded test can run, which is exactly why nothing
+// upstream could ever bound it by construction). WITH `wetLimiter` at its
+// measured tuning (threshold 0.9, attack 2 microseconds, release 100ms --
+// dsp/Reverb.hpp's own `kReverbWetLimiter*` constants): worst case =
+// 1.000000, at the ceiling.
 // -----------------------------------------------------------------------
 TEST_CASE(reverb_wet_output_stays_at_or_below_limiter_ceiling_with_hold_at_max) {
     dsp::Reverb rv;
@@ -2115,17 +2100,16 @@ TEST_CASE(reverb_wet_output_stays_at_or_below_limiter_ceiling_with_hold_at_max) 
 }
 
 // =========================================================================
-// T1.6 (openspec/changes/frogg3rs-post-expansion-consolidation) -- pin the
-// two measurements the predecessor change performed in STANDALONE harnesses
-// and never guarded. The archived numbers (its tasks.md §EXECUTION): Tilt
-// post-limiter peak 0.8000 at centre vs 0.7973 at brightest; Tuned peak
-// exactly 0.8000 across every sweep rate and room size. Both are really the
-// same property -- neither control can push the wet path past the stage
-// ceiling (dsp::kStageCeiling, 0.80) -- and that ceiling, not the exact
-// third decimal of an unpinned measurement, is what a later change must not
-// silently invalidate. The spec delta this closes:
-// "A measurement performed in a standalone harness and reported only in a
-// document does not satisfy this requirement."
+// Pin the two measurements a predecessor change performed in STANDALONE
+// harnesses and never guarded. The archived numbers: Tilt post-limiter
+// peak 0.8000 at centre vs 0.7973 at brightest; Tuned peak exactly 0.8000
+// across every sweep rate and room size. Both are really the same property
+// -- neither control can push the wet path past the stage ceiling
+// (dsp::kStageCeiling, 0.80) -- and that ceiling, not the exact third
+// decimal of an unpinned measurement, is what a later change must not
+// silently invalidate. The principle this test exists to enforce: a
+// measurement performed in a standalone harness and reported only in a
+// document does not satisfy this requirement.
 // =========================================================================
 
 TEST_CASE(reverb_tilt_never_raises_the_post_limiter_peak_above_the_stage_ceiling) {
@@ -2156,17 +2140,17 @@ TEST_CASE(reverb_tilt_never_raises_the_post_limiter_peak_above_the_stage_ceiling
         if (maxAbs > worstPeak) { worstPeak = maxAbs; worstTilt = tilt; }
     }
 
-    // OMNI 9.1 positive control: the rig must actually drive the limiter to
-    // its ceiling, or "never exceeds it" is vacuously true of silence. The
+    // Positive control: the rig must actually drive the limiter to its
+    // ceiling, or "never exceeds it" is vacuously true of silence. The
     // archived centre measurement WAS 0.8000, i.e. pinned at the ceiling.
     std::cout << "  [T1.6 tilt-pin] peak at tilt centre=" << peakAtCentre
               << "  worst peak=" << worstPeak << " at tilt=" << worstTilt
               << "  ceiling=" << dsp::kStageCeiling << "\n";
-    // P8v (§9.1) found the ceiling comparison alone is SELF-REFERENTIAL:
-    // raising kStageCeiling moves measured peak and asserted bound together
-    // (0.9 vs 0.9, still green), so only a decoupled break -- loosening the
-    // wet limiter's own ceiling -- failed it (1.19562 vs 0.8001). Pinning
-    // the literal 0.80 (the archived measurement's own value) closes that
+    // The ceiling comparison alone is SELF-REFERENTIAL: raising
+    // kStageCeiling moves measured peak and asserted bound together (0.9
+    // vs 0.9, still green), so only a decoupled break -- loosening the wet
+    // limiter's own ceiling -- failed it (1.19562 vs 0.8001). Pinning the
+    // literal 0.80 (the archived measurement's own value) closes that
     // hole: a silently moved stage ceiling now fails here too.
     REQUIRE_NEAR(dsp::kStageCeiling, 0.8, 1.0e-6);
     REQUIRE_TRUE(peakAtCentre > dsp::kStageCeiling - 0.01f);            // the instrument was at the ceiling...
@@ -2211,30 +2195,28 @@ TEST_CASE(reverb_tuned_sweeps_never_raise_the_peak_above_the_stage_ceiling) {
 }
 
 // =========================================================================
-// S2a.1 (openspec/changes/archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/
-// tasks.md) -- reverb tank in-loop saturator. `dsp::Reverb::Process` now
-// writes `preOut + fb * PadeSaturator::Saturate(aFb)` (dsp/Reverb.hpp:
-// 410-411), the SAME saturator in the SAME in-loop position the delay's own
-// B2 fix uses (dsp/Delay.hpp), because an unsaturated recursive loop
-// settles at `in/(1-fb)` and Hold pushes `fb` to ~0.99998.
+// Reverb tank in-loop saturator. `dsp::Reverb::Process` now writes
+// `preOut + fb * PadeSaturator::Saturate(aFb)` (dsp/Reverb.hpp:545-546),
+// the SAME saturator in the SAME in-loop position the delay's own fix uses
+// (dsp/Delay.hpp), because an unsaturated recursive loop settles at
+// `in/(1-fb)` and Hold pushes `fb` to ~0.99998.
 //
 // These three TEST_CASEs and their two fixtures lived in a dedicated
-// app/FroggersReverbSaturatorTests.cpp with its own binary, for one stated
-// reason: at the time this file was other in-flight work and the S2a.1
-// brief forbade touching it. That reason has lapsed, so they are folded in
-// here -- same convention (pure app/dsp/*.hpp, no Sheaf/JUCE), same
-// harness, and the duplicated harness/build recipe goes away with the
-// separate file (OMNI §8).
+// app/FroggersReverbSaturatorTests.cpp with its own binary, because this
+// file was other in-flight work at the time and could not be touched. That
+// reason has lapsed, so they are folded in here -- same convention (pure
+// app/dsp/*.hpp, no Sheaf/JUCE), same harness, and the duplicated
+// harness/build recipe goes away with the separate file.
 // =========================================================================
 
 // -----------------------------------------------------------------------
-// OMNI §9.1 positive-control fixture: a minimal, LOCAL manual replica of
-// ONLY the recursive relationship that determines dsp::Reverb's own
-// lineA/lineB growth (pre-delay tap, room-size-derived per-line delay
-// length, diffusion cross-feed, `fb`) -- every formula copied verbatim from
-// dsp::Reverb::Process (dsp/Reverb.hpp) EXCEPT the one line S2a.1 changed:
-// no PadeSaturator::Saturate here, deliberately -- this is the pre-fix
-// shape.
+// Positive-control fixture: a minimal, LOCAL manual replica of ONLY the
+// recursive relationship that determines dsp::Reverb's own lineA/lineB
+// growth (pre-delay tap, room-size-derived per-line delay length,
+// diffusion cross-feed, `fb`) -- every formula copied verbatim from
+// dsp::Reverb::Process (dsp/Reverb.hpp) EXCEPT the one line the fix
+// changed: no PadeSaturator::Saturate here, deliberately -- this is the
+// pre-fix shape.
 //
 // Deliberately omits dampFilter/width/mix/wetLimiter: dsp::Reverb::Process
 // never feeds any of those back into lineA/lineB -- `dampFilter.Process`
@@ -2246,7 +2228,7 @@ TEST_CASE(reverb_tuned_sweeps_never_raise_the_peak_above_the_stage_ceiling) {
 //
 // Distinct from this file's own
 // reverb_process_matches_manual_tank_replica_at_neutral_mod_and_hold, which
-// is NOT duplication of these two (OMNI §8: classify before merging): that
+// is NOT duplication of these two: that
 // test re-derives the tank from FroggersEngine.hpp's raw ExpMapCompute
 // calls precisely so it does NOT go through dsp::Reverb's own static
 // helpers -- its independence from them IS its assertion, and routing it
@@ -2267,8 +2249,8 @@ struct UnsaturatedTankReplica {
     // Returns the two tap values (valA, valB) read this sample: the only
     // quantities dsp::Reverb::Process's OUTPUT path ever reads out of the
     // tank, so PreFixReverbReplica below builds the rest of the pre-fix
-    // chain on top of this without restating any tank math (OMNI §8: one
-    // definition site). Sound by construction: dA/dB are clamped to >= 1,
+    // chain on top of this without restating any tank math. Sound by
+    // construction: dA/dB are clamped to >= 1,
     // so readA/readB can never equal indexA/indexB and this sample's writes
     // cannot disturb this sample's reads.
     std::pair<float, float> Step(float input, float sizeKnob01, float decayKnob01, float preKnob01,
@@ -2436,9 +2418,9 @@ TEST_CASE(reverb_tank_stays_bounded_under_sustained_overdrive_at_max_decay_and_h
               << "  [S2a.1 bounded-vs-unbounded]   WITHOUT saturator (positive control, identical run): "
               << maxControlMagnitude << "\n";
 
-    // OMNI §9.1: the positive control must actually have exceeded the
-    // bound the real (fixed) unit respects, or this run never tested
-    // anything the fix could fail.
+    // The positive control must actually have exceeded the bound the real
+    // (fixed) unit respects, or this run never tested anything the fix
+    // could fail.
     REQUIRE_TRUE(maxControlMagnitude > bound);
     REQUIRE_TRUE(maxControlMagnitude > kOverdriveInput * 2.0f);  // comfortably past "just barely over the bound".
     REQUIRE_TRUE(maxRawMagnitude <= bound + 1.0e-4f);
@@ -2528,24 +2510,25 @@ TEST_CASE(reverb_quiet_ordinary_level_tail_matches_unsaturated_control_at_max_ho
 }
 
 // -----------------------------------------------------------------------
-// B6b's guard AND S2a.1's, merged: one scenario, one instrument, one
-// TEST_CASE (OMNI §8 -- keeping two would be sequential duplication).
+// The wetLimiter guard and the in-loop-saturator guard, merged: one
+// scenario, one instrument, one TEST_CASE (keeping two would be sequential
+// duplication).
 //
-// B6b (`wetLimiter`, added above) had to prove it capped the tail's LEVEL
+// The wetLimiter fix (added above) had to prove it capped the tail's LEVEL
 // without touching Hold's PERSISTENCE -- "fixed the level by breaking the
-// feature." S2a.1 (in-loop `PadeSaturator`, dsp/Reverb.hpp:410-411) has to
-// prove exactly the same thing about exactly the same tail. Same knobs,
+// feature." The in-loop `PadeSaturator` fix (dsp/Reverb.hpp:545-546) has
+// to prove exactly the same thing about exactly the same tail. Same knobs,
 // same burst, same measurement: one test.
 //
 // SUPERSEDES an earlier `reverb_hold_at_max_tail_still_sustains_after_
 // wet_limiter_is_added` whose whole bar was
 // `peakAfterSilenceRun > peakAfterExcite * 0.5f`. That bar was not merely
-// tight, it was STALE -- calibrated against the pre-S2a.1 regime, in which
+// tight, it was STALE -- calibrated against the pre-fix regime, in which
 // (MEASURED, and reproduced by `PreFixReverbReplica` on every run of this
 // test rather than taken on faith) the OUTPUT at this exact scenario sat
 // PINNED at the wetLimiter's 0.8 ceiling for the entire 10000-sample
 // silence window, retention 1.000. That is not Hold sustaining a tail; it
-// is the unbounded-tank defect S2a.1 removes, seen from the output side.
+// is the unbounded-tank defect the fix removes, seen from the output side.
 // A bar that only passes in that regime asserts the bug.
 //
 // What this asserts instead is what a real reverb tail actually is:
@@ -2557,8 +2540,9 @@ TEST_CASE(reverb_quiet_ordinary_level_tail_matches_unsaturated_control_at_max_ho
 //       direction the old bar had backwards, and the one that stops (1)
 //       and (2) from silently going vacuous if the tank ever regressed to
 //       riding the limiter again.
-// (3) is kept honest by OMNI §9.1: the pre-fix control is asserted to BE
-// pinned, so this run demonstrably could have caught the pinned regime.
+// (3) is kept honest by a positive control: the pre-fix control is
+// asserted to BE pinned, so this run demonstrably could have caught the
+// pinned regime.
 //
 // MEASURED post-fix at this scenario (printed below on every run): 0.800
 // right after the burst -> 0.374 at +2000 samples -> 0.302 at +10000
@@ -2632,54 +2616,44 @@ TEST_CASE(reverb_hold_at_max_tail_stays_audible_and_decays_gradually_not_pinned)
     //     artifact. Measured 0.377; the pre-fix regime this rejects
     //     measures 1.000.
     REQUIRE_TRUE(afterLongSilence < afterRightAfterBurst * 0.8f);
-    // OMNI §9.1 positive control for (3): the pre-fix reconstruction must
-    // actually exhibit the pinned regime, or (3) never tested anything.
+    // Positive control for (3): the pre-fix reconstruction must actually
+    // exhibit the pinned regime, or (3) never tested anything.
     REQUIRE_TRUE(beforeLongSilence > beforeRightAfterBurst * 0.9f);
 }
 
 // =========================================================================
-// T2.5(b) (frogg3rs-stop-isolation-and-legible-labels tasks.md; proposal.md
-// SS2 W2b; MEASURED third mechanism, packet 2b/2c 2026-08-17): pins the
-// app-free claim the T2.5 fix rests on -- that Grit (Reverb slot 11) is the
-// load-bearing variable for the tank's self-sustain after Stop, isolated
-// from the App, the voice engine, the delay line, and the randomized
-// trigger entirely (dsp::Reverb::Process + StateMagnitude() only). Chosen
-// for THIS file over FroggersAudioRoutingTests.cpp because it needs none of
-// the App/Rig/parameter-model machinery that file's tests reuse -- matches
-// this file's own header framing ("DSP port... dependency-free") and its
-// established idiom of instantiating dsp::Reverb directly (see
+// Pins the app-free claim the fix rests on -- that Grit (Reverb slot 11)
+// is the load-bearing variable for the tank's self-sustain after Stop,
+// isolated from the App, the voice engine, the delay line, and the
+// randomized trigger entirely (dsp::Reverb::Process + StateMagnitude()
+// only). Chosen for THIS file over FroggersAudioRoutingTests.cpp because
+// it needs none of the App/Rig/parameter-model machinery that file's tests
+// reuse -- matches this file's own header framing ("DSP port...
+// dependency-free") and its established idiom of instantiating
+// dsp::Reverb directly (see
 // reverb_tilt_never_raises_the_post_limiter_peak_above_the_stage_ceiling
-// and neighbours, above). FroggersAudioRoutingTests.cpp's extended T2.3(a)
-// covers the separate claim that FroggersAppCore's stoppedKnob plumbing
-// actually resolves Grit to 0.0f while stopped.
+// and neighbours, above). FroggersAudioRoutingTests.cpp's own stopped-knob
+// plumbing test covers the separate claim that FroggersAppCore's
+// stoppedKnob plumbing actually resolves Grit to 0.0f while stopped.
 //
-// Knobs held fixed at the EXACT state packet 2b measured off
-// FroggersReverbTankMechanismRepro.cpp's PASS P2B-REPRO trial 0
-// (p2b-stderr3.log's "P2B REVERB-KNOBS" line immediately following the
-// "STOP ISSUED (repro trial 0)" marker -- that tag appears twice in the
-// log, at an earlier unrelated all-zero default-state line and at this
-// one; only the line after "STOP ISSUED (repro trial 0)" matches the
-// constants below), with Tank drive forced to
-// kStopUnityDriveKnob (0.5, unity) exactly as FroggersAppCore.hpp's
-// stoppedKnob override already does while stopped -- reproduced from
-// .../scratchpad/p2b_isolated_reverb_test.cpp, the app-free positive
-// control packet 2b/2c's investigation ran directly against dsp::Reverb.
-// A single small seed sample (0.01), then nothing but exact zero for
-// 300000 samples (6.25s at 48kHz):
+// Knobs held fixed at the exact state measured from an isolated
+// reproduction of the tank mechanism immediately after Stop is issued,
+// with Tank drive forced to kStopUnityDriveKnob (0.5, unity) exactly as
+// FroggersAppCore.hpp's stoppedKnob override already does while stopped --
+// reproduced from an isolated, app-free harness that ran directly against
+// dsp::Reverb. A single small seed sample (0.01), then nothing but exact
+// zero for 300000 samples (6.25s at 48kHz):
 //   - at the DRAWN Grit knob (0.8094f, the pre-fix state): the tank's own
 //     state LOCKS at a nonzero magnitude and never decays -- measured
 //     0.306814, constant from ~n=72000 (1.5s) through the full window.
-//   - at Grit forced to 0.0f (T2.5's fix -- its own exact bit-identical
+//   - at Grit forced to 0.0f (the fix -- its own exact bit-identical
 //     bypass by construction, Mangle(x,0,0) - Mangle(0,0,0) == x,
-//     dsp/Reverb.hpp:534-538): the SAME seed decays to 1.98e-7 by the same
+//     dsp/Reverb.hpp:526-527): the SAME seed decays to 1.98e-7 by the same
 //     checkpoint.
 // =========================================================================
 TEST_CASE(reverb_tank_grit_zero_lets_the_measured_pass_d_seed_decay_where_grit_0p8094_locked_forever) {
-    // Measured knobs (packet 2b, p2b-stderr3.log's "P2B REVERB-KNOBS" line
-    // immediately following the "STOP ISSUED (repro trial 0)" marker -- see
-    // this test's own header comment above for why that anchor, not the
-    // bare tag, is needed) -- everything held fixed except Grit, which this
-    // test sweeps between the two measured arms.
+    // Measured knobs, held fixed except Grit, which this test sweeps
+    // between the two measured arms.
     constexpr float mixKnob = 0.4301f, sizeKnob = 0.7342f, decayKnob = 0.8151f, preKnob = 0.3110f,
                      dampKnob = 0.3885f, widthKnob = 0.7300f, diffusionKnob = 0.0084f, modDepthKnob = 0.0499f,
                      holdKnob = 0.5241f, modRateKnob = 0.1358f, tiltKnob = 0.8414f, tunedKnob = 0.7377f;
@@ -2690,7 +2664,7 @@ TEST_CASE(reverb_tank_grit_zero_lets_the_measured_pass_d_seed_decay_where_grit_0
     // dsp::Reverb::TankDriveFromKnob reuse elsewhere in this suite).
     constexpr float kStopUnityDriveKnob = 0.5f;
     constexpr float sr = 48000.0f;
-    constexpr long kSamples = 300000;  // 6.25s at 48kHz -- packet 2b's own measurement window.
+    constexpr long kSamples = 300000;  // 6.25s at 48kHz.
     constexpr float kSeed = 0.01f;
 
     auto runArm = [&](float gritKnob) -> float {
@@ -2707,17 +2681,17 @@ TEST_CASE(reverb_tank_grit_zero_lets_the_measured_pass_d_seed_decay_where_grit_0
         return rv.StateMagnitude();
     };
 
-    // OMNI §9.1 positive control: the pre-fix state (Grit at the drawn
-    // 0.8094) really does lock nonzero, or the Grit==0 assertion below
-    // never tested anything against a genuine counter-example.
+    // Positive control: the pre-fix state (Grit at the drawn 0.8094)
+    // really does lock nonzero, or the Grit==0 assertion below never
+    // tested anything against a genuine counter-example.
     const float lockedMagnitude = runArm(0.8094f);
     std::cout << "  [T2.5b] Grit=0.8094 (pre-fix state): FINAL mag=" << lockedMagnitude
-              << " (measured packet 2b: 0.306814, locked)\n";
+              << " (measured: 0.306814, locked)\n";
     REQUIRE_TRUE(lockedMagnitude > 0.1f);  // genuinely locked, not a fluke near-zero run.
 
     const float decayedMagnitude = runArm(0.0f);
     std::cout << "  [T2.5b] Grit=0.0 (T2.5's stopped-state override): FINAL mag=" << decayedMagnitude
-              << " (measured packet 2b: 1.98e-7, decayed)\n";
+              << " (measured: 1.98e-7, decayed)\n";
     // Task's own bound: decays below 1e-4 within the window.
     REQUIRE_TRUE(decayedMagnitude < 1.0e-4f);
 }
@@ -2725,7 +2699,7 @@ TEST_CASE(reverb_tank_grit_zero_lets_the_measured_pass_d_seed_decay_where_grit_0
 // =========================================================================
 // 3.9 -- Drive (PolynomialDrive.hpp whole file, wiring FroggersEngine.hpp:
 // 81-92,207,483-490,569-573,640-650). Blend and Phase are newly authored (no
-// Froggers original -- GetParam(7)/(8) unread) -- design D15.
+// Froggers original -- GetParam(7)/(8) unread).
 // =========================================================================
 
 TEST_CASE(polynomial_drive_gain_matches_expmap_1_to_5) {
@@ -2788,14 +2762,13 @@ TEST_CASE(digital_reorganizer_set_flip_truncates_set_hash_rounds) {
     REQUIRE_TRUE(reorg.hashBits == static_cast<uint8_t>(std::round(0.5f * 8.0f)));  // rounds, :161
 }
 
-// S1.3 (openspec/changes/archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/
-// tasks.md; proposal.md §2-4; DIVERGENCE #2 note above dsp::DigitalReorganizer
-// in Drive.hpp): Process() now returns Mangle(x) - Mangle(0), not Mangle(x)
-// alone, at any nonzero flip/hash -- THE sanctioned exception to "any red is
-// a regression" (tasks.md §0). This was RED after S1.3 landed (measured:
-// reorg.Process(-0.6f) moved from -0.998438 to -1.48281, a delta of exactly
-// -0.484375 == -Mangle(0.0f, flip=51, hashBits=6)) and is re-asserted here,
-// never deleted, against the corrected behaviour.
+// Process() now returns Mangle(x) - Mangle(0), not Mangle(x) alone, at any
+// nonzero flip/hash -- see the DIVERGENCE #2 note above
+// dsp::DigitalReorganizer in Drive.hpp. THE sanctioned exception to "any
+// red is a regression": this was RED after the fix landed (measured:
+// reorg.Process(-0.6f) moved from -0.998438 to -1.48281, a delta of
+// exactly -0.484375 == -Mangle(0.0f, flip=51, hashBits=6)) and is
+// re-asserted here, never deleted, against the corrected behaviour.
 TEST_CASE(digital_reorganizer_process_matches_bit_scramble_formula) {
     dsp::DigitalReorganizer reorg;
     reorg.SetFlip(0.2f);
@@ -2821,8 +2794,7 @@ TEST_CASE(digital_reorganizer_process_matches_bit_scramble_formula) {
     // with two evaluations of that independent formula: `rawScramble` is
     // called once at `x` and once at silence, mirroring Process()'s own
     // Mangle(input,...) - Mangle(0.0f,...) shape one level up, without
-    // duplicating the transcribed expression a second time in this file
-    // (OMNI §8: one local definition, two call sites).
+    // duplicating the transcribed expression a second time in this file.
     const auto rawScramble = [&](float x) {
         const float inputUp = (x + 1.0f) * 128.0f;
         uint8_t inputInt = static_cast<uint8_t>(std::round(inputUp));
@@ -2843,7 +2815,7 @@ TEST_CASE(digital_reorganizer_process_matches_bit_scramble_formula) {
     }
 }
 
-// Fix 1a regression test (strict-executor brief item "FIX 1"): at
+// Fix 1a regression test: at
 // input==1.0 exactly, inputUp==256, and `static_cast<uint8_t>(std::round(256.0f))`
 // was undefined behavior before Drive.hpp's clamp. This is newly written
 // code this app owns (unlike fuegoize's UB, which is carried forward
@@ -2998,8 +2970,7 @@ TEST_CASE(drive_blend_phase_default_phase_impulse_response_decays_not_rings_fore
 }
 
 // -----------------------------------------------------------------------
-// B7.2 (openspec/changes/archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/tasks.md
-// §K.1/§K.4): FAILING-FIRST for the property this task fixes. §K.1 measured
+// FAILING-FIRST for the property this fixes. An earlier measurement found
 // DriveBlendPhase's allpass coefficient `a` -- read fresh from the Phase
 // knob every sample, unsmoothed -- produces gain up to 4.15x under
 // full-bank per-sample-random modulation and 50.5x under a periodic
@@ -3007,21 +2978,21 @@ TEST_CASE(drive_blend_phase_default_phase_impulse_response_decays_not_rings_fore
 // against bounded (+-1) input. A fixed-coefficient allpass is unity-gain;
 // a time-varying one is not.
 //
-// Two adversarial patterns, matching §K.1's own two cases:
+// Two adversarial patterns, matching that earlier measurement's own two
+// cases:
 //   (A) `wet` AND `phaseKnob01` both redrawn per-sample-random -- the
 //       "full-bank per-sample-random modulation" case (`knob()` refreshes
-//       every sample in production, FroggersAppCore.hpp:1008-1009 /
-//       tasks.md's "Audio-rate modulation" section -- this is not an edge
-//       case, it is what audio-rate noise modulation of this knob does
-//       continuously).
+//       every sample in production, FroggersAppCore.hpp -- this is not an
+//       edge case, it is what audio-rate noise modulation of this knob
+//       does continuously).
 //   (B) a periodic phase/content coincidence -- `wet` a bounded sine at
 //       fWet, `phaseKnob01` a synced duty-cycled square-ish LFO at 2*fWet
-//       -- reproducing §K.1's own "LFO near the note's period" mechanism.
-//       A scratch harness sweep (not this file) found this exact
-//       configuration reaches 61.2x unsmoothed -- EXCEEDS §K.1's own
-//       recorded 50.5x -- verified bounded/plateauing (buildup complete
-//       within ~500 samples, unchanged out to 20M samples), not divergent,
-//       matching §K.1's own plateau finding.
+//       -- reproducing the earlier measurement's own "LFO near the note's
+//       period" mechanism. A scratch harness sweep (not this file) found
+//       this exact configuration reaches 61.2x unsmoothed -- EXCEEDS the
+//       50.5x recorded above -- verified bounded/plateauing (buildup
+//       complete within ~500 samples, unchanged out to 20M samples), not
+//       divergent, matching that same plateau finding.
 //
 // MEASURED with this exact test (reverting dsp::DriveBlendPhase's
 // coeffSmoother/outputLimiter to confirm the failing-first requirement,
@@ -3155,8 +3126,7 @@ TEST_CASE(drive_blend_phase_static_phase_output_unchanged_by_smoothing_and_limit
 // Froggers original exists for all nine params -- nothing here is authored.
 // =========================================================================
 
-// Packet P1 (openspec/changes/frogg3rs-post-expansion-consolidation, T3.2):
-// replaces both map_rows_to_delay_params_passes_through_rows_0_to_6_directly
+// This replaces both map_rows_to_delay_params_passes_through_rows_0_to_6_directly
 // (rows 0-6 only, rows 7/8 folded) and
 // map_rows_to_delay_params_color_halo_fold_matches_formula_and_clamps (the
 // fold's own formula/clamp) -- the fold is deleted, so there is no fold
@@ -3271,11 +3241,10 @@ TEST_CASE(stereo_delay_clear_buffers_resets_to_silence) {
 }
 
 // -----------------------------------------------------------------------
-// B2 (tasks.md CONSOLIDATED PUSH table; W2.1-MATH-2's "the delay is the
-// only unsaturated feedback stage" finding): FAILING-FIRST, pinning a
-// latent defect nobody has heard (the brief's own words). Pre-fix,
-// `StereoDelay::Process` wrote `inSignal + fbL * fbk` -- a linear,
-// unsaturated loop. `fbk` clamps to 0.98 (:170 above), so the loop's steady
+// FAILING-FIRST, pinning a latent defect nobody has heard: the delay was
+// the only unsaturated feedback stage. Pre-fix, `StereoDelay::Process`
+// wrote `inSignal + fbL * fbk` -- a linear, unsaturated loop. `fbk` clamps
+// to 0.98 (dsp/Delay.hpp:844), so the loop's steady
 // state is `in*send / (1 - 0.98)` == 50x input, unbounded by anything
 // short of that 50x ceiling. Post-fix, the fed-back term is wrapped in the
 // SAME `PadeSaturator::Saturate` the comb's own in-loop feedback already
@@ -3327,16 +3296,13 @@ TEST_CASE(delay_feedback_loop_stays_bounded_at_max_feedback) {
 }
 
 // -----------------------------------------------------------------------
-// B6a (openspec/changes/archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/tasks.md,
-// "Group B outcomes" / operator: "why can't we just have limiters for
-// reverb and delay?"): FAILING-FIRST for the property B2's in-loop
-// saturator alone cannot close -- B2 bounds the LOOP's own write to
-// `|inSignal| + fbk` (~1.98 at max feedback, the test above), still well
-// over the master output limiter's 0.9 threshold (W2.1-MATH-2's own
-// finding: "at A = 0.5 that is 25.0 against a 0.9 threshold"). This test
-// pins the STAGE's own escape bound instead: `wetLimiterL`/`wetLimiterR`
-// (dsp/Delay.hpp), applied to `dL`/`dR` strictly AFTER B2's loop write, so
-// what actually leaves this stage never exceeds
+// FAILING-FIRST for the property the in-loop saturator alone cannot close
+// -- it bounds the LOOP's own write to `|inSignal| + fbk` (~1.98 at max
+// feedback, the test above), still well over the master output limiter's
+// 0.9 threshold (at A = 0.5 that is 25.0 against a 0.9 threshold). This
+// test pins the STAGE's own escape bound instead: `wetLimiterL`/`wetLimiterR`
+// (dsp/Delay.hpp), applied to `dL`/`dR` strictly AFTER the loop write
+// above, so what actually leaves this stage never exceeds
 // `dsp::OutputLimiter::kDefaultCeiling` (1.0 -- both wetLimiterL/R's own
 // `kDelayWetLimiterCeiling` and the master's ceiling share this same
 // value).
@@ -3380,7 +3346,7 @@ TEST_CASE(delay_wet_output_stays_at_or_below_limiter_ceiling_at_max_feedback) {
     REQUIRE_TRUE(maxAbs <= ceiling + 1.0e-4f);
 }
 
-// Fix 1b regression test (strict-executor brief item "FIX 1"): immediately
+// Fix 1b regression test: immediately
 // after construction/SetSampleRate, `writePos == 0`, so a call with a
 // large-enough delay time makes `readPos` in `ReadAt` negative -- the
 // "first ~delaySamples calls after construction" window the frozen
@@ -3429,7 +3395,7 @@ TEST_CASE(stereo_delay_read_before_buffer_has_filled_is_defined_and_silent) {
 }
 
 // =========================================================================
-// 9.1/9.4 -- ResonantBump/Comb transfer-function UIState (design D10)
+// 9.1/9.4 -- ResonantBump/Comb transfer-function UIState
 // =========================================================================
 
 // Independent cross-check of ResonantBump::UIState::TransferFunctionValue's
@@ -3477,9 +3443,9 @@ TEST_CASE(comb_zero_feedback_response_is_exactly_unity) {
     }
 }
 
-// Task 9.4: "self-oscillating comb feedback produces only finite plot
-// values" -- Comb::GetFeedback's own +-0.95 ceiling (item 1, design.md
-// A2, was +-1.1), densely sampled, must never produce a NaN/Inf response,
+// "Self-oscillating comb feedback produces only finite plot values" --
+// Comb::GetFeedback's own +-0.95 ceiling (was +-1.1), densely sampled,
+// must never produce a NaN/Inf response,
 // and must stay within the bound SafeDenominator's floor implies
 // (1/kMinMagnitude = 1000x).
 TEST_CASE(self_oscillating_comb_response_is_finite_and_bounded) {
@@ -3498,7 +3464,7 @@ TEST_CASE(self_oscillating_comb_response_is_finite_and_bounded) {
 }
 
 // =========================================================================
-// 8.4 -- RandomShLane deja-vu behavior (design D8a): a locked loop
+// 8.4 -- RandomShLane deja-vu behavior: a locked loop
 // (dejaVuKnob=0.5, sources 1/2/3) never regenerates a slot value once
 // drawn; a free-running lane (dejaVuKnob=0.0, sources 4/5) regenerates the
 // current slot's value on every single Increment() call.
@@ -3551,7 +3517,7 @@ TEST_CASE(free_running_source_keeps_producing_new_values_across_two_full_cycles)
 }
 
 // =========================================================================
-// Drive/Delay slots 9-13 (strict-executor packet, D1-D10). Each mapping's
+// Drive/Delay slots 9-13 (D1-D10). Each mapping's
 // own default-reproduces-today's-literal claim is pinned here through the
 // REAL setter, not just by inspecting the in-class fallback default that
 // the tests above (frog_block_process_matches_manual_chain_replica,
@@ -3569,9 +3535,10 @@ TEST_CASE(drive_set_anti_alias_brightness_default_knob_reproduces_0_4f_cutoff) {
 }
 
 TEST_CASE(polynomial_drive_set_link_default_knob_reproduces_0_25f_coupling) {
-    // D2: knob 0.5f -> linkScalar == 0.5f*0.5f == 0.25f exactly, matching the
-    // pre-packet hardcoded literal this same formula (polynomial_drive_set_
-    // coefs_matches_space_filling_curve_formula above) already pins.
+    // D2: knob 0.5f -> linkScalar == 0.5f*0.5f == 0.25f exactly, matching
+    // the pre-existing hardcoded literal this same formula
+    // (polynomial_drive_set_coefs_matches_space_filling_curve_formula
+    // above) already pins.
     dsp::PolynomialDrive drive;
     drive.SetGain(0.5f);
     const float computedGain = drive.gain;
@@ -3603,10 +3570,10 @@ TEST_CASE(frog_block_set_fold_divisor_stays_strictly_positive_across_full_knob_r
 // D1/D3/D4/D5's combined claim: at the exact default knob values recorded in
 // FroggersParameters.hpp (0.5f/0.5f/1.0f/0.5f for ABrt/Fold/Tone/Bias), a
 // FrogBlock wired through the real setters must be bit-for-bit identical to
-// one that never calls them at all (the pre-packet behaviour) -- the actual
+// one that never calls them at all (the previous behaviour) -- the actual
 // claim "a fresh launch sounds EXACTLY as it does today" makes, verified
 // through the production call path rather than by inspecting field defaults.
-TEST_CASE(frog_block_default_knob_values_reproduce_pre_packet_output_exactly) {
+TEST_CASE(frog_block_default_knob_values_reproduce_original_output_exactly) {
     dsp::FrogBlock blockOld;  // never touches SetAntiAliasBrightness/SetFold/SetTone/SetBias.
     blockOld.polynomialDrive.SetGain(0.4f);
     blockOld.polynomialDrive.SetCoefs(0.7f);
@@ -3710,7 +3677,7 @@ TEST_CASE(stereo_delay_feedback_drive_at_maximum_does_not_raise_the_per_sample_b
 // wired through the real setters is bit-for-bit identical to one that never
 // calls them, across enough samples (and a nonzero dmod) to exercise the
 // mod-rate LFO path D8 touches.
-TEST_CASE(stereo_delay_default_knob_values_reproduce_pre_packet_output_exactly) {
+TEST_CASE(stereo_delay_default_knob_values_reproduce_original_output_exactly) {
     const float sr = 48000.0f;
     dsp::StereoDelay delayOld;
     delayOld.SetSampleRate(sr);  // never touches SetFeedbackDrive/SetFeedbackTone/SetModRate/SetWidthBalance/SetCrush.
@@ -3741,11 +3708,10 @@ TEST_CASE(stereo_delay_default_knob_values_reproduce_pre_packet_output_exactly) 
 }
 
 // =========================================================================
-// T3.1c (Diffusion, Delay slot 8, strict-executor packet P2): per-channel
-// three-section Schroeder allpass cascade on the wet tap
-// (dsp/Delay.hpp SchroederAllpassSection/DelayDiffuser/
-// StereoDelay::ApplyDiffusion). dfrz/drev (slots 4/7) stay inert -- not
-// touched by this packet.
+// Diffusion (Delay slot 8): per-channel three-section Schroeder allpass
+// cascade on the wet tap (dsp/Delay.hpp SchroederAllpassSection/
+// DelayDiffuser/StereoDelay::ApplyDiffusion). dfrz/drev (slots 4/7) stay
+// inert -- not touched here.
 // =========================================================================
 
 TEST_CASE(stereo_delay_diffusion_at_default_zero_is_bit_identical_to_no_diffusion) {
@@ -3764,13 +3730,11 @@ TEST_CASE(stereo_delay_diffusion_at_default_zero_is_bit_identical_to_no_diffusio
     // then process identical input, built through the real production
     // entry point (dsp::MapRowsToDelayParams, the same call
     // FroggersAppCore.hpp makes) with row8Diffusion explicitly 0.0f. If
-    // ddif==0 truly bypasses the diffuser (this packet's binding
-    // placement, dsp/Delay.hpp Process()), the dirtied history is never
-    // read and outputs must match exactly; if a future change drops the
-    // bypass (e.g. always blends `diffused*ddif` in regardless, or drops
-    // the `(1-ddif)` dry term / the `*ddif` scale on `diffused`), this is
-    // the test that catches it -- see the packet report for the actual
-    // broken/restored numbers this test produced.
+    // ddif==0 truly bypasses the diffuser (dsp/Delay.hpp Process()), the
+    // dirtied history is never read and outputs must match exactly; if a
+    // future change drops the bypass (e.g. always blends `diffused*ddif`
+    // in regardless, or drops the `(1-ddif)` dry term / the `*ddif` scale
+    // on `diffused`), this is the test that catches it.
     const float sr = 48000.0f;
     dsp::StereoDelay delayDirty;
     delayDirty.SetSampleRate(sr);
@@ -3798,7 +3762,7 @@ TEST_CASE(stereo_delay_diffusion_at_default_zero_is_bit_identical_to_no_diffusio
         maxAbsDiffL = std::max(maxAbsDiffL, std::fabs(wetDirty.l - wetClean.l));
         maxAbsDiffR = std::max(maxAbsDiffR, std::fabs(wetDirty.r - wetClean.r));
     }
-    REQUIRE_NEAR(maxAbsDiffL, 0.0, 0.0);  // exact equality (eps=0) -- this packet's own binding requirement.
+    REQUIRE_NEAR(maxAbsDiffL, 0.0, 0.0);  // exact equality (eps=0) -- the binding requirement.
     REQUIRE_NEAR(maxAbsDiffR, 0.0, 0.0);
 }
 
@@ -3837,7 +3801,7 @@ TEST_CASE(stereo_delay_diffusion_at_maximum_differs_measurably_from_no_diffusion
 }
 
 TEST_CASE(stereo_delay_diffusion_state_tracks_the_signal_while_ddif_is_zero) {
-    // Packet P2 postflight regression guard. The original P2 call site read
+    // Regression guard: the original call site read
     // `(p.ddif == 0.0f) ? dL : ApplyDiffusion(...)`, which skipped the CALL
     // at zero and so never advanced the sections' history. Every other
     // diffusion test holds ddif fixed for its whole run, so none of them can
@@ -3983,21 +3947,20 @@ TEST_CASE(stereo_delay_diffusion_does_not_raise_wet_output_beyond_limiter_ceilin
 }
 
 // =========================================================================
-// T3.1d (Reverse Blend, Delay slot 7, strict-executor packet P3): per-
-// channel backward-travelling read pointer blended against the forward tap
-// on the wet tap (dsp/Delay.hpp DelayReverser/StereoDelay::ApplyReverse/
-// StereoDelay::Process). dfrz (slot 4) stays inert -- not touched by this
-// packet.
+// Reverse Blend (Delay slot 7): per-channel backward-travelling read
+// pointer blended against the forward tap on the wet tap (dsp/Delay.hpp
+// DelayReverser/StereoDelay::ApplyReverse/StereoDelay::Process). dfrz
+// (slot 4) stays inert -- not touched here.
 // =========================================================================
 
 TEST_CASE(stereo_delay_reverse_blend_at_default_zero_is_bit_identical_to_no_reverse_blend) {
-    // T3.1d binding requirement (item 4): drev==0.0f (the Reverse blend
+    // Binding requirement: drev==0.0f (the Reverse blend
     // knob's own default, FroggersParameters.hpp; DelayParams::drev's own
     // in-class default) must leave the wet tap EXACTLY -- bit-for-bit, not
     // merely close -- what it would be with no reverse tap at all.
     //
-    // Proven the same way T3.1c's own analogous test proves it for
-    // Diffusion: one instance's reverse-tap state is poked directly to a
+    // Proven the same way the equivalent Diffusion test above proves it:
+    // one instance's reverse-tap state is poked directly to a
     // dirty, non-quiescent value (reverserL/reverserR are public members,
     // same per-channel-instance idiom the diffuser already established)
     // with NO Process() calls in between -- so neither instance's
@@ -4006,9 +3969,8 @@ TEST_CASE(stereo_delay_reverse_blend_at_default_zero_is_bit_identical_to_no_reve
     // instances. Both then process identical input, built through the real
     // production entry point (dsp::MapRowsToDelayParams) with row7Reverse
     // explicitly 0.0f. If drev==0 truly bypasses the reverse tap's
-    // contribution (this packet's binding placement, dsp/Delay.hpp
-    // Process()), the dirtied state is never read into the output and
-    // outputs must match exactly.
+    // contribution (dsp/Delay.hpp Process()), the dirtied state is never
+    // read into the output and outputs must match exactly.
     const float sr = 48000.0f;
     dsp::StereoDelay delayDirty;
     delayDirty.SetSampleRate(sr);
@@ -4039,7 +4001,7 @@ TEST_CASE(stereo_delay_reverse_blend_at_default_zero_is_bit_identical_to_no_reve
         maxAbsDiffL = std::max(maxAbsDiffL, std::fabs(wetDirty.l - wetClean.l));
         maxAbsDiffR = std::max(maxAbsDiffR, std::fabs(wetDirty.r - wetClean.r));
     }
-    REQUIRE_NEAR(maxAbsDiffL, 0.0, 0.0);  // exact equality (eps=0) -- this packet's own binding requirement.
+    REQUIRE_NEAR(maxAbsDiffL, 0.0, 0.0);  // exact equality (eps=0) -- the binding requirement.
     REQUIRE_NEAR(maxAbsDiffR, 0.0, 0.0);
 }
 
@@ -4047,7 +4009,7 @@ TEST_CASE(stereo_delay_reverse_blend_at_maximum_time_reverses_a_sharp_attack_slo
     // "Reverse actually reverses" requirement: feed a distinctive
     // asymmetric transient (sharp attack, slow decay) and confirm that at
     // drev==1 the tap's envelope is time-reversed relative to drev==0 --
-    // the slow ramp precedes the sharp edge (tasks.md T3.1d's own framing).
+    // the slow ramp precedes the sharp edge.
     //
     // Method: dfbk=0 keeps the delay LINE itself an exact scaled copy of
     // the input stream (no feedback repeats to complicate it), so the
@@ -4163,10 +4125,9 @@ TEST_CASE(stereo_delay_reverse_blend_at_maximum_time_reverses_a_sharp_attack_slo
 
 TEST_CASE(stereo_delay_reverse_blend_midpoint_differs_from_both_endpoints) {
     // "Midpoint is a real state" requirement (spec requirement, not just a
-    // nice-to-have -- tasks.md T3.1d: "It passes the continuous-range rule
-    // (the midpoint is a real mixed texture)."): drev==0.5 must differ from
-    // BOTH drev==0.0 and drev==1.0 -- proving the control is continuous,
-    // not a switch.
+    // nice-to-have: "it passes the continuous-range rule (the midpoint is
+    // a real mixed texture)"): drev==0.5 must differ from BOTH drev==0.0
+    // and drev==1.0 -- proving the control is continuous, not a switch.
     const float sr = 48000.0f;
     dsp::StereoDelay delay0;
     delay0.SetSampleRate(sr);
@@ -4206,12 +4167,12 @@ TEST_CASE(stereo_delay_reverse_blend_midpoint_differs_from_both_endpoints) {
 }
 
 TEST_CASE(stereo_delay_reverse_blend_wrap_crossfade_bounds_the_sample_to_sample_delta) {
-    // "No click at the wrap" requirement (tasks.md T3.1d, operator-decided:
-    // buffer smoothing at the reverse tap's wrap is REQUIRED, not optional
-    // -- "what makes the control shippable at all"). Threshold calibrated
-    // by measurement, not guessed (OMNI's own "a click test whose threshold
-    // was guessed proves nothing"): with kReverseWrapCrossfadeSeconds
-    // forced to 1.0e-9f (collapsing the crossfade to a single sample --
+    // "No click at the wrap" requirement: buffer smoothing at the reverse
+    // tap's wrap is REQUIRED, not optional -- what makes the control
+    // shippable at all. Threshold calibrated by measurement, not guessed
+    // -- a click test whose threshold was guessed proves nothing: with
+    // kReverseWrapCrossfadeSeconds forced to 1.0e-9f (collapsing the
+    // crossfade to a single sample --
     // this exact scenario, same params, same sample count) the measured
     // max delta was 0.512177; shipped (kReverseWrapCrossfadeSeconds =
     // 0.005f) it measures 0.0246075 -- a ~20.8x reduction. 0.1f sits
@@ -4250,9 +4211,9 @@ TEST_CASE(stereo_delay_reverse_blend_wrap_crossfade_bounds_the_sample_to_sample_
 }
 
 TEST_CASE(stereo_delay_reverse_state_tracks_the_signal_while_drev_is_zero) {
-    // Guards the P2-class defect directly (P2 postflight note, tasks.md
-    // T3.1c): a reverse tap that is never advanced while drev sits at its
-    // 0.0f default would replay stale content -- or in this struct's case,
+    // Guards the same defect class directly: a reverse tap that is never
+    // advanced while drev sits at its 0.0f default would replay stale
+    // content -- or in this struct's case,
     // never move its read pointer at all -- the first time the control was
     // turned up. Every other reverse-blend test above holds drev fixed for
     // its whole run, so none of them can observe that; the state has to be
@@ -4327,14 +4288,13 @@ TEST_CASE(stereo_delay_reverse_blend_does_not_raise_wet_output_beyond_limiter_ce
 }
 
 // =========================================================================
-// T3.1a/T3.1b (Freeze, Delay slot 4, strict-executor packet P4): a
-// crossfade on BOTH new-input write and feedback loop gain (dsp/Delay.hpp
-// DelayParams::dfrz/dfrzLatched, StereoDelay::Process). drev/ddif (slots
-// 7/8) stay untouched by this packet.
+// Freeze (Delay slot 4): a crossfade on BOTH new-input write and feedback
+// loop gain (dsp/Delay.hpp DelayParams::dfrz/dfrzLatched,
+// StereoDelay::Process). drev/ddif (slots 7/8) stay untouched here.
 //
-// Two matched claims from this packet's own brief: the clamp (freeze==1,
-// unlatched) HOLDS the loop-gain product at unity, and dfrzLatched (T3.1b's
-// override hook, wired by a later packet) can EXCEED that hold. Verified
+// Two matched claims: the clamp (freeze==1, unlatched) HOLDS the
+// loop-gain product at unity, and dfrzLatched (the override hook, wired
+// separately) can EXCEED that hold. Verified
 // two ways below: a pure-formula sweep of the freezeEff/fbEff mapping
 // itself (bit-exact claims, no simulation needed -- but also NOT sensitive
 // to a bug in the real Process(), since it never calls it; see the very
@@ -4356,9 +4316,9 @@ TEST_CASE(stereo_delay_reverse_blend_does_not_raise_wet_output_beyond_limiter_ce
 // =========================================================================
 
 // Reused by 5 TEST_CASEs below (freeze==0 at max drive, freeze==1 swept,
-// latched above centre, latched below centre, release-after-latch) -- OMNI
-// §6 helper rule, isolates the one "inject, then measure round-trip
-// growth/decay" transformation stage every one of them needs.
+// latched above centre, latched below centre, release-after-latch) --
+// isolates the one "inject, then measure round-trip growth/decay"
+// transformation stage every one of them needs.
 //
 // Two phases, in this order, both required: (1) SEED exactly one round
 // trip with dfrz/dfrzLatched FORCED to 0.0f/false regardless of what `p`
@@ -4403,19 +4363,17 @@ std::vector<float> MeasureFreezeRoundTripPeaks(dsp::StereoDelay& delay, const ds
 }
 
 TEST_CASE(stereo_delay_freeze_effective_values_are_bit_exact_at_default_across_full_sweep) {
-    // T3.1a/T3.1b's own "why exactly this form" claim (dsp/Delay.hpp
-    // Process()): at freeze==0, not latched, `fbEff` must be BIT-EXACTLY
-    // `fbk` (not merely close) and `freezeEff` BIT-EXACTLY `0.0f` -- an
-    // exact-zero multiply followed by adding that exact zero, both IEEE-754
+    // The "why exactly this form" claim (dsp/Delay.hpp Process()): at
+    // freeze==0, not latched, `fbEff` must be BIT-EXACTLY `fbk` (not
+    // merely close) and `freezeEff` BIT-EXACTLY `0.0f` -- an exact-zero
+    // multiply followed by adding that exact zero, both IEEE-754
     // identities regardless of the finite magnitude of `1/fbDrive - fbk`.
     // Same formula text as the production call site, swept across dfbk's
-    // whole [0,1] range x Feedback Drive's whole knob range: this is
-    // exactly the regression this packet's brief warns an algebraically-
-    // equivalent but NOT bit-exact rewrite (`lerp(fbk*fbDrive,1,freeze)/
-    // fbDrive`) would cause. This test alone cannot catch that regression
-    // in the SHIPPED formula (it never calls Process()) -- its sibling
-    // below does; see the packet report for the broken/restored numbers
-    // both produce under exactly that rewrite.
+    // whole [0,1] range x Feedback Drive's whole knob range: this guards
+    // exactly the regression an algebraically-equivalent but NOT bit-exact
+    // rewrite (`lerp(fbk*fbDrive,1,freeze)/fbDrive`) would cause. This
+    // test alone cannot catch that regression in the SHIPPED formula (it
+    // never calls Process()) -- its sibling below does.
     for (int fbkStep = 0; fbkStep <= 20; ++fbkStep) {
         const float dfbk = static_cast<float>(fbkStep) / 20.0f;
         const float fbk = std::min(std::max(dfbk, 0.0f), 0.98f);
@@ -4427,43 +4385,41 @@ TEST_CASE(stereo_delay_freeze_effective_values_are_bit_exact_at_default_across_f
             const float freezeEff = dfrzLatched ? 1.0f : freeze;
             const float fbEff = dfrzLatched ? 1.0f : fbk + (1.0f / fbDrive - fbk) * freeze;
             REQUIRE_TRUE(freezeEff == 0.0f);  // bit-exact, not merely near.
-            REQUIRE_TRUE(fbEff == fbk);        // bit-exact -- this packet's own binding claim.
+            REQUIRE_TRUE(fbEff == fbk);        // bit-exact -- the binding claim.
         }
     }
 }
 
-TEST_CASE(stereo_delay_freeze_at_default_reproduces_pinned_pre_packet_output_through_real_process) {
+TEST_CASE(stereo_delay_freeze_at_default_reproduces_pinned_original_output_through_real_process) {
     // Companion to the pure-formula sweep above, but through the REAL
-    // production dsp::StereoDelay::Process() entry point, over a nontrivial
-    // continuous input, so a regression in the ACTUAL shipped formula (not
-    // just a parallel copy of it) is what this test is sensitive to -- the
-    // packet's own required §9.1 proof for "the bit-identical test" breaks
-    // THIS test, not the sweep above, precisely because only this one calls
-    // production code.
+    // production dsp::StereoDelay::Process() entry point, over a
+    // nontrivial continuous input, so a regression in the ACTUAL shipped
+    // formula (not just a parallel copy of it) is what this test is
+    // sensitive to -- a required positive-control proof for "the
+    // bit-identical test" breaks THIS test, not the sweep above,
+    // precisely because only this one calls production code.
     //
     // fbDrive is deliberately NOT 1.0: the forbidden rewrite
     // (`lerp(fbk*fbDrive,1,freeze)/fbDrive`) divides back out by fbDrive,
     // and fbDrive==1.0 would let that multiply-then-divide round-trip
     // exactly by construction (x*1/1==x, no rounding possible), hiding the
     // very regression this test exists to catch. "Not a power of two" is
-    // NOT by itself sufficient, per OMNI §9.1's own positive-control
-    // discipline -- a first attempt at this test used dfbk=0.6/knob=0.3
-    // (fbDrive~=0.574, not a power of two) and a float32 probe (OMNI §9.1,
-    // see the packet report) showed `(0.6f*0.574...f)/0.574...f` round-
-    // trips to bit-exact 0.6f anyway, which would have made this test's own
-    // required §9.1 falsifiability proof a dead instrument -- a NULL result
-    // silently mistaken for a negative one. knob==0.437 was chosen by
-    // instead PROBING float32 arithmetic directly (not reasoned about) and
-    // confirming `(fbk*fbDrive)/fbDrive` differs from `fbk` by 1 ULP at
-    // this exact pair -- see the packet report for the probe. dtim==0 keeps
-    // the round trip short (~48 samples at 48kHz, this file's own "shortest
+    // NOT by itself sufficient, per positive-control discipline -- a first
+    // attempt at this test used dfbk=0.6/knob=0.3 (fbDrive~=0.574, not a
+    // power of two) and a float32 probe showed `(0.6f*0.574...f)/
+    // 0.574...f` round-trips to bit-exact 0.6f anyway, which would have
+    // made this test's own required falsifiability proof a dead
+    // instrument -- a NULL result silently mistaken for a negative one.
+    // knob==0.437 was chosen by instead PROBING float32 arithmetic
+    // directly (not reasoned about) and confirming `(fbk*fbDrive)/fbDrive`
+    // differs from `fbk` by 1 ULP at this exact pair. dtim==0 keeps the
+    // round trip short (~48 samples at 48kHz, this file's own "shortest
     // reachable round trip" convention), so hundreds of samples cover many
     // round trips -- a recursive loop, so even that 1-ULP-per-round-trip
     // discrepancy compounds instead of staying hidden.
     //
-    // MEASURED FIRST, then written to match (OMNI: measured, not assumed):
-    // see the packet report for these two constants' provenance and for the
-    // broken-vs-restored numbers the required §9.1 mutation produced.
+    // MEASURED FIRST, then written to match: both constants above were
+    // found by direct probing, not derived on paper.
     const float sr = 48000.0f;
     dsp::StereoDelay delay;
     delay.SetSampleRate(sr);
@@ -4488,12 +4444,11 @@ TEST_CASE(stereo_delay_freeze_at_default_reproduces_pinned_pre_packet_output_thr
     REQUIRE_NEAR(lastWet.r, -0.0563911721f, 0.0);
 }
 
-TEST_CASE(stereo_delay_freeze_clamp_does_not_reach_zero_loop_gain_matches_pre_packet_at_max_feedback_drive) {
-    // T3.1a's own binding invariant, stated as the thing this packet's
-    // brief says must NOT change: at freeze==0, the loop-gain product is
-    // `fbk*fbDrive` exactly as it was before this packet -- including past
-    // 1.0 (an "accidental Stop-sustain" the brief rules must survive
-    // untouched), NOT clamped toward the freeze==1 hold. Measured here at
+TEST_CASE(stereo_delay_freeze_clamp_does_not_reach_zero_loop_gain_matches_original_at_max_feedback_drive) {
+    // Binding invariant: at freeze==0, the loop-gain product is
+    // `fbk*fbDrive` exactly as it was before this fix -- including past
+    // 1.0 (an "accidental Stop-sustain" that must survive untouched), NOT
+    // clamped toward the freeze==1 hold. Measured here at
     // Feedback Drive's own maximum (knob 1.0 -> fbDrive==4.0,
     // ExpMapCompute(0.25,4,1.0)), the extreme where freeze==1's own hold
     // (1/fbDrive==0.25) sits FARTHEST from fbk -- the most sensitive point
@@ -4520,7 +4475,7 @@ TEST_CASE(stereo_delay_freeze_clamp_does_not_reach_zero_loop_gain_matches_pre_pa
     const float measuredGain = peaks[1] / peaks[0];
     const float fbk = 0.98f;
     const float fbDrive = 4.0f;
-    const float theoreticalGain = fbk * fbDrive;  // 3.92 -- the packet's own cited figure.
+    const float theoreticalGain = fbk * fbDrive;  // 3.92.
 
     std::cout << "  [T3.1a clamp-does-not-reach-zero] fbDrive=max(4.0) fbk=0.98 measured loop gain="
               << measuredGain << " theoretical fbk*fbDrive=" << theoreticalGain << "\n";
@@ -4537,8 +4492,7 @@ TEST_CASE(stereo_delay_freeze_feedback_is_monotonically_non_decreasing_across_it
     // Feedback Drive (0.98 -> 0.25 at fbDrive 4.0), so raising Freeze
     // lowered loop gain. Every other Freeze test held freeze FIXED for its
     // whole run, so none of them could observe a direction of travel --
-    // which is exactly why a knob wired backwards passed the entire suite
-    // (proposal.md §3 names this defect class).
+    // which is exactly why a knob wired backwards passed the entire suite.
     //
     // Asserted against dsp::StereoDelay::FreezeFeedback directly rather than
     // through round-trip peak measurement: at high fbDrive the loop
@@ -4576,13 +4530,13 @@ TEST_CASE(stereo_delay_freeze_feedback_is_monotonically_non_decreasing_across_it
         // The ceiling, at every fbk: lossless recirculation, never self-gain.
         REQUIRE_NEAR(dsp::StereoDelay::FreezeFeedback(fbk, 1.0f, false), 1.0, 1.0e-6);
         // Bit-exact passthrough at zero -- the invariant that keeps the
-        // default, and proposal.md §7's accidental sustain, untouched.
+        // default, and the accidental sustain behaviour, untouched.
         REQUIRE_TRUE(dsp::StereoDelay::FreezeFeedback(fbk, 0.0f, false) == fbk);
     }
 
-    // OMNI 9.1 positive control: report the swept ranges and the smallest
-    // observed step, so a run that swept nothing is visible as such rather
-    // than reading as a pass.
+    // Positive control: report the swept ranges and the smallest observed
+    // step, so a run that swept nothing is visible as such rather than
+    // reading as a pass.
     std::cout << "  [T3.1e monotonicity] swept fbk 0.00..0.98 (11 steps) x freeze 0.00..1.00 (101 steps); "
               << "value range [" << minSeen << ", " << maxSeen << "]; smallest step " << minStep
               << " at fbk=" << worstFbk << "\n";
@@ -4616,15 +4570,13 @@ TEST_CASE(stereo_delay_freeze_latch_exceeds_every_value_the_encoder_can_reach) {
     REQUIRE_TRUE(dsp::StereoDelay::FreezeFeedback(0.98f, 1.0f, true) == latched);
 }
 TEST_CASE(stereo_delay_freeze_latched_grows_the_loop_measurably_beyond_unlatched_full_freeze) {
-    // T3.1b's own override, and "the test that distinguishes the override
-    // from the hold; the most important one in this packet" per the brief.
-    // dfrzLatched bypasses T3.1a's clamp outright (fbEff := 1.0f, so the
-    // loop-gain product becomes fbDrive itself) rather than driving dfrz
-    // past its own clamp, which by construction could never exceed the
-    // freeze==1 hold measured just above -- so this test's own claim can
-    // ONLY be true if dfrzLatched is honoured as its own branch, not folded
-    // into dfrz (the trap this packet's brief warns two earlier packets
-    // met). Feedback Drive above centre (knob 1.0 -> fbDrive==4.0, "above
+    // Distinguishes the override from the hold. dfrzLatched bypasses the
+    // clamp outright (fbEff := 1.0f, so the loop-gain product becomes
+    // fbDrive itself) rather than driving dfrz past its own clamp, which by
+    // construction could never exceed the freeze==1 hold measured just
+    // above -- so this test's own claim can ONLY be true if dfrzLatched is
+    // honoured as its own branch, not folded into dfrz (a trap two earlier
+    // attempts fell into). Feedback Drive above centre (knob 1.0 -> fbDrive==4.0, "above
     // centre" since knob 0.5 -> fbDrive==1.0 is SetFeedbackDrive's own
     // documented centre) so the override's own gain (==fbDrive==4.0)
     // clearly exceeds the hold's gain (==1.0) measured above.
@@ -4683,13 +4635,13 @@ TEST_CASE(stereo_delay_freeze_latched_grows_the_loop_measurably_beyond_unlatched
 }
 
 TEST_CASE(stereo_delay_freeze_latched_below_centre_feedback_drive_does_not_grow) {
-    // "Expected behaviour, not a defect" (this packet's brief, verbatim) --
-    // pinned here so nobody "fixes" it later. dfrzLatched's own gain is
-    // ==fbDrive regardless of dfbk (fbEff := 1.0f unconditionally), so
-    // BELOW centre (fbDrive < 1, knob < 0.5) the override's own gain is <1
-    // -- it decays, exactly like an ordinary sub-unity feedback loop,
-    // because there is nothing in T3.1b's own formula that floors fbDrive
-    // at 1; latching only ever multiplies the SAME fbDrive already chosen
+    // "Expected behaviour, not a defect" -- pinned here so nobody "fixes"
+    // it later. dfrzLatched's own gain is ==fbDrive regardless of dfbk
+    // (fbEff := 1.0f unconditionally), so BELOW centre (fbDrive < 1, knob
+    // < 0.5) the override's own gain is <1 -- it decays, exactly like an
+    // ordinary sub-unity feedback loop, because there is nothing in the
+    // formula that floors fbDrive at 1; latching only ever multiplies the
+    // SAME fbDrive already chosen
     // by the Feedback Drive knob.
     const float sr = 48000.0f;
     dsp::StereoDelay delay;
@@ -4729,10 +4681,10 @@ TEST_CASE(stereo_delay_freeze_releasing_the_latch_after_running_hot_decays_towar
     // its own default (0.0f) -- at a dfbk chosen so the released
     // fbk*fbDrive product sits BELOW unity (0.15*4.0==0.6), so the released
     // loop decays rather than continuing to grow on its own (the untouched
-    // "accidental Stop-sustain" this packet's brief protects is a
-    // SEPARATE, deliberately-unrelated claim about dfbk/fbDrive
-    // combinations that exceed unity; this test picks a combination that
-    // does not, so release's own decay is the only effect in view).
+    // "accidental Stop-sustain" behaviour is a SEPARATE, deliberately-
+    // unrelated claim about dfbk/fbDrive combinations that exceed unity;
+    // this test picks a combination that does not, so release's own decay
+    // is the only effect in view).
     const float sr = 48000.0f;
     dsp::StereoDelay delay;
     delay.SetSampleRate(sr);
@@ -4750,9 +4702,9 @@ TEST_CASE(stereo_delay_freeze_releasing_the_latch_after_running_hot_decays_towar
     constexpr int kRoundTripSamples = 48;
     constexpr int kHotRoundTrips = 8;  // latched gain==4.0/round-trip -- plenty to reach Saturate's ceiling.
 
-    // Reuses MeasureFreezeRoundTripPeaks for its own seed phase too (OMNI
-    // §8: one definition site) -- p already carries dfrzLatched==true/
-    // dfrz==1.0f here, so injecting the burst under THESE params directly
+    // Reuses MeasureFreezeRoundTripPeaks for its own seed phase too -- p
+    // already carries dfrzLatched==true/dfrz==1.0f here, so injecting the
+    // burst under THESE params directly
     // would hit the exact same "frozen input never enters the line" trap
     // the helper's own header comment exists to avoid.
     const std::vector<float> hotPeaks = MeasureFreezeRoundTripPeaks(delay, p, 0.01f, kRoundTripSamples, kHotRoundTrips);
@@ -4823,8 +4775,8 @@ TEST_CASE(stereo_delay_freeze_midpoint_differs_from_both_endpoints) {
 }
 
 // =========================================================================
-// Strict-executor packet -- Ring Mod (Audio slots 9-11, task A), PM rate
-// (Audio slot 12, task B), VCO balance (Audio slot 13, task C).
+// Ring Mod (Audio slots 9-11, task A), PM rate (Audio slot 12, task B),
+// VCO balance (Audio slot 13, task C).
 // =========================================================================
 
 TEST_CASE(ring_mod_depth_scale_zero_off_gate_and_smoothstep_uses_own_floor) {
@@ -5052,10 +5004,9 @@ TEST_CASE(pm_rate_floor_positive_control_lfo_moves_and_differs_from_ceiling) {
     REQUIRE_TRUE(cyclesAtKnob1 - cyclesAtKnob0 > 1.0f);
 }
 
-// Task C1: BINDING INVARIANT (operator ruling) -- the WEIGHTS themselves
-// are asserted directly (not an output-level proxy, which the task
-// explicitly calls "strictly weaker evidence"), swept across the full
-// [0,1] knob range at fine granularity.
+// BINDING INVARIANT: the WEIGHTS themselves are asserted directly (not an
+// output-level proxy, which is "strictly weaker evidence"), swept across
+// the full [0,1] knob range at fine granularity.
 TEST_CASE(vco_balance_weights_sum_to_one_and_stay_within_bounds_across_full_sweep) {
     for (int i = 0; i <= 200; ++i) {
         const float knob = static_cast<float>(i) / 200.0f;
@@ -5068,8 +5019,8 @@ TEST_CASE(vco_balance_weights_sum_to_one_and_stay_within_bounds_across_full_swee
         REQUIRE_TRUE(w2 >= 0.10f - 1e-6f && w2 <= 0.80f + 1e-6f);
         REQUIRE_TRUE(w3 >= 0.10f - 1e-6f && w3 <= 0.80f + 1e-6f);
     }
-    // Default (centre, 0.5f) reproduces the exact pre-packet equal-thirds
-    // mix MixOscVoices used to hardcode.
+    // Default (centre, 0.5f) reproduces the exact equal-thirds mix
+    // MixOscVoices used to hardcode.
     float w1 = 0.0f;
     float w2 = 0.0f;
     float w3 = 0.0f;
@@ -5079,7 +5030,7 @@ TEST_CASE(vco_balance_weights_sum_to_one_and_stay_within_bounds_across_full_swee
     REQUIRE_NEAR(w3, 1.0f / 3.0f, 1e-6);
 }
 
-TEST_CASE(mix_osc_voices_default_balance_knob_reproduces_pre_packet_equal_thirds_average) {
+TEST_CASE(mix_osc_voices_default_balance_knob_reproduces_original_equal_thirds_average) {
     // Task C's own "default = centre, exactly the equal-thirds mix it
     // replaces" requirement, verified through the actual production call
     // path (MixOscVoices), not just the weight helper in isolation.
