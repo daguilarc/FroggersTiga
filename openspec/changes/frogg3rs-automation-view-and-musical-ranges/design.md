@@ -167,11 +167,17 @@ reader arriving from it needs to know which features are absent here.
 e2e green; Sheaf's own suite for the framework change. Never above `-j2`,
 always `nice`. Baseline at this change's open: 290/290.
 
-## G — Known defect, NOT in this change's scope
+## G — For the post-testing merge into main
+
+Once this change is tested and accepted, the v2 branch merges into main and
+both the desktop and wasm trees are updated as part of that work. The item
+below is carried into that merge plan rather than handled here: it lives in
+a tree this change does not touch, and the merge is where that tree is
+already being opened.
 
 Found while tracing a dangling comment citation during the predecessor's
-close-out. Recorded here because this is the live change someone will read
-next, and because the fix belongs to work that has not been opened yet.
+close-out, and recorded here because this is the live change someone will
+read next.
 
 **`sim/Fuegoize.hpp` invokes undefined behavior at full fuego.** It computes
 the modulo divisor as `static_cast<uint8_t>((mask + 1u) ? (mask + 1u) : 1u)`.
@@ -195,11 +201,12 @@ include path, and `bindings.cpp` reaches `Fuegoize.hpp` through
 `WasmSimHost.hpp` and `DelayState.hpp`. The code path is traced; a crash has
 not been observed.
 
-**Disposition: fix it when the v2 branch merges into main**, since desktop
-and wasm are updated as part of that work. Nothing in the specs prevents
-editing those trees — `froggers-web-host`'s "superseded, not edited"
-requirement is scoped to the change that introduced it, not standing. The
-fix is to move the cast off the divisor, matching the firmware, and to add a
-test that drives fuego to maximum: nothing exercises that path today, because
-the app's parity tests cover `app/dsp/Fuegoize.hpp` rather than the
-simulator's copy.
+**In the merge plan:** move the cast off the divisor so it matches the
+firmware's form, and add a test that drives fuego to maximum. Nothing
+exercises that path today — the app's parity tests cover
+`app/dsp/Fuegoize.hpp`, not the simulator's copy — so the fix needs its own
+coverage rather than relying on an existing test to catch a regression.
+
+Nothing in the specs stands in the way: `froggers-web-host`'s "superseded,
+not edited" requirement is scoped to the change that introduced it, not
+standing, so the merge is free to update these trees.
