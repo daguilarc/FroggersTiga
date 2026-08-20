@@ -358,9 +358,6 @@ Human-readable mirror of host differences: `SIM_MANUAL.md` § **Host input bound
 ## Verification commands
 
 ```sh
-scripts/verify_clean_rebuild.sh
-scripts/check_host_artifact_hygiene.sh
-scripts/check_openspec_hygiene.sh --post-closure
 node scripts/generate-host-display.mjs --check
 cd web && npm run verify:host-display && npm run verify:wasm-render-allocation
 ```

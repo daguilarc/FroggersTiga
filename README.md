@@ -349,8 +349,6 @@ This uses CMake `FetchContent`'s local source override and avoids silently depen
 
 Links `src/core/` + `DesktopHostIO` only (no libDaisy). Transport bar: **Play/Stop**, format toggles (**WAV/MP3/FLAC/OGG**), **Record** (stereo export), **MIDI**, **Audio**. **WAV** and **OGG** export work in default JUCE builds; **MP3** needs `JUCE_USE_MP3AUDIOFORMAT` + LAME at compile time; **FLAC** needs `JUCE_USE_FLAC`. macOS menu **FroggersTiga → Manual / Quick Dict / License** (embedded docs).
 
-**Clean rebuild check:** `scripts/verify_clean_rebuild.sh` — generator freshness, sim tests, web TypeScript, desktop build, and workspace hygiene.
-
 **Release packages:** See [`desktop/PACKAGING.md`](desktop/PACKAGING.md) for DMG / Windows installer commands. Move tag `froggerstiga-v1` on `main` (force-push) to trigger `.github/workflows/desktop-release.yml` and publish assets on [GitHub Releases](https://github.com/daguilarc/frogg3rs/releases).
 
 Parameter and host UX reference for this frozen desktop-v1 surface: [`SIM_MANUAL.md`](SIM_MANUAL.md).

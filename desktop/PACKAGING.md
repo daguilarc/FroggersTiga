@@ -114,5 +114,3 @@ Public GitHub releases ship **desktop standalone** and **web sim** only.
 | **VCV Rack plugin** (`vcv/`) | Local-only; directory in `.gitignore`. CV-only — no MIDI widgets or CC mod sources; per-parameter CV jacks combine with internal routes. |
 
 Public CI (`desktop-release.yml`, `pages.yml`) never builds `vcv/`. See `docs/CI.md`. The untested `BUILD_VST`/`PluginEditor`/`PluginProcessor` wrappers described here previously were removed (never built by CI, never exercised at the `AudioProcessor` layer); a VST/AU host is being rebuilt from scratch under `app/vst/` (see `openspec/changes/frogg3rs-browser-and-vst-hosts/`).
-
-**Worktree hygiene:** `scripts/verify_clean_rebuild.sh` rebuilds sim, web, and desktop from clean output trees and fails if tracked source drifts or generated host-display files are stale.

@@ -69,22 +69,6 @@ Update root `SIM_MANUAL.md` first; mirrors under `docs/` and `web/public/` must 
 
 Like v1 desktop packages, local v2 builds are **not** code-signed. macOS Gatekeeper or Windows SmartScreen may block first launch — use right-click **Open** or local dev workarounds.
 
-## Verification
-
-Default hygiene (v1 only):
-
-```sh
-scripts/verify_clean_rebuild.sh
-```
-
-Optional v2 sweep after local changes:
-
-```sh
-VERIFY_V2=1 scripts/verify_clean_rebuild.sh
-```
-
-This adds `desktop-v2` Release build + `ControlCoreBridge_test`.
-
 ## Release policy
 
 | Phase | Where | Gate |

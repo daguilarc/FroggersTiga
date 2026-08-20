@@ -15,27 +15,13 @@ These checks are intentionally local. They are useful before pushing changes, bu
 
 | Script | What it guards |
 |--------|----------------|
-| `scripts/check_host_artifact_hygiene.sh` | No public build/cache artifacts; shared path classes from `scripts/repo_path_policy.sh` |
-| `scripts/check_openspec_hygiene.sh` | Local OpenSpec lifecycle using filesystem/OpenSpec CLI only; no git operations |
 | `desktop/scripts/verify-release-metadata.sh` | CMake, web package, README/SIM_MANUAL version alignment |
-| `sim/check_common_core_wrappers.sh` | `src/common` headers that mirror `src/core` stay thin firmware compatibility wrappers |
-| `sim/check_vcv_panel_bounds.sh` | VCV panel HP/layout constants |
-| `sim/check_vcv_panel_svg.sh` | VCV SVG panel files |
-| `sim/check_vcv_midi_boundary.sh` | No MIDI/CC leakage into `vcv/src` |
-| `sim/check_vcv_license_boundary.sh` | GPL boundary for Rack plugin tree |
 | `npm --prefix web run test:e2e` | Browser regression coverage after WASM/web changes |
 
 Run locally:
 
 ```bash
-scripts/check_host_artifact_hygiene.sh
-scripts/check_openspec_hygiene.sh
 desktop/scripts/verify-release-metadata.sh
-sim/check_common_core_wrappers.sh
-sim/check_vcv_panel_bounds.sh
-sim/check_vcv_panel_svg.sh
-sim/check_vcv_midi_boundary.sh
-sim/check_vcv_license_boundary.sh
 npm --prefix web run test:e2e
 ```
 
@@ -74,10 +60,6 @@ node scripts/verify-host-display-shape.mjs
 sim/check_host_display_projections.sh
 sim/check_mod_source_labels.sh
 ```
-
-## Local full sweep
-
-`scripts/verify_clean_rebuild.sh` rebuilds sim, web, and desktop from clean trees and catches stale generated files.
 
 ## Path Classes
 
