@@ -1,4 +1,4 @@
-# FroggersTiga Quick Dict
+# frogg3rs Quick Dict
 
 Terse parameter glossary for the current **Frogg3rs — Sheaf app** (`app/`). Full guide → [`MANUAL.md`](MANUAL.md).
 Daisy Field hardware firmware (frozen, different parameter model entirely) → [`DAISY_MANUAL.md`](DAISY_MANUAL.md).

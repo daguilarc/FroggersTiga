@@ -14,6 +14,6 @@ fi
 
 printf 'Desktop app for FroggersTiga (release channel `%s`, package version **v%s**).\n\n' "$TAG" "$VERSION"
 printf 'Download **FroggersTiga.dmg** (macOS) or **FroggersTiga-Setup.exe** (Windows).\n\n'
-printf 'Web sim: https://daguilarc.github.io/FroggersTiga/\n\n'
+printf 'Web sim: https://daguilarc.github.io/frogg3rs/\n\n'
 printf '%s\n\n' '---'
 sed -n '/^## Version history$/,$p' "$MANUAL"

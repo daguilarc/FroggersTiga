@@ -10,16 +10,13 @@
 #
 # The original version
 # used `grep -rIl`, whose `-I` flag SKIPS BINARY FILES ENTIRELY -- so it
-# false-passed on the exact thing it exists to catch. frogg3rs.wasm is a
-# binary that embeds the literal string "FroggersTiga" via DWARF/compiler
-# diagnostics carrying the *local build machine's* absolute source paths
-# (this dev machine's folder is still literally
-# ~/Desktop/FroggersTiga/... -- that machine-local rename is a separate,
-# still-pending task, independent of this app-identity
-# gate). A naive "binary files must never contain FroggersTiga" rule would
-# therefore always fail on THIS machine regardless of app-identity
-# correctness, which is not the failure this gate is for. So the policy is
-# split by what the match actually is:
+# false-passed on the exact thing it exists to catch. A wasm binary can
+# embed the literal string "FroggersTiga" via DWARF/compiler diagnostics
+# carrying the build machine's absolute source paths, which is a build-path
+# artifact rather than an app-identity defect. A naive "binary files must
+# never contain FroggersTiga" rule would fail on such a build regardless of
+# app-identity correctness, which is not the failure this gate is for. So
+# the policy is split by what the match actually is:
 #
 #   1. TEXT files (grep -I, i.e. binaries excluded from this pass): ANY
 #      "FroggersTiga" occurrence -> FAIL. Unchanged intent from before,
@@ -33,13 +30,12 @@
 #   3. Binary files containing the bare "FroggersTiga" string that is NOT
 #      one of the origin-URL forms above (i.e. a compiled-in local
 #      filesystem path, not a URL) -> WARN, non-fatal, printed per file.
-#      These are exactly the local-build-path embeddings described above:
-#      absent from a CI build (whose checkout path does not contain
-#      "FroggersTiga"), and cleared once the pending local folder rename
-#      lands. The gate does not have a green build available to prove that
-#      against on THIS machine, so it downgrades to a loud warning rather
-#      than lying green by skipping the file, or permanently failing for a
-#      reason unrelated to app identity.
+#      These are exactly the build-path embeddings described above, absent
+#      from any checkout whose path does not contain "FroggersTiga" -- which
+#      now includes this machine's own working folder. A match here means the
+#      artifact predates that, so it is a stale-build signal rather than an
+#      app-identity defect: a loud warning, rather than lying green by
+#      skipping the file or failing for a reason unrelated to app identity.
 #   4. Empty-scan guard: if the target directory contains zero files, FAIL
 #      -- a no-op scan (e.g. pointed at a nonexistent or emptied directory)
 #      must never report OK.
@@ -92,7 +88,7 @@ fi
 if binary_matches=$(grep -rlaF -- "$NEEDLE" "$SITE_DIR" 2>/dev/null); then
   while IFS= read -r file; do
     [[ -z "$file" ]] && continue
-    echo "renamed-origin gate: WARN -- binary $file embeds '$NEEDLE' as a local build-machine path (not a text file, not an origin-URL form); expected to clear once the pending local folder rename lands, and is absent from a CI checkout" >&2
+    echo "renamed-origin gate: WARN -- binary $file embeds '$NEEDLE' as a build-machine path (not a text file, not an origin-URL form); this artifact predates the current build path -- rebuild to clear it" >&2
   done <<< "$binary_matches"
 fi
 
