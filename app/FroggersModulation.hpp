@@ -1,22 +1,18 @@
 #pragma once
 
 // synth_froggers::{FroggersModulationSlate, FroggersModulationDrillIn,
-// RandomizeAll, RandomizePage, ApplyFroggersDefaultPatch} -- packet 6 of the
-// froggers-sheaf-app change (openspec/changes/froggers-sheaf-app/tasks.md,
-// section "6. Modulation slate + drill-in", tasks 6.1-6.12; design D5, D8,
-// D8a, D9b, D14, D16). Strict-executor scope: ONLY tasks 6.1-6.12. Section
-// "6a. Audio routing" (parameters -> DSP -> stereo output) is a DIFFERENT,
-// later task and is NOT touched here -- the VCO/EF DSP stepped below exists
-// solely to produce the six modulation-source values design D5 assigns to
-// slots 6-11; none of it is summed to FroggersApp::ProcessBlock's stereo
-// output bus yet (that stays task 2.1's silent placeholder until 6a wires
-// it). Packet 3's DSP port (app/dsp/*.hpp) is reused as-is; nothing here
-// re-derives a Froggers formula.
+// RandomizeAll, RandomizePage, ApplyFroggersDefaultPatch} -- registers and
+// steps the 15 modulation sources, in a fixed load-bearing order (below), and
+// owns drill-in/randomize/reset for the modulation-depth grid. The VCO/EF DSP
+// stepped below, which produces the six audio-rate/envelope-follower source
+// values (slots 6-11), also feeds FroggersAppCore's RouteAudioSample(),
+// which sums it to the real stereo output bus. app/dsp/*.hpp's DSP port is
+// reused as-is; nothing here re-derives a Froggers formula.
 //
 // ============================================================================
-// 6.1/6.2 -- registration, in design D5's load-bearing order
+// Registration, in a load-bearing order
 // ============================================================================
-// `StandardModulators` is NOT used (D5, revised): `kRandomCount = 4` is a
+// `StandardModulators` is NOT used: `kRandomCount = 4` is a
 // hard `static constexpr` (include/synth/StandardModulators.hpp:27) with four
 // hardcoded visualizers (:46-49,188-191), so it cannot yield six S&H sources,
 // and with slots 0-5 already taken by the six Random S&H sources there is
@@ -27,34 +23,33 @@
 // Sheaf pieces reused: `NoiseModulatorProcessor` (DspNoise.hpp:48-54),
 // `NoiseWaveformVisualizer`, `GangedRandomLfoVisualizer` (:247-248).
 //
-// Slot order (design D5, task 6.2) -- SetModulationSource bounds-checks only
+// Slot order -- SetModulationSource bounds-checks only
 // and has no reservation registry, so registration order is load-bearing;
 // each slot below is registered by its own explicit call (never a loop that
-// could silently reorder), and task 6.6's test asserts all 15 by identity:
+// could silently reorder), and a test asserts all 15 by identity:
 //   0-5   Random S&H 1-6 (5 from the ported RandomShLane, #6 a Sheaf
-//         GangedRandomLfoProcessor<1> -- design D8)
+//         GangedRandomLfoProcessor<1>)
 //   6-8   VCO 1/2/3 audio out
 //   9-11  VCO 1/2/3 envelope follower
 //   12    Noise
 //   13-14 external audio rate, external audio envelope follower
 //
 // ============================================================================
-// Clock/rate wiring (packet 8, tasks.md section "8. Marbles: clock +
-// visualizer", tasks 8.1/8.3; design D8/D8a) -- IMPLEMENTED here.
+// Clock/rate wiring
 // ============================================================================
 // The five RandomShLane sources' `Increment()` (advance to a new held value)
-// is now driven by MasterClock ticks: `FroggersApp::ProcessBlock` computes
+// is driven by MasterClock ticks: `FroggersApp::ProcessBlock` computes
 // the transport quarter-note position ONCE per sample via its own
-// `TransportQuarterNotesAt()` helper (task 6b's clock-read helper, reused
-// here rather than re-derived -- see task 8.1's own note below) and passes
+// `TransportQuarterNotesAt()` helper (the same clock-read helper the ASR gate
+// uses, reused here rather than re-derived) and passes
 // that same `std::optional<double>` into `Step()`, which runs each of the
 // five sources' own `synth::Phasor2Tick` (multiplier 1/2/3/1, source #5
-// pre-scaling `time` by 1/4 with multiplier 1 -- design D8a's rate table)
-// and calls `Increment()` on a tick. Source #6 is NOT tick-driven (design
-// D8): `PrepareBlockClock()`, called once per block from
+// pre-scaling `time` by 1/4 with multiplier 1 -- the rate table below)
+// and calls `Increment()` on a tick. Source #6 is NOT tick-driven:
+// `PrepareBlockClock()`, called once per block from
 // `FroggersApp::ProcessBlock` BEFORE the per-sample loop, recomputes its
 // `GangedRandomLfoInput` from `block.clockPlan->QuarterNotesPerSample()` so
-// one full move-cycle spans 16 quarter notes (four bars, D8a), clamping to
+// one full move-cycle spans 16 quarter notes (four bars), clamping to
 // a safe fallback (120 BPM-equivalent) when no clock plan is available so
 // `GangedRandomLfoProcessor::Process`'s `ValidateRandomTimingConfig` never
 // throws (`DspRandomLfo.hpp:26-30`).
@@ -72,13 +67,13 @@
 // registering them (`NormalizeMatrixOutput`, `0.5 + 0.5*clamp(x,-1,1)`,
 // :420-422,367-378) rather than passing raw bipolar signal through. This
 // port follows the same convention: `RandomShLane::Process()` and
-// `VcoEnvelopeFollowers`/`SingleEnvelopeFollower` are already [0,1] (packet
-// 3), and the two genuinely bipolar signals here (VCO audio, external audio)
+// `VcoEnvelopeFollowers`/`SingleEnvelopeFollower` are already [0,1], and the
+// two genuinely bipolar signals here (VCO audio, external audio)
 // are renormalized with the identical `0.5 + 0.5*clamp(x,-1,1)` formula
 // below (`NormalizeBipolarToUnit`).
 //
 // ============================================================================
-// 6.4 -- drill-in level cap (design D5, resolved)
+// Drill-in level cap
 // ============================================================================
 // Sheaf's `Bank` has no level concept at all: one `Parameter* selected_`
 // (ParameterModulation.hpp:656) plus one bool computed from it
@@ -91,15 +86,14 @@
 // that would open a third level, and otherwise defers entirely to Bank's
 // native behavior for PRESSES (including `Deselect()`'s own
 // full-exit-from-any-level semantics, unchanged and un-changeable -- it is
-// Sheaf's, not this app's). REVISED by E.2 (design A7a, operator override
-// 2026-07-29): `FroggersModulationDrillIn::Back()` no longer simply forwards
-// that raw `Deselect()` call for every level -- from level 2 it now
-// synthesizes a one-level pop app-side (`Deselect()` then re-press the
+// Sheaf's, not this app's). `FroggersModulationDrillIn::Back()` does not
+// simply forward that raw `Deselect()` call for every level -- from level 2
+// it synthesizes a one-level pop app-side (`Deselect()` then re-press the
 // remembered level-1 encoder id), landing back on the level-1 view instead
 // of a full exit. See `Back()`'s own comment for the exact mechanism.
 //
 // ============================================================================
-// 6.7-6.11 -- randomize (design D14): Sheaf remains the only mutator
+// Randomize: Sheaf remains the only mutator
 // ============================================================================
 // `Bank::RandomizeModulationDepths` and the `Modifier::Random`/`RandomMod`
 // dispatch inside `Bank::HandlePress` (src/ParameterModulation.cpp:2633-2650,
@@ -111,35 +105,32 @@
 // dispatch a press at the target cell; `Bank::HandlePress`'s modifier branch
 // (:2633-2642) applies `Modifier::Random`/`RandomMod` to that ONE cell's
 // parameter and returns before touching `selected_`/level state at all. This
-// file drives exactly that mechanism, cell by cell, so the app "chooses the
-// target set" (which cells get pressed, and in what view) while Sheaf
-// performs every mutation, per D14/the amended resolved-decision 14. Nothing
-// here reimplements `RandomizeModulationDepths`'s coin-flip loop or
-// `RandomizeVisibleValue`.
+// governs DEPTH randomization below: the app "chooses the target set"
+// (which cells get pressed, and in what view) while Sheaf performs every
+// mutation. Nothing here reimplements `RandomizeModulationDepths`'s
+// coin-flip loop or `RandomizeVisibleValue`.
 //
 // `Bank::ApplyModifierToTopLevel` (public) is deliberately NOT used for the
 // parameter-page cases below: it applies to every cell in `topLevel_`
-// unconditionally, including the shared Crunchy at slot 15, and D14 requires
-// Crunchy excluded. Cell-by-cell press dispatch (via
+// unconditionally, including the shared Crunchy at slot 15, which this app
+// excludes from randomize. Cell-by-cell press dispatch (via
 // `FroggersModulationDrillIn::PressEncoder`, which never presses slot 15)
 // is what makes the exclusion possible without touching Bank's private
 // surface.
 //
-// T3.1 CORRECTION (frogg3rs-stop-isolation-and-legible-labels, packet 3,
-// 2026-08-17): the paragraph above is no longer true for the VALUE path.
+// The paragraph above does not hold for the VALUE path.
 // `Parameter::RandomizeVisibleValue` (called by `Bank::ApplyModifierToParameter`
 // under a held `Modifier::Random` press, src/ParameterModulation.cpp:1723-1731)
 // computes its delta against `TargetValue(0)`, the MODULATION-RESOLVED value --
 // so under live audio-rate modulation each press ratchets the commanded value
-// into the [0,1] clamp (proposal §1b; measured 20/20 at exactly 1.0000 after 5
-// presses). `PressBankWithRandomValue` below no longer presses through
+// into the [0,1] clamp (measured 20/20 at exactly 1.0000 after 5
+// presses). `PressBankWithRandomValue` below does not press through
 // `Bank::HandlePress`/`Modifier::Random` at all for the value write: it draws
 // its own uniform value and commits it directly via `HandleSetAbsolute`
-// (see that function's own comment). Depth randomization is UNCHANGED --
+// (see that function's own comment). Depth randomization differs --
 // `RandomizeParameterModulationDepths` above still calls Sheaf's
 // `RandomizeVisibleValue` directly, which is correct because a freshly
-// zeroed depth has no live modulation of its own to resolve against. Filed
-// upstream as `UPSTREAM-SHEAF-ASK.md` ask #16; the app does not wait on it.
+// zeroed depth has no live modulation of its own to resolve against.
 
 #include "FroggersParameters.hpp"
 #include "FroggersRandomShVisualizer.hpp"
@@ -167,8 +158,7 @@
 
 namespace synth_froggers {
 
-// Design D5's slate order, named for readability at call sites; values are
-// the literal slot indices task 6.2 specifies.
+// The slate's fixed source order, named for readability at call sites.
 enum FroggersModulatorSlot : std::size_t {
     kModSlotRandomSh1 = 0,
     kModSlotRandomSh2 = 1,
@@ -204,8 +194,8 @@ inline float NormalizeBipolarToUnit(float bipolar)
 // layout from `Bank::CompactPhysicalLayout()`, which returns only the
 // encoder ids this bank has actually registered a parameter at
 // (topLevel_.size(), src/ParameterModulation.cpp:2915-2921) -- 11 for every
-// Froggers bank (9 page params + Crispy + Crunchy; D5a's slots 9-13 are
-// deliberately left empty). `Bank::OpenModulationView` requires
+// Froggers bank (9 page params + Crispy + Crunchy; this bank's slots 9-13
+// are deliberately left empty). `Bank::OpenModulationView` requires
 // `physicalLayout.size() >= numModulators + 1` = 16
 // (ParameterModulation.cpp:2818-2821), so the single-arg overload throws
 // ("modulation view has more modulators than slot depth positions") the
@@ -219,7 +209,7 @@ inline std::span<const synth::PhysicalEncoderId> FullPhysicalLayout(synth::Bank&
     return bank.AssociatedSlot()->PhysicalEncoders();
 }
 
-// Owns the DSP behind design D5's 15 modulation sources and their
+// Owns the DSP behind this slate's 15 modulation sources and their
 // registration. Constructed once, never moved (its `source6Visualizer_`
 // member holds a reference into `gangedRandomLfo6_`'s own UiState, so this
 // object's address must stay stable for its whole lifetime -- exactly the
@@ -238,8 +228,8 @@ public:
           noiseProcessor_(/*voiceCount=*/1),
           noiseVisualizer_(synth::Color::White),
           source6Visualizer_(gangedRandomLfo6_.UiState()),
-          // Task 8.3: the five X-style sources' own new Visualizer (design
-          // D8a), one per lane, each bound to this instance's own
+          // The five X-style sources' own Visualizer, one per lane, each
+          // bound to this instance's own
           // randomShLaneUiStates_[i] (populated each block by
           // PublishUiState()) -- same "constructed once, never moved"
           // convention as source6Visualizer_ above (Visualizer deletes
@@ -254,7 +244,7 @@ public:
     FroggersModulationSlate(const FroggersModulationSlate&) = delete;
     FroggersModulationSlate& operator=(const FroggersModulationSlate&) = delete;
 
-    // task 6.1/6.2: register all 15 sources, in D5's order, one explicit
+    // Registers all 15 sources, in the fixed slot order above, one explicit
     // call per slot.
     // Provisioned depth-parameter storage: worst case is every top-level
     // parameter carrying a depth for every modulation source --
@@ -265,25 +255,22 @@ public:
     static constexpr std::size_t kDepthParameterStorageCapacity =
         FroggersParameterModel::kMaxParameters * FroggersParameterModel::kNumModulators;
 
-    // `extraDepthCapacity` defaults to the provisioning task 6.8 needs
+    // `extraDepthCapacity` defaults to the full provisioning need
     // (kDepthParameterStorageCapacity); tests pass a small override to
     // deterministically exercise the CanAllocate()-exhaustion / partial-
-    // randomize detection (task 6.8) without needing to actually drive 900+
+    // randomize detection without needing to actually drive 900+
     // real allocations.
     void Init(synth::ParameterGroup& group, std::size_t extraDepthCapacity = kDepthParameterStorageCapacity) {
         group_ = &group;
         RegisterSources();
 
-        // task 6.8's materialization ceiling (915 L1 depths, plus one
-        // focused parameter's 225 L2 depths) exceeds packet 4's
-        // kMaxParameters=64 initial batch (deliberately sized for only the
-        // 91 top-level parameters, per FroggersParameterModel's own Init
-        // comment: "Modulation-depth parameters (packet 6; up to 915
-        // level-1 plus more at level 2) are deliberately NOT sized for here
-        // -- that growth rides ParameterGroup's own storage-batch request
-        // mechanism... once a later packet wires the modulation slate").
-        // This IS that later packet: provision the extra capacity directly
-        // (rather than relying on the async ParameterStorageBatchNeeded /
+        // This materialization ceiling (915 L1 depths, plus one focused
+        // parameter's 225 L2 depths) exceeds the kMaxParameters=64 initial
+        // batch (deliberately sized for only the 91 top-level parameters --
+        // modulation-depth parameters are NOT sized for at that point, since
+        // they ride ParameterGroup's own storage-batch request mechanism
+        // instead). Provisions the extra capacity directly here (rather than
+        // relying on the async ParameterStorageBatchNeeded /
         // ParameterMessageOutBus / Engine::MessageThreadTick path, which
         // exists for hosts that pump a message thread -- this app's tests
         // construct a bare ParameterManager with no such pump running).
@@ -294,16 +281,13 @@ public:
     // Sample-rate-dependent setup (VCO pitch mapping needs the real rate at
     // Process()-call time, not here; EF coefficients and the GangedRandomLfo
     // lookup table are the two pieces that must be prepared once up front).
-    // C1 (openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md
-    // F8.1 -- found during that task's required §12 trace, not in its
-    // original six-site enumeration): this method's only production caller
+    // This method's only production caller
     // is FroggersAppCore::PrepareToPlay() (`modulation_.Prepare(sampleRate)`,
-    // its very first statement), which now validates the host's sample rate
-    // ONCE before any downstream use, including this call (see that
-    // method's own §12 trace). So `sampleRate` here is always already
-    // positive, and the `48000.0` re-guard this used to duplicate --a THIRD
-    // fallback value, disagreeing with both the six 44100.0 sites and
-    // Limiter's 1.0f -- is unreachable.
+    // its very first statement), which validates the host's sample rate
+    // ONCE before any downstream use, including this call. So `sampleRate`
+    // here is always already positive: a redundant `48000.0` fallback here
+    // would be a THIRD fallback value, disagreeing with both the six
+    // 44100.0 sites and Limiter's 1.0f, so this function carries none.
     void Prepare(double sampleRate) {
         sampleRate_ = sampleRate;
         vcoEnvelopeFollowers_.SetSampleRate(static_cast<float>(sampleRate_));
@@ -317,9 +301,8 @@ public:
         float phaseMod01 = 0.0f;
     };
 
-    // Task 8.1 (design D8/D8a): recomputes source #6's tempo-following
-    // GangedRandomLfoInput. Called ONCE PER BLOCK (matching design D8's own
-    // "recomputing... each block") from FroggersApp::ProcessBlock, BEFORE
+    // Recomputes source #6's tempo-following
+    // GangedRandomLfoInput. Called ONCE PER BLOCK from FroggersApp::ProcessBlock, BEFORE
     // the per-sample loop that calls Step() -- `quarterNotesPerSample` is
     // `block.clockPlan->QuarterNotesPerSample()` when a clock plan exists,
     // nullopt otherwise (a plan-independent rate, so this does not need the
@@ -329,8 +312,8 @@ public:
         // duration, so the config below stays valid (Process() below throws
         // on invalid input, DspRandomLfo.hpp:26-30) even with no clock plan
         // at all (transport never started, or a rejected/zero-frame
-        // callback) -- required by task 8.1's own "clamp finite and
-        // positive before it reaches the audio thread."
+        // callback) -- input to `GangedRandomLfoInput` must stay finite and
+        // positive before it reaches the audio thread.
         constexpr double kFallbackQuarterNoteSeconds = 0.5;
         double quarterNoteSeconds = kFallbackQuarterNoteSeconds;
         if (quarterNotesPerSample.has_value() && std::isfinite(*quarterNotesPerSample) &&
@@ -338,13 +321,13 @@ public:
             quarterNoteSeconds = 1.0 / (*quarterNotesPerSample * sampleRate_);
         }
 
-        // Design D8/D8a: "one move spans 16 quarter notes" (four bars).
+        // One move spans 16 quarter notes (four bars).
         // Split between the "waiting" (holding still) and "moving"
         // (transitioning) phases at the SAME 2:1 ratio (and the same
-        // sigma-to-mu fraction) packet 6's original fixed placeholder used
+        // sigma-to-mu fraction) the original fixed placeholder used
         // (waiting mu=3.0/sigma=0.5, moving mu=1.5/sigma=0.3) -- an
         // implementer choice for how the 16-QN total round splits, flagged
-        // for by-ear tuning like design D8a's other constants (task 8.6),
+        // for by-ear tuning like this file's other constants,
         // not derived from any cited source.
         constexpr double kQuarterNotesPerMove = 16.0;
         const double totalRoundSeconds = kQuarterNotesPerMove * quarterNoteSeconds;
@@ -371,18 +354,18 @@ public:
     // knobs (post-fuego cached values from the PREVIOUS sample, since this
     // Step() runs before the current sample's fuego/modulation resolve --
     // see the class-level comment on the one-sample latency this implies
-    // for any parameter a VCO-audio source itself modulates, e.g. design
-    // D16's cross-VCO pitch default). Zero cross-VCO terms (design D7): each
+    // for any parameter a VCO-audio source itself modulates, e.g. the Audio
+    // bank's cross-VCO pitch detents, kAudioPitchDetents further down this
+    // file). Zero cross-VCO terms: each
     // Vco::Process call only ever reads its OWN three knobs.
     void Step(const VcoDrive& vco1, const VcoDrive& vco2, const VcoDrive& vco3,
               std::optional<double> transportQuarterNotes) {
-        // Task 8.1 (design D8/D8a): tick each of the five X-style lanes at
+        // Tick each of the five X-style lanes at
         // its own rate against the SAME already-computed transport
         // quarter-note position FroggersApp::ProcessBlock's own
-        // TransportQuarterNotesAt() helper produced for the ASR gate (task
-        // 6b) -- reusing that one value here, rather than re-deriving the
-        // null-check/guard/Try-call sequence a second time, is exactly what
-        // task 6b.3 asks packet 8 to do. `Phasor2Tick::Input` rejects
+        // TransportQuarterNotesAt() helper produced for the ASR gate --
+        // reusing that one value here, rather than re-deriving the
+        // null-check/guard/Try-call sequence a second time. `Phasor2Tick::Input` rejects
         // `multiplier <= 0` (DspPhasor2Tick.hpp:17-22), so rate
         // MULTIPLICATIONS use `multiplier` (sources 1/4 = 1, source 2 = 2,
         // source 3 = 3) and the one rate DIVISION (source 5, once per bar =
@@ -392,20 +375,19 @@ public:
             randomShLaneOutputs_[i] = randomShLanes_[i].Process();
         }
 
-        // Random S&H 6 (Y-style, design D8's GangedRandomLfoProcessor<1>
+        // Random S&H 6 (Y-style, GangedRandomLfoProcessor<1>
         // mechanism resolution). `currentGangedLfoInput_` is recomputed once
-        // per block by PrepareBlockClock() (task 8.1) so this source is
-        // tempo-proportional rather than tick-driven (design D8: NOT
-        // phase-locked to the quarter-note grid).
+        // per block by PrepareBlockClock() so this source is
+        // tempo-proportional rather than tick-driven -- NOT
+        // phase-locked to the quarter-note grid.
         gangedRandomLfo6_.Process(currentGangedLfoInput_);
         randomSh6Output_ = gangedRandomLfo6_.Output(0);
 
         // VCO audio (slots 6-8): each VCO stepped from only its own knobs.
-        // Strict-executor packet (Ring Mod/PM-rate, dsp::Vco::Process's
-        // signature grew two params): this modulation-preview slate has no
+        // This modulation-preview slate has no
         // Ring Mod or PM-rate knob of its own (VcoDrive only carries
         // pitch01/shape01/phaseMod01), so phaseMod01 is passed again as the
-        // rate argument -- reproducing exactly the old coupled rate-from-
+        // rate argument -- reproducing the coupled rate-from-
         // depth behaviour this call always had -- and Ring Mod is held at
         // 0.0f (its own zero floor), so this source's output is unchanged.
         const float sr = static_cast<float>(sampleRate_);
@@ -416,7 +398,7 @@ public:
         vco2AudioSource_ = NormalizeBipolarToUnit(vco2Raw);
         vco3AudioSource_ = NormalizeBipolarToUnit(vco3Raw);
 
-        // VCO envelope followers (slots 9-11); already [0,1] (packet 3).
+        // VCO envelope followers (slots 9-11); already [0,1].
         float efOut[dsp::VcoEnvelopeFollowers::kNumTaps];
         vcoEnvelopeFollowers_.Process(vco1Raw, vco2Raw, vco3Raw, efOut);
         vco1EfSource_ = efOut[0];
@@ -427,40 +409,27 @@ public:
         noiseProcessor_.Process();
 
         // External audio (slots 13-14) -- deliberately NOT stepped here.
-        // T6 (openspec/changes/archive/2026-08-10-frogg3rs-external-audio-phantom-input/
-        // tasks.md): this used to recompute externalAudioSource_ /
-        // externalAudioEfSource_ from an `externalAudioSample` parameter and
-        // call SetExternalAudioConnected(externalInputConnected) every
-        // sample, but FroggersAppCore::ProcessBlock's only production caller
-        // fed a compile-time `0.0f`/`false` (Config() now requests zero
-        // audio input channels -- see that class's own comment), so this
-        // was recomputing the same two constants ~96,000x/second.
         // externalAudioSource_/externalAudioEfSource_ (below) stay at their
-        // NSDMI defaults forever now: 0.5f == NormalizeBipolarToUnit(0.0f)
-        // exactly, and 0.0f == what a zero-initialized SingleEnvelopeFollower
-        // fed a constant 0.0f holds forever (target <= level from sample
-        // one, so `level` never moves off its own 0.0f default --
-        // dsp/EnvelopeFollowers.hpp's Process()) -- bit-identical to what
-        // this used to compute every sample, and still a defined, finite
+        // NSDMI defaults: 0.5f == NormalizeBipolarToUnit(0.0f) exactly, and
+        // 0.0f == what a zero-initialized SingleEnvelopeFollower fed a
+        // constant 0.0f holds forever (target <= level from sample one, so
+        // `level` never moves off its own 0.0f default --
+        // dsp/EnvelopeFollowers.hpp's Process()) -- still a defined, finite
         // value for Modulators::UpdateModValues() to dereference regardless
-        // (design D5's "present but inert" contract). `.connected` likewise
-        // stays whatever RegisterSources() set (false, below) -- nothing
-        // here calls SetExternalAudioConnected() anymore. That method is
-        // KEPT, unchanged, as the writer a future re-enable will need (see
-        // FroggersAppCore.hpp's Config()/ProcessBlock comments for what
-        // re-enabling requires); a caller that wants connected=true today
-        // (e.g. a test) calls it directly instead of through Step() --
-        // see FroggersModulationTests.cpp's Fixture::StepOnce.
+        // of connectedness ("present but inert"). `.connected` is likewise
+        // never written here: SetExternalAudioConnected() (below) is the
+        // only writer, called once at startup and once per routing
+        // transition by FroggersAppCore -- never per sample, and never from
+        // this method.
     }
 
-    // task 6.5: "Flip connected back to true when an input appears" -- the
-    // cell stays pushed with a null parameter whenever this is false
+    // The cell stays pushed with a null parameter whenever this is false
     // (Sheaf's own OpenModulationView/EnsureModulationDepthParameter
     // behavior, ParameterModulation.cpp:2784-2786,2843-2852), so the slate
-    // never changes size or order regardless of cabling. T6: no longer
-    // called per-sample from Step() (production never had a varying value
-    // to feed it); kept as the standalone writer a real re-enable
-    // derivation, or a test wanting connected=true, calls explicitly.
+    // never changes size or order regardless of cabling. Called once at
+    // startup and once per routing transition (FroggersAppCore.hpp's
+    // Init()/ProcessFrame()) -- never per sample; a test wanting
+    // connected=true calls it directly instead of routing through Step().
     void SetExternalAudioConnected(bool connected) {
         group_->GetModulators().Metadata(kModSlotExternalAudio).connected = connected;
         group_->GetModulators().Metadata(kModSlotExternalAudioEf).connected = connected;
@@ -470,9 +439,9 @@ public:
         return group_->GetModulators().Metadata(kModSlotExternalAudio).connected;
     }
 
-    // Task 8.3: publishes this block's visualizer-facing state -- the five
-    // X-style lanes' UiState (task 8.4's "visualizer state matches the
-    // bag") and source #6's GangedRandomLfo UiState (its own PublishUiState,
+    // Publishes this block's visualizer-facing state -- the five
+    // X-style lanes' UiState (their state matches the
+    // bag) and source #6's GangedRandomLfo UiState (its own PublishUiState,
     // the same call apps/braid-4 and apps/miniapp make once per block for
     // their own StandardModulators instances). Called once per block from
     // FroggersApp::ProcessBlock, AFTER the per-sample loop (mirroring
@@ -485,27 +454,28 @@ public:
         gangedRandomLfo6_.PublishUiState();
     }
 
-    // Test/inspection accessors (also usable by a later packet's UI wiring).
+    // Test/inspection accessors (also usable by UI wiring).
     synth::ParameterGroup& Group() { return *group_; }
     float SourceValue(std::size_t modIx) const { return group_->GetModulators().Value(0, modIx); }
     const synth::ModulatorMetadata& Metadata(std::size_t modIx) const {
         return group_->GetModulators().Metadata(modIx);
     }
-    // Task 8.4: reflects randomShLanes_[laneIx]'s current index/bag as of the
+    // Reflects randomShLanes_[laneIx]'s current index/bag as of the
     // last PublishUiState() call -- lets a test observe lane advance without
     // reaching into this class's private DSP state.
     const dsp::RandomShLane::UiState& RandomShLaneUiState(std::size_t laneIx) const {
         return randomShLaneUiStates_.at(laneIx);
     }
-    // Task 8.4: "source #6 is verified as tempo-proportional rather than
-    // counted in ticks" -- exposes PrepareBlockClock()'s own recomputed
-    // config directly, so a test can check the muSeconds/tempo relationship
+    // Exposes PrepareBlockClock()'s own recomputed
+    // config directly, so a test can check that source #6 is
+    // tempo-proportional rather than counted in ticks, via the
+    // muSeconds/tempo relationship
     // by formula rather than statistically waiting for real LFO rounds to
     // complete (which involves random normal draws and would be slow/flaky).
     const synth::GangedRandomLfoInput& CurrentGangedLfoInputForTest() const { return currentGangedLfoInput_; }
 
 private:
-    // Task 8.1: one shared per-sample tick call, so the 8.4 test suite can
+    // One shared per-sample tick call, so a test suite can
     // exercise this without wiring up a real MasterClock/AudioBlock (a bare
     // std::optional<double> is exactly what FroggersApp::ProcessBlock's own
     // TransportQuarterNotesAt() helper already returns).
@@ -521,9 +491,9 @@ private:
         };
 
         const double quarterNotes = transportQuarterNotes.value_or(0.0);
-        // Design D8a's rate table: #1 quarter note (x1), #2 eighth (x2),
+        // The rate table: #1 quarter note (x1), #2 eighth (x2),
         // #3 eighth triplet (x3), #4 quarter note (x1, free-running
-        // character differs via the lane's own construction, task 3.4), #5
+        // character differs via the lane's own construction), #5
         // once per bar (QN/4, x1 -- a DIVISION, so `time` is pre-scaled
         // rather than using `multiplier`, per Phasor2Tick's own
         // `multiplier <= 0` rejection, DspPhasor2Tick.hpp:17-22).
@@ -534,7 +504,7 @@ private:
         tickLane(tick5_, randomShLanes_[4], quarterNotes / 4.0, 1);
     }
 
-    // Task 8.3: per-lane visualizer colors, shared between RegisterSources()
+    // Per-lane visualizer colors, shared between RegisterSources()
     // (ModulatorMetadata::sourceColor) and the constructor's visualizer
     // initializer list -- kept as one formula so the two never drift apart.
     static synth::Color LaneColor(std::size_t i) {
@@ -542,16 +512,15 @@ private:
     }
 
     void RegisterSources() {
-        // task 6.3: source colors. No v2 "modulation source palette" file
-        // exists for this all-new 15-source set (v2's own mod sources are
-        // largely superseded by D5 -- see design D5's "superseded by this
-        // slate" note), so these are an implementer default: one hue family
-        // per source category, spaced for visual distinction, flagged here
-        // (and in the packet report) as not verified against a specific v2
+        // Source colors: no shared "modulation source palette" file
+        // exists for this 15-source set, so these are an implementer
+        // default: one hue family
+        // per source category, spaced for visual distinction, not verified
+        // against a specific
         // palette table.
-        // Task 8.3: each X-style lane's OWN new Visualizer (design D8a),
+        // Each X-style lane's OWN Visualizer,
         // constructed once alongside this instance (see the constructor's
-        // own comment) -- replaces the packet-6 placeholder `nullptr`.
+        // own comment).
         std::array<synth::ui::Visualizer*, kFroggersNumRandomShLanes> randomShLaneVisualizers{
             &randomShLaneVisualizer1_, &randomShLaneVisualizer2_, &randomShLaneVisualizer3_,
             &randomShLaneVisualizer4_, &randomShLaneVisualizer5_,
@@ -563,12 +532,12 @@ private:
                  /*connected=*/true});
         }
         {
-            // ITEM 2b: mirrors Sheaf's own StandardModulators::Init, which
+            // Mirrors Sheaf's own StandardModulators::Init, which
             // calls SetVoiceColor on every GangedRandomLfoProcessor it owns
             // before registering it (StandardModulators.hpp:126-130).
             // gangedRandomLfo6_ is this app's own standalone instance (not
-            // one of StandardModulators' processors, since D8 resolves
-            // source #6 outside that shared machinery), so nothing else
+            // one of StandardModulators' processors -- source #6 is resolved
+            // outside that shared machinery), so nothing else
             // ever calls this -- without it, its one voice's UiState color
             // (what GangedRandomLfoVisualizer actually draws,
             // GangedRandomLfoVisualizer.hpp's `voice.color`) stays at
@@ -613,22 +582,17 @@ private:
                 {"VCO3 EF", "V3EF", synth::Color::Yellow.AdjustBrightness(0.55f), nullptr, true});
         }
 
-        // task 6.1: reuse NoiseModulatorProcessor's own SourcePointers() span
+        // Reuses NoiseModulatorProcessor's own SourcePointers() span
         // directly -- it is already sized to its voiceCount (1), matching
         // this mono group's numVoices, so no manual pointer wiring is needed.
         group_->SetModulationSource(kModSlotNoise, noiseProcessor_.SourcePointers(),
             {"Noise", "Noise", synth::Color::White, &noiseVisualizer_, true});
 
-        // task 6.5: external audio pair registered `connected = false`
-        // initially. As of frogg3rs-external-audio-phantom-input's T1/T2/T6,
-        // this is not merely an initial value that Step() later refreshes --
-        // `Config()` requests ZERO audio input channels, and T6 removed the
-        // per-sample call that used to re-derive this every sample (see
-        // Step()'s own comment), so nothing in this class calls
-        // SetExternalAudioConnected() again in production. `false` set here
-        // is permanent for the object's lifetime until a future re-enable
-        // writes a real derivation (FroggersAppCore.hpp's Config()/
-        // ProcessBlock comments say what that requires).
+        // External audio pair registered `connected = false` initially --
+        // an unconditional starting point, immediately overwritten once
+        // FroggersAppCore::Init() reads the host's actual routed-input state
+        // (see that method's own comment) and on every later transition
+        // (ProcessFrame()). Never true from this call alone.
         {
             const std::array<float*, 1> src{&externalAudioSource_};
             group_->SetModulationSource(kModSlotExternalAudio, src,
@@ -647,8 +611,8 @@ private:
     static constexpr std::array<const char*, kFroggersNumRandomShLanes> kRandomShShortNames{
         "RndSH1", "RndSH2", "RndSH3", "RndSH4", "RndSH5",
     };
-    // Distinct per-lane seeds (D8/task 3.4: each RGen is now per-instance, so
-    // distinct seeds are what actually gives five independent streams).
+    // Distinct per-lane seeds: each RGen is per-instance, so
+    // distinct seeds are what actually gives five independent streams.
     static constexpr std::array<uint32_t, kFroggersNumRandomShLanes> kRandomShSeeds{
         0x1a2b3c4du, 0x2b3c4d5eu, 0x3c4d5e6fu, 0x4d5e6f70u, 0x5e6f7081u,
     };
@@ -660,11 +624,11 @@ private:
     dsp::Vco vco2_;
     dsp::Vco vco3_;
     dsp::VcoEnvelopeFollowers vcoEnvelopeFollowers_;
-    // T6: .Process() is no longer called (Step() no longer steps external
+    // .Process() is no longer called (Step() no longer steps external
     // audio -- see that method's own comment); KEPT, along with its
     // SetSampleRate() call in Prepare() below, as re-enable infrastructure
-    // rather than removed -- neither does per-sample work, so neither was
-    // what the T6 finding was about, and deleting them would leave a future
+    // rather than removed -- neither does per-sample work on its own, and
+    // deleting them would leave a future
     // re-enable to rediscover the correct attack/release coefficients
     // (SetSampleRate's coefficients are sample-rate-dependent; the struct's
     // own raw defaults are only valid near ~2kHz, not 48kHz) instead of
@@ -672,24 +636,24 @@ private:
     dsp::SingleEnvelopeFollower externalAudioEf_;
 
     std::array<dsp::RandomShLane, kFroggersNumRandomShLanes> randomShLanes_;
-    // Task 8.1: one Phasor2Tick per X-style lane (design D8a's rate table);
+    // One Phasor2Tick per X-style lane (the rate table above);
     // NOT one per bank/parameter -- each lane owns exactly its own ticker,
-    // matching the "each source carries a fixed character" framing (D8).
+    // matching the "each source carries a fixed character" framing.
     synth::Phasor2Tick tick1_;
     synth::Phasor2Tick tick2_;
     synth::Phasor2Tick tick3_;
     synth::Phasor2Tick tick4_;
     synth::Phasor2Tick tick5_;
-    // Task 8.3: visualizer-facing published state for the five lanes above
+    // Visualizer-facing published state for the five lanes above
     // (declared before the Visualizer members below, which each hold a
     // pointer into one element -- see this class's own "constructed once,
     // never moved" address-stability convention).
     std::array<dsp::RandomShLane::UiState, kFroggersNumRandomShLanes> randomShLaneUiStates_;
 
     synth::GangedRandomLfoProcessor<1> gangedRandomLfo6_;
-    // Task 8.1: source #6's tempo-following input, recomputed once per block
-    // by PrepareBlockClock(). Default-initialized to the same shape packet
-    // 6's fixed placeholder used, so a Step() call before the first
+    // Source #6's tempo-following input, recomputed once per block
+    // by PrepareBlockClock(). Default-initialized to a plausible fixed
+    // shape, so a Step() call before the first
     // PrepareBlockClock() (should not happen in practice -- FroggersApp
     // calls PrepareBlockClock() before its per-sample loop every block --
     // but is a defensive, always-valid starting point, not a live musical
@@ -702,7 +666,7 @@ private:
     synth::NoiseModulatorProcessor noiseProcessor_;
     synth::ui::NoiseWaveformVisualizer noiseVisualizer_;
     synth::ui::GangedRandomLfoVisualizer<1> source6Visualizer_;
-    // Task 8.3: the five X-style lanes' own new Visualizer (design D8a) --
+    // The five X-style lanes' own Visualizer --
     // individually-named members, not a std::array, because
     // synth::ui::Visualizer deletes copy/move (see the constructor's own
     // comment).
@@ -720,8 +684,8 @@ private:
     float vco1EfSource_ = 0.0f;
     float vco2EfSource_ = 0.0f;
     float vco3EfSource_ = 0.0f;
-    // T6: these two NSDMI values are now permanent, not merely initial --
-    // Step() no longer writes either (see its own comment). Both values are
+    // These two NSDMI values are permanent, not merely initial --
+    // Step() does not write either (see its own comment). Both values are
     // exactly what the removed per-sample computation always produced from
     // its permanently-0.0f input, so this is not an observable behavior
     // change.
@@ -730,22 +694,22 @@ private:
 };
 
 // ============================================================================
-// task 6.4/6.6 -- drill-in level cap
+// Drill-in level cap
 // ============================================================================
 class FroggersModulationDrillIn {
 public:
-    // F5.1: the ONE definition site of the drill-in maximum. PUBLIC because
+    // The ONE definition site of the drill-in maximum. PUBLIC because
     // `RandomizeAll` below reads it to decide whether a deeper level exists to
-    // descend into -- it must not re-declare the number (OMNI §8), and it is
+    // descend into -- it must not re-declare the number, and it is
     // the same fact this class already enforces in `PressEncoder`.
-    static constexpr std::size_t kMaxDrillLevel = 3;   // F5.3: raised from 2, keeping the base-3 theme
+    static constexpr std::size_t kMaxDrillLevel = 3;
 
     explicit FroggersModulationDrillIn(synth::Bank& bank) : bank_(&bank) {}
 
     std::size_t Level() const { return level_; }
     synth::Bank& BankRef() { return *bank_; }
 
-    // task 6.4: the app-side level counter. Levels below the cap are Sheaf's
+    // The app-side level counter. Levels below the cap are Sheaf's
     // native behavior (no app code); the ONLY thing added is refusing to
     // dispatch a press that would open one level deeper than the cap.
     void PressEncoder(synth::PhysicalEncoderId encoderId) {
@@ -761,9 +725,8 @@ public:
             }
         }
         synth::Parameter* const selectedBefore = bank_->SelectedParameter();
-        // S5.1 (operator regression, 2026-08-07 -- "the drilldown back
-        // button still doesn't go one back, it goes all the way back"):
-        // capture, BEFORE dispatching the press, whether `encoderId` is the
+        // Guards against the drilldown Back button going all the way back
+        // instead of one level: capture, BEFORE dispatching the press, whether `encoderId` is the
         // Target/Back cell -- i.e. whether the pressed cell's own visible
         // parameter is the parameter already selected. This MUST be read
         // now, not after HandlePress() returns: a Target/Back press calls
@@ -801,8 +764,8 @@ public:
                 // Target/Back cell included, dispatches through here, never
                 // through Back() directly -- see this class's own header
                 // comment). Pop exactly ONE level by calling the existing
-                // Back() mechanism -- reused as-is, not duplicated (OMNI
-                // §8) -- rather than the full `level_ = 0` reset below.
+                // Back() mechanism -- reused as-is, not duplicated --
+                // rather than the full `level_ = 0` reset below.
                 // Back() reads the CURRENT `level_` to compute its target
                 // depth, so this must run before `level_` is touched here;
                 // it leaves `level_` at that one-shallower depth itself.
@@ -810,8 +773,7 @@ public:
             } else {
                 // Genuine full clear: `selectedBefore` was already nullptr
                 // (level 0, e.g. an empty-cell press), so `wasTargetBackPress`
-                // is false and this is a same-value no-op -- unchanged from
-                // before this fix. No path reaches this branch with
+                // is false and this is a same-value no-op. No path reaches this branch with
                 // `wasTargetBackPress` false and `selectedBefore` non-null:
                 // that would require HandlePress to null out `selected_`
                 // some OTHER way, and the trace above establishes there is
@@ -819,8 +781,7 @@ public:
                 level_ = 0;
             }
         } else if (selectedAfter != selectedBefore) {
-            // E.2 (design A7a, operator override 2026-07-29), generalised by
-            // F5.1 from a single remembered level-1 encoder to one per level:
+            // One remembered encoder id per level (not just one for level 1):
             // remember the encoder id that opened THIS descent, so Back() can
             // re-open the same path one level at a time (Sheaf's Bank has no
             // one-level pop of its own -- Deselect() is always a full exit --
@@ -837,16 +798,12 @@ public:
         // an empty cell. Level stays exactly where it was either way.
     }
 
-    // task 6.4, REVISED by E.2 (design A7a, operator override 2026-07-29):
-    // "Back exits to the parameter grid from any level" is no longer true --
-    // Back pops exactly ONE level, from any depth. Sheaf's Bank::Deselect()
-    // is still a full, unconditional exit (no Sheaf change, no one-level pop
+    // Back pops exactly ONE level, from any depth -- Sheaf's Bank::Deselect()
+    // is a full, unconditional exit (no Sheaf change, no one-level pop
     // added there), so the one-level pop is synthesized app-side: Deselect()
     // all the way out, then replay the remembered presses (`levelEncoders_`,
     // set by PressEncoder above) that walk back down to exactly one level
-    // short of where Back() was called. F5.1 generalised this from a single
-    // remembered level-1 encoder plus a level-2 special case to one
-    // mechanism at any depth. `target` is captured BEFORE `level_` is reset
+    // short of where Back() was called, at any depth. `target` is captured BEFORE `level_` is reset
     // to 0 below, and uses the `(level_ == 0) ? 0 : level_ - 1` form because
     // `level_ - 1` on an unsigned zero would wrap instead of staying at 0.
     void Back() {
@@ -861,7 +818,7 @@ public:
 private:
     synth::Bank* bank_;
     std::size_t level_ = 0;
-    // E.2 (design A7a), generalised by F5.1: one remembered encoder id per
+    // One remembered encoder id per
     // level of the current drill-in path -- `levelEncoders_[i]` is the
     // encoder id that opens level i+1. See PressEncoder's own comment for
     // when each entry is recorded, and Back() for how they are replayed.
@@ -869,11 +826,9 @@ private:
 };
 
 // ============================================================================
-// task 6.7-6.11 -- randomize (design D14)
+// Randomize
 // ============================================================================
-// E.1 (design A6, 2026-07-29) -- REVISED from task 6.10's original note
-// below, which documented a bug: every "randomize this parameter's depths"
-// operation used to route through a held Modifier::RandomMod press into
+// Depth randomize does not dispatch a held Modifier::RandomMod press into
 // Bank::HandlePress, which calls the PRIVATE Bank::RandomizeModulationDepths
 // (src/ParameterModulation.cpp:2881-2913). That function's own loop --
 //     while (manager_->NextRandomCoin() < 0.5f) { ... one depth touched ... }
@@ -886,27 +841,26 @@ private:
 // `detail::RandomizeParameterModulationDepths` below (used by all four call
 // sites: RandomizeBankLevel1Depths, RandomizePage's drill-in branch, and
 // both RandomizeAll drill-in branches) replaces this with an APP-SIDE count/
-// source selection -- an app-owned weighted table, currently F1.2's mode-2
-// shape (frogg3rs-blowout-and-drilldown-repair, 2026-08-07; supersedes A6's
-// original median-3 10/30/30/20 -- see that function's own table comment for
-// the exact numbers) -- while Sheaf
+// source selection -- an app-owned weighted table (see that function's own
+// table comment for the exact numbers) -- while Sheaf
 // still performs every actual write (`Parameter::EnsureModulationDepth` +
 // `Parameter::RandomizeVisibleValue`, the same two calls
-// `Bank::RandomizeModulationDepths` itself makes internally). This is design
-// D14's "app chooses the target set, Sheaf does every write" split, not a
-// violation of it -- see that function's own header comment for the full
+// `Bank::RandomizeModulationDepths` itself makes internally). This is an
+// "app chooses the target set, Sheaf does every write" split, not a
+// violation of Sheaf's ownership of the actual writes -- see that function's
+// own header comment for the full
 // derivation. NEVER a no-op (at least 1 connected source is always touched
 // when one exists), and never re-draws the same source twice (Sheaf's own
 // loop could; this one uses a partial Fisher-Yates over the connected set).
 //
-// The OTHER knob this app owns, unchanged by E.1: Randomize All's aggregate
+// The OTHER knob this app owns: Randomize All's aggregate
 // reach also comes from how many PARAMETERS it presses (61 for the
-// parameter-page case, task 6.8) -- a future maintainer who wants Randomize
-// All to feel like "more" or "fewer" changes has two independent levers now
+// parameter-page case) -- a future maintainer who wants Randomize
+// All to feel like "more" or "fewer" changes has two independent levers
 // (the per-parameter count table above, or the parameter set
 // RandomizeAll/RandomizeBankLevel1Depths iterates over).
 struct FroggersRandomizeResult {
-    // task 6.8: EnsureModulationDepthParameter's CanAllocate() failure must
+    // EnsureModulationDepthParameter's CanAllocate() failure must
     // surface as a detectable partial randomize, not fail silently. True
     // when `ParameterGroup::CanAllocate()` (public) was observed false
     // immediately before a press that could have needed to materialize a
@@ -921,11 +875,11 @@ namespace detail {
 // (ParameterModulation.cpp:2790-2792) is ABOUT to fire for the next press:
 // `ParameterGroup::CanAllocate()` (public) is already false. Checking a
 // per-parameter "does every connected modulator have a materialized depth"
-// count instead would be wrong -- design D14's own bias table
-// (P(k)=0.5^(k+1), mean 1.0) is Sheaf's geometric loop, REPLACED on the app
-// side since E.1. The distribution actually in force is this file's own
-// RandomizeParameterModulationDepths draw below (F1.2's mode-2 table as of
-// 2026-08-07, mean 2.25 -- see that draw's own comment for the exact
+// count instead would be wrong -- Sheaf's own geometric bias
+// (P(k)=0.5^(k+1), mean 1.0) is REPLACED on the app
+// side. The distribution actually in force is this file's own
+// RandomizeParameterModulationDepths draw below (mean 2.25 -- see that
+// draw's own comment for the exact
 // numbers) -- and that still means a HEALTHY randomize typically leaves
 // most of a parameter's 15 possible depths untouched; that is normal, not a
 // partial randomize. Only "no more storage was available to give" is.
@@ -933,7 +887,7 @@ inline bool CapacityExhausted(const synth::ParameterGroup& group) {
     return !group.CanAllocate();
 }
 
-// A3 (scene-pair semantics, tasks.md's A3 decision): Randomize All/Page is
+// Randomize All/Page is
 // "agnostic to scene-slider position" -- every depth write below targets one
 // of these two FIXED scene poles directly, never the live (possibly
 // mid-blend) `manager.Scene()`. leftScene==rightScene on each, so
@@ -947,10 +901,10 @@ inline bool CapacityExhausted(const synth::ParameterGroup& group) {
 inline constexpr synth::SceneState kScenePole0{0, 0, 0.0f};
 inline constexpr synth::SceneState kScenePole1{1, 1, 0.0f};
 
-// F2: the single definition site for "how many scene poles exist." Both
+// The single definition site for "how many scene poles exist." Both
 // ZeroExistingModulationDepths and RandomizeParameterModulationDepths below
-// used to hardcode kScenePole0/kScenePole1 as two separate consecutive
-// statements; both now iterate this array instead, so a future change to
+// iterate this array, rather than hardcoding kScenePole0/kScenePole1 as two
+// separate consecutive statements each, so a future change to
 // `FroggersParameterModel::kNumScenes` trips the static_assert right below
 // (a build break) instead of silently leaving both call sites still
 // handling exactly two poles. Size is deduced from the initializer list
@@ -960,12 +914,12 @@ inline constexpr std::array kScenePoles{kScenePole0, kScenePole1};
 static_assert(kScenePoles.size() == FroggersParameterModel::kNumScenes,
               "kScenePoles must enumerate exactly kNumScenes scene poles");
 
-// F3: the bipolar-neutral commanded value, named once. Sheaf's own
+// The bipolar-neutral commanded value, named once. Sheaf's own
 // `kNeutralModulationDepthCenter` (ParameterModulation.cpp:258) is
 // file-private and not reachable from here, so this is a legitimate
 // separate definition -- but it must exist exactly once on this side, not
-// as a bare `0.5f` repeated at every call site (W1.0: "depths are
-// RangeKind::Bipolar, 0.5 IS zero"). Referenced by
+// as a bare `0.5f` repeated at every call site: depths are
+// `RangeKind::Bipolar`, so 0.5, not 0.0, is neutral. Referenced by
 // ZeroExistingModulationDepths below and by FroggersModulationTests.cpp.
 inline constexpr float kNeutralModulationDepthCenter = 0.5f;
 // Matches Sheaf's own `kModulationNeutralTolerance`
@@ -978,7 +932,7 @@ inline constexpr float kNeutralModulationDepthCenter = 0.5f;
 // one moves with it.
 inline constexpr float kModulationNeutralEpsilon = 0.000001f;
 
-// A1 (non-additive randomize) + A3 (scene-pair semantics): zeroes
+// Non-additive randomize, scene-pair semantics: zeroes
 // `parameter`'s EXISTING (already-materialized) modulation depths at BOTH
 // scene poles, immediately before RandomizeParameterModulationDepths below
 // draws a fresh set. Only touches depths that are already materialized --
@@ -989,10 +943,10 @@ inline constexpr float kModulationNeutralEpsilon = 0.000001f;
 // a nonzero commanded value in the first place). `kNeutralModulationDepthCenter`
 // is the bipolar neutral commanded value (see its own comment above).
 // A raw `SceneCenter` write (not `RandomizeVisibleValue`/`HandleSetAbsolute`)
-// is deliberate: it is the exact commanded-value write W1.0 identifies
-// `sceneCenters_` as being, with no dependency on the depth's own
+// is deliberate: it is the exact commanded-value write that
+// `sceneCenters_` needs, with no dependency on the depth's own
 // (currently stale) `targetCenter_`, and the single `ComputeAllParameters()`
-// call A2 adds at the end of the whole randomize operation resyncs
+// call the randomize operation makes at the end resyncs
 // `currentCenter_`/`targetCenter_`/the UI display for every parameter this
 // touches -- including these zeroed ones -- in one pass, so nothing here
 // needs to re-converge anything itself.
@@ -1016,7 +970,7 @@ inline constexpr float kModulationNeutralEpsilon = 0.000001f;
 //     so a depth counts as "affecting" merely because it has SUB-modulation,
 //     even when its own value is dead neutral. Writing sub-depths to every
 //     materialized depth therefore lit up all 13 as badges when only ~3
-//     sources were modulating (measured 2026-08-07: badge 13, non-neutral 1).
+//     sources were modulating (measured: badge 13, non-neutral 1).
 //     The badge was reporting CONNECTEDNESS, not modulation.
 //
 // `HasNonZeroState()` itself is private in Sheaf and unreachable from here, so
@@ -1029,12 +983,12 @@ inline constexpr float kModulationNeutralEpsilon = 0.000001f;
 //   - "is this source modulating at all" (any pole) -- what the badge shows,
 //     and what RandomizeAll's descent gates on;
 //   - "is this source modulating in scene N" (this one) -- used to compare the
-//     two poles against each other, which is W1.0's badge/depth symmetry
+//     two poles against each other, to assert the badge/depth symmetry
 //     property ("randomizing only scene 0 lights the badge in both scenes
 //     while scene 1 reads zero"). Expressing THAT with the any-pole form would
 //     make its own assertion trivially true and silently gut the test.
 // Both share this one neutral-value/epsilon comparison, so the threshold that
-// decides "neutral" has exactly one definition site (OMNI §8).
+// decides "neutral" has exactly one definition site.
 inline bool DepthIsModulatingInScene(const synth::Parameter& depth, std::size_t sceneIx) {
     return std::fabs(depth.SceneCenter(sceneIx) - kNeutralModulationDepthCenter) >
            kModulationNeutralEpsilon;
@@ -1061,22 +1015,20 @@ inline void ZeroExistingModulationDepths(synth::Parameter& parameter) {
     }
 }
 
-// E.1 (design A6) -- the shared count/source-selection helper used by all
+// The shared count/source-selection helper used by all
 // four RandomMod dispatch sites in this file (RandomizeBankLevel1Depths,
 // RandomizePage's drill-in branch, and both RandomizeAll drill-in branches).
 // Chooses a COUNT of `parameter`'s connected modulation sources using the
-// mode-2 table below (F1.2, 2026-08-07 -- supersedes A6's original median-3
-// 10/30/30/20; see the table's own comment, right above the draw, for the
-// exact numbers and their derivation), draws that many DISTINCT sources
+// mode-2 table below (see the table's own comment, right above the draw, for
+// the exact numbers and their derivation), draws that many DISTINCT sources
 // (partial Fisher-Yates -- Sheaf's
 // own private Bank::RandomizeModulationDepths loop can independently redraw
-// the same source twice, which this does not reproduce, per A6's "two
-// properties Sheaf's loop has that the replacement should not inherit"), and
+// the same source twice, which this does not reproduce), and
 // for each chosen source calls the exact same two public calls Sheaf's own
 // loop makes internally: `Parameter::EnsureModulationDepth` then
 // `Parameter::RandomizeVisibleValue` (ParameterModulation.cpp:2896-2911).
 // Sheaf performs every write; only the count and the source set are chosen
-// here (design D14's split). Does NOT dispatch through Bank::HandlePress at
+// here. Does NOT dispatch through Bank::HandlePress at
 // all -- no press, no modifier-hold, no selection/level state touched -- so
 // callers do not need `parameter` to be the bank's currently selected/open
 // one.
@@ -1085,15 +1037,16 @@ inline void ZeroExistingModulationDepths(synth::Parameter& parameter) {
 // everywhere else in this file) when storage was already exhausted before
 // this call, OR when `EnsureModulationDepth` returns null mid-loop (storage
 // ran out while this call was materializing depths) -- the same "stop and
-// report partial" convention `ApplyFroggersDefaultPatch`'s `applyDetent`
-// lambda already uses for the identical null-return case.
+// report partial" convention `ApplyAudioPitchDetent`
+// already uses for the identical null-return case.
 inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager, synth::Parameter& parameter) {
     synth::ParameterGroup& group = parameter.Group();
     bool partial = CapacityExhausted(group);
 
-    // A1 (non-additive, Option A -- operator 2026-08-05: "the randomization
-    // should never have been additive"): zero this parameter's own existing
-    // depths, BOTH scene poles (A3), before drawing the fresh set below.
+    // Non-additive (Option A): zero this parameter's own existing
+    // depths, BOTH scene poles, before drawing the fresh set below, so each
+    // randomize draws fresh depths rather than accumulating on top of the
+    // previous draw.
     // Scope note: this function is the single call site every RandomizeAll/
     // RandomizePage branch below routes through per parameter, so "zero in
     // scope, then draw" naturally becomes "zero ALL depths this operation
@@ -1120,27 +1073,25 @@ inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager,
         return partial;
     }
 
-    // F1.2 (frogg3rs-blowout-and-drilldown-repair, 2026-08-07) -- mode-2
-    // table. SUPERSEDES A6's 10/30/30/20: the operator's ruling -- "mode 2,
-    // rarely above 4 is good enough" -- explicitly authorizes breaking A6's
-    // deliberate 2/3 tie and tuning toward the resulting mean, both of which
-    // A6's own directives (retracted by F0.3) used to forbid. Never-zero and
-    // distinct-source draws are UNCHANGED from A6 -- see this function's own
+    // Mode-2
+    // table, tuned so the mode (2) clears the next count (3) by a wide
+    // margin rather than sitting on an even tie. Never-zero and
+    // distinct-source draws -- see this function's own
     // header comment for why distinctness matters.
     //
     // count=1: 20% (u<0.20f)     count=2: 46% (u<0.66f) <- the mode
     // count=3: 26% (u<0.92f)     count=4:  6% (u<0.98f)
     // count=5+: 2%, geometric r=0.30 (else branch below)
     //
-    // Derivation (operator-approved numbers; recorded so a future retune
+    // Derivation (recorded so a future retune
     // starts from this arithmetic instead of re-deriving it):
-    //   P(>=4)                   = 6% + 2%               = 8%     (was 30% under A6)
+    //   P(>=4)                   = 6% + 2%               = 8%
     //   P(count=7)               = 0.02 * 0.30^2 * 0.70   = 0.126%
-    //   P(>=7)                   = 0.02 * 0.30^2          = 0.18%  (was 4.9% under A6)
-    //   E[params at 7+ / press]  = 16 * 0.0018           = 0.029  (was 0.78, across 16
+    //   P(>=7)                   = 0.02 * 0.30^2          = 0.18%
+    //   E[params at 7+ / press]  = 16 * 0.0018           = 0.029  (across 16
     //                               visible params -- roughly one press in 35, i.e.
     //                               "essentially never")
-    //   mean = 0.20(1)+0.46(2)+0.26(3)+0.06(4)+0.02(5+0.3/0.7) = 2.25 (was ~3.1)
+    //   mean = 0.20(1)+0.46(2)+0.26(3)+0.06(4)+0.02(5+0.3/0.7) = 2.25
     //   mode = 2, strictly (46% > 26% > 20% > 6% > 2%); minimum is still 1, never 0
     const float u = manager.NextRandomCoin();
     std::size_t count;
@@ -1173,13 +1124,13 @@ inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager,
             partial = true;
             break;  // storage exhausted mid-call -- partial, not a silent short-count.
         }
-        // A3 (scene-pair semantics): the SAME chosen source (`eligible[i]`)
+        // The SAME chosen source (`eligible[i]`)
         // gets an INDEPENDENT random value in EACH scene pole -- identical
         // source membership (so the badge, true if ANY scene is nonzero,
         // agrees with what every scene actually holds), different values per
         // pole (so blending sweeps between two distinct modulation states).
         // Deliberately NOT `manager.Scene()` (the live, possibly mid-blend
-        // scene) -- see kScenePole0/kScenePole1's own comment. F2: iterates
+        // scene) -- see kScenePole0/kScenePole1's own comment. Iterates
         // kScenePoles rather than naming each pole in its own statement --
         // see that array's own comment.
         for (const synth::SceneState& pole : kScenePoles) {
@@ -1189,29 +1140,29 @@ inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager,
     return partial;
 }
 
-// T3.1 (frogg3rs-stop-isolation-and-legible-labels, packet 3): a single-cell
+// A single-cell
 // VALUE randomize of whatever parameter is currently VISIBLE at `encoderId`
 // on `bank` -- `bank.VisibleParameter(encoderId)` is exactly
 // `FindVisibleCell(encoderId)->parameter` (src/ParameterModulation.cpp:2718-
-// 2721), the same lookup `Bank::HandlePress`'s modifier branch used
-// internally, so this targets the identical cell the old press-based path
-// did (top-level or drilled-in, whichever is visible), with no dependency
+// 2721), the same lookup `Bank::HandlePress`'s modifier branch uses
+// internally, so this targets the identical cell a press-based path
+// would (top-level or drilled-in, whichever is visible), with no dependency
 // on whether this Bank is the slot's currently *selected* one.
 //
-// Previously this dispatched a press under a held `Modifier::Random`, which
-// routed into Sheaf's `Parameter::RandomizeVisibleValue`
-// (ParameterModulation.cpp:1723-1731). That function deltas against
+// Dispatching a press under a held `Modifier::Random`, which
+// routes into Sheaf's `Parameter::RandomizeVisibleValue`
+// (ParameterModulation.cpp:1723-1731), does not work here: that function deltas against
 // `TargetValue(0)`, the MODULATION-RESOLVED value, so under live audio-rate
 // modulation repeated presses ratchet the commanded value into the [0,1]
-// clamp instead of landing the drawn value (proposal §1b; measured 20/20 at
+// clamp instead of landing the drawn value (measured 20/20 at
 // exactly 1.0000 after 5 presses on a modulated Freeze). Sheaf is pinned and
-// untouched (UPSTREAM-SHEAF-ASK.md #16), so the fix is here: draw ONE
+// untouched, so the fix is here: draw ONE
 // uniform value and commit it directly as the COMMANDED value via
 // `HandleSetAbsolute` (`sceneCenters_`, no dependency on resolved/modulated
-// state) to BOTH scene poles -- A3's already-established "Randomize
+// state) to BOTH scene poles -- the "Randomize
 // All/Page is agnostic to scene-slider position" convention (`kScenePoles`'s
 // own comment above), the same idiom `RandomizeParameterModulationDepths`
-// and `ResetParameterValueAndDepths` already use elsewhere in this file. One
+// and `ApplyBankDefaultPatch` already use elsewhere in this file. One
 // draw, not one per pole (unlike the depth path): "a draw lands the drawn
 // value" is the whole fix, and a single shared draw is what makes that
 // literally true regardless of scene-slider position.
@@ -1248,11 +1199,11 @@ inline void PressBankWithRandomValue(synth::ParameterManager& manager, synth::Ba
 }
 
 // Randomizes one bank's 14 page-parameter values plus its Crispy (encoder 14)
-// -- NEVER Crunchy (encoder 15) -- matching D14's "include per-bank Crispy,
+// -- NEVER Crunchy (encoder 15) -- an "include per-bank Crispy,
 // exclude global Crunchy" rule shared by Randomize All and Randomize Page's
 // parameter-page cases. Presses `bank` directly (see PressBankWithRandomValue);
 // no level state is touched or required.
-// `includeCrispy` (operator decision 2026-07-29) exists because the two
+// `includeCrispy` exists because the two
 // callers must differ on it:
 //
 //   Randomize Page -> TRUE.  One page's local Crispy is that page's business.
@@ -1277,8 +1228,8 @@ inline void RandomizeBankValues(synth::ParameterManager& manager, synth::Bank& b
 // that function randomizes VALUES and its two callers differ on Crispy, while
 // this one randomizes DEPTHS and its sole caller (RandomizeAll's level-0
 // branch, which runs it once per bank) always wants Crispy out. The why is
-// spelled out at this function's tail (operator 2026-07-29).
-// E.1 (design A6): no longer presses through Bank::HandlePress at all --
+// spelled out at this function's tail.
+// Does not press through Bank::HandlePress at all --
 // `bank.VisibleParameter(paramIx)` reads the top-level parameter directly
 // (this bank is never drilled into here, so `visible_ == topLevel_`, per
 // PressBankWithRandomValue's own header comment on Bank-owned state), and
@@ -1288,8 +1239,9 @@ inline void RandomizeBankValues(synth::ParameterManager& manager, synth::Bank& b
 // ParameterGroup -- so no separate group parameter is needed here anymore).
 inline bool RandomizeBankLevel1Depths(synth::ParameterManager& manager, synth::Bank& bank) {
     bool partial = false;
-    // F0.1: each call's result is hoisted into its own named local BEFORE
-    // combining (mirrors FroggersAppCore.hpp:482-488's F4 fix), so every
+    // Each call's result is hoisted into its own named local BEFORE
+    // combining (the same short-circuit hazard FroggersAppCore::ProcessFrame()
+    // guards against for its own Randomize All/Page dispatch), so every
     // iteration of this loop always runs its randomize call -- `partial =
     // RandomizeParameterModulationDepths(...) || partial` reads fine but is
     // only correct because the call sits on the left of `||`; swapping the
@@ -1303,8 +1255,8 @@ inline bool RandomizeBankLevel1Depths(synth::ParameterManager& manager, synth::B
         const bool paramPartial = RandomizeParameterModulationDepths(manager, *param);
         partial = partial || paramPartial;
     }
-    // Crispy's DEPTHS are excluded here for the same reason its value is
-    // (operator 2026-07-29): this function runs once per bank from Randomize
+    // Crispy's DEPTHS are excluded here for the same reason its value is:
+    // this function runs once per bank from Randomize
     // All, so modulating local Crispy on all six pages lands in the same place
     // as randomizing global Crunchy. Randomize Page reaches a single page's
     // Crispy depths through the ordinary drill-in path, which is unaffected.
@@ -1312,63 +1264,167 @@ inline bool RandomizeBankLevel1Depths(synth::ParameterManager& manager, synth::B
 }
 
 // ----------------------------------------------------------------------------
-// Packet P6a -- Reset Page/Reset All (model layer): counterparts to the
-// randomize helpers just above, reusing their exact enumeration idioms.
+// The default patch: ONE bank-addressable definition, consumed by both a
+// fresh launch (ApplyFroggersDefaultPatch, further down this file) and Reset
+// (ResetPage/ResetAll below). A parameter's default is its own registered
+// ParameterConfig default (FroggersBankLayouts()'s defaultValue field --
+// the same source FroggersParameterModel::Init() reads when first
+// constructing it) unless one of the two per-bank overlays below replaces
+// it; everything not named here is 0.0f, that field's own struct default.
 // ----------------------------------------------------------------------------
 
-// Resets ONE top-level parameter completely: its own commanded value to 0.0
-// in BOTH scene poles (kScenePoles idiom -- the same pattern
-// ApplyFroggersDefaultPatch's own HandleSetAbsolute calls already use
-// further down in this file), and its own materialized modulation depths to
-// NEUTRAL via the existing ZeroExistingModulationDepths -- reused as-is, not
-// reimplemented. A depth's "off" is kNeutralModulationDepthCenter (0.5f), not
-// 0.0f (depths are RangeKind::Bipolar): writing a literal 0.0 to a depth
-// would be full NEGATIVE depth, the opposite of off -- which is exactly why
-// depths go through the existing neutral-writing helper here instead of the
-// direct HandleSetAbsolute(pole, 0.0f) this function uses for `parameter`
-// itself.
-inline void ResetParameterValueAndDepths(synth::Parameter& parameter) {
-    for (const synth::SceneState& pole : kScenePoles) {
-        parameter.HandleSetAbsolute(pole, 0.0f);
+// The six cross-VCO pitch-modulation detents the Audio bank's default patch
+// gives its three pitch parameters (slots 0-2), sourced from the VCO
+// audio-rate slate entries (indices 6-8):
+//   VCO1 pitch (slot 0) <- +1 detent from VCO2 audio (7), VCO3 audio (8)
+//   VCO2 pitch (slot 1) <- -1 detent from VCO1 audio (6), VCO3 audio (8)
+//   VCO3 pitch (slot 2) <- +1 detent from VCO1 audio (6), VCO2 audio (7)
+// One shared table rather than six separate call-site literals, so
+// RestoreAudioPitchDetentsFor below can find "does this specific depth carry
+// an override" without a second copy of the same six facts.
+struct AudioPitchDetentSpec {
+    std::size_t targetParamIx;
+    std::size_t modIx;
+    float sign;
+};
+inline constexpr std::array<AudioPitchDetentSpec, 6> kAudioPitchDetents{{
+    {0, kModSlotVco2Audio, +1.0f}, {0, kModSlotVco3Audio, +1.0f},
+    {1, kModSlotVco1Audio, -1.0f}, {1, kModSlotVco3Audio, -1.0f},
+    {2, kModSlotVco1Audio, +1.0f}, {2, kModSlotVco2Audio, +1.0f},
+}};
+
+// One relative-encoder detent's worth of modulation depth. The surface's
+// real encoder resolution is not established elsewhere in this codebase, so
+// this is an explicit placeholder quantum (1/100, a common relative-encoder
+// resolution) rather than a value derived from a cited source -- revisit if
+// a real encoder resolution is established later.
+inline constexpr float kPlaceholderEncoderDetent = 1.0f / 100.0f;
+
+// Applies exactly one cross-VCO pitch detent: neutralizes the depth first
+// (so this lands the same result whether the depth is being materialized
+// for the first time -- a fresh launch -- or already carries a different
+// value -- Reset), then applies the signed detent as a relative increment
+// from that known base, via the same HandleIncDec call this file's
+// randomize helpers use elsewhere. Storage exhaustion (EnsureModulationDepth
+// returning null) leaves the depth unmaterialized rather than forcing a
+// write, the same convention this file uses everywhere else CanAllocate()
+// can fail.
+inline void ApplyAudioPitchDetent(FroggersParameterModel& model, const AudioPitchDetentSpec& spec) {
+    synth::Parameter& target = model.PageParameter(FroggersBankId::Audio, spec.targetParamIx);
+    synth::Parameter* depth = target.EnsureModulationDepth(spec.modIx);
+    if (depth == nullptr) {
+        return;
     }
-    ZeroExistingModulationDepths(parameter);
+    for (const synth::SceneState& pole : kScenePoles) {
+        depth->SceneCenter(pole.leftScene) = kNeutralModulationDepthCenter;
+        depth->HandleIncDec(pole, spec.sign * kPlaceholderEncoderDetent);
+    }
 }
 
-// Reset counterpart to RandomizeBankValues above: the SAME enumeration (this
-// bank's kFroggersParamsPerBank page parameters, reached via
-// Bank::VisibleParameter -- reused from RandomizeBankLevel1Depths's own
-// idiom just above, safe for the same reason PressBankWithRandomValue's own
-// header comment gives: this bank is never drilled into here, so
-// visible_ == topLevel_ -- plus Crispy when `includeCrispy`, NEVER Crunchy).
-// Each enumerated parameter gets the full ResetParameterValueAndDepths
-// treatment (value -> 0.0, own depths -> neutral). `includeCrispy` mirrors
-// RandomizeBankValues's own knob and its own reasoning: Reset Page wants
-// TRUE (a page's local Crispy is that page's own business), Reset All wants
-// FALSE (resetting local Crispy on all six banks at once is effectively
-// resetting global Crunchy, which this app never touches either way).
-inline void ResetBankValues(synth::Bank& bank, bool includeCrispy) {
-    for (synth::PhysicalEncoderId e = 0; e < kFroggersParamsPerBank; ++e) {
-        synth::Parameter* param = bank.VisibleParameter(e);
-        if (param == nullptr) {
-            // Not defensive padding (OMNI 12): the parameter-model spec's
-            // "Sparse banks are valid" scenario permits unregistered slots,
-            // so a null here is a REAL reachable case for any future sparse
-            // bank, even though every current bank registers all fourteen.
-            continue;
-        }
-        ResetParameterValueAndDepths(*param);
-    }
-    if (includeCrispy) {
-        synth::Parameter* crispy = bank.VisibleParameter(kFroggersCrispySlot);
-        if (crispy != nullptr) {
-            ResetParameterValueAndDepths(*crispy);
+// If `parameter` is one of the Audio bank's three pitch parameters, applies
+// whichever of kAudioPitchDetents targets it. A no-op for every other
+// parameter -- the loop below simply never matches -- which is what lets
+// Reset's drilled-in branch call this unconditionally on whatever parameter
+// is currently selected, at any level, with no separate identity gate.
+inline void RestoreAudioPitchDetentsFor(FroggersParameterModel& model, synth::Parameter& parameter) {
+    for (const AudioPitchDetentSpec& spec : kAudioPitchDetents) {
+        if (&model.PageParameter(FroggersBankId::Audio, spec.targetParamIx) == &parameter) {
+            ApplyAudioPitchDetent(model, spec);
         }
     }
+}
+
+// Scene 1 (pole 0) keeps sine/saw/square = 0.0/0.5/1.0 -- Audio bank slots
+// 3-5, confirmed against EvalWaveMorph's sine->saw (0-0.5) / saw->square
+// (0.5-1.0) crossfade (app/dsp/Vco.hpp's EvalWaveMorph, ported from
+// src/core/VcoWaveEval.hpp:7-23). Scene 2 (pole 1) gets the MIRROR of that
+// same value, `1.0 - shape` -- written as an expression of the scene-1
+// value, not as three more hardcoded literals, so the mirror relationship is
+// what the reader sees. VCO2's 0.5 (saw) is its own mirror and is therefore
+// unchanged in scene 2 too, without needing a special case. The six pitch
+// detents ride alongside, identical in both scene poles (same sources, same
+// signs, same magnitude).
+inline void ApplyAudioBankOverlay(FroggersParameterModel& model) {
+    constexpr std::array<float, 3> kScene1VcoShapes{0.0f, 0.5f, 1.0f};
+    for (std::size_t vcoIx = 0; vcoIx < kScene1VcoShapes.size(); ++vcoIx) {
+        const float scene1Shape = kScene1VcoShapes[vcoIx];
+        synth::Parameter& shapeParam = model.PageParameter(FroggersBankId::Audio, 3 + vcoIx);
+        shapeParam.HandleSetAbsolute(kScenePole0, scene1Shape);
+        shapeParam.HandleSetAbsolute(kScenePole1, 1.0f - scene1Shape);
+    }
+    for (const AudioPitchDetentSpec& spec : kAudioPitchDetents) {
+        ApplyAudioPitchDetent(model, spec);
+    }
+}
+
+// Drive (Drive bank, slot 0) = 20% of its range, identical in both scene
+// poles -- only the Audio bank's shapes differ between poles.
+inline void ApplyDriveBankOverlay(FroggersParameterModel& model) {
+    for (const synth::SceneState& pole : kScenePoles) {
+        model.PageParameter(FroggersBankId::Drive, 0).HandleSetAbsolute(pole, 0.2f);
+    }
+}
+
+// Applies bank `bankId`'s own slice of the default patch: every one of its
+// kFroggersParamsPerBank page parameters and its Crispy, both scene poles,
+// set to that parameter's own registered default -- then the bank's own
+// overlay on top where one exists (Audio, Drive).
+inline void ApplyBankDefaultPatch(FroggersParameterModel& model, FroggersBankId bankId) {
+    const FroggersBankLayout& layout = FroggersBankLayouts()[static_cast<std::size_t>(bankId)];
+    for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
+        synth::Parameter& param = model.PageParameter(bankId, paramIx);
+        for (const synth::SceneState& pole : kScenePoles) {
+            param.HandleSetAbsolute(pole, layout.params[paramIx].defaultValue);
+        }
+    }
+    for (const synth::SceneState& pole : kScenePoles) {
+        model.Crispy(bankId).HandleSetAbsolute(pole, 0.0f);
+    }
+    if (bankId == FroggersBankId::Audio) {
+        ApplyAudioBankOverlay(model);
+    } else if (bankId == FroggersBankId::Drive) {
+        ApplyDriveBankOverlay(model);
+    }
+}
+
+// Crunchy is a single Parameter registered before the per-bank loop and
+// shared into every bank's slot 15 (FroggersParameters.hpp:331-338,
+// reached here through FroggersParameterModel::Crunchy()) -- it belongs to
+// no one bank, so it is not part of ApplyBankDefaultPatch above; this is its
+// own default-patch slice, the "plus the globals" a bank-addressable default
+// patch still needs.
+inline void ApplyCrunchyDefaultPatch(FroggersParameterModel& model) {
+    for (const synth::SceneState& pole : kScenePoles) {
+        model.Crunchy().HandleSetAbsolute(pole, 0.0f);
+    }
+}
+
+// Reset counterpart to ApplyBankDefaultPatch: clears whatever pre-existing
+// (possibly Randomize-dirtied) depths this bank's page parameters and
+// Crispy carry, THEN applies ApplyBankDefaultPatch on top -- so any depth
+// ApplyBankDefaultPatch's own overlay materializes (the Audio bank's cross-
+// VCO detents) is the last write and survives, while every other depth lands
+// on neutral exactly as ApplyBankDefaultPatch already leaves a freshly
+// constructed instance.
+inline void ResetBankToDefaultPatch(FroggersParameterModel& model, FroggersBankId bankId) {
+    for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
+        ZeroExistingModulationDepths(model.PageParameter(bankId, paramIx));
+    }
+    ZeroExistingModulationDepths(model.Crispy(bankId));
+    ApplyBankDefaultPatch(model, bankId);
+}
+
+// Reset counterpart to ApplyCrunchyDefaultPatch, mirroring
+// ResetBankToDefaultPatch's own clear-then-apply shape for the one global
+// the default patch also needs.
+inline void ResetGlobalCrunchyToDefaultPatch(FroggersParameterModel& model) {
+    ZeroExistingModulationDepths(model.Crunchy());
+    ApplyCrunchyDefaultPatch(model);
 }
 
 }  // namespace detail
 
-// task 6.9: Randomize Page -- "randomize exactly what is displayed."
+// Randomize Page -- "randomize exactly what is displayed."
 //   - parameter page (drillIn.Level()==0): this bank's 14 values + Crispy,
 //     excluding Crunchy; no depths.
 //   - level-1 grid (Level()==1): one RandomizeParameterModulationDepths call
@@ -1382,16 +1438,16 @@ inline FroggersRandomizeResult RandomizePage(synth::ParameterManager& manager, F
         detail::RandomizeBankValues(manager, drillIn.BankRef(), /*includeCrispy=*/true);
         return {};
     }
-    // Level 1 or 2: one RandomizeParameterModulationDepths call (design A6's
-    // count/source-selection helper) on whichever parameter is currently
-    // selected. E.1: no longer a Target/Back-cell press -- the helper is
+    // Level 1 or 2: one RandomizeParameterModulationDepths call (the
+    // count/source-selection helper above) on whichever parameter is currently
+    // selected -- not a Target/Back-cell press; the helper is
     // called on the selected parameter directly.
     synth::Parameter& selected = *drillIn.BankRef().SelectedParameter();
     const bool partial = detail::RandomizeParameterModulationDepths(manager, selected);
     return {partial};
 }
 
-// task 6.8: Randomize All -- context-sensitive by view, "wider and deeper."
+// Randomize All -- context-sensitive by view, "wider and deeper."
 //   - parameter page (Level()==0): every top-level parameter ACROSS ALL SIX
 //     BANKS -- value + level-1 depths, Crispy included, Crunchy excluded.
 //     Never descends to level 2. Each bank is pressed directly via its own
@@ -1402,15 +1458,18 @@ inline FroggersRandomizeResult RandomizePage(synth::ParameterManager& manager, F
 //     depths, PLUS one more RandomizeParameterModulationDepths call on each of
 //     those depths that is ACTUALLY MODULATING (detail::DepthIsModulating) --
 //     i.e. randomizing at level N also randomizes level N+1, at every N, gated
-//     only by kMaxDrillLevel. Operator 2026-08-07: "level 1 randomize all
-//     should affect level 2 randomization. level 2 randomize all should affect
-//     level 3." There is no per-level branch: the old shape descended at
-//     level 1 only and let levels 2/3 fall through to RandomizePage, which was
-//     a hardcoded special case of exactly the kind F5.1 deleted from Back().
+//     only by kMaxDrillLevel: "level 1 randomize all
+//     should affect level 2 randomization, level 2 randomize all should affect
+//     level 3." There is no per-level branch here: a per-level branch that
+//     descended at level 1 only and let levels 2/3 fall through to
+//     RandomizePage would be a hardcoded special case of exactly the kind
+//     this class's Back() avoids.
 //
 //     Two things this deliberately does NOT do. It never opens a view --
 //     RandomizeParameterModulationDepths takes `Parameter&` and reads no view
-//     state -- so the level counter never moves (F4, the ejection fix). And it
+//     state -- so the level counter never moves, avoiding a bug where
+//     Randomize All would eject the player out of the drilled-in view back to
+//     level 0. And it
 //     skips neutral depths rather than descending into every materialized one:
 //     a neutral depth modulates nothing, and sub-modulating it made the
 //     drilled parameter report 13 badges against 1 live source, because
@@ -1420,14 +1479,15 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
                                             FroggersParameterModel& model) {
     if (drillIn.Level() == 0) {
         bool partial = false;
-        // F0.1: hoisted for the same reason as RandomizeBankLevel1Depths's own
-        // loop above (mirrors FroggersAppCore.hpp:482-488) -- this loop is
+        // Hoisted for the same reason as RandomizeBankLevel1Depths's own
+        // loop above (the same short-circuit hazard FroggersAppCore::ProcessFrame()
+        // guards against) -- this loop is
         // ACROSS ALL SIX BANKS, so a short-circuited `||` here would skip
         // randomizing every remaining bank once one had already gone partial.
         for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
             const auto bankId = static_cast<FroggersBankId>(bankIx);
             synth::Bank& bank = model.BankAt(bankId);
-            // Randomize All: Crispy EXCLUDED on every bank (operator 2026-07-29).
+            // Randomize All: Crispy EXCLUDED on every bank.
             detail::RandomizeBankValues(manager, bank, /*includeCrispy=*/false);
             const bool bankPartial = detail::RandomizeBankLevel1Depths(manager, bank);
             partial = partial || bankPartial;
@@ -1435,39 +1495,41 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
         return {partial};
     }
 
-    // ONE rule for every drilled-in level (operator, 2026-08-07: "level 1
-    // randomize all should affect level 2 randomization. level 2 randomize all
-    // should affect level 3"). This used to be a `Level() == 1` branch with
-    // levels 2 and 3 falling through to RandomizePage, i.e. the descent was a
-    // hardcoded level-1 special case -- the same §5/§8 shape F5.1 deleted from
-    // Back()'s `wasLevelTwo`. There is no per-level branching now: at ANY
+    // ONE rule for every drilled-in level: "level 1
+    // randomize all should affect level 2 randomization, level 2 randomize all
+    // should affect level 3." There is no per-level branching: at ANY
     // drilled-in level, randomize the selected parameter's own depths, then
     // descend exactly one level, guarded by kMaxDrillLevel. Raising the cap
-    // again needs no edit here.
+    // again needs no edit here. A `Level() == 1`-only branch with
+    // levels 2 and 3 falling through to RandomizePage would make the descent a
+    // hardcoded level-1 special case -- the same shape Back() avoids for its
+    // own per-level replay.
     //
     // Level 0 already returned above, so this is every drilled-in level. No
     // guard condition and no enclosing block: a redundant `Level() >= 1` test
     // would only add an unreachable tail the compiler still demands a return
     // for.
     //
-    // F4 (operator: "randomize all in level 1 shouldn't navigate me out wtf"):
-    // this used to Back() out to level 0 to look up the selected parameter's
+    // This deliberately does NOT Back() out to level 0 to look up the selected
+    // parameter's
     // encoder id, PressEncoder back in, then PressEncoder/Back once per depth
-    // parameter to reach the next level -- round trips whose only permanent
-    // effect was driving the level counter to 0, which was the ejection. None
-    // of it was needed: RandomizeParameterModulationDepths takes `Parameter&`
+    // parameter to reach the next level -- that round trip's only permanent
+    // effect would be driving the level counter to 0, ejecting the player out
+    // of the drilled-in view. None
+    // of it is needed: RandomizeParameterModulationDepths takes `Parameter&`
     // directly, reads eligibility from `group.GetModulators().Metadata()`, and
     // calls EnsureModulationDepth itself -- nothing in it reads view state. So
     // this only ever calls that helper, never the view, and the level never
-    // moves. (F4.3: Bank::Deselect(), which Back() called, had always pruned
+    // moves. (Bank::Deselect(), which such a round trip would call via Back(),
+    // always prunes
     // the transient eager materialization back to whatever was actually
-    // written, so removing the round trips left the steady-state count
-    // unchanged; what it dropped was the wasted allocate-then-prune churn.)
+    // written, so avoiding the round trip leaves the steady-state count
+    // unchanged; what it avoids is the wasted allocate-then-prune churn.)
     synth::Parameter& selectedParam = *drillIn.BankRef().SelectedParameter();
     bool partial = detail::RandomizeParameterModulationDepths(manager, selectedParam);
     // Descend one level -- but ONLY if a deeper level exists to descend into.
     // Read from the drill-in's own single definition site rather than
-    // re-testing a literal (OMNI §8).
+    // re-testing a literal.
     if (drillIn.Level() < FroggersModulationDrillIn::kMaxDrillLevel) {
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
             synth::Parameter* depthParam = selectedParam.ModulationDepthParameter(modIx);
@@ -1481,7 +1543,7 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
             // DepthIsModulating's own comment for the badge mechanism.
             if (!detail::DepthIsModulating(*depthParam)) {
                 // CLEAR it rather than merely skipping. Randomize is
-                // non-additive (A1): each press zeroes the selected
+                // non-additive: each press zeroes the selected
                 // parameter's own depths before drawing, so a source picked
                 // last press is neutral this press. But
                 // ZeroExistingModulationDepths DOES NOT RECURSE -- it clears
@@ -1491,11 +1553,12 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
                 // Sheaf's badge criterion counts a depth that merely HAS
                 // sub-modulation -- so the badge would stay lit for a source
                 // that is modulating nothing, which is the very defect this
-                // rule exists to remove. Found by this task's own test.
+                // rule exists to remove.
                 detail::ZeroExistingModulationDepths(*depthParam);
                 continue;
             }
-            // F0.1: hoisted for the same reason (mirrors FroggersAppCore.hpp:482-488)
+            // Hoisted for the same reason (the same short-circuit hazard
+            // FroggersAppCore::ProcessFrame() guards against)
             // -- this loop is the depth-parameter sweep, so a short-circuited
             // `||` here would skip randomizing every remaining depth parameter.
             const bool depthPartial = detail::RandomizeParameterModulationDepths(manager, *depthParam);
@@ -1507,75 +1570,82 @@ inline FroggersRandomizeResult RandomizeAll(synth::ParameterManager& manager, Fr
 }
 
 // ============================================================================
-// Packet P6a -- Reset Page/Reset All: siblings of RandomizePage/RandomizeAll
-// just above, mirroring their own drillIn.Level() branching and enumeration
-// exactly (this packet's own brief: "cover the same set the matching
-// Randomize covers at the same level"). Reset is fully deterministic (no
-// manager.NextRandom*() calls, no allocation -- HandleSetAbsolute never
-// allocates and ZeroExistingModulationDepths only ever touches already-
-// materialized depths), so unlike Randomize there is no partial/capacity-
-// exhaustion outcome to report; both return void.
+// Reset Page/Reset All: siblings of RandomizePage/RandomizeAll above,
+// mirroring their own drillIn.Level() branching and enumeration -- except
+// that at Level()==0 both revert to the default patch (see above) rather
+// than to Randomize's own drawn values, and Reset All additionally reaches
+// the global Crunchy, which Randomize All never touches. Reset is fully
+// deterministic (no manager.NextRandom*() calls), so unlike Randomize there
+// is no partial/capacity-exhaustion outcome to report; both return void.
 // ============================================================================
 
-// task 6.9 sibling -- Reset Page.
-//   - parameter page (drillIn.Level()==0): this bank's kFroggersParamsPerBank
-//     values + Crispy reset to 0.0, excluding Crunchy (RandomizeBankValues's
-//     own Crispy/Crunchy rule -- includeCrispy=true, matching RandomizePage's
-//     own call) -- PLUS each of those parameters' own materialized depths
-//     reset to NEUTRAL, never 0.0 (see ResetParameterValueAndDepths's own
-//     comment on the depth-neutral trap).
+// Reset Page.
+//   - parameter page (drillIn.Level()==0): this bank's own slice of the
+//     default patch -- its kFroggersParamsPerBank values, its Crispy, and
+//     (on the Audio bank) its shape/pitch-detent overlay -- via
+//     ResetBankToDefaultPatch. Crunchy belongs to no one bank, so Reset Page
+//     leaves it untouched.
 //   - level-1/level-2 grid (Level()==1 or 2): the SAME set
 //     RandomizeParameterModulationDepths would act on from that view -- the
-//     selected parameter's own depth CHILDREN, reset to neutral via
-//     ZeroExistingModulationDepths. `selected`'s own value is deliberately
-//     left untouched here, matching Randomize exactly:
-//     RandomizeParameterModulationDepths never writes to `parameter` itself,
-//     only to its depth children. This also matters for the trap: at level
-//     2, `selected` IS itself a depth parameter, so forcing it to 0.0
-//     directly here would silently reintroduce the exact defect item 3 warns
-//     against, through a different call site.
-inline void ResetPage(synth::ParameterManager& /*manager*/, FroggersModulationDrillIn& drillIn) {
+//     selected parameter's own depth children -- reset to their default-
+//     patch value: neutral, except the depths RestoreAudioPitchDetentsFor
+//     restores when `selected` is one of the Audio bank's pitch parameters.
+//     `selected`'s own value is deliberately left untouched here, matching
+//     Randomize exactly: RandomizeParameterModulationDepths never writes to
+//     `parameter` itself, only to its depth children. This also matters at
+//     level 2, where `selected` IS itself a depth parameter -- forcing it to
+//     a value directly here would reintroduce the "0.0 is not off" trap
+//     through a different call site.
+inline void ResetPage(synth::ParameterManager& /*manager*/, FroggersModulationDrillIn& drillIn,
+                       FroggersParameterModel& model) {
     if (drillIn.Level() == 0) {
-        detail::ResetBankValues(drillIn.BankRef(), /*includeCrispy=*/true);
+        for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+            if (&model.BankAt(bankIx) == &drillIn.BankRef()) {
+                detail::ResetBankToDefaultPatch(model, static_cast<FroggersBankId>(bankIx));
+                break;
+            }
+        }
         return;
     }
     synth::Parameter& selected = *drillIn.BankRef().SelectedParameter();
     detail::ZeroExistingModulationDepths(selected);
+    detail::RestoreAudioPitchDetentsFor(model, selected);
 }
 
-// task 6.8 sibling -- Reset All.
-//   - parameter page (Level()==0): every bank's kFroggersParamsPerBank page
-//     parameters get the full ResetParameterValueAndDepths treatment (value
-//     -> 0.0, own depths -> neutral) -- Crispy EXCLUDED on every bank,
-//     matching RandomizeAll's own includeCrispy=false (resetting local
-//     Crispy on all six banks at once is effectively resetting global
-//     Crunchy, which is never touched either way). Each bank is reached
-//     directly via `model.BankAt(bankId)` (RandomizeAll's own idiom),
-//     independent of which bank the BankSlot currently displays.
+// Reset All -- global, at every level.
+//   - parameter page (Level()==0): every bank's own slice of the default
+//     patch (ResetBankToDefaultPatch, the same helper Reset Page uses for
+//     its one bank), PLUS the single shared global Crunchy
+//     (ResetGlobalCrunchyToDefaultPatch). Neither the per-bank Crispy
+//     carve-out nor the never-touch-Crunchy rule Randomize All applies to
+//     itself carries over to Reset: Reset All reverts the WHOLE patch, and
+//     Crunchy is part of it. Each bank is reached directly via
+//     `model.BankAt(bankId)` (RandomizeAll's own idiom), independent of
+//     which bank the BankSlot currently displays.
 //   - ANY drilled-in grid (Level() >= 1): the selected parameter's own depth
-//     children reset to neutral, PLUS -- mirroring RandomizeAll's own
-//     recursive one-level descent, gated the same way by kMaxDrillLevel --
-//     each of THOSE depths' own depth children reset to neutral too, i.e.
-//     resetting at level N also resets level N+1, exactly matching how
-//     RandomizeAll randomizes level N+1 too. Unlike RandomizeAll, this does
-//     NOT gate the descent on detail::DepthIsModulating first: that gate
-//     exists to skip meaningless RANDOM draws on a depth that modulates
-//     nothing, which does not apply to a deterministic clear --
-//     ZeroExistingModulationDepths is already a safe no-op on a depth that
-//     has no materialized children of its own.
+//     children reset to their default-patch value (RestoreAudioPitchDetentsFor,
+//     as above), PLUS -- mirroring RandomizeAll's own recursive one-level
+//     descent, gated the same way by kMaxDrillLevel -- each of THOSE depths'
+//     own depth children reset to neutral too (no default-patch override
+//     ever reaches a second level deep, so grandchildren are always plain
+//     neutral). Unlike RandomizeAll, this does NOT gate the descent on
+//     detail::DepthIsModulating first: that gate exists to skip meaningless
+//     RANDOM draws on a depth that modulates nothing, which does not apply
+//     to a deterministic clear -- ZeroExistingModulationDepths is already a
+//     safe no-op on a depth that has no materialized children of its own.
 inline void ResetAll(synth::ParameterManager& /*manager*/, FroggersModulationDrillIn& drillIn,
                       FroggersParameterModel& model) {
     if (drillIn.Level() == 0) {
         for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
-            const auto bankId = static_cast<FroggersBankId>(bankIx);
-            synth::Bank& bank = model.BankAt(bankId);
-            detail::ResetBankValues(bank, /*includeCrispy=*/false);
+            detail::ResetBankToDefaultPatch(model, static_cast<FroggersBankId>(bankIx));
         }
+        detail::ResetGlobalCrunchyToDefaultPatch(model);
         return;
     }
 
     synth::Parameter& selectedParam = *drillIn.BankRef().SelectedParameter();
     detail::ZeroExistingModulationDepths(selectedParam);
+    detail::RestoreAudioPitchDetentsFor(model, selectedParam);
     if (drillIn.Level() < FroggersModulationDrillIn::kMaxDrillLevel) {
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
             synth::Parameter* depthParam = selectedParam.ModulationDepthParameter(modIx);
@@ -1588,80 +1658,18 @@ inline void ResetAll(synth::ParameterManager& /*manager*/, FroggersModulationDri
 }
 
 // ============================================================================
-// task 6.12 -- default patch (design D16)
+// The default patch, applied once on a fresh launch.
 // ============================================================================
-// Requires slate indices 6-8 (VCO audio sources) to already be registered,
-// hence this function takes the slate too, and must run AFTER
-// FroggersModulationSlate::Init.
+// Requires slate indices 6-8 (VCO audio sources) to already be registered
+// (the Audio bank's own overlay materializes real modulation depths sourced
+// from them), hence this must run AFTER FroggersModulationSlate::Init. Every
+// bank's own slice (detail::ApplyBankDefaultPatch, defined above alongside
+// Reset -- the same function both consume) plus the one global, Crunchy.
 inline void ApplyFroggersDefaultPatch(FroggersParameterModel& model) {
-    // "One encoder detent" (design D16): the surface's real encoder
-    // resolution is not established until packet 10, so this is an explicit
-    // placeholder quantum, flagged per D16's own "ties the default to the
-    // encoder resolution" caveat -- NOT a value derived from any cited
-    // Sheaf/Froggers source. 1/100 approximates a common relative-encoder
-    // resolution; if packet 10 establishes a different one, this constant
-    // (and therefore this default) must be revisited.
-    constexpr float kPlaceholderEncoderDetent = 1.0f / 100.0f;
-
-    // C1a (tasks.md CONSOLIDATED PUSH, item C1 -- operator: "the default VCO
-    // shapes in scene 2 should be the opposite of what they are in scene
-    // 1"): scene 1 (pole 0, `detail::kScenePole0`) keeps sine/saw/square =
-    // 0.0/0.5/1.0 exactly as before -- Audio bank slots 3-5 (design D5a),
-    // confirmed against EvalWaveMorph's sine->saw (0-0.5) / saw->square
-    // (0.5-1.0) crossfade (app/dsp/Vco.hpp's EvalWaveMorph, ported from
-    // src/core/VcoWaveEval.hpp:7-23). Scene 2 (pole 1, `detail::
-    // kScenePole1`) gets the MIRROR of that same value, `1.0 - shape` --
-    // written as an expression of the scene-1 value, not as three more
-    // hardcoded literals, so the mirror relationship is what the reader
-    // sees. VCO2's 0.5 (saw) is its own mirror and is therefore unchanged
-    // in scene 2 too, without needing a special case.
-    constexpr std::array<float, 3> kScene1VcoShapes{0.0f, 0.5f, 1.0f};
-    for (std::size_t vcoIx = 0; vcoIx < kScene1VcoShapes.size(); ++vcoIx) {
-        const float scene1Shape = kScene1VcoShapes[vcoIx];
-        synth::Parameter& shapeParam = model.PageParameter(FroggersBankId::Audio, 3 + vcoIx);
-        shapeParam.HandleSetAbsolute(detail::kScenePole0, scene1Shape);
-        shapeParam.HandleSetAbsolute(detail::kScenePole1, 1.0f - scene1Shape);
+    for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+        detail::ApplyBankDefaultPatch(model, static_cast<FroggersBankId>(bankIx));
     }
-
-    // C1b: the same light cross-VCO pitch modulation lands in BOTH scene
-    // poles, identically -- same sources, same signs, same magnitude. This
-    // matches A3's rule that source membership (and, for this fixed
-    // non-randomized default, depth too) is identical across poles.
-    // Sourced from the VCO audio-rate slate entries (indices 6-8), targeting
-    // Audio bank pitch parameters (slots 0-2):
-    //   VCO1 pitch (slot 0) <- +1 detent from VCO2 audio (7), VCO3 audio (8)
-    //   VCO2 pitch (slot 1) <- -1 detent from VCO1 audio (6), VCO3 audio (8)
-    //   VCO3 pitch (slot 2) <- +1 detent from VCO1 audio (6), VCO2 audio (7)
-    auto applyDetent = [&](std::size_t targetParamIx, std::size_t modIx, float sign) {
-        synth::Parameter& target = model.PageParameter(FroggersBankId::Audio, targetParamIx);
-        synth::Parameter* depth = target.EnsureModulationDepth(modIx);
-        if (depth == nullptr) {
-            return;  // storage exhausted -- would be a partial default patch; flagged, not silently ignored
-        }
-        // F2: iterates kScenePoles rather than naming each pole in its own
-        // statement -- see that array's own comment. Same delta applied
-        // independently to each pole's own scene center, from the same
-        // freshly-materialized neutral base, so both poles land on the same
-        // final value.
-        for (const synth::SceneState& pole : detail::kScenePoles) {
-            depth->HandleIncDec(pole, sign * kPlaceholderEncoderDetent);
-        }
-    };
-    applyDetent(0, kModSlotVco2Audio, +1.0f);
-    applyDetent(0, kModSlotVco3Audio, +1.0f);
-    applyDetent(1, kModSlotVco1Audio, -1.0f);
-    applyDetent(1, kModSlotVco3Audio, -1.0f);
-    applyDetent(2, kModSlotVco1Audio, +1.0f);
-    applyDetent(2, kModSlotVco2Audio, +1.0f);
-
-    // C1c: Drive (Drive bank, slot 0) = 20% of its range (D16, flagged
-    // provisional -- "GAIN on the distortion page" maps to the Drive
-    // parameter, no parameter is literally named Gain, D5a's Drive-bank
-    // layout), identical in both scene poles -- only the VCO shapes differ
-    // between scene 1 and scene 2.
-    for (const synth::SceneState& pole : detail::kScenePoles) {
-        model.PageParameter(FroggersBankId::Drive, 0).HandleSetAbsolute(pole, 0.2f);
-    }
+    detail::ApplyCrunchyDefaultPatch(model);
 }
 
 }  // namespace synth_froggers

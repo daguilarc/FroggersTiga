@@ -1,8 +1,7 @@
-// FroggersModulationTests.cpp -- tasks.md section "6. Modulation slate +
-// drill-in", task 6.6 (slate registration / depth materialization / drill-in
-// level cap / external-audio inertness), task 6.7 (disconnected sources
-// never randomized), task 6.11 (randomize semantics), task 6.12 (default
-// patch, design D16).
+// FroggersModulationTests.cpp -- covers the modulation slate and drill-in:
+// slate registration / depth materialization / drill-in level cap /
+// external-audio inertness, disconnected sources never being randomized,
+// randomize semantics, and the default patch.
 //
 // Uses a bare synth::ParameterManager + FroggersParameterModel +
 // FroggersModulationSlate directly (matching FroggersParameterModelTests.cpp's
@@ -388,30 +387,85 @@ TEST_CASE(external_audio_cells_present_and_inert_with_no_input) {
     REQUIRE_TRUE(!fx.slate.Metadata(kModSlotExternalAudioEf).connected);
 
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+    synth::Parameter& target = fx.model.PageParameter(FroggersBankId::Reverb, 0);
     drillIn.PressEncoder(0);  // open L1 view -- slate stays 15 cells regardless of cabling
     // The external-audio cells are still PUSHED (present) at their fixed
     // positions (13, 14) but with a null parameter (inert / disconnected
     // encoder rendering), per ParameterModulation.cpp:2843-2852,2784-2786.
-    REQUIRE_TRUE(fx.model.PageParameter(FroggersBankId::Reverb, 0)
-                     .ModulationDepthParameter(kModSlotExternalAudio) == nullptr);
-    REQUIRE_TRUE(fx.model.PageParameter(FroggersBankId::Reverb, 0)
-                     .ModulationDepthParameter(kModSlotExternalAudioEf) == nullptr);
+    REQUIRE_TRUE(target.ModulationDepthParameter(kModSlotExternalAudio) == nullptr);
+    REQUIRE_TRUE(target.ModulationDepthParameter(kModSlotExternalAudioEf) == nullptr);
     // Every OTHER (connected) source still materializes normally -- the
     // slate never changes size or shifts positions because of cabling.
     for (std::size_t modIx = 0; modIx < kModSlotExternalAudio; ++modIx) {
-        REQUIRE_TRUE(fx.model.PageParameter(FroggersBankId::Reverb, 0).ModulationDepthParameter(modIx) != nullptr);
+        REQUIRE_TRUE(target.ModulationDepthParameter(modIx) != nullptr);
     }
+    drillIn.Back();
 
-    // Now flip an input on and confirm the pair reports connected (task 6.5:
-    // "flip connected back to true when an input appears"). No sample-value
-    // argument anymore (T6 removed Step()'s external-audio-sample parameter
-    // along with the connected one -- see Fixture::StepOnce's own comment);
-    // this scenario is about the connected bit, and no test in this file
-    // ever reads externalAudioSource_/externalAudioEfSource_'s value
-    // (verified by grep for SourceValue(kModSlotExternalAudio*) -- none).
+    // OMNI 9.1 positive control: flip an input on and watch the SAME two
+    // kinds of assertion -- the metadata bit, AND the surface-level depth
+    // cell a real operator press would see -- go the other way in this same
+    // fixture, same run, not just a flipped internal bool.
     fx.StepOnce(/*externalConnected=*/true);
     REQUIRE_TRUE(fx.slate.Metadata(kModSlotExternalAudio).connected);
     REQUIRE_TRUE(fx.slate.Metadata(kModSlotExternalAudioEf).connected);
+    drillIn.PressEncoder(0);  // re-open the identical view now that both slots are connected
+    REQUIRE_TRUE(target.ModulationDepthParameter(kModSlotExternalAudio) != nullptr);
+    REQUIRE_TRUE(target.ModulationDepthParameter(kModSlotExternalAudioEf) != nullptr);
+}
+
+// The metadata flag and the depth cell's mere existence (both proven above)
+// are not proof that modulation actually reaches a destination: a connected
+// source with a materialized but unread depth would look identical on both
+// counts. This proves the source's VALUE flows through: at a full (|depth|
+// == 1.0) route, the resolved value is driven entirely by the source and the
+// destination's own commanded center contributes nothing at all
+// (ParameterModulation.cpp:2257-2270's weightSum>=1.0 branch zeroes
+// targetCenterScales_ -- see AttachFullPositiveAudioRateModulation's own
+// comment, below, for the fuller derivation). So pinning the destination's
+// commanded value to a KNOWN quantity, then attaching a full-positive
+// external-audio route, must move the resolved value away from that known
+// quantity and toward the source's own -- a swing that cannot happen unless
+// the source's value actually reached the destination. The destination is
+// pinned explicitly (`HandleSetAbsolute`) rather than read as whatever its
+// unexamined default happens to be: the external-audio source's own value is
+// permanently 0.5 (externalAudioSource_'s NSDMI -- Step()'s own comment), and
+// 0.5 is `NormalizeBipolarToUnit`'s "no signal" convention, so a destination
+// that ALSO happened to default to 0.5 would make full-positive and
+// full-negative depth resolve identically (verified empirically: they do,
+// at exactly 0.5, for this bank's own default) -- a coincidence of the
+// destination's default, not proof of anything. Pinning it to 1.0 removes
+// that dependency entirely. `Parameter::TargetValue` is the private
+// accessor this mechanism is named after; `GetRaw(0)` (public) reads the
+// same resolved quantity through `currentCenter_`/`CurrentDepthSlots`, which
+// `ParameterManager::ComputeAllParameters()`'s `SnapCurrentToTarget()` call
+// keeps equal to the target ones (ParameterModulation.cpp:1207-1216,
+// 3165-3173) -- the same convergence AttachFullPositiveAudioRateModulation's
+// own comment relies on for the depth parameter's `GetRaw()`.
+TEST_CASE(connected_external_audio_modulation_reaches_a_destination_end_to_end) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/true);
+    fx.model.Group().UpdateModValues();
+
+    synth::Parameter& target = fx.model.PageParameter(FroggersBankId::Reverb, 0);
+    for (const synth::SceneState& pole : detail::kScenePoles) {
+        target.HandleSetAbsolute(pole, 1.0f);  // known quantity, deliberately far from the source's own 0.5.
+    }
+    fx.manager.ComputeAllParameters();
+    const float unmodulated = target.GetRaw(0);
+
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+    drillIn.PressEncoder(0);
+    synth::Parameter* depth = target.ModulationDepthParameter(kModSlotExternalAudio);
+    REQUIRE_TRUE(depth != nullptr);
+    for (const synth::SceneState& pole : detail::kScenePoles) {
+        depth->SceneCenter(pole.leftScene) = 1.0f;  // full-positive bipolar depth
+    }
+    fx.manager.ComputeAllParameters();
+    const float modulated = target.GetRaw(0);
+
+    std::cout << "connected_external_audio_modulation_reaches_a_destination_end_to_end: unmodulated="
+              << unmodulated << " modulated=" << modulated << "\n";
+    REQUIRE_TRUE(std::fabs(modulated - unmodulated) > 0.3f);
 }
 
 TEST_CASE(disconnected_external_audio_never_receives_randomized_depth) {
@@ -1249,6 +1303,69 @@ bool IsOnBankPage(synth::Parameter* candidate, FroggersParameterModel& model, Fr
 }
 
 // ----------------------------------------------------------------------------
+// Fresh-instance oracle: Reset's own correctness standard is "matches a
+// freshly constructed model with the default patch applied" -- not a
+// hand-written literal, since a bank's own default is 0.0f for most
+// parameters but not all (FroggersBankLayouts()'s own defaultValue field,
+// plus the Audio/Drive overlays). An unmaterialized depth reads as neutral,
+// the same as a materialized-and-neutral one (an absent depth modulates
+// nothing either way), so the comparison below treats the two as equal
+// rather than requiring identical materialization -- Reset never
+// de-materializes a depth it once touched, so a Reset instance and a truly
+// fresh one can disagree on WHETHER a depth Parameter exists while still
+// agreeing on what it means.
+// ----------------------------------------------------------------------------
+
+std::pair<float, float> EffectiveDepthValue(const ParamSnapshot& snap, std::size_t modIx) {
+    if (!snap.depths[modIx].has_value()) {
+        return {detail::kNeutralModulationDepthCenter, detail::kNeutralModulationDepthCenter};
+    }
+    return *snap.depths[modIx];
+}
+
+bool ParameterDiffersFromDefaultPatch(synth::Parameter& parameter, synth::Parameter& reference, float tolerance) {
+    const ParamSnapshot actual = SnapshotParameter(parameter);
+    const ParamSnapshot expected = SnapshotParameter(reference);
+    if (std::fabs(actual.v0 - expected.v0) > tolerance || std::fabs(actual.v1 - expected.v1) > tolerance) {
+        return true;
+    }
+    for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+        const auto [actualD0, actualD1] = EffectiveDepthValue(actual, modIx);
+        const auto [expectedD0, expectedD1] = EffectiveDepthValue(expected, modIx);
+        if (std::fabs(actualD0 - expectedD0) > tolerance || std::fabs(actualD1 - expectedD1) > tolerance) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void RequireParameterMatchesDefaultPatch(synth::Parameter& parameter, synth::Parameter& reference) {
+    constexpr float kTol = 1e-6f;
+    const ParamSnapshot actual = SnapshotParameter(parameter);
+    const ParamSnapshot expected = SnapshotParameter(reference);
+    REQUIRE_NEAR(actual.v0, expected.v0, kTol);
+    REQUIRE_NEAR(actual.v1, expected.v1, kTol);
+    for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+        const auto [actualD0, actualD1] = EffectiveDepthValue(actual, modIx);
+        const auto [expectedD0, expectedD1] = EffectiveDepthValue(expected, modIx);
+        REQUIRE_NEAR(actualD0, expectedD0, kTol);
+        REQUIRE_NEAR(actualD1, expectedD1, kTol);
+    }
+}
+
+void RequireModelMatchesFreshDefaultPatch(FroggersParameterModel& actualModel, FroggersParameterModel& referenceModel) {
+    for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+        const auto bankId = static_cast<FroggersBankId>(bankIx);
+        for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
+            RequireParameterMatchesDefaultPatch(actualModel.PageParameter(bankId, paramIx),
+                                                 referenceModel.PageParameter(bankId, paramIx));
+        }
+        RequireParameterMatchesDefaultPatch(actualModel.Crispy(bankId), referenceModel.Crispy(bankId));
+    }
+    RequireParameterMatchesDefaultPatch(actualModel.Crunchy(), referenceModel.Crunchy());
+}
+
+// ----------------------------------------------------------------------------
 // "ResetPage clears only the current bank" / "ResetAll clears every bank"
 // ----------------------------------------------------------------------------
 
@@ -1267,12 +1384,17 @@ TEST_CASE(reset_page_clears_only_current_bank_values_and_depths) {
         RandomizePage(fx.manager, pageDrill);
     }
 
+    Fixture reference;
+    ApplyFroggersDefaultPatch(reference.model);
+
     const auto before = SnapshotAllTopLevelParameters(fx.model);
 
     // Positive control (OMNI Sec 9.1): confirm the setup above actually
-    // materialized at least one non-neutral depth on Reverb's own page
-    // before trusting "reads neutral after" as meaningful.
+    // moved Reverb's own page away from the default patch -- a materialized
+    // non-neutral depth, and at least one value -- before trusting "matches
+    // the default patch after" as meaningful.
     bool reverbHadNonNeutralDepthBefore = false;
+    bool reverbValueMovedBefore = false;
     for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
         synth::Parameter& p = fx.model.PageParameter(FroggersBankId::Reverb, paramIx);
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
@@ -1281,31 +1403,27 @@ TEST_CASE(reset_page_clears_only_current_bank_values_and_depths) {
                 reverbHadNonNeutralDepthBefore = true;
             }
         }
+        if (ParameterDiffersFromDefaultPatch(p, reference.model.PageParameter(FroggersBankId::Reverb, paramIx), 0.05f)) {
+            reverbValueMovedBefore = true;
+        }
     }
     REQUIRE_TRUE(reverbHadNonNeutralDepthBefore);
+    REQUIRE_TRUE(reverbValueMovedBefore);
 
-    ResetPage(fx.manager, drillIn);  // drillIn is still Level()==0, on Reverb
+    ResetPage(fx.manager, drillIn, fx.model);  // drillIn is still Level()==0, on Reverb
 
-    constexpr float kTol = 1e-6f;
-    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;
     bool anyReverbDepthCheckedAfter = false;
     for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
         synth::Parameter& p = fx.model.PageParameter(FroggersBankId::Reverb, paramIx);
-        REQUIRE_NEAR(p.SceneCenter(0), 0.0f, kTol);
-        REQUIRE_NEAR(p.SceneCenter(1), 0.0f, kTol);
+        RequireParameterMatchesDefaultPatch(p, reference.model.PageParameter(FroggersBankId::Reverb, paramIx));
         for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
-            synth::Parameter* depth = p.ModulationDepthParameter(modIx);
-            if (depth == nullptr) {
-                continue;
+            if (p.ModulationDepthParameter(modIx) != nullptr) {
+                anyReverbDepthCheckedAfter = true;
             }
-            anyReverbDepthCheckedAfter = true;
-            REQUIRE_NEAR(depth->SceneCenter(0), kNeutral, kTol);
-            REQUIRE_NEAR(depth->SceneCenter(1), kNeutral, kTol);
         }
     }
-    synth::Parameter& reverbCrispy = fx.model.Crispy(FroggersBankId::Reverb);
-    REQUIRE_NEAR(reverbCrispy.SceneCenter(0), 0.0f, kTol);
-    REQUIRE_NEAR(reverbCrispy.SceneCenter(1), 0.0f, kTol);
+    RequireParameterMatchesDefaultPatch(fx.model.Crispy(FroggersBankId::Reverb),
+                                         reference.model.Crispy(FroggersBankId::Reverb));
     REQUIRE_TRUE(anyReverbDepthCheckedAfter);
 
     // Every OTHER top-level parameter (five other banks' page params +
@@ -1319,69 +1437,147 @@ TEST_CASE(reset_page_clears_only_current_bank_values_and_depths) {
     }
 }
 
-TEST_CASE(reset_all_clears_every_bank) {
+TEST_CASE(reset_page_on_audio_restores_shapes_and_pitch_detents_while_other_banks_stay_untouched) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/true);
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Audio));
+
+    RandomizeAll(fx.manager, drillIn, fx.model);
+    for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+        FroggersModulationDrillIn pageDrill(fx.model.BankAt(static_cast<FroggersBankId>(bankIx)));
+        RandomizePage(fx.manager, pageDrill);
+    }
+
+    Fixture reference;
+    ApplyFroggersDefaultPatch(reference.model);
+
+    // Positive control (OMNI Sec 9.1): the randomize above genuinely moved
+    // Audio's own page (shapes and/or pitch detents included) away from the
+    // default patch.
+    bool audioMovedBefore = false;
+    for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
+        if (ParameterDiffersFromDefaultPatch(fx.model.PageParameter(FroggersBankId::Audio, paramIx),
+                                              reference.model.PageParameter(FroggersBankId::Audio, paramIx), 0.05f)) {
+            audioMovedBefore = true;
+        }
+    }
+    REQUIRE_TRUE(audioMovedBefore);
+
+    const auto before = SnapshotAllTopLevelParameters(fx.model);
+
+    ResetPage(fx.manager, drillIn, fx.model);  // drillIn is still Level()==0, on Audio
+
+    // Audio's own slice -- values (shapes included) and depths (the six
+    // cross-VCO pitch detents included) -- matches the default patch
+    // exactly, not a flat zero/neutral clear.
+    for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
+        RequireParameterMatchesDefaultPatch(fx.model.PageParameter(FroggersBankId::Audio, paramIx),
+                                             reference.model.PageParameter(FroggersBankId::Audio, paramIx));
+    }
+    RequireParameterMatchesDefaultPatch(fx.model.Crispy(FroggersBankId::Audio),
+                                         reference.model.Crispy(FroggersBankId::Audio));
+
+    // Every other bank (and Crunchy) is completely untouched from its
+    // pre-reset (still-randomized) state.
+    for (const auto& [paramPtr, snap] : before) {
+        if (IsOnBankPage(paramPtr, fx.model, FroggersBankId::Audio)) {
+            continue;  // checked above.
+        }
+        RequireParameterUnchanged(*paramPtr, snap);
+    }
+}
+
+TEST_CASE(reset_all_matches_a_freshly_constructed_default_patch_instance_field_for_field) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
 
     RandomizeAll(fx.manager, drillIn, fx.model);  // values+depths on all 6 banks' page params
+    for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+        FroggersModulationDrillIn pageDrill(fx.model.BankAt(static_cast<FroggersBankId>(bankIx)));
+        RandomizePage(fx.manager, pageDrill);  // Crispy on every bank -- Randomize All itself excludes it
+    }
+    // RandomizeAll/RandomizePage never touch Crunchy (unchanged by this
+    // packet) -- perturb it by hand so Reset All's own "Crunchy is global
+    // too" behaviour has something real to prove.
+    constexpr float kPerturbedCrunchy = 0.73f;
+    fx.model.Crunchy().SceneCenter(0) = kPerturbedCrunchy;
+    fx.model.Crunchy().SceneCenter(1) = kPerturbedCrunchy;
 
-    // Positive control: confirm at least one bank has a non-neutral
-    // materialized depth before reset.
-    bool anyNonNeutralBefore = false;
-    ForEachTopLevelParameter(fx.model, [&](synth::Parameter& p) {
-        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
-            synth::Parameter* depth = p.ModulationDepthParameter(modIx);
-            if (depth != nullptr && detail::DepthIsModulating(*depth)) {
-                anyNonNeutralBefore = true;
+    Fixture reference;
+    ApplyFroggersDefaultPatch(reference.model);
+
+    // Positive control (OMNI Sec 9.1): confirm the setup above genuinely
+    // moved every bank's own page, every bank's Crispy, and Crunchy away
+    // from the default patch -- a reset that "matches" a patch that never
+    // moved would be void, not passing.
+    for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
+        const auto bankId = static_cast<FroggersBankId>(bankIx);
+        bool bankMoved = false;
+        for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
+            if (ParameterDiffersFromDefaultPatch(fx.model.PageParameter(bankId, paramIx),
+                                                  reference.model.PageParameter(bankId, paramIx), 0.05f)) {
+                bankMoved = true;
             }
         }
-    });
-    REQUIRE_TRUE(anyNonNeutralBefore);
+        REQUIRE_TRUE(bankMoved);
+        REQUIRE_TRUE(ParameterDiffersFromDefaultPatch(fx.model.Crispy(bankId), reference.model.Crispy(bankId), 0.05f));
+    }
+    REQUIRE_TRUE(ParameterDiffersFromDefaultPatch(fx.model.Crunchy(), reference.model.Crunchy(), 0.05f));
 
     ResetAll(fx.manager, drillIn, fx.model);  // Level()==0
 
-    constexpr float kTol = 1e-6f;
-    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;
-    for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
-        const auto bankId = static_cast<FroggersBankId>(bankIx);
-        for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
-            synth::Parameter& p = fx.model.PageParameter(bankId, paramIx);
-            REQUIRE_NEAR(p.SceneCenter(0), 0.0f, kTol);
-            REQUIRE_NEAR(p.SceneCenter(1), 0.0f, kTol);
-            for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
-                synth::Parameter* depth = p.ModulationDepthParameter(modIx);
-                if (depth == nullptr) {
-                    continue;
-                }
-                REQUIRE_NEAR(depth->SceneCenter(0), kNeutral, kTol);
-                REQUIRE_NEAR(depth->SceneCenter(1), kNeutral, kTol);
-            }
-        }
-    }
+    // The whole instrument -- every bank's page, every bank's Crispy, and
+    // the shared Crunchy, both scene poles, every materialized depth --
+    // matches a freshly constructed, freshly patched instance field for
+    // field.
+    RequireModelMatchesFreshDefaultPatch(fx.model, reference.model);
 }
 
-TEST_CASE(reset_never_touches_crunchy_in_any_view) {
+TEST_CASE(reset_page_never_touches_crunchy) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);
     synth::Parameter& crunchy = fx.model.Crunchy();
     // Deliberately non-zero, non-neutral, non-default: Crunchy's own
     // ParameterConfig default is already 0.0f, so checking against that
     // default alone would not distinguish "never touched" from "touched and
-    // (incorrectly) reset to 0.0" -- this perturbation makes the check real.
+    // reset to 0.0" -- this perturbation makes the check real.
     constexpr float kPerturbed = 0.73f;
     crunchy.SceneCenter(0) = kPerturbed;
     crunchy.SceneCenter(1) = kPerturbed;
 
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
-    ResetAll(fx.manager, drillIn, fx.model);
+    ResetPage(fx.manager, drillIn, fx.model);
     REQUIRE_TRUE(crunchy.SceneCenter(0) == kPerturbed);
     REQUIRE_TRUE(crunchy.SceneCenter(1) == kPerturbed);
-    REQUIRE_TRUE(crunchy.ModulationDepthParameter(0) == nullptr);
+}
 
-    ResetPage(fx.manager, drillIn);
-    REQUIRE_TRUE(crunchy.SceneCenter(0) == kPerturbed);
-    REQUIRE_TRUE(crunchy.SceneCenter(1) == kPerturbed);
+TEST_CASE(reset_all_resets_crunchy_to_its_default) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/true);
+    synth::Parameter& crunchy = fx.model.Crunchy();
+    // Comfortably away from Crunchy's own default (0.0f, its
+    // ParameterConfig's own struct default -- see FroggersParameters.hpp's
+    // Crunchy registration) so "reads its default after" is a real check,
+    // not a 0.0-before/0.0-after tautology.
+    constexpr float kPerturbed = 0.73f;
+    crunchy.SceneCenter(0) = kPerturbed;
+    crunchy.SceneCenter(1) = kPerturbed;
+    // Crunchy's own modulation depths are part of "Crunchy reverts to its
+    // default" too, not just its value.
+    synth::Parameter* crunchyDepth = crunchy.EnsureModulationDepth(kModSlotRandomSh1);
+    REQUIRE_TRUE(crunchyDepth != nullptr);
+    crunchyDepth->SceneCenter(0) = 0.9f;
+    crunchyDepth->SceneCenter(1) = 0.9f;
+
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
+    ResetAll(fx.manager, drillIn, fx.model);  // Level()==0, global
+
+    constexpr float kTol = 1e-6f;
+    REQUIRE_NEAR(crunchy.SceneCenter(0), 0.0f, kTol);
+    REQUIRE_NEAR(crunchy.SceneCenter(1), 0.0f, kTol);
+    REQUIRE_NEAR(crunchyDepth->SceneCenter(0), detail::kNeutralModulationDepthCenter, kTol);
+    REQUIRE_NEAR(crunchyDepth->SceneCenter(1), detail::kNeutralModulationDepthCenter, kTol);
 }
 
 // ----------------------------------------------------------------------------
@@ -1409,7 +1605,7 @@ TEST_CASE(reset_depths_read_neutral_not_zero_the_trap_is_not_reintroduced) {
     }
     REQUIRE_TRUE(anyNonNeutralBefore);
 
-    ResetPage(fx.manager, drillIn);  // Level()==1: resets focused's own depths
+    ResetPage(fx.manager, drillIn, fx.model);  // Level()==1: resets focused's own depths
 
     constexpr float kNeutral = detail::kNeutralModulationDepthCenter;  // 0.5f
     constexpr float kTol = 1e-6f;
@@ -1474,7 +1670,7 @@ TEST_CASE(reset_page_drilled_in_acts_on_only_the_selected_parameters_own_depths)
 
     const auto siblingBefore = SnapshotParameter(sibling);
 
-    ResetPage(fx.manager, drillIn);  // drillIn still at Level()==1 on `focused`
+    ResetPage(fx.manager, drillIn, fx.model);  // drillIn still at Level()==1 on `focused`
 
     // `focused`'s own depths -- RandomizeParameterModulationDepths's exact
     // target set at this drill level -- are all neutral now.
@@ -1501,6 +1697,87 @@ TEST_CASE(reset_page_drilled_in_acts_on_only_the_selected_parameters_own_depths)
     // `sibling` -- a different top-level parameter's own depths, never the
     // selected one -- is completely untouched.
     RequireParameterUnchanged(sibling, siblingBefore);
+}
+
+// ----------------------------------------------------------------------------
+// Drilled-in reset on the Audio bank's pitch parameters: the default patch
+// itself gives two of the fifteen depth cells a non-neutral value, so
+// resetting them must land back on that detent, not neutral -- the same
+// "0.0 is not off" class of trap as above, one level up (a whole depth
+// carrying the wrong default, not just the wrong zero).
+// ----------------------------------------------------------------------------
+
+TEST_CASE(reset_page_drilled_into_audio_pitch_restores_its_default_patch_detent_not_neutral) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/true);
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Audio));
+    drillIn.PressEncoder(0);  // -> level 1: materializes all 15 depth cells on VCO1 pitch
+    REQUIRE_TRUE(drillIn.Level() == 1);
+    synth::Parameter& vco1Pitch = fx.model.PageParameter(FroggersBankId::Audio, 0);
+
+    Fixture reference;
+    ApplyFroggersDefaultPatch(reference.model);
+    synth::Parameter& referenceVco1Pitch = reference.model.PageParameter(FroggersBankId::Audio, 0);
+
+    // The two depths the default patch itself sets a detent on. Perturb
+    // both away from that detent so "restores it" is a real check.
+    synth::Parameter* detentFromVco2 = vco1Pitch.ModulationDepthParameter(kModSlotVco2Audio);
+    synth::Parameter* detentFromVco3 = vco1Pitch.ModulationDepthParameter(kModSlotVco3Audio);
+    REQUIRE_TRUE(detentFromVco2 != nullptr);
+    REQUIRE_TRUE(detentFromVco3 != nullptr);
+    constexpr float kPerturbed = 0.9f;
+    detentFromVco2->SceneCenter(0) = kPerturbed;
+    detentFromVco2->SceneCenter(1) = kPerturbed;
+    detentFromVco3->SceneCenter(0) = kPerturbed;
+    detentFromVco3->SceneCenter(1) = kPerturbed;
+
+    // Positive control (OMNI Sec 9.1): the perturbation above genuinely
+    // moved both depths away from their default-patch detent value.
+    synth::Parameter* referenceDetentFromVco2 = referenceVco1Pitch.ModulationDepthParameter(kModSlotVco2Audio);
+    synth::Parameter* referenceDetentFromVco3 = referenceVco1Pitch.ModulationDepthParameter(kModSlotVco3Audio);
+    REQUIRE_TRUE(referenceDetentFromVco2 != nullptr);
+    REQUIRE_TRUE(referenceDetentFromVco3 != nullptr);
+    REQUIRE_TRUE(std::fabs(detentFromVco2->SceneCenter(0) - referenceDetentFromVco2->SceneCenter(0)) > 0.05f);
+    REQUIRE_TRUE(std::fabs(detentFromVco3->SceneCenter(0) - referenceDetentFromVco3->SceneCenter(0)) > 0.05f);
+
+    ResetPage(fx.manager, drillIn, fx.model);  // Level()==1: resets vco1Pitch's own depths
+
+    // Every one of VCO1 pitch's depths -- the two detents included -- now
+    // matches the default patch exactly, not a flat neutral clear.
+    RequireParameterMatchesDefaultPatch(vco1Pitch, referenceVco1Pitch);
+
+    // The trap, pinned directly: the two detents are nowhere near neutral.
+    constexpr float kNeutral = detail::kNeutralModulationDepthCenter;
+    REQUIRE_TRUE(std::fabs(detentFromVco2->SceneCenter(0) - kNeutral) > 0.005f);
+    REQUIRE_TRUE(std::fabs(detentFromVco3->SceneCenter(0) - kNeutral) > 0.005f);
+}
+
+TEST_CASE(reset_all_drilled_into_audio_pitch_restores_its_default_patch_detent_not_neutral) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/true);
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Audio));
+    drillIn.PressEncoder(1);  // -> level 1: materializes all 15 depth cells on VCO2 pitch
+    REQUIRE_TRUE(drillIn.Level() == 1);
+    synth::Parameter& vco2Pitch = fx.model.PageParameter(FroggersBankId::Audio, 1);
+
+    Fixture reference;
+    ApplyFroggersDefaultPatch(reference.model);
+    synth::Parameter& referenceVco2Pitch = reference.model.PageParameter(FroggersBankId::Audio, 1);
+
+    synth::Parameter* detentFromVco1 = vco2Pitch.ModulationDepthParameter(kModSlotVco1Audio);
+    REQUIRE_TRUE(detentFromVco1 != nullptr);
+    constexpr float kPerturbed = 0.05f;
+    detentFromVco1->SceneCenter(0) = kPerturbed;
+    detentFromVco1->SceneCenter(1) = kPerturbed;
+
+    // Positive control (OMNI Sec 9.1).
+    synth::Parameter* referenceDetentFromVco1 = referenceVco2Pitch.ModulationDepthParameter(kModSlotVco1Audio);
+    REQUIRE_TRUE(referenceDetentFromVco1 != nullptr);
+    REQUIRE_TRUE(std::fabs(detentFromVco1->SceneCenter(0) - referenceDetentFromVco1->SceneCenter(0)) > 0.05f);
+
+    ResetAll(fx.manager, drillIn, fx.model);  // Level()==1
+
+    RequireParameterMatchesDefaultPatch(vco2Pitch, referenceVco2Pitch);
 }
 
 // ============================================================================

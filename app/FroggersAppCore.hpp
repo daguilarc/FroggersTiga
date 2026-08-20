@@ -166,45 +166,35 @@ public:
         audioVcos_[2].SetScopeColor(synth::Color::Yellow);
     }
 
+    // Unregisters the routed-input callback Init() below registers, if any.
+    // `context_->inputRoutingSignal` is host-owned and can outlive this
+    // object (it is declared to survive exactly that -- see Runtime.hpp's
+    // own member-ordering comment), so a still-registered callback capturing
+    // `this` would dangle the moment this destructor finishes; clearing it
+    // here removes that registration first.
+    ~FroggersAppCore() {
+        if (context_ != nullptr) {
+            context_->SetInputRoutedChangedCallback({});
+        }
+    }
+
     static synth::RuntimeConfig Config() {
         synth::RuntimeConfig config;
         config.appName = "Frogg3rs Synth";
-        // frogg3rs-external-audio-phantom-input (tasks.md T1) corrects Task
-        // 2.6's own reasoning that used to sit here: that comment traced
-        // `numAudioInputs` correctly as far as "forwarded verbatim to
-        // `juce::AudioDeviceManager::initialiseWithDefaultDevices(
-        // config.numAudioInputs, config.numAudioOutputs)`"
-        // (External/Sheaf/projects/synth/runtime/Runtime.hpp:237), but never
-        // followed that call through to what it DOES with a nonzero count:
-        // it opens the platform's DEFAULT input device -- chosen by nobody,
-        // not by the operator. `config.numAudioInputs > 0` is also what
-        // gates whether a *persisted* input-device selection is even applied
-        // (Runtime.hpp:260-261) -- moot at 0, since there is no channel to
-        // apply one to. On this machine that default device is the built-in
-        // mic, present and open whether or not anything is plugged in, so
-        // raising this to 1 does not deliver "a real input channel"; it
-        // silently opens the operator's microphone on every launch, unasked.
-        // ProcessBlock no longer threads a named `externalInputConnected`
-        // local at all (T6 deleted it: nothing ever varied it, since this
-        // requests zero channels) -- one requested channel that is always
-        // the wrong one was never a signal worth deriving a connected state
-        // from. Back to 0: no device, default or otherwise, opens at all,
-        // and the two external-audio slate slots (13/14, design D5) are
-        // disconnected by construction, not by a separate flag layered on
-        // top.
-        //
-        // What would justify raising this again: a REAL routed-input signal
-        // surfaced by the host (UPSTREAM-SHEAF-ASK.md item 8, asks 1/2 --
-        // still open), not a Sheaf pin bump -- the defect and this fix both
-        // stand entirely on this call's contract, unrelated to which Sheaf
-        // commit is pinned (proposal.md §0/§3). Re-enabling is then several
-        // coupled edits together, deliberately, never one integer alone --
-        // this value, together with a real per-sample connected/sample
-        // derivation fed into FroggersModulation.hpp's `Step()`/
-        // `SetExternalAudioConnected` (see ProcessBlock's own comment for
-        // what T6 removed there) -- so a single-edit re-enable, exactly what
-        // this change exists to prevent, stays impossible.
-        config.numAudioInputs = 0;
+        // One input channel is requested. That alone never means an input is
+        // actually available to the operator: requesting any nonzero count
+        // also opens a platform-default input device at launch, before any
+        // device selection is made -- on this machine, the built-in
+        // microphone, unasked (Runtime.hpp's `initialiseWithDefaultDevices`
+        // call). The external-audio modulation sources
+        // (`kModSlotExternalAudio`/`kModSlotExternalAudioEf`,
+        // FroggersModulation.hpp) never treat channel presence as consent:
+        // `Init()` below subscribes their `connected` state to the host's
+        // routed-input signal instead (`synth::AppContext::InputRouted()`/
+        // `SetInputRoutedChangedCallback()`), which reads true only while an
+        // operator-selected input device is open and current, and stays
+        // false for a platform-default device nobody chose.
+        config.numAudioInputs = 1;
         config.numAudioOutputs = 2;
         config.preferredSampleRate = 48000.0;
         config.preferredBlockSize = 256;
@@ -266,6 +256,26 @@ public:
         // Packet 6 (tasks.md section 6, tasks 6.1/6.2): register all 15
         // modulation sources, in design D5's order. See FroggersModulation.hpp.
         modulation_.Init(parameters_.Group());
+
+        // Drives the external-audio modulation sources' connected state from
+        // the host's routed-input signal: true only while an
+        // operator-selected input device is open and current (see
+        // synth::AppContext::InputRouted()'s own doc comment), never from
+        // channel presence alone. The callback runs on the message thread
+        // (InputRoutingSignal::Publish's contract) and only ever queues the
+        // new value -- ProcessFrame() below (audio thread, once per block)
+        // is what actually applies it to the slate's metadata, because
+        // Modulators::UpdateModValues() reads that same metadata every
+        // sample on the audio thread and a direct write from here would
+        // race it.
+        context_->SetInputRoutedChangedCallback([this](bool routed) {
+            pendingExternalAudioRouted_.store(routed ? 1 : 0, std::memory_order_release);
+        });
+        // Applied directly, not through the pending atomic above: nothing
+        // else touches modulation_'s metadata until the audio thread starts
+        // running, so the signal's current value can be read and applied
+        // here, once, without racing anything.
+        modulation_.SetExternalAudioConnected(context_->InputRouted());
 
         // Task 6.12 (design D16): apply the default patch once, on first
         // start, now that slate indices 6-8 (VCO audio sources) exist.
@@ -624,6 +634,14 @@ public:
             drillIn_.emplace(parameters_.BankAt(activeBankIx_));
         }
 
+        // Applies the most recent routed-input transition queued by Init()'s
+        // callback (message thread), if any -- at most once per block, never
+        // per sample, and always before ProcessBlock() reads it below.
+        const int routedRequest = pendingExternalAudioRouted_.exchange(-1, std::memory_order_acq_rel);
+        if (routedRequest >= 0) {
+            modulation_.SetExternalAudioConnected(routedRequest != 0);
+        }
+
         const int bankRequest = pendingBankSelect_.exchange(-1, std::memory_order_acq_rel);
         if (bankRequest >= 0 && static_cast<std::size_t>(bankRequest) < kFroggersBankCount) {
             if (static_cast<std::size_t>(bankRequest) != activeBankIx_) {
@@ -693,17 +711,19 @@ public:
                 anyPartial = anyPartial || pagePartial;
                 randomizeRan = true;
             }
-            // T5.1: Reset drains here, beside Randomize, so the two are
-            // serviced on the same audio-thread edge and in the same order
-            // every block. Reset allocates nothing (it never calls
-            // EnsureModulationDepth), so it has no partial/capacity outcome
-            // to fold into `anyPartial` and returns void -- see
-            // FroggersModulation.hpp's ResetPage/ResetAll.
+            // Reset drains here, beside Randomize, so the two are serviced on
+            // the same audio-thread edge and in the same order every block.
+            // Reset does not surface a partial/capacity outcome the way
+            // Randomize does: it can materialize a handful of the Audio
+            // bank's own default-patch depths (ResetBankToDefaultPatch ->
+            // ApplyBankDefaultPatch -> EnsureModulationDepth), but never on a
+            // scale where reporting a partial reset to the UI would be
+            // meaningful -- see FroggersModulation.hpp's ResetPage/ResetAll.
             if (pendingResetAll_.exchange(false, std::memory_order_acq_rel)) {
                 ResetAll(*context_->parameterManager, *drillIn_, parameters_);
             }
             if (pendingResetPage_.exchange(false, std::memory_order_acq_rel)) {
-                ResetPage(*context_->parameterManager, *drillIn_);
+                ResetPage(*context_->parameterManager, *drillIn_, parameters_);
             }
             if (randomizeRan) {
                 // A4: surface a partial randomize -- observable to tests via
@@ -757,68 +777,14 @@ public:
     // parameter values into the real DSP chain and sums it to the stereo
     // output bus, replacing task 2.1's silent placeholder.
     void ProcessBlock(synth::AudioBlock& block) {
-        // frogg3rs-external-audio-phantom-input (tasks.md T2, T2.2
-        // PREFLIGHT-AMENDED 2026-08-09): external audio is disconnected BY
-        // CONSTRUCTION now, not by a flag layered on top of a channel-exists
-        // check.
-        //
-        // History (operator decision 2026-07-29): the original mechanism
-        // here asked only "did the device hand us an input channel?", which
-        // on a laptop is ALWAYS true -- the built-in mic presents an input
-        // channel whether or not anything is plugged in (this machine's own
-        // startup log reads "1 in / 2 out" with nothing attached). That
-        // marked BOTH external modulation sources -- slots 13/14, external
-        // audio and its envelope follower -- permanently connected, so
-        // Randomize kept assigning depths to sources carrying nothing but
-        // mic noise. Sheaf's randomizer is not at fault: it correctly picks
-        // only among sources whose metadata says `connected`
-        // (src/ParameterModulation.cpp:2886-2895) -- the app was lying to
-        // it. A hand-set `kExternalAudioOptedIn = false` flag compensated by
-        // vetoing that permanently-true check -- correct in effect, but only
-        // because nobody had yet made the one-line edit its own comment
-        // invited, and a since-corrected upstream doc (UPSTREAM-SHEAF-ASK.md
-        // item 8) briefly told a future reader that edit had become safe. It
-        // had not: see this class's `Config()` for why raising the input
-        // count alone still does not mean "the operator routed something
-        // in."
-        //
-        // "A channel exists" and "the operator routed something in" are
-        // still different questions the app cannot tell apart -- the
-        // selected input device name lives runtime-side (Runtime.hpp's
-        // AudioDeviceSnapshot) and `AppContext` exposes no audio-device
-        // state at all (UPSTREAM-SHEAF-ASK.md item 8, asks 1/2, still open).
-        // Rather than veto a permanently-true check with a flag, this change
-        // removes the check: `Config()` now requests zero audio input
-        // channels, so `block.inputs`/`block.numInputChannels` never carry a
-        // channel to test in the first place. The old `externalInputHasChannel`
-        // (and its `block.inputs[0]` null-check read) is deleted as a
-        // provably-dead branch (OMNI §12: trace the origin, remove
-        // impossible branches) rather than kept behind a flag that a future
-        // edit could silently re-arm by raising one integer.
-        //
-        // T6 (openspec/changes/archive/2026-08-10-frogg3rs-external-audio-phantom-input/
-        // tasks.md, postflight finding): `externalInputConnected` USED to
-        // stay a named local here -- not inlined as a bare `false` -- passed
-        // into `modulation_.Step(...)` below, which forwarded it into
-        // FroggersModulation.hpp's `SetExternalAudioConnected` every sample:
-        // ~96,000 writes/second of a compile-time-`false` constant over a
-        // metadata field `RegisterSources()` already sets to `false` at
-        // construction. Deleted: Step() no longer takes an external-input-
-        // connected parameter at all (see its own comment), and nothing
-        // here needs to call SetExternalAudioConnected() again in
-        // production -- slots 13/14 stay REGISTERED and present (inert, not
-        // absent -- see froggers-modulation-slate spec.md's "present but
-        // inert" requirement) purely from RegisterSources()'s own
-        // `connected = false` registration, unconditionally, for the
-        // object's whole lifetime. Re-enabling still requires raising
-        // `Config().numAudioInputs` back up together with a real derivation
-        // against a routed signal, same as before T6 -- but that derivation
-        // must now also re-thread a real per-sample sample value and
-        // connected state into Step() (both deleted here as dead alongside
-        // this local, since neither ever varied) and call
-        // SetExternalAudioConnected() with the real value, rather than
-        // relying on a local that no longer exists. Never a single flip
-        // that could silently re-arm this bug.
+        // External audio (slots 13/14) is disconnected by construction, not
+        // by a flag layered on top of a channel-exists check: whether a
+        // channel is present in `block.inputs` is a different question from
+        // whether the operator actually routed something in, and this
+        // method never conflates the two. The sources' `connected` state is
+        // driven entirely from the host's routed-input signal (see Init()'s
+        // and ProcessFrame()'s own comments, above) -- this method does not
+        // read `block.inputs`/`block.numInputChannels` for that purpose.
 
         // Task 8.1 (design D8/D8a): source #6's tempo-following recompute
         // happens ONCE PER BLOCK, not per sample (design D8's own wording),
@@ -841,13 +807,6 @@ public:
 
         for (std::size_t frame = 0; frame < block.numFrames; ++frame) {
             const std::uint64_t absoluteOutputSample = block.startSample + frame;
-            // Was `externalInputConnected ? block.inputs[0][frame] : 0.0f`,
-            // then (T2.2) `const float externalAudioSample = 0.0f;` passed
-            // into `modulation_.Step(...)` below. T6 deletes this local too:
-            // Step() no longer takes an external-audio-sample parameter at
-            // all (see its own comment) now that its only production value
-            // was provably always `0.0f` -- `Config()` requests zero input
-            // channels, so there was never a channel for this to carry.
 
             // Task 6b (design D17, revised 2026-07-27): the ASR gate follows
             // the master clock's transport quarter-note pulse -- see
@@ -2297,6 +2256,11 @@ private:
     std::atomic<bool> pendingResetAll_{false};
     std::atomic<bool> pendingResetPage_{false};
     std::atomic<double> pendingTempoBpmRequest_{-1.0};
+    // Queued by Init()'s routed-input-changed callback (message thread);
+    // drained by ProcessFrame() (audio thread), same -1-sentinel/exchange
+    // idiom as pendingBankSelect_/pendingEncoderPress_ above. -1 = no
+    // pending transition, 0 = not routed, 1 = routed.
+    std::atomic<int> pendingExternalAudioRouted_{-1};
 
     std::atomic<double> tempoDisplayBpm_{synth::MasterClock::kDefaultTempoBpm};
     std::atomic<bool> tempoExternallyClocked_{false};

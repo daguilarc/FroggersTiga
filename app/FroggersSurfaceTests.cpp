@@ -1,10 +1,8 @@
-// FroggersSurfaceTests.cpp -- tasks.md section "10. Surface layout (ported
-// v2 design)", task 10.5: layout bounds; the in-place drill-in swap; no
-// overlap at the target window size; every encoder cell fully inside the
-// grid region; and the encoder ring renders the fuegoized value with no
-// visualizer-specific UI code (the rendered-surface half of task 5.5,
-// deliberately deferred to this packet). Also covers 10.6's BPM
-// normal/external-clock-slaved states and 10.7's "exactly two randomize
+// FroggersSurfaceTests.cpp -- surface layout tests: layout bounds; the
+// in-place drill-in swap; no overlap at the target window size; every
+// encoder cell fully inside the grid region; and the encoder ring renders
+// the fuegoized value with no visualizer-specific UI code. Also covers BPM
+// normal/external-clock-slaved states and the "exactly two randomize
 // controls, neither retired control present" requirement.
 //
 // Pure layout-math checks (bounds, no-overlap, cell containment) construct
@@ -13,7 +11,7 @@
 // parameter state. The drill-in swap, encoder-ring, BPM, and
 // randomize-control-inventory checks drive a real `synth_froggers::
 // FroggersApp` through `synth_rig::SynthRig`, same convention as every other
-// packet's runtime tests (FroggersHeadlessTests.cpp task 2.3, etc.) --
+// file's runtime tests (FroggersHeadlessTests.cpp, etc.) --
 // dispatching actions through the actual `FroggersUiSurface` rather than
 // reaching into FroggersApp/FroggersParameterModel directly, since the
 // surface's own action routing (including the pending-atomic bridge
@@ -126,19 +124,18 @@ const synth::ui::Node* FindNodeById(const synth::ui::NodeTree& tree, const std::
     return nullptr;
 }
 
-// F7: the drill-level indicator is one more DrawCommand appended to its
+// The drill-level indicator is one more DrawCommand appended to its
 // carrying node's own output, not a separate node -- so reading it back
 // means scanning THAT node's drawCommands for its Kind::Text entry, rather
 // than a FindNodeById lookup by an indicator-specific id.
 //
-// GENERALISED, 2026-08-08 (see AppendScopeCell's and AppendEncoderCell's
-// own comments, FroggersUiSurface.hpp, for the full investigation): the
-// carrying node used to always be kVcoScope, then briefly the Target/Back
-// grid cell -- both are dead ends the operator rejected (unreachable, then
-// mislabelled "BACK"). These three helpers already took the node id as a
-// parameter rather than assuming one fixed id, which is exactly what let
-// the carrying node move a SECOND time (STEP 1, 2026-08-09) to its own
-// dedicated header row (`FroggersNodeIds::kModulationHeader`,
+// The carrying node's identity has moved over time (see AppendScopeCell's
+// and AppendEncoderCell's own comments, FroggersUiSurface.hpp, for the full
+// history): it used to always be kVcoScope, then briefly the Target/Back
+// grid cell -- both are dead ends (unreachable, then mislabelled "BACK").
+// These three helpers already took the node id as a parameter rather than
+// assuming one fixed id, which is exactly what let the carrying node move
+// again to its own dedicated header row (`FroggersNodeIds::kModulationHeader`,
 // AppendModulationHeaderRow()) with no changes needed here.
 //
 // LAST match, not first: kept for the reason it was added -- an encoder
@@ -159,8 +156,8 @@ const synth::ui::Node* FindNodeById(const synth::ui::NodeTree& tree, const std::
 // what -- if anything -- follows it; DrillBadgeTextCommand below only ever
 // needed the command itself. Rather than let a second caller grow a
 // second scan of the same list, this is the one scan site and
-// DrillBadgeTextCommand is rewritten in terms of it (OMNI §8/§14: a third
-// use of "find a node's Kind::Text command" must not become a third scan).
+// DrillBadgeTextCommand is rewritten in terms of it (a third use of "find a
+// node's Kind::Text command" must not become a third scan).
 std::optional<std::size_t> DrillBadgeTextIndex(const synth::ui::NodeTree& tree, const std::string& nodeId) {
     const synth::ui::Node* node = FindNodeById(tree, nodeId);
     if (node == nullptr) {
@@ -2250,10 +2247,10 @@ TEST_CASE(bpm_slider_has_an_adjacent_label_node_with_the_constant_bpm_text) {
     checkAdjacentLabel("BPM");
 }
 
-// --- 10.7/D14: exactly two randomize controls; neither retired control ------
+// --- Exactly two randomize controls; neither retired control ------
 
 // ---------------------------------------------------------------------
-// T5.1 -- Reset Page / Reset All (packet P6b).
+// Reset Page / Reset All.
 // ---------------------------------------------------------------------
 
 TEST_CASE(reset_row_sits_below_randomize_with_two_equal_halves) {
@@ -2267,7 +2264,7 @@ TEST_CASE(reset_row_sits_below_randomize_with_two_equal_halves) {
     REQUIRE_TRUE(HasButtonLabeled(tree, "Reset Page"));
     REQUIRE_TRUE(HasButtonLabeled(tree, "Reset All"));
 
-    // "Below them, same size" (operator) is defined BY the Randomize row,
+    // "Below them, same size" is defined BY the Randomize row,
     // not re-derived: the Reset row must carry the same two-halves
     // weighting. Assert the row exists and that Reset's own buttons come
     // after Randomize's in the tree's emission order, which is the row
@@ -2290,7 +2287,7 @@ TEST_CASE(reset_row_sits_below_randomize_with_two_equal_halves) {
     REQUIRE_TRUE(resetPageIx > randomizeAllIx);  // below, not above.
     REQUIRE_TRUE(resetAllIx > resetPageIx);      // Page then All, matching Randomize's own order.
 
-    std::cout << "  [T5.1 row order] RandomizeAll@" << randomizeAllIx << " ResetPage@" << resetPageIx
+    std::cout << "  [reset row order] RandomizeAll@" << randomizeAllIx << " ResetPage@" << resetPageIx
               << " ResetAll@" << resetAllIx << "\n";
 }
 
@@ -2302,33 +2299,58 @@ TEST_CASE(reset_all_clears_values_and_neutralises_depths_end_to_end) {
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
     synth::ui::Surface& surface = rig.Application().PortableSurface();
 
+    // A fresh launch's own default patch is not all-zero (e.g. the Audio
+    // bank's VCO shapes, its cross-VCO pitch detents, and Drive all start
+    // away from zero) -- so the correct post-reset target is each
+    // parameter's own default-patch value, not a literal 0.0. Snapshot it
+    // here, right after construction and before anything dirties it, so the
+    // comparisons below check against what a fresh launch actually shows,
+    // not a hand-written expectation.
+    std::vector<float> defaultValues;
+    defaultValues.reserve(synth_froggers::kFroggersBankCount * synth_froggers::kFroggersParamsPerBank);
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+        for (std::size_t slot = 0; slot < synth_froggers::kFroggersParamsPerBank; ++slot) {
+            defaultValues.push_back(model.PageParameter(bankIx, slot).SceneCenter(0));
+        }
+    }
+
     // Randomize first, so there is genuinely something to clear -- a reset
-    // measured against an already-zero patch would prove nothing (OMNI
-    // 9.1: the instrument has to be live for the null to mean anything).
+    // measured against a patch that never moved would prove nothing: the
+    // instrument has to be live for the null result to mean anything.
     surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kRandomizeAll));
     rig.RunBlocks(8);
 
-    float maxBefore = 0.0f;
-    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
-        for (std::size_t slot = 0; slot < synth_froggers::kFroggersParamsPerBank; ++slot) {
-            maxBefore = std::max(maxBefore, std::fabs(model.PageParameter(bankIx, slot).SceneCenter(0)));
+    float maxAbsDeltaBefore = 0.0f;
+    {
+        std::size_t ix = 0;
+        for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+            for (std::size_t slot = 0; slot < synth_froggers::kFroggersParamsPerBank; ++slot) {
+                maxAbsDeltaBefore = std::max(
+                    maxAbsDeltaBefore, std::fabs(model.PageParameter(bankIx, slot).SceneCenter(0) - defaultValues[ix]));
+                ++ix;
+            }
         }
     }
 
     surface.DispatchAction(synth::ui::Action::Named(synth_froggers::FroggersActions::kResetAll));
     rig.RunBlocks(8);
 
-    float maxAfter = 0.0f;
-    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
-        for (std::size_t slot = 0; slot < synth_froggers::kFroggersParamsPerBank; ++slot) {
-            maxAfter = std::max(maxAfter, std::fabs(model.PageParameter(bankIx, slot).SceneCenter(0)));
+    float maxAbsDeltaAfter = 0.0f;
+    {
+        std::size_t ix = 0;
+        for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+            for (std::size_t slot = 0; slot < synth_froggers::kFroggersParamsPerBank; ++slot) {
+                maxAbsDeltaAfter = std::max(
+                    maxAbsDeltaAfter, std::fabs(model.PageParameter(bankIx, slot).SceneCenter(0) - defaultValues[ix]));
+                ++ix;
+            }
         }
     }
 
-    std::cout << "  [T5.1 end-to-end] max |value| across all 6 banks x 14 slots: before reset=" << maxBefore
-              << "  after reset=" << maxAfter << "\n";
-    REQUIRE_TRUE(maxBefore > 0.05f);        // the randomize actually moved something...
-    REQUIRE_TRUE(maxAfter < 1.0e-6f);       // ...and the reset cleared all of it, through the real UI path.
+    std::cout << "  [reset end-to-end] max |value - default| across all 6 banks x 14 slots: after randomize="
+              << maxAbsDeltaBefore << "  after reset=" << maxAbsDeltaAfter << "\n";
+    REQUIRE_TRUE(maxAbsDeltaBefore > 0.05f);   // the randomize actually moved something away from default...
+    REQUIRE_TRUE(maxAbsDeltaAfter < 1.0e-6f);  // ...and the reset brought every one of them back, through the real UI path.
 }
 
 TEST_CASE(exactly_two_randomize_controls_and_no_retired_controls_anywhere) {
