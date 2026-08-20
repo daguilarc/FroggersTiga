@@ -238,13 +238,40 @@ own manual and stays untouched.
   requires a labelled row inside it. None of the three has a delta in this
   change.
 
-So the deletion is not a documentation edit. Either this change adds deltas
-retiring or re-pointing those three capabilities and moves the release-notes
-and mirror-sync inputs to `MANUAL.md`, or the deletion waits for the merge in
-§G, where the frozen trees are already being opened. That is an operator
-decision, not an executor's. What this change can do unconditionally is the
-rest of §F: `MANUAL.md`'s coverage, the audio and MIDI configuration section,
-and `QUICK_DICT.md`'s false external-audio claim.
+So the deletion is not a documentation edit, and it lands at the cutover
+(group 10) where those consumers are already being opened. What this change
+does unconditionally is the rest of §F: `MANUAL.md`'s coverage, the audio and
+MIDI configuration section, and `QUICK_DICT.md`'s false external-audio claim.
+
+**The parity capability retires with it — it protects nothing afterward.**
+`sim-operator-doc-parity` exists to keep one manual and four generated mirrors
+byte-identical. The current app does not read a mirror: its site links
+`MANUAL.md` on GitHub directly and the browser build copies no markdown at
+all. `pages.yml` already publishes `app/browser/dist/site` and its own comment
+says the pipeline no longer builds the legacy web display authority — so the
+sync check that workflow still runs is already guarding a site it stopped
+publishing. The three consumers that remain are the v1 help modal, the built
+v1 Pages site, and the frozen desktop app's embedded Help, all of which go at
+the cutover. So the whole apparatus goes: the sync script, the parity check,
+the pre-commit re-sync, the four mirror files, and the two CMake embeds.
+`QUICK_DICT.md` stays — it is the terse counterpart to `MANUAL.md`, and only
+its copies were ever the redundancy.
+
+**Retiring the mirrors is not the same as taking the docs away, and the app
+must gain what the frozen desktop already had.** The frozen desktop bundles
+the root `SIM_MANUAL.md`, `QUICK_DICT.md` and `LICENSE` as resource sources in
+its own CMake — one source of truth, the copy existing only inside the built
+bundle. The current app does not: `app/Resources/` holds two icons, and the
+browser site reaches the manual by linking to GitHub. That is acceptable for a
+browser, which is already on the network, and wrong for a plugin loaded in a
+DAW on a machine that is not. So the standalone and the plugin embed
+`MANUAL.md` and `QUICK_DICT.md` the same way the frozen desktop did.
+
+This is why the parity capability can retire without leaving the operator
+worse off. The redundancy it policed was four CHECKED-IN duplicates that had
+to be re-synced by a hook and verified by a CI check. A build-time embed has
+no such duplicate: edit the one document and the next build carries it. The
+requirement moves from "keep six files identical" to "there is one file."
 
 `MANUAL.md` must cover exactly: what frogg3rs is and what it runs in
 (standalone, browser build, VST3 and AU); every global control **including

@@ -76,6 +76,9 @@ operator raised while it was closing.
 - **froggers-vst-host** (delta): ADDED — automation delivers to its own bank
   without moving the visible page; MODIFIED — the plugin presents an optional
   audio input bus feeding the external-audio sources.
+- **froggers-sheaf-runtime-app** (delta): ADDED — the manual and quick
+  dictionary ship inside the standalone and the plugin, readable offline,
+  embedded from the repository's single copy at build time.
 - **froggers-vco-topology** (delta): ADDED — envelope times map
   exponentially; ADDED — control bounds stay within their musically useful
   range.
@@ -87,7 +90,8 @@ operator raised while it was closing.
 
 ## Impact
 
-- Affected specs: `froggers-vst-host`, `froggers-vco-topology`. Deleting
+- Affected specs: `froggers-vst-host`, `froggers-vco-topology`,
+  `froggers-sheaf-runtime-app`. Deleting
   `SIM_MANUAL.md` would additionally affect `sim-operator-doc-parity`,
   `froggers-host-master` and `global-strip-marbles-label`, which name it in
   their requirements; that deletion is gated on an operator decision (task

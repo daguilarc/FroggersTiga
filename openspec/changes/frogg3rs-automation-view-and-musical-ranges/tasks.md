@@ -227,6 +227,19 @@ excusing it.
 - [ ] 7.5 Apply design F's voice rule to whatever you rewrite: say what the
       control does, give range, units and default, stop.
 
+- [ ] 7.6 Ship the docs WITH the app: embed `MANUAL.md` and `QUICK_DICT.md`
+      as build resources in the standalone and in the VST3/AU plugin, and add
+      the surface that opens them. A plugin in a DAW with no internet cannot
+      follow a web link, which is what the current app's site does today
+      (`app/browser/site/index.html` points at GitHub). Follow the frozen
+      desktop's pattern — the ROOT documents listed as resource sources, so
+      the copy exists only in the built bundle and there is no second
+      checked-in file to keep in sync. `app/Resources/` currently holds only
+      icons.
+- [ ] 7.7 The browser build keeps linking to the published documents — it is
+      already on the network. Confirm that link resolves after the repository
+      rename before relying on it.
+
 ## 8. Carried from the predecessor
 
 - [ ] 8.1 Assert the plugin editor renders parameters before the host ever
@@ -274,12 +287,15 @@ performed). Both, not either.
       `global-strip-marbles-label` — and this change declares deltas for
       neither of them today. Deltas are what preflight validates, so they are
       written before the group runs, not during it.
-      OPERATOR DECISION inside this task: `sim-operator-doc-parity` exists
-      entirely to keep the manual and its four generated mirrors in sync.
-      Does that capability RETIRE with the document, or get rewritten around
-      `MANUAL.md`? The mirrors and the sync check are still live and still
-      useful, which argues for rewriting rather than removing — but that is a
-      call, not an inference.
+      `sim-operator-doc-parity` RETIRES rather than being rewritten — traced,
+      not assumed. It exists to hold one manual and four generated mirrors in
+      sync, and after the merge nothing reads a mirror: the current app links
+      `MANUAL.md` on GitHub directly (`app/browser/site/index.html`), the
+      browser build copies no markdown at all, and `pages.yml` already
+      publishes `app/browser/dist/site` instead of the legacy web tree. Its
+      three remaining consumers — the v1 site's help modal, the built v1
+      Pages site, and the frozen desktop app's embedded Help — all go with
+      this group. One document with no copies has no parity to keep.
 - [ ] 10.1 Merge v2 into main.
 - [ ] 10.2 Rename the desktop release product. The asset filenames come from
       the build, not from GitHub, so there is no rename step as such: the
@@ -296,11 +312,16 @@ performed). Both, not either.
       heading off `SIM_MANUAL.md` and onto `MANUAL.md`
       (`desktop/scripts/render-release-notes.sh`,
       `desktop/scripts/verify-release-metadata.sh`).
-- [ ] 10.5 Re-point every remaining `SIM_MANUAL.md` consumer at `MANUAL.md`:
-      the mirror sync and its pre-commit hook and parity check, the desktop
-      Help menu, the website's Manual modal, and the two CMake resource
-      embeds. Then delete `SIM_MANUAL.md`, against the deltas declared in
-      10.0.
+- [ ] 10.5 Tear down the mirror apparatus wholesale rather than re-pointing
+      it, since it has no consumer left: `scripts/sync-help-docs.sh`,
+      `sim/check_operator_docs_sync.sh`, the re-sync step in
+      `scripts/hooks/pre-commit`, its invocation in `.github/workflows/
+      pages.yml`, the four generated mirrors under `docs/` and
+      `web/public/`, and the two CMake resource embeds. `QUICK_DICT.md`
+      itself STAYS — it is the terse counterpart to `MANUAL.md`; only its
+      copies go. Then delete `SIM_MANUAL.md`, against the deltas from 10.0.
+      Verify no remaining reader before deleting each: this list was traced
+      2026-08-20 and a consumer added since would make it wrong.
 - [ ] 10.6 Retire the frozen trees the merge makes redundant — `desktop-v2/`
       alone is 165 tracked files with no consumer. Trace each tree's
       consumers first and report found versus changed; "frozen" is not
