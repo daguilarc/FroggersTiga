@@ -239,7 +239,7 @@ excusing it.
       boundary; it invalidates a running session's absolute paths.
       Afterwards update ledger and memory entries citing the old path.
 
-## 9. Close
+## 9. Verify and hand off for testing
 
 - [ ] 9.1 Full suite green; browser build and e2e green; plugin builds VST3
       and AU; Sheaf's suite green. Counts reported.
@@ -256,15 +256,30 @@ excusing it.
 - [ ] 9.4 Push Sheaf BEFORE the superproject — the superproject records only
       the pin, and CI builds from it. Sheaf commits append to the existing
       open pull request.
-- [ ] 9.5 Archive with spec sync. Sync only what is delivered.
+- [ ] 9.5 Hand off for operator testing. Groups 1–9 are testable here; the
+      change is NOT archived at this point, because group 10 has not run.
 
-## 10. Cutover (design G) — GATED on group 9's operator acceptance
+## 10. Cutover (design G) — GATED on operator testing
 
 Same hygiene principle as group 0, applied where the thing being cleaned up
-is still load-bearing until now. Nothing here starts before the operator has
-tested and accepted groups 1–9: every item removes or renames something a
-shipping path currently depends on.
+is still load-bearing until now. Every item here removes or renames something
+a shipping path currently depends on, so nothing starts until the operator has
+PLAYED IT and LOADED IT IN A DAW — task 5.5 (the musical ranges, every number
+of which is derived rather than heard) and task 9.3 (DAW smoke, never once
+performed). Both, not either.
 
+- [ ] 10.0 BEFORE ANY OTHER ITEM IN THIS GROUP: declare the spec deltas this
+      group needs. Retiring `SIM_MANUAL.md` touches three capabilities that
+      name it — `sim-operator-doc-parity`, `froggers-host-master`,
+      `global-strip-marbles-label` — and this change declares deltas for
+      neither of them today. Deltas are what preflight validates, so they are
+      written before the group runs, not during it.
+      OPERATOR DECISION inside this task: `sim-operator-doc-parity` exists
+      entirely to keep the manual and its four generated mirrors in sync.
+      Does that capability RETIRE with the document, or get rewritten around
+      `MANUAL.md`? The mirrors and the sync check are still live and still
+      useful, which argues for rewriting rather than removing — but that is a
+      call, not an inference.
 - [ ] 10.1 Merge v2 into main.
 - [ ] 10.2 Rename the desktop release product. The asset filenames come from
       the build, not from GitHub, so there is no rename step as such: the
@@ -284,9 +299,8 @@ shipping path currently depends on.
 - [ ] 10.5 Re-point every remaining `SIM_MANUAL.md` consumer at `MANUAL.md`:
       the mirror sync and its pre-commit hook and parity check, the desktop
       Help menu, the website's Manual modal, and the two CMake resource
-      embeds. Then delete `SIM_MANUAL.md`, and write the three spec deltas it
-      is named in (`sim-operator-doc-parity`, `froggers-host-master`,
-      `global-strip-marbles-label`).
+      embeds. Then delete `SIM_MANUAL.md`, against the deltas declared in
+      10.0.
 - [ ] 10.6 Retire the frozen trees the merge makes redundant — `desktop-v2/`
       alone is 165 tracked files with no consumer. Trace each tree's
       consumers first and report found versus changed; "frozen" is not
@@ -298,3 +312,10 @@ shipping path currently depends on.
 - [ ] 10.8 Update the desktop and wasm trees as part of the merge, per
       design G. Re-run group 0's sweep afterward: a merge that opens frozen
       trees is exactly when new orphans appear.
+
+## 11. Close
+
+- [ ] 11.1 Full suite green once more after the merge; browser build and e2e
+      green; plugin builds VST3 and AU. Counts reported.
+- [ ] 11.2 Archive with spec sync. Sync only what is delivered — across all
+      eleven groups, not only the ones this session remembers.
