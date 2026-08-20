@@ -1,22 +1,21 @@
 #pragma once
 
-// synth_froggers::RandomShLaneVisualizer -- packet 8 (tasks.md section
-// "8. Marbles: clock + visualizer", task 8.3; design D8a). The five X-style
-// Random S&H sources' visualizer: "a new Visualizer rendering the
-// remembered loop as a waveform with a playhead at the current index."
+// synth_froggers::RandomShLaneVisualizer -- the five X-style
+// Random S&H sources' visualizer: a Visualizer rendering the
+// remembered loop as a waveform with a playhead at the current index.
 // Sheaf ships nothing for this -- DspRandomLfo has no loop concept, and
 // GangedRandomLfoVisualizer draws an *extrapolated future* path, not
-// remembered history (design D8a) -- so this is new UI code, reading
+// remembered history -- so this is new UI code, reading
 // dsp::RandomShLane::UiState (app/dsp/RandomShLane.hpp, populated once per
 // block via RandomShLane::PopulateUiState()).
 //
-// This is the ONLY bespoke drawing code this change adds anywhere in the
-// app -- the VCO scopes (packet 7) and the bump/comb transfer-function
-// plots (packet 9, FroggersTransferFunctionVisualizer.hpp) are both
+// This is the ONLY bespoke drawing code this app adds anywhere --
+// the VCO scopes and the bump/comb transfer-function
+// plots (FroggersTransferFunctionVisualizer.hpp) are both
 // generic Visualizer subclasses sampling a Sheaf-shaped contract
 // (ScopeVisualizer<UIState> and a from-scratch TransferFunction sampler,
 // respectively) -- but no ported/Sheaf equivalent exists for "remembered
-// loop with a playhead," so per design D8a this is authored, not reused.
+// loop with a playhead," so this is authored, not reused.
 
 #include "dsp/RandomShLane.hpp"
 
@@ -61,8 +60,8 @@ protected:
 
         // Playhead marker at the current index -- the same "small filled
         // circle at the live position" convention
-        // GangedRandomLfoVisualizer uses for source #6 (design D8a's
-        // requirement that both visualizer kinds read as related).
+        // GangedRandomLfoVisualizer uses for source #6, so both visualizer
+        // kinds read as related.
         constexpr float kDotRadius = 3.0f;
         const synth::ui::Point playhead = points[std::min(currentIndex, points.size() - 1)];
         commands.push_back(synth::ui::DrawCommand::FillEllipse(

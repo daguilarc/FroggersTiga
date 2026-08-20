@@ -1,12 +1,12 @@
-// check_no_juce.cpp -- tasks.md 2.4: mechanically enforce "no JUCE in the
+// check_no_juce.cpp -- mechanically enforces "no JUCE in the
 // app core."
 //
 // This TU includes only Froggers.hpp (the app core) and is compiled with
 // JUCE's module directory ADDED to the include path (see the
 // check-no-juce Makefile target) -- deliberately, so that "we simply never
 // pointed the compiler at JUCE" cannot masquerade as passing this check.
-// Absence of a link dependency is not sufficient (spec
-// froggers-sheaf-runtime-app); this proves no header Froggers.hpp
+// Absence of a link dependency is not sufficient;
+// this proves no header Froggers.hpp
 // transitively includes resolves into JUCE, by asserting the sentinel macro
 // every JUCE header sets (JUCE_MAJOR_VERSION, set by
 // juce_core/system/juce_TargetPlatform.h) is still undefined afterwards.

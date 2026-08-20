@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# check_no_frozen_includes.sh -- tasks.md 3 preamble: "Add a mechanical
+# check_no_frozen_includes.sh -- a mechanical
 # check, like the existing include guards, that no app TU includes from
-# those trees" (src/, sim/, desktop-v2/). Also covers the other frozen
-# trees named in this packet's hard constraints (desktop/, wasm/, vcv/,
-# web/) for the same reason: the DSP port is a sanctioned COPY (design D3),
+# the frozen trees (src/, sim/, desktop-v2/, desktop/, wasm/, vcv/,
+# web/): the DSP port is a sanctioned COPY,
 # not a shared header, so no file under app/ may ever #include out of any
 # of them, however the path is spelled (quoted, angle-bracket, with or
 # without a leading ../).

@@ -11,8 +11,8 @@
      distinct from sheaf-patch's dev.sheaf.SheafPatch: two bundles sharing one
      identifier let LaunchServices resolve the wrong app.
 
-     CFBundleIconFile (operator 2026-08-17, "why isn't this using the same
-     logo we were using for the v1 build?"): v1's JUCE CMake build got its
+     CFBundleIconFile should use the same
+     logo as the v1 build: v1's JUCE CMake build got its
      icon for free (desktop/CMakeLists.txt's ICON_BIG/ICON_SMALL generate both
      the .icns and this key automatically), but this Sheaf-bundle path has no
      such step -- juce_build.mk:152-154 only copies the binary and this plist,

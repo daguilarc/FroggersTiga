@@ -1,23 +1,24 @@
-// FroggersScopeAdvanceIndexTests.cpp -- tasks.md section "1. Oscilloscopes +
-// the defect class" (tasks 1.1, 1.3; design E1).
+// FroggersScopeAdvanceIndexTests.cpp -- guards Sheaf's ScopeWriter's two-feed
+// contract for the VCO oscilloscopes.
 //
 // Sheaf's ScopeWriter needs TWO feeds per sample: Write() to store the
-// value (already called by dsp::Vco::Process(), app/dsp/Vco.hpp:166) and
+// value (called by FroggersAppCore::RouteAudioSample(), once per VCO, on
+// the post-gate signal) and
 // AdvanceIndex() to move the ring-buffer cursor (`index_ += amount`,
-// External/Sheaf/projects/synth/include/synth/DspScope.hpp:126-128).
-// Froggers called Write() and Publish() but never AdvanceIndex() -- zero
-// matches under app/ before this fix. index_ stayed 0, so every Write()
+// External/Sheaf/projects/synth/include/synth/DspScope.hpp:126-128). Once,
+// Froggers called Write() and Publish() but never AdvanceIndex(). index_
+// stayed 0, so every Write()
 // overwrote slot 0 and Publish() always republished index 0; ScopeReader's
 // no-marker fallback then computed endIndex_ == startIndex_ == 0
 // (DspScope.hpp:266-267), making Empty() permanently true (:270,298), so
 // BuildScopePolylines returned early and the scope panel drew only
 // background fill + midline.
 //
-// Task 1.1's test (vco_scope_reader_non_empty_after_one_block_with_transport_running)
+// vco_scope_reader_non_empty_after_one_block_with_transport_running
 // is the failing-test-first check: a real FroggersApp (scope wiring happens
 // in its own constructor) driven through one block with the transport
-// running must leave the reader non-Empty(). Task 1.3's test
-// (vco_scope_published_index_advances_across_successive_blocks) is the
+// running must leave the reader non-Empty().
+// vco_scope_published_index_advances_across_successive_blocks is the
 // regression guard: non-emptiness alone is a weaker assertion a future
 // refactor could satisfy by accident (e.g. any single nonzero write), so
 // this instead asserts the PUBLISHED index itself strictly advances
@@ -87,8 +88,8 @@ synth::RuntimeDataPaths UseScratchRuntimeDataPaths(const char* testName) {
 using Rig = synth_rig::SynthRig<synth_froggers::FroggersApp>;
 
 // -----------------------------------------------------------------------
-// Task 1.1 (design E1) -- failing-test-first for the missing AdvanceIndex()
-// call. Before the fix, ScopeReader is permanently Empty() regardless of
+// Guards against the missing AdvanceIndex()
+// call reappearing: without it, ScopeReader is permanently Empty() regardless of
 // how many blocks run, because index_ (and therefore publishedIndex_)
 // never leaves 0.
 // -----------------------------------------------------------------------
@@ -108,7 +109,7 @@ TEST_CASE(vco_scope_reader_non_empty_after_one_block_with_transport_running) {
 }
 
 // -----------------------------------------------------------------------
-// Task 1.3 -- regression test that fails if AdvanceIndex() is ever removed
+// Fails if AdvanceIndex() is ever removed
 // again. Asserts the PUBLISHED scope index strictly advances between
 // successive blocks, not merely that output is non-empty (a weaker
 // assertion a future refactor could satisfy accidentally -- e.g. a single

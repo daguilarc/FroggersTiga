@@ -1,19 +1,21 @@
-// FroggersMonoValidationTests.cpp -- tasks.md 2.5: "Validate the mono
-// assumption end-to-end. This is a designed stop-and-ask gate." (see design
-// D4's trace row: the earlier "mono is first-class" claim was overclaimed,
-// and StandardModulators special-cases mono *out* -- nothing in Sheaf
+// FroggersMonoValidationTests.cpp -- validates the mono
+// assumption end-to-end. This is a designed stop-and-ask gate: an earlier
+// "mono is first-class" claim was overclaimed, and StandardModulators
+// special-cases mono *out* -- nothing in Sheaf
 // demonstrates the full parameter/modulation/encoder pipeline exercised
-// end-to-end with the primary group at numVoices == 1 until this test does.)
+// end-to-end with the primary group at numVoices == 1 except this test.
 //
-// Per tasks.md 2.5 and the packet-2 hard constraints, this stands up
-// EXACTLY what the validation needs and nothing from later packets: one
+// This stands up
+// EXACTLY what the validation needs and nothing more: one
 // ParameterGroup{numVoices = 1}, one Bank, one Bank/BankSlot pair, one
 // modulation source (registered directly via
-// ParameterGroup::SetModulationSource -- the mechanism design D5 uses, not
+// ParameterGroup::SetModulationSource -- the mechanism this app's own
+// modulation slate uses, not
 // the StandardModulators aggregate), and the depth cell that source's
 // drill-in materializes. This is deliberately NOT part of FroggersApp/
-// Froggers.hpp -- FroggersApp stays a parameter-free placeholder (task 2.1);
-// this is a standalone throwaway validation app run only through this test.
+// Froggers.hpp: it is a standalone, minimal validation app, run only
+// through this test, that isolates the mono-model question from everything
+// else FroggersApp does.
 //
 // Driven end-to-end through synth_rig::SynthRig<App> (the same JUCE-free
 // harness Sheaf's own miniapp/braid-4 system tests use), so parameter
@@ -22,7 +24,7 @@
 // through the production message/audio-thread path, not called directly.
 //
 // If any of the four checks below come back second-class, this test must
-// fail loudly and the packet stops here per tasks.md 2.5 -- no workaround, no
+// fail loudly -- no workaround, no
 // silent adaptation.
 
 #include "support/SynthRig.hpp"
@@ -61,7 +63,7 @@ public:
 
     static synth::RuntimeConfig Config() {
         synth::RuntimeConfig config;
-        config.appName = "Froggers Mono Validation (task 2.5, not shipped)";
+        config.appName = "Froggers Mono Validation (not shipped)";
         config.numAudioInputs = 0;
         config.numAudioOutputs = 2;
         config.preferredSampleRate = 48000.0;
@@ -77,7 +79,7 @@ public:
         context_ = context;
         synth::ParameterManager& manager = *context_->parameterManager;
 
-        // --- exactly one mono ParameterGroup (task 2.5 / design D4) ---
+        // --- exactly one mono ParameterGroup ---
         group_ = &manager.CreateGroup({
             .numVoices = 1,
             .numModulators = kNumModulators,
@@ -96,8 +98,8 @@ public:
         });
         synth::Parameter& param = manager.ParameterById(paramId_);
 
-        // --- exactly one modulation source, registered the way design D5
-        // registers Froggers' own slate (ParameterGroup::SetModulationSource
+        // --- exactly one modulation source, registered the way
+        // Froggers' own slate registers its sources (ParameterGroup::SetModulationSource
         // directly), not via the StandardModulators aggregate ---
         std::array<float* const, 1> sourcePointers{&modSourceValue_};
         group_->SetModulationSource(0, sourcePointers, synth::ModulatorMetadata{
@@ -201,7 +203,7 @@ constexpr std::size_t kTestParamPosition = 0;
 constexpr std::size_t kTargetBackPosition = 1;
 
 TEST_CASE(mono_group_parameter_registers_and_resolves) {
-    // Check 1 (tasks.md 2.5): "parameters register and resolve."
+    // Check 1: parameters register and resolve.
     synth_rig::SynthRig<synth_froggers_validation::MonoValidationApp> rig(
         64, UseScratchRuntimeDataPaths("registers_and_resolves"));
 
@@ -219,7 +221,7 @@ TEST_CASE(mono_group_parameter_registers_and_resolves) {
 }
 
 TEST_CASE(mono_group_populate_ui_state_publishes_single_voice) {
-    // Check 2 (tasks.md 2.5): "PopulateUIState publishes a single voice."
+    // Check 2: PopulateUIState publishes a single voice.
     // PopulateUIState is throttled by uiPublishInterval_
     // (include/synth/Engine.hpp:409) -- pump enough blocks, per the task
     // note, before reading the published state (rig.UIState() also forces an
@@ -242,8 +244,8 @@ TEST_CASE(mono_group_populate_ui_state_publishes_single_voice) {
 }
 
 TEST_CASE(mono_group_encoder_draw_state_yields_one_ring) {
-    // Check 3 (tasks.md 2.5): "EncoderDrawStateFromParameter yields
-    // voiceCount == 1 and one ring, not a degenerate stack."
+    // Check 3: EncoderDrawStateFromParameter yields
+    // voiceCount == 1 and one ring, not a degenerate stack.
     synth_rig::SynthRig<synth_froggers_validation::MonoValidationApp> rig(
         64, UseScratchRuntimeDataPaths("one_ring_not_a_stack"));
 
@@ -258,7 +260,7 @@ TEST_CASE(mono_group_encoder_draw_state_yields_one_ring) {
 }
 
 TEST_CASE(mono_group_drill_in_materializes_depth_parameter) {
-    // Check 4 (tasks.md 2.5): "drill-in materializes depth parameters."
+    // Check 4: drill-in materializes depth parameters.
     // Press the physical encoder holding the test parameter -- through
     // SynthRig::Press, the same production UI-bus message path a real
     // control surface uses (synth::MessageIn::ParamPush) -- and confirm the

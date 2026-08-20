@@ -1,6 +1,4 @@
-// Direct-launch entry point for the Frogg3rs build (proposal
-// openspec/changes/archive/2026-08-05-frogg3rs-audio-safety-and-ui-rework/tasks.md, §G-PLAN/§G;
-// originally PROPOSAL-direct-launch.md, folded in 2026-08-02). Modelled on
+// Direct-launch entry point for the Frogg3rs build. Modelled on
 // External/Sheaf/projects/synth/apps/sheaf-patch/Main.cpp: same
 // window/session-owner plumbing, minus the "Select an app" picker. Registers
 // and launches only Frogg3rs -- no Braid4Registration.hpp, no
@@ -89,7 +87,7 @@ private:
     template <synth::SynthApplication App>
     void LaunchRegisteredApp(synth::RuntimeDataPaths paths) {
         try {
-            // T5.3c (packet P7b): holds the CONCRETE session (not the
+            // Holds the CONCRETE session (not the
             // type-erased synth_runtime::RuntimeSessionOwner, which exposes
             // only Component()) so RegisterRecordingCallbacks below can
             // reach the running FroggersApp via GetRuntime().GetEngine().
@@ -109,8 +107,8 @@ private:
             //
             // Sizing from `config` alone opens the window exactly 96px too
             // narrow and clips that sidebar off the right edge, where it stays
-            // invisible until the user drags the window wider (operator,
-            // 2026-08-05: "i still had to resize the window to see the buttons
+            // invisible until the user drags the window wider (a real
+            // reported symptom: "i still had to resize the window to see the buttons
             // on the right hand side"). Sheaf ships two window paths and this
             // file was modelled on the wrong one: `apps/sheaf-patch/Main.cpp`
             // :87-99 sizes from `config` and has the same defect, while
@@ -120,7 +118,7 @@ private:
             juce::Component& content = session->Component();
             window_->ShowContent(content, content.getWidth(), content.getHeight());
             activeSession_ = std::move(session);
-            // T5.3c: activeSession_'s declared type is concretely
+            // activeSession_'s declared type is concretely
             // RuntimeShellSession<synth_froggers::FroggersApp> (see this
             // method's own comment above), regardless of this method's own
             // App template parameter -- valid because this file only ever
@@ -133,7 +131,7 @@ private:
         }
     }
 
-    // T5.3c (tasks.md, packet P7b): registers the two host-facing seams
+    // Registers the two host-facing seams
     // FroggersAppCore exposes (SetOnRecordRefused/SetOnRecordingFinished --
     // see that file's own comment) with their JUCE-side behaviour. This is
     // the ONLY place in the app that JUCE dialog/file-write code for Record
@@ -177,10 +175,10 @@ private:
                     return;  // Cancelled.
                 }
 
-                // T5.3c: the encoding itself is core-side, pure std:: (no
+                // The encoding itself is core-side, pure std:: (no
                 // juce::AudioFormatWriter anywhere in this app) -- this host
-                // layer is dialog-plus-byte-stream only, per that task's own
-                // stated preference. Streamed to disk via
+                // layer is dialog-plus-byte-stream only, deliberately.
+                // Streamed to disk via
                 // juce::FileOutputStream (not std::ofstream): the target
                 // came back as a juce::File from the FileChooser, and this
                 // stays in the same JUCE idiom as everything else in this
@@ -200,8 +198,7 @@ private:
                     ok ? juce::String("Recording saved.") : juce::String("Failed to write recording.");
                 // v1-style, verbatim wording (desktop/Source/
                 // MainComponent.cpp:219, reference only) appended to the
-                // same completion alert rather than a separate one, per this
-                // packet's own brief.
+                // same completion alert rather than a separate one.
                 if (ok && truncated) {
                     message += " (stopped at the 30-minute limit)";
                 }

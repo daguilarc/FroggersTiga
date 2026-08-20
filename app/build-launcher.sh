@@ -4,8 +4,8 @@
 # EXTRA_APP_HEADERS must list EVERY header the app compiles: the sheaf-patch
 # Makefile uses them as literal prerequisites (Makefile:47-48) and generates no
 # -MMD/-MP dependency files, so an unlisted header is untracked and edits to it
-# produce a build that succeeds while silently ignoring the change
-# (design.md:188). Globbing keeps that list from rotting -- a hand-written list
+# produce a build that succeeds while silently ignoring the change.
+# Globbing keeps that list from rotting -- a hand-written list
 # tracked 4 of 18 headers, missing all of app/dsp/.
 set -euo pipefail
 
@@ -40,8 +40,8 @@ nice make -j2 -C External/Sheaf/projects/synth/apps/sheaf-patch \
   APP_INFO_PLIST="$REPO_ROOT/app/Frogg3rs-Info.plist" \
   "$@"
 
-# Icon (operator 2026-08-17, "why isn't this using the same logo we were
-# using for the v1 build?"): juce_build.mk's bundle rule (:152-154) has no
+# Icon: the launcher build should use the same logo as the v1 build, but
+# juce_build.mk's bundle rule (:152-154) has no
 # icon/resource step at all -- it only mkdir's Contents/MacOS and copies the
 # binary and Info.plist, so Contents/Resources/ does not exist after the make
 # above runs. app/Frogg3rs-Info.plist's CFBundleIconFile (see that file's own

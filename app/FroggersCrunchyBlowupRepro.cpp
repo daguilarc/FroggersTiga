@@ -1,5 +1,5 @@
-// FroggersCrunchyBlowupRepro.cpp -- headless repro for the
-// operator-confirmed "audio still blows out and gets permanently killed" bug
+// FroggersCrunchyBlowupRepro.cpp -- headless repro for a reported
+// "audio still blows out and gets permanently killed" bug
 // that survives the scoopNotch fix (FroggersAppCore.hpp:613-638). NOT part of
 // the regular suite (not wired into app/Makefile's `test` target) -- a
 // one-off investigation binary, built with the same flags app/Makefile's
@@ -10,7 +10,7 @@
 //     app/FroggersCrunchyBlowupRepro.cpp External/Sheaf/projects/synth/build/libsynth.a \
 //     -o app/build/froggers_crunchy_blowup_repro
 //
-// Repro steps, per the investigation brief:
+// Repro steps:
 //   1. Start the transport the real way (SynthRig::StartAt pushes the same
 //      synth::MessageIn::Start(...) through the uiBus the real Play button
 //      does -- identical to FroggersRandomizeAllRepro.cpp).
@@ -114,8 +114,7 @@ struct ShadowChain {
     void Prepare(float sr) {
         sampleRate = sr;
         delay.SetSampleRate(sr);
-        // B5 (openspec/changes/archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/
-        // tasks.md): mirrors FroggersAppCore::PrepareToPlay's new
+        // Mirrors FroggersAppCore::PrepareToPlay's
         // `filterChain_.Configure(sampleRate_)` call -- this struct's own
         // header comment promises a byte-for-byte copy of
         // RouteAudioSample's stage order/formulas, so the peak branch's own
@@ -123,8 +122,8 @@ struct ShadowChain {
         // rate configuration production gives it, not the constructor's
         // assumed-48kHz default (FilterFx.hpp).
         filterChain.Configure(sr);
-        // B6a/B6b (tasks.md CONSOLIDATED PUSH table): same reasoning,
-        // mirroring FroggersAppCore::PrepareToPlay's new
+        // Same reasoning,
+        // mirroring FroggersAppCore::PrepareToPlay's
         // `delay_.SetSampleRate(sampleRate_)` (already called two lines
         // above)/`reverb_.Configure(sampleRate_)` calls -- Delay's own
         // wetLimiterL/R are already configured by the `delay.SetSampleRate`
@@ -140,7 +139,7 @@ struct ShadowChain {
     // "large but still finite" excursion, distinct from an outright
     // non-finite one, so a stage that merely gets loud (and would be
     // audibly clipped/blown-out at the real output) is distinguishable from
-    // one that has actually gone non-finite (unrecoverable per PART 2).
+    // one that has actually gone non-finite (and is therefore unrecoverable).
     static constexpr float kLargeMagnitude = 8.0f;
 
     struct StageEvent {
@@ -169,13 +168,13 @@ struct ShadowChain {
         };
 
         // -- Audio bank -> 3x dsp::Vco --------------------------------------
-        // Not updated to read Ring Mod (slots 9-11) or PM rate (slot 12) --
-        // same "this repro harness is a diagnostic snapshot, not one of this
-        // packet's expected files" precedent as the Filter slot 9-13 comment
-        // below. The old 3-knob pmKnob argument is passed again as the new
-        // rate argument (reproduces the old coupled rate-from-depth
-        // behaviour exactly) and Ring Mod is held at its own zero floor
-        // (0.0f), so this tool's output is unchanged.
+        // Does not read Ring Mod (slots 9-11) or PM rate (slot 12) -- this
+        // repro harness is a diagnostic snapshot, not a file kept in sync
+        // with every new knob (same choice as the Filter slot 9-13 comment
+        // below). The 3-knob pmKnob argument is passed again as the
+        // rate argument (reproduces the coupled rate-from-depth
+        // behaviour the production code once had) and Ring Mod is held at its own zero floor
+        // (0.0f), so this tool's output is unaffected by either addition.
         const float v1 = vco1.Process(knob(FroggersBankId::Audio, 0), knob(FroggersBankId::Audio, 3),
                                        knob(FroggersBankId::Audio, 6), knob(FroggersBankId::Audio, 6), 0.0f,
                                        sampleRate);
@@ -192,15 +191,14 @@ struct ShadowChain {
         // -- Envelope bank -> ASR + voice mix --------------------------------
         // Envelope bank slots are interleaved ADSR, slot = 4*vco +
         // {0:Attack, 1:Decay, 2:Sustain, 3:Release} (FroggersParameters.hpp).
-        // Decay (slots 1/5/9) is now read, matching FroggersAppCore.hpp's
-        // RouteAudioSample -- MixOscVoices's signature grew required decay
-        // arguments this packet, so this call had to be touched regardless.
+        // Decay (slots 1/5/9) is read, matching FroggersAppCore.hpp's
+        // RouteAudioSample -- MixOscVoices's signature requires decay
+        // arguments.
         // Curve (slot 12) / Grace (slot 13) are left at their default (0.0f,
-        // neutral) rather than read here -- same "this repro harness is a
-        // diagnostic snapshot, not one of this packet's expected files"
-        // precedent as the Filter slot 9-13 comment below (this tool's
-        // Curve/Grace behaviour stays exactly today's linear/no-deferral
-        // shape, deliberately, rather than tracking the two new knobs).
+        // neutral) rather than read here -- same diagnostic-snapshot choice
+        // as the Filter slot 9-13 comment below (this tool's
+        // Curve/Grace behaviour stays the linear/no-deferral
+        // shape, deliberately, rather than tracking those two knobs).
         const float chainIn = dsp::MixOscVoices(
             adsr, v1, v2, v3, knob(FroggersBankId::Envelope, 0), knob(FroggersBankId::Envelope, 1),
             knob(FroggersBankId::Envelope, 2), knob(FroggersBankId::Envelope, 3), knob(FroggersBankId::Envelope, 4),
@@ -245,9 +243,9 @@ struct ShadowChain {
         const float cmlp =
             dsp::ExpMapCompute(4.0f * combFreq, 20000.0f / sampleRate, knob(FroggersBankId::Filter, 6));
         filterChain.comb.SetCutoffAlpha(1.0f - std::exp(-2.0f * static_cast<float>(M_PI) * cmlp));
-        // Not updated for Task A/B/C/D's new Filter slots 9-13 (this repro
-        // harness is a diagnostic snapshot, not one of this packet's
-        // expected files) -- /*topology=*/0.0f reproduces the old
+        // Does not read Filter slots 9-13 (this repro
+        // harness is a diagnostic snapshot, not a file kept in sync with
+        // every new knob) -- /*topology=*/0.0f reproduces the
         // always-`useParallel=true` behaviour bit-for-bit (FilterFxChain::
         // Process's own comment, dsp/FilterFx.hpp) so this tool's output is
         // unchanged.
@@ -368,8 +366,8 @@ SweepResult RunSweepAndReport(const char* label, std::size_t position, const cha
 
     // Optional compound scenario: fire Randomize All (the already-fixed
     // scoopNotch bug's own trigger, FroggersRandomizeAllRepro.cpp) BEFORE
-    // sweeping this control, matching the operator's actual usage sequence
-    // (Randomize All in an earlier session, Crunchy cranked in this one) --
+    // sweeping this control, matching a realistic usage sequence
+    // (Randomize All, then Crunchy cranked) --
     // not just a fresh default patch.
     if (randomizeAllFirst) {
         rig.Application().RequestRandomizeAll();
@@ -402,7 +400,7 @@ SweepResult RunSweepAndReport(const char* label, std::size_t position, const cha
     return result;
 }
 
-// PART 2 item 4 support: a short run demonstrating a LEGITIMATE all-zero
+// A short run demonstrating a LEGITIMATE all-zero
 // output (every VCO's ASR sustain target forced to 0, so dsp::VcoAdsrState
 // holds every voice's level at 0 by design -- VoiceEnvelope.hpp's
 // stepVoice()'s Attack/Hold branches ramp toward/hold at `sustainLevel`,

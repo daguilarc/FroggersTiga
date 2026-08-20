@@ -1,18 +1,18 @@
-// FroggersParameterModelTests.cpp -- tasks.md section 4 ("Parameter model
-// (mono, 16-slot banks)"), tasks 4.5 and 4.6.
+// FroggersParameterModelTests.cpp -- validates the mono, 16-slot bank
+// parameter model.
 //
-// 4.5 requires: parameter count/identity per bank (9 + Crispy@14 +
+// Requires: parameter count/identity per bank (9 + Crispy@14 +
 // Crunchy@15); Crispy/Crunchy slot identity stable across bank changes;
 // per-bank colour reaching EncoderDrawState.baseColor; scene blend
 // interpolating across banks and reaching the published ring state.
 //
-// 4.6 is a STOP-AND-ASK GATE validating the shared-Crunchy assumption:
+// Also a STOP-AND-ASK GATE validating the shared-Crunchy assumption:
 // registering one Parameter at slot 15 in all six banks must resolve
 // identically from every bank, move together when edited from any bank,
 // publish as ONE parameter (not six), and drill in to the same target from
 // any bank -- with no duplicate-registration/bank-ownership assertion firing.
 // See the final test case's comment for how each check maps to a concrete
-// assertion, and the packet report for the gate's outcome.
+// assertion.
 //
 // The purely structural checks (identity, counts, colours-at-config-level)
 // use a bare synth::ParameterManager + FroggersParameterModel directly --
@@ -21,8 +21,8 @@
 // and shared-Crunchy runtime checks (which need real message-bus press/turn
 // routing and PopulateUIState's real throttle) use
 // synth_rig::SynthRig<FroggersApp> (External/Sheaf's
-// tests/support/SynthRig.hpp), same as FroggersHeadlessTests.cpp (task 2.3)
-// and FroggersMonoValidationTests.cpp (task 2.5).
+// tests/support/SynthRig.hpp), same as FroggersHeadlessTests.cpp
+// and FroggersMonoValidationTests.cpp.
 
 #include "Froggers.hpp"
 #include "FroggersParameters.hpp"
@@ -227,7 +227,7 @@ TEST_CASE(scene_blend_interpolates_and_reaches_published_ring_state_across_banks
     reverbParam.SceneCenter(0) = 0.3f;
     reverbParam.SceneCenter(1) = 0.7f;
 
-    // Audio is the default active bank (task 4.4); make that explicit rather
+    // Audio is the default active bank; make that explicit rather
     // than relying on the default.
     rig.SelectBank(/*slotIx=*/0, static_cast<std::size_t>(synth_froggers::FroggersBankId::Audio));
     rig.RunBlocks(4);
@@ -236,7 +236,7 @@ TEST_CASE(scene_blend_interpolates_and_reaches_published_ring_state_across_banks
     // blend is one manager-wide SceneState, so it must reach every
     // registered parameter's ring state at once, not just the visible bank's
     // (ParameterGroup::ProcessSamplePhase1 iterates ALL topLevelParameters_).
-    // Per design D9a's traced chain, PopulateUIState publishes
+    // PopulateUIState publishes
     // UIDisplayCenter(v) -- reverbParam.UIDisplayCenter(0) reads the exact
     // value that publish would copy, without needing Reverb to be the active
     // bank on the one shared BankSlot.
@@ -245,8 +245,7 @@ TEST_CASE(scene_blend_interpolates_and_reaches_published_ring_state_across_banks
         // kDefaultUiDisplayCenterAlpha) needs roughly 14 blocks of 256
         // frames to settle a full-range jump within 1%; 64 gives generous
         // margin (rig.UIState() also forces an immediate synchronous
-        // publish, sidestepping the uiPublishInterval_ throttle noted in
-        // task 4.5/5.5).
+        // publish, sidestepping the uiPublishInterval_ throttle).
         rig.RunBlocks(64);
         synth::ParameterManager::UIState& uiState = rig.UIState();
         const synth::Parameter::UIState& cell = uiState.slots[0].cells[0];
@@ -352,17 +351,17 @@ TEST_CASE(shared_crunchy_resolves_and_moves_identically_from_any_bank) {
     // Engine::Initialize()) before this test body ever ran.
 }
 
-// --- 5.5/5.6 fuego seam (packet 5, model level; design D6/D9a) ------------
+// --- Fuego seam (model level) ------------
 //
 // The rendered-surface assertion (that the encoder ring itself paints the
-// processed value) is explicitly deferred to task 10.5 -- these tests stop
-// at the model boundary: Parameter::CachedKnobValue() (what a DSP consumer
-// reads once wired) and ParameterManager::UIState.values[v] (what the
-// encoder draw path reads today, per D9a's traced chain).
+// processed value) is not covered here -- these tests stop
+// at the model boundary: Parameter::CachedKnobValue() (what the real DSP
+// chain reads) and ParameterManager::UIState.values[v] (what the
+// encoder draw path reads).
 //
 // Direct model-driving tests (no SynthRig) call FroggersParameterModel::
 // ProcessSample() in a tight loop against a bare synth::ParameterManager --
-// the same "no Engine/SynthRig needed" pattern the 4.5 structural checks
+// the same "no Engine/SynthRig needed" pattern the structural checks above
 // use, since ProcessSample() only touches the ParameterGroup the model
 // itself owns. Setting Parameter::SceneCenter(0) directly and letting the
 // currentCenter_/targetCenter_ smoother cascade (processLiteAlpha ~=0.1227,
@@ -400,14 +399,14 @@ TEST_CASE(fuego_seam_transform_reaches_cached_knob_value_matching_dsp_stack) {
     const float rawCrispy = crispy.GetRaw(0);
     const float rawCrunchy = crunchy.GetRaw(0);
 
-    // "The fuego transform reaches the DSP" (task 5.5) -- read at the
+    // The fuego transform must reach the DSP -- read at the
     // model's DSP-facing seam: Parameter::CachedKnobValue() is exactly the
-    // slot a DSP consumer reads each sample once one is wired (no DSP is
-    // wired to the parameter model yet, per FroggersParameters.hpp's own
-    // packet-4 scope note); this is the strongest testable proxy for that
-    // requirement at this packet. Independently recompute the expected
-    // value via the same ported cascade (app/dsp/Fuegoize.hpp's FuegoStack,
-    // packet 3) from the settled raw inputs read a moment ago -- GetRaw() is
+    // slot the real DSP chain reads each sample (FroggersAppCore::
+    // RouteAudioSample's own `knob` lambda calls it directly) -- this is
+    // the exact value production reads, not a proxy for a future consumer.
+    // Independently recompute the expected
+    // value via the same ported cascade (app/dsp/Fuegoize.hpp's FuegoStack)
+    // from the settled raw inputs read a moment ago -- GetRaw() is
     // a pure read of currentCenter_/modulation state that hasn't changed
     // since ApplyFuegoSeam() last ran, so this recomputation and the value
     // actually written by the seam must match to floating-point precision.
@@ -428,7 +427,7 @@ TEST_CASE(crispy_sweep_changes_sibling_parameters_on_its_own_bank_only) {
     model.Init(manager);
 
     // Global Crunchy stays at 0 (identity/bypass for the global stage) so
-    // this test isolates Crispy's own effect cleanly -- task 5.3's cascade
+    // this test isolates Crispy's own effect cleanly -- the fuego cascade
     // still applies the per-bank Crispy stage even with Crunchy at 0 (the
     // musical row's second Fuegoize call is keyed by the Crunchy-warped
     // Crispy value, which is simply the raw Crispy value unchanged when
@@ -460,7 +459,7 @@ TEST_CASE(crispy_sweep_changes_sibling_parameters_on_its_own_bank_only) {
     REQUIRE_TRUE(std::fabs(audioRow0.CachedKnobValue(0) - audioRow0.GetRaw(0)) > 1e-2f);
     REQUIRE_TRUE(std::fabs(audioRow1.CachedKnobValue(0) - audioRow1.GetRaw(0)) > 1e-2f);
 
-    // Reverb's row 0 -- its OWN bank's Crispy is left at 0, so (task 5.3's
+    // Reverb's row 0 -- its OWN bank's Crispy is left at 0, so (the fuego
     // cascade, with Crunchy also at 0) both Fuegoize stages bypass via the
     // `fuegKnob <= 0` identity shortcut -- CachedKnobValue must equal its
     // own raw value exactly, whatever that settled to: Audio's Crispy sweep
@@ -529,8 +528,7 @@ TEST_CASE(global_crunchy_itself_receives_no_fuego_stage) {
         model.ProcessSample(sampleIx);
     }
 
-    // Task 5.6 (design D6, flagged as an inference awaiting operator
-    // confirmation, not a traced fact): global Crunchy receives NO fuego
+    // An inference, not a traced fact: global Crunchy receives NO fuego
     // stage at all -- its cached knob value must equal its own raw value
     // exactly, since ApplyFuegoSeam() never calls ReplaceCachedKnobValue()
     // on the Crunchy parameter.
@@ -550,14 +548,14 @@ TEST_CASE(fuegoized_value_is_published_to_ui_state_values) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(64, UseScratchRuntimeDataPaths("fuego_ui_publish"));
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
 
-    // Reverb bank param 0 (Wet/dry), NOT any Audio-bank parameter: packet 6's
-    // default patch (design D16, task 6.12) assigns live cross-VCO pitch
+    // Reverb bank param 0 (Wet/dry), NOT any Audio-bank parameter: the
+    // default patch assigns live cross-VCO pitch
     // modulation depths onto the Audio bank's VCO1/2/3 pitch parameters
     // (slots 0-2), so those three no longer resolve to a pure,
     // un-modulated scene-center value the way this test's premise assumes.
     // Reverb param 0 carries no modulation-depth assignment in the default
     // patch, so it stays exactly scene-center + fuego, which is what this
-    // test (task 5.5, predating packet 6) is actually about.
+    // test is actually about.
     synth::Parameter& page0 = model.PageParameter(synth_froggers::FroggersBankId::Reverb, 0);
     synth::Parameter& crispy = model.Crispy(synth_froggers::FroggersBankId::Reverb);
     synth::Parameter& crunchy = model.Crunchy();
@@ -592,7 +590,7 @@ TEST_CASE(fuegoized_value_is_published_to_ui_state_values) {
     REQUIRE_TRUE(std::fabs(publishedValue - rawPage0) > 0.01f);
 }
 
-// --- Task 3.3: envelope short names survive EncoderDraw's 4-char truncation
+// --- Envelope short names survive EncoderDraw's 4-char truncation
 // ---------------------------------------------------------------------------
 // EncoderDraw renders UpperShortLabel(shortLabel) with a hard 4-char cap
 // (EncoderDraw.hpp:571-582). The envelope bank's short names are the only

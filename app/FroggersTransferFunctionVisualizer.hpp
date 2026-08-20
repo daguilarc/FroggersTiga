@@ -1,17 +1,16 @@
 #pragma once
 
-// synth_froggers::TransferFunctionVisualizer -- packet 9 (tasks.md section
-// "9. Bump/Comb transfer-function visualizers", task 9.2; design D10). One
+// synth_froggers::TransferFunctionVisualizer -- one
 // Visualizer sampling any synth::TransferFunction's FrequencyResponse()
 // into a DrawCommand::Polyline (PortableUI.hpp:101,105), log-frequency
 // axis. Generic over EITHER ResonantBump::UIState or Comb::UIState
-// (app/dsp/FilterFx.hpp, task 9.1) -- both derive from synth::TransferFunction,
+// (app/dsp/FilterFx.hpp) -- both derive from synth::TransferFunction,
 // so one Visualizer implementation covers both the bump's peak/notch and
-// the comb's periodic response, exactly as D10 asks ("one Visualizer...
-// handles the comb's periodic response and the bump's peak/notch").
+// the comb's periodic response.
 //
-// Task 9.4's "self-oscillating comb feedback... the displayed magnitude is
-// bounded rather than drawn out of frame": FilterFx.hpp's closed forms are
+// A self-oscillating comb's feedback can drive the displayed magnitude
+// arbitrarily high, so it must stay bounded rather than drawn out of frame:
+// FilterFx.hpp's closed forms are
 // already finite by construction (SafeDenominator floors the
 // denominator's magnitude), but a finite-and-huge value could still land
 // far outside this Visualizer's own drawing bounds. Plotting in dB and

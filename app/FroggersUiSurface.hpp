@@ -1,21 +1,16 @@
 #pragma once
 
-// synth_froggers::FroggersUiSurface -- packet 10 of the froggers-sheaf-app
-// change (openspec/changes/froggers-sheaf-app/tasks.md, section "10. Surface
-// layout (ported v2 design)"; design D9/D9a/D9b/D11/D14/D17;
-// spec `specs/froggers-app-surface-layout/spec.md`), re-architected under
-// `openspec/changes/archive/2026-08-05-frogg3rs-audio-safety-and-ui-rework/tasks.md` task F.3
-// (2026-08-04/05) to adopt Sheaf's portable layout engine
-// (`PortableUILayout.hpp`/`PortableUIMetrics.hpp`, pin `77a3019e`) instead of
-// this file's own hand-rolled pixel arithmetic.
+// synth_froggers::FroggersUiSurface -- the app's surface layout
+// (spec `specs/froggers-app-surface-layout/spec.md`), built on Sheaf's
+// portable layout engine (`PortableUILayout.hpp`/`PortableUIMetrics.hpp`)
+// rather than hand-rolled pixel arithmetic.
 //
-// TOPOLOGY DIRECTIVE (operator, 2026-08-03): "sheaf is the guide for classes
-// but froggers is the guide for topology." This surface is now declared as
-// ONE grid -- encoders and chrome alike are grid citizens with cell
-// positions, not a scope/grid region plus a separately auto-flowed chrome
-// band. `FroggersCellMap` below is the topology, expressed as data (the
-// operator-approved 6-row-by-6-column table, tasks.md F.3 CELL MAP); the
-// mechanism -- how a cell becomes real geometry -- is the Sheaf idiom
+// Topology: sheaf supplies the class idioms but this app owns its own
+// topology. This surface is declared as ONE grid -- encoders and chrome
+// alike are grid citizens with cell positions, not a scope/grid region plus
+// a separately auto-flowed chrome band. `FroggersCellMap` below is the
+// topology, expressed as data (a 6-row-by-6-column table); the mechanism --
+// how a cell becomes real geometry -- is the Sheaf idiom
 // Braid 4's own app uses for its grids (`apps/braid-4/Braid4UiModel.hpp`'s
 // `EmitBraid4CellGrid`/`Braid4CellLayout`): a `Column` of `Row`s, weighted
 // `Extent::Weight(n)` cells (n>1 expresses a span), and Draw nodes whose
@@ -29,17 +24,17 @@
 // `StandardAppLayout` (`PortableUIStandardLayout.hpp`) is NOT used: it is
 // Braid4's OWN topology (an empty second-visualizer slot does not collapse,
 // `PortableUIStandardLayout.hpp:89-99`), not a neutral scaffold, and this
-// app's topology is the operator's, not Braid4's.
+// app's topology is its own, not Braid4's.
 //
-// Window size: OPERATOR DECISION 2026-08-05, route 2a. The surface still
-// resolves against `context->config->uiWidth/uiHeight` (a fixed, compiled-in
-// size, unchanged from before this task) rather than a live window extent --
-// making the layout track the ACTUAL window requires an upstream shell
-// change (filed as ask 15: `RuntimeMainComponent::BuildTree()` composes the
-// sidebar from `App::Config().uiWidth`, not a live extent, so a resizable
-// surface here would desync from it). Everything internal to this surface is
-// nonetheless fully declarative, so adopting a live extent later is a change
-// to `FroggersPageLayout::RootBounds()`'s source, not a redesign.
+// Window size: the surface still resolves against
+// `context->config->uiWidth/uiHeight` (a fixed, compiled-in size) rather
+// than a live window extent -- making the layout track the ACTUAL window
+// requires an upstream shell change (`RuntimeMainComponent::BuildTree()`
+// composes the sidebar from `App::Config().uiWidth`, not a live extent, so a
+// resizable surface here would desync from it). Everything internal to this
+// surface is nonetheless fully declarative, so adopting a live extent later
+// is a change to `FroggersPageLayout::RootBounds()`'s source, not a
+// redesign.
 //
 // Bounds note (still true): `synth::ui::Builder`'s Button/Slider/Toggle/
 // ComboBox/TextField/StatusText node kinds take no explicit `Bounds` --
@@ -49,25 +44,23 @@
 // `Bounds` for by hand -- the scope panel, the encoder grid, Play/Stop's
 // plates -- is now an in-flow cell with a declared `LayoutOptions` instead;
 // the sole exception is the transport plates' own fixed `Extent::Px(28)`
-// size (unchanged from before this task, see `kTransportPlateSize`), which
-// was already a `LayoutOptions`-expressed size, not an `explicitBounds`
-// out-of-flow declaration.
+// size (see `kTransportPlateSize`), which was already a
+// `LayoutOptions`-expressed size, not an `explicitBounds` out-of-flow
+// declaration.
 //
-// Crunchy was removed from a dedicated chrome slider entirely (operator
-// 2026-07-27: "why is there a fucking slider for crunchy... i never asked
-// for that. It duplicates bank slot 15"). Crunchy is reachable only via the
-// encoder grid's slot 15, addressed exactly like any other bank parameter --
-// see design.md D11/Resolved-decisions and tasks.md 10.2 for the recorded
-// trade-off (Crunchy is unreachable while a modulation view is open, since
-// slot 15 is then Target/Back). Crunchy (slot 15) is GLOBAL -- one shared
-// `Parameter` aliased into all six banks (`FroggersParameters.hpp:79-80,
-// 191,251-256,342-366`) carrying its own fixed Yellow rather than the bank
-// colour, and excluded from drill-in/randomize dispatch
-// (`FroggersModulation.hpp:120-126`). That colour already flows through
-// `Parameter::UIState.color` into `EncoderDrawStateFromParameter` with no
-// special-casing needed here -- this file's one encoder-cell code path
-// renders slot 14 (Crispy, per-bank colour) and slot 15 (Crunchy, fixed
-// Yellow) identically; the colour difference is data, not branching.
+// Crunchy has no dedicated chrome slider: it duplicates bank slot 15, so it
+// is reachable only via the encoder grid's slot 15, addressed exactly like
+// any other bank parameter (Crunchy is unreachable while a modulation view
+// is open, since slot 15 is then Target/Back). Crunchy (slot 15) is GLOBAL
+// -- one shared `Parameter` aliased into all six banks
+// (`FroggersParameters.hpp:79-80, 191,251-256,342-366`) carrying its own
+// fixed Yellow rather than the bank colour, and excluded from drill-in/
+// randomize dispatch (`FroggersModulation.hpp:120-126`). That colour already
+// flows through `Parameter::UIState.color` into
+// `EncoderDrawStateFromParameter` with no special-casing needed here -- this
+// file's one encoder-cell code path renders slot 14 (Crispy, per-bank
+// colour) and slot 15 (Crunchy, fixed Yellow) identically; the colour
+// difference is data, not branching.
 //
 // Threading note: see FroggersAppCore.hpp's own header comment for the full
 // reasoning. Encoder DRAG, scene select/blend, and transport Start/Stop are

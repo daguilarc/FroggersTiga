@@ -1,34 +1,33 @@
-// FroggersBadgeCriterionRepro.cpp -- F1.1 residual (openspec/changes/
-// archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md): "the operator's
-// complaint
-// is about what they SEE." Compares, per visible parameter, (b) the number
+// FroggersBadgeCriterionRepro.cpp -- checks whether the modulation badge
+// reflects what a player actually SEES. Compares, per visible parameter, (b) the number
 // of modulation depths with non-neutral SceneCenter (the commanded value
 // Randomize All writes) against (c) std::popcount(modulatorsAffectingMask),
 // the mask `Parameter::PopulateUIState` publishes (ParameterModulation.hpp:
 // 442) and `EncoderDraw.hpp:723`'s `drawBadges(state.modulatorsAffectingMask,
 // ...)` actually reads to paint badges.
 //
-// `Parameter::HasNonZeroState()` -- the originally-specced (c) -- is PRIVATE
+// `Parameter::HasNonZeroState()` -- the mechanism (c) would ideally read
+// directly -- is PRIVATE
 // (ParameterModulation.hpp:566, inside the `private:` block opening at :535)
 // and unreachable from app code, so this measures the mask the same public
 // path the real UI uses: `Bank::VisibleParameter(ix)` for the `Parameter&`
 // behind each grid cell, `ParameterManager::UIState` (`rig.UIState()`) for
 // the mask that cell's `Parameter::UIState` publishes.
 //
-// Measures two conditions, exactly as tasks.md's F1.1 asks:
+// Measures two conditions:
 //   (i)  a level-0 Randomize All -- the ordinary button press, drillIn at
 //        level 0 (the parameter grid).
 //   (ii) a level-1 Randomize All -- drill into ONE parameter's modulation
 //        view first (Filter slot 5, Comb feedback), THEN Randomize All --
-//        since F4 this also writes level-2 sub-depths on each of that
+//        this also writes level-2 sub-depths on each of that
 //        parameter's OWN (now-materialized) depth children, without opening
 //        any view into them.
 // Both scenarios measure whatever grid is actually on screen at that point
 // (Bank::VisibleParameter(ix) is level-aware -- OpenModulationView/Deselect
-// swap what it returns), matching "what the operator SEES."
+// swap what it returns), matching what a player actually SEES.
 //
 // NOT part of the regular suite (not wired into app/Makefile's `test`
-// target, per F0.2's *Repro.cpp convention) -- a one-off measurement
+// target, per the *Repro.cpp convention) -- a one-off measurement
 // binary, built the same way FroggersStopFlushRepro.cpp documents:
 //
 //   cd /path/to/FroggersTiga && nice clang++ -std=c++20 -Wall -Wextra -Wpedantic -O2 \
@@ -159,7 +158,7 @@ int main() {
 
     // ---------------------------------------------------------------
     // Scenario (ii): level-1 Randomize All -- drill into Comb feedback's
-    // modulation view first, THEN Randomize All (F4: must not eject back to
+    // modulation view first, THEN Randomize All (must not eject back to
     // level 0).
     // ---------------------------------------------------------------
     rig.Application().RequestEncoderPress(5);
@@ -174,7 +173,7 @@ int main() {
     } else {
         rig.Application().RequestRandomizeAll();
         rig.RunBlocks(1);
-        std::printf("  drillIn.Level() after this Randomize All: %zu (F4: must stay 1, not eject to 0)\n",
+        std::printf("  drillIn.Level() after this Randomize All: %zu (must stay 1, not eject to 0)\n",
                      rig.Application().ActiveDrillIn().Level());
         std::printf("  LastRandomizePartial=%d\n", rig.Application().LastRandomizePartial());
         level1Matches = MeasureAndReport(rig, bank);

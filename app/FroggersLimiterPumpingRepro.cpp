@@ -1,8 +1,7 @@
-// FroggersLimiterPumpingRepro.cpp -- F2.0a/F2.0b (openspec/changes/
-// archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md): headless measurement
-// harness for "measure the RIGHT quantity" (F2.0a) and "measure the
-// OPERATOR'S ACTUAL condition" (F2.0b). NOT part of the regular suite (not
-// wired into app/Makefile's `test` target, per F0.2's *Repro.cpp
+// FroggersLimiterPumpingRepro.cpp -- headless measurement
+// harness that measures the RIGHT quantity, under the ACTUAL reported
+// condition. NOT part of the regular suite (not
+// wired into app/Makefile's `test` target, per the *Repro.cpp
 // convention) -- a one-off measurement binary, built the same way
 // FroggersStopFlushRepro.cpp documents:
 //
@@ -12,7 +11,7 @@
 //     -o app/build/froggers_limiter_pumping_repro
 //
 // Purpose: measure, not fix. Every existing number for the master limiter's
-// engagement (F2.0's table) is `minEnvelopeSeen`, a minimum, which cannot
+// engagement is `minEnvelopeSeen`, a minimum, which cannot
 // distinguish "dipped once for one block" from "rode flat at 0.9858 for all
 // 256 blocks". Pumping is audible VARIATION in gain, not a low minimum --
 // this harness reports duty cycle (fraction of blocks with envelope <
@@ -20,13 +19,13 @@
 // envelope trace (a rough "does it oscillate or sit flat" proxy: 0 means
 // monotonic/flat, a large count means it is wiggling), on two patches:
 //
-//   Scenario A (F2.0a) -- the existing hostile patch, static knobs, no
+//   Scenario A -- the existing hostile patch, static knobs, no
 //   modulation. Bit-identical to FroggersAudioRoutingTests.cpp's
 //   master_limiter_stays_at_unity_across_hostile_patch (comb feedback +
 //   comb/peak + reverb Hold + reverb wet + Drive all at max, PLUS Filter
 //   Crispy at max), measured over the same 256-block window that test uses.
 //
-//   Scenario B (F2.0b) -- the operator's actual condition: RequestRandomizeAll()
+//   Scenario B -- the reported actual condition: RequestRandomizeAll()
 //   through the real ProcessFrame() drain (same method the Randomize All
 //   button calls, per FroggersRandomizeAllRepro.cpp's established
 //   convention), THEN Filter Crispy forced to max on top, then the same
@@ -63,8 +62,7 @@ synth::RuntimeDataPaths ScratchPaths(const char* label) {
     return paths;
 }
 
-// Mirrors FroggersAudioRoutingTests.cpp's ApplyPatchNow (B7.5.0 settling
-// rule): a SceneCenter write is only ~81% applied after one block
+// Mirrors FroggersAudioRoutingTests.cpp's ApplyPatchNow: a SceneCenter write is only ~81% applied after one block
 // (Parameter::ProcessSamplePhase1's periodic smoothed Compute, alpha 0.0994
 // every 16 samples); ComputeAllParameters() converges it exactly instead.
 void ApplyPatchNow(Rig& rig) {
@@ -90,7 +88,7 @@ struct EnvelopeStats {
     int directionChanges = 0;          // local extrema in the trace; 0 == monotonic/flat
 };
 
-// F2.0a's own instruction: report duty cycle, min-to-max range, and mean --
+// Reports duty cycle, min-to-max range, and mean --
 // NOT just minEnvelopeSeen, which cannot distinguish "dipped once" from
 // "rode flat". directionChanges is an added rough oscillation-vs-flat
 // signal: counts every time the block-to-block envelope delta changes sign,
@@ -145,7 +143,7 @@ int main() {
     constexpr std::size_t kMeasureBlocks = 256;  // matches master_limiter_stays_at_unity_across_hostile_patch's window.
 
     // ---------------------------------------------------------------
-    // Scenario A (F2.0a): the existing hostile patch, static knobs.
+    // Scenario A: the existing hostile patch, static knobs.
     // Bit-identical setup to FroggersAudioRoutingTests.cpp's
     // master_limiter_stays_at_unity_across_hostile_patch.
     // ---------------------------------------------------------------
@@ -165,7 +163,7 @@ int main() {
         auto& limiter = rig.Application().TestOutputLimiter();
         const EnvelopeStats stats = MeasureEnvelope(rig, limiter, kMeasureBlocks);
 
-        std::printf("=== M2 / F2.0a: existing hostile patch (static, no modulation) ===\n");
+        std::printf("=== M2: existing hostile patch (static, no modulation) ===\n");
         std::printf("PeakAbs (measurement window): %.6f   sawNaN=%d\n",
                      static_cast<double>(PeakAbs(rig.Output())), rig.SawNaN());
         PrintStats(stats);
@@ -173,7 +171,7 @@ int main() {
     }
 
     // ---------------------------------------------------------------
-    // Scenario B (F2.0b): the operator's actual condition.
+    // Scenario B: the reported actual condition.
     // RequestRandomizeAll() through the real ProcessFrame() drain, THEN
     // Filter Crispy forced to max on top.
     // ---------------------------------------------------------------
@@ -204,7 +202,7 @@ int main() {
         std::printf("Post-RequestRandomizeAll: LastRandomizePartial=%d\n",
                      rig.Application().LastRandomizePartial());
 
-        // THEN Filter Crispy to max on top, exactly as F2.0b specifies. This
+        // THEN Filter Crispy to max on top. This
         // is a plain SceneCenter write (not through RandomizeAll's own
         // converge-immediately path), so ApplyPatchNow() as in Scenario A.
         model.Crispy(synth_froggers::FroggersBankId::Filter).SceneCenter(0) = 1.0f;
@@ -217,7 +215,7 @@ int main() {
         auto& limiter = rig.Application().TestOutputLimiter();
         const EnvelopeStats stats = MeasureEnvelope(rig, limiter, kMeasureBlocks);
 
-        std::printf("\n=== M3 / F2.0b: post-Randomize-All + Filter Crispy max ===\n");
+        std::printf("\n=== M3: post-Randomize-All + Filter Crispy max ===\n");
         std::printf("PeakAbs (measurement window): %.6f   sawNaN=%d\n",
                      static_cast<double>(PeakAbs(rig.Output())), rig.SawNaN());
         PrintStats(stats);

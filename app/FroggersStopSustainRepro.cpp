@@ -1,28 +1,25 @@
-// FroggersStopSustainRepro.cpp -- T4.2 (openspec/changes/
-// frogg3rs-post-expansion-consolidation): the runtime capture §7e said was
-// the ONE thing reading could not settle, run 2026-08-17 after the operator
-// re-reported "the stop button still does not stop sound when things are
-// being modulated at audio rate" and ruled the effect must be ISOLATED to
-// the Freeze button (superseding this change's own T4.1 closure).
+// FroggersStopSustainRepro.cpp -- investigates whether audio-rate
+// modulation can leave sound sustaining after Stop instead of decaying to
+// silence, isolated to the Freeze button.
 //
-// NOT part of the regular suite (F0.2's *Repro.cpp convention) -- built by
+// NOT part of the regular suite (the *Repro.cpp convention) -- built by
 // hand exactly like FroggersStopFlushRepro.cpp documents.
 //
-// WHY THE 2026-08-07 HARNESS CANNOT ANSWER THIS: its F3.2c/F3.2d passes
-// concluded audio-rate modulation was VOID because S1a.2 gated modulation on
-// the transport, so knobs cannot MOVE post-Stop. §7's mechanism needs no
-// post-Stop movement: modulation_.Step() stops being called and the slate
-// FREEZES AT LAST VALUES (FroggersAppCore.hpp:889-891 region), so a drive
-// knob whose modulated value was high at the Stop edge STAYS high. And the
-// three parameters §7b implicates -- Delay slot 9 FbDr, Reverb slot 10
+// A harness that only exercises Stop while transport-gated modulation is
+// live cannot answer this: gating modulation on the transport means knobs
+// stop MOVING post-Stop, but the mechanism this file targets needs no
+// post-Stop movement. `FroggersAppCore::RouteAudioSample()` skips
+// `modulation_.Step()` once the transport is no longer running, so the
+// slate FREEZES AT LAST VALUES -- a drive
+// knob whose modulated value was high at the Stop edge STAYS high. The
+// three parameters this targets -- Delay slot 9 FbDr, Reverb slot 10
 // TkDv, Filter slot 12 CDrv, each a 0.25-4.0 pre-gain on an in-loop
-// saturator argument -- did not exist when that harness was written
-// (they shipped 2026-08-13, frogg3rs-bank-expansion). No historical pass
-// covers the reported condition.
+// saturator argument -- are read from the model directly, independent of
+// any prior harness's coverage.
 //
-// THREE PASSES, one variable each (OMNI §9.1 -- the control proves the
+// THREE PASSES, one variable each (a positive control proves the
 // instrument could have shown a decaying tail):
-//   A DRIVES-HIGH + AUDIO-RATE DEPTHS -- the operator's reported condition:
+//   A DRIVES-HIGH + AUDIO-RATE DEPTHS -- the reported condition:
 //     drive bases at 1.0 AND kModSlotVco1Audio depths at full positive on
 //     all three, so the frozen slate holds them high after Stop.
 //   B DRIVES-HIGH, NO DEPTHS -- same bases, no modulation: distinguishes
@@ -33,7 +30,7 @@
 // Measurement: pre-Stop 100ms peak (liveness gate), then per-second output
 // peak for 60s after Stop. The question the numbers answer: does the tail
 // decay inside the ~1.05s Grace+fade window before ForEachStatefulUnit
-// (Reset) lands (bounded), or persist past it (§7e's re-seed hypothesis)?
+// (Reset) lands (bounded), or persist past it?
 
 #include <algorithm>
 #include <cmath>
@@ -64,7 +61,7 @@ struct DriveTarget {
     const char* name;
 };
 
-// §7b's table, verbatim: the three in-loop saturator pre-gains.
+// The three in-loop saturator pre-gains, verbatim.
 constexpr DriveTarget kDriveTargets[] = {
     {synth_froggers::FroggersBankId::Delay, 9, "Delay slot 9 (Feedback drive)"},
     {synth_froggers::FroggersBankId::Reverb, 10, "Reverb slot 10 (Tank drive)"},
@@ -162,8 +159,8 @@ PassResult RunPass(bool drivesHigh, bool audioRateDepths, const char* scratchLab
 // approximation of it. Passes A-C refuted the hand-built condition (all
 // silent by t+2s -- the Grace+fade window then the AllIdle clear), yet the
 // operator observes sustain in the live app. The delta between rig and live
-// is unidentified, so this pass reproduces the operator's own gesture:
-// repeated Randomize All presses (the real trigger per §7c), then Stop,
+// is unidentified, so this pass reproduces the reported gesture:
+// repeated Randomize All presses (the real trigger), then Stop,
 // across many independent trials. Any trial whose post-Stop tail survives
 // t+5s is a REPRODUCTION, and its drive-parameter snapshot is printed for
 // bisection. Zero reproductions is itself a finding: the mechanism then
@@ -241,8 +238,9 @@ int RunRandomizedTrials(int trials, Intervention intervention) {
         PrintSevenSnapshot(model, "pre-stop");
         rig.StopAt(timestamp);
         if (intervention == Intervention::ZeroDepthsAtStop || intervention == Intervention::BothAtStop) {
-            // Same reach ResetBankValues uses (BankAt + VisibleParameter, which
-            // covers Crispy at 14) -- PageParameter(_, 14) aborts, and the
+            // Iterates BankAt + VisibleParameter (which
+            // covers Crispy at 14), not PageParameter(_, 14) -- PageParameter
+            // aborts on slot 14, and the
             // first build of this arm died on exactly that (SIGABRT, exit 134).
             for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
                 synth::Bank& bank = model.BankAt(static_cast<synth_froggers::FroggersBankId>(bankIx));
@@ -456,12 +454,11 @@ int main() {
         return 1;
     }
     std::printf("\n################ PASS D: randomized-trigger sweep ################\n");
-    // T1.4 (frogg3rs-stop-isolation-and-legible-labels tasks.md, ORDERING
-    // audit note): re-run AFTER T2.1 lands, at the original 20-trial count
-    // the investigation that opened this whole change used (proposal.md
-    // SS1: "20/20 trials sustain past t+5s") -- bumped from 5 here
-    // (unchanged D2-D4 bisection passes below still run their original 5,
-    // they are diagnostic, not this task's own re-run).
+    // Runs at 20 trials (not 5, like the diagnostic D2-D4 bisection passes
+    // below) -- the investigation that motivated this file found 20/20
+    // trials sustaining past t+5s, so matching that count here reproduces
+    // the same statistical weight; the bisection passes stay at 5 since
+    // they are diagnostic, not a re-run of that finding.
     RunRandomizedTrials(20, Intervention::None);
     std::printf("\n################ PASS D2: bisection -- zero all depths at Stop ################\n");
     RunRandomizedTrials(5, Intervention::ZeroDepthsAtStop);

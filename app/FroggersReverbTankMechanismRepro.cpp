@@ -1,7 +1,6 @@
-// FroggersReverbTankMechanismRepro.cpp -- P2b investigation packet
-// (scratchpad p2b-brief.md): settles WHICH of the three candidate mechanisms
-// keeps the reverb tank loud for 5+s after Stop, once P1 (envelope ramp
-// bound) and P2's own Stop-edge forced-release + effective-value overrides
+// FroggersReverbTankMechanismRepro.cpp -- settles WHICH of the three candidate mechanisms
+// keeps the reverb tank loud for 5+s after Stop, once the envelope-ramp
+// bound and the Stop-edge forced-release + effective-value overrides
 // are already in place. Pass D of FroggersStopSustainRepro.cpp already
 // established the symptom (20/20 randomized trials sustain past t+5s) and
 // pass E already showed AllIdle()==1 by ~t+0.5s while reverb_.StateMagnitude()
@@ -11,14 +10,14 @@
 // exact sample where the AllIdle-triggered clear fires (or does not), and
 // the reverb's own INPUT sample immediately after any clear that does fire.
 //
-// NOT part of the regular suite (F0.2's *Repro.cpp convention).
+// NOT part of the regular suite (the *Repro.cpp convention).
 //
-// Candidates (brief's wording, verbatim):
+// Candidates:
 //   1. The clear never fires on the reverb.
 //   2. The clear fires, but something re-excites the tank afterwards.
 //   3. Something else.
 //
-// Method (OMNI 9.1): every negative result gets a positive control with the
+// Method: every negative result gets a positive control with the
 // number printed. PASS P2B-CONTROL reproduces pass C (drives at unity, no
 // audio-rate depths -- must decay cleanly) WITH the same instrumentation on,
 // to prove the RESET/SAMPLE print lines the mechanism pass depends on are
@@ -48,8 +47,9 @@ synth::RuntimeDataPaths ScratchPaths(const char* label) {
     return paths;
 }
 
-// Mirrors FroggersStopSustainRepro.cpp's kDriveTargets (same three in-loop
-// saturator pre-gains the earlier packet already bisected).
+// Mirrors FroggersStopSustainRepro.cpp's kDriveTargets (the same three
+// in-loop saturator pre-gains that file's own bisection passes narrowed
+// down).
 struct DriveTarget {
     synth_froggers::FroggersBankId bank;
     std::size_t slot;
@@ -111,7 +111,7 @@ void RunControlPass() {
     }
 }
 
-// PASS P2B-REPRO: the operator's own gesture (5x Randomize All, then Stop),
+// PASS P2B-REPRO: the reported gesture (5x Randomize All, then Stop),
 // same recipe FroggersStopSustainRepro.cpp's Pass D uses, with the temp
 // instrumentation switched on. Retries a small number of trials only because
 // Randomize All draws are random; Pass D already measured 20/20 reproducing,

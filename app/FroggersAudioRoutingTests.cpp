@@ -146,12 +146,11 @@ void RequireFiniteStereo(const std::vector<Rig::OutputFrame>& frames) {
     }
 }
 
-// F2 (omni-rule §8 postflight, audit-fix-brief 2026-08-17): settle/check-
+// Settle/check-
 // window silence-measurement scaffolding, extracted after it appeared a
-// third near-byte-identical time (T2.5's Grit stopped-state test) -- the
-// third instance is what turned two pre-existing near-identical blocks into
-// a §8 violation (§14's postflight clause: a new named concept retroactively
-// turns previously-fine code into duplication). Every caller only varies HOW
+// third near-byte-identical time (the Grit stopped-state test) -- a
+// concept repeating a third time is what turns two pre-existing
+// near-identical blocks into duplication worth naming and sharing. Every caller only varies HOW
 // LONG to wait before measuring (settleSeconds); sample rate, block size,
 // the trailing check-window length, and the silence floor are the same
 // fixed values at all 3 call sites (FroggersApp::Config() sets 48 kHz/
@@ -165,7 +164,7 @@ void RequireFiniteStereo(const std::vector<Rig::OutputFrame>& frames) {
 // long-release test, an intervening Freeze-button press in the Freeze-latch
 // test), so folding it in would gut those per-test assertions.
 // Only the declaration block that derives checkWindowBlocks/settleLeadBlocks
-// (§8's flagged concept) is shared.
+// is shared.
 struct SilenceSettleWindow {
     std::size_t settleLeadBlocks;
     std::size_t checkWindowBlocks;
@@ -266,19 +265,19 @@ TEST_CASE(default_patch_produces_non_silent_finite_audio) {
 }
 
 // -----------------------------------------------------------------------
-// Task 6.2/6.12 -- the default patch must be audible on laptop speakers,
-// not merely nonzero. All three Audio-bank pitch knobs (Audio bank slots
-// 0-2) register at the ordinary 0.0f default (FroggersParameters.hpp's own
-// FroggersBankLayouts(), Audio row), and
+// The default patch must be audible on laptop speakers,
+// not merely nonzero. If All three Audio-bank pitch knobs (Audio bank slots
+// 0-2) registered at the ordinary 0.0f default (FroggersParameters.hpp's own
+// FroggersBankLayouts(), Audio row), then, since
 // Vco::PitchToPhaseIncrement(0, sr) = ExpMapCompute(20/sr, 20000/sr, 0)
-// (app/dsp/Vco.hpp:118-119) means every VCO free-runs at 20 Hz before any
-// fix -- inaudible on a MacBook Air, and NOT caught by a plain RMS/PeakAbs
+// (app/dsp/Vco.hpp), every VCO would free-run at 20 Hz --
+// inaudible on a MacBook Air, and NOT caught by a plain RMS/PeakAbs
 // check (a 20 Hz tone is nonzero-RMS). This test instead asserts Goertzel
-// power at the EXPECTED post-fix fundamentals (110/220/330 Hz) dominates
-// power at the broken pre-fix ones (20/40/60 Hz) -- a ratio check needing
-// no calibrated magic constant, resolving task 6.12's tracked fragility
-// (see the assertion's own comment below for the prior version and why it
-// was fragile).
+// power at the EXPECTED audible fundamentals (110/220/330 Hz) dominates
+// power at the inaudible ones a 0.0f default would give (20/40/60 Hz) -- a
+// ratio check needing
+// no calibrated magic constant
+// (see the assertion's own comment below for a prior, more fragile version).
 // -----------------------------------------------------------------------
 TEST_CASE(default_patch_has_audible_band_energy_above_150hz) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("default_patch_band_energy"));

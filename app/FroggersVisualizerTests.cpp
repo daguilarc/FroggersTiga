@@ -1,5 +1,5 @@
-// FroggersVisualizerTests.cpp -- tasks.md section "7. VCO scopes" (task
-// 7.4) and section "9. Bump/Comb transfer-function visualizers" (task 9.4,
+// FroggersVisualizerTests.cpp -- covers the VCO scopes and the
+// bump/comb transfer-function visualizers,
 // the "displayed magnitude is bounded rather than drawn out of frame"
 // half; the "response matches closed-form at sample points" half lives in
 // FroggersDspParityTests.cpp alongside the rest of the ported DSP's own
@@ -74,8 +74,8 @@ synth::RuntimeDataPaths UseScratchRuntimeDataPaths(const char* testName) {
 using Rig = synth_rig::SynthRig<synth_froggers::FroggersApp>;
 
 // -----------------------------------------------------------------------
-// Task 7.4 -- "scope channels bound; visualizer connected flag true after
-// processing." Before any ProcessBlock() call, the UIState the visualizer
+// Scope channels must be bound and the visualizer connected flag true
+// after processing. Before any ProcessBlock() call, the UIState the visualizer
 // reads has never been populated (default-constructed `connected = false`);
 // after at least one block, each VCO's channel is bound and its UIState's
 // `connected` flag is true.
@@ -94,12 +94,12 @@ TEST_CASE(vco_scope_channels_bound_and_visualizer_connected_after_processing) {
         const auto& state = rig.Application().VcoScopeUiState(vcoIx);
         REQUIRE_TRUE(state.connected.load());
         REQUIRE_TRUE(state.scope.load() != nullptr);
-        // Task 7.2: ReserveChans(1) called once per VCO, in order -- each
+        // ReserveChans(1) is called once per VCO, in order -- each
         // VCO's own flat channel index should equal its own index.
         REQUIRE_TRUE(state.scopeChannel.load() == vcoIx);
     }
 
-    // Task 7.3: ScopeVisualizer<UIState> renders with NO app-level drawing
+    // ScopeVisualizer<UIState> renders with NO app-level drawing
     // code (this test file adds none) -- Draw() must produce at least one
     // command once the underlying scope has live data.
     auto& visualizer = rig.Application().VcoScopeVisualizer();
@@ -109,10 +109,10 @@ TEST_CASE(vco_scope_channels_bound_and_visualizer_connected_after_processing) {
 }
 
 // -----------------------------------------------------------------------
-// UI-rework ITEM 3 failing-test-first (design.md A3d, tasks.md B.3,
-// 2026-07-29): before this fix, dsp::Vco::Process() wrote its raw,
-// PRE-gate output to the scope unconditionally, so the VCO scope visibly
-// animated even with the transport never started -- operator: "i haven't
+// If dsp::Vco::Process() wrote its raw,
+// PRE-gate output to the scope unconditionally, the VCO scope would visibly
+// animate even with the transport never started -- a real reported
+// confusion: "i haven't
 // clicked play at all yet, and the VCO oscilloscope still shows waves
 // moving. so, doesn't make much sense." With the transport never started,
 // `audioAdsr_` never leaves `Stage::Idle` (VcoAdsrState::init() leaves the
@@ -148,14 +148,14 @@ TEST_CASE(vco_scope_traces_are_flat_when_transport_never_started) {
 }
 
 // -----------------------------------------------------------------------
-// Task 9.4 -- "self-oscillating comb feedback produces only finite plot
-// values, and the displayed magnitude is bounded rather than drawn out of
-// frame." Drives dsp::Comb::UIState with the comb's own worst-case
-// self-oscillating configuration (Comb::GetFeedback's +-0.95 ceiling --
-// item 1, design.md A2, was +-1.1 -- with a near-unity lowpass so the loop
+// Self-oscillating comb feedback must produce only finite plot
+// values, with the displayed magnitude bounded rather than drawn out of
+// frame. Drives dsp::Comb::UIState with the comb's own worst-case
+// self-oscillating configuration (Comb::GetFeedback's +-0.95 ceiling,
+// with a near-unity lowpass so the loop
 // gain's magnitude gets close to 1 across a wide band) directly into
 // TransferFunctionVisualizer -- no FroggersApp needed, since this is
-// purely about the Visualizer/UIState contract task 9.1/9.2 add.
+// purely about the Visualizer/UIState contract.
 // -----------------------------------------------------------------------
 TEST_CASE(self_oscillating_comb_visualizer_plot_stays_within_bounds) {
     synth_froggers::dsp::Comb::UIState state;

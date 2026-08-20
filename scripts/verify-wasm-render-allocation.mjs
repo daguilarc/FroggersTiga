@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Static regression for omni task 7.3:
+ * Static regression asserting that:
  * - WasmSimHost max chunk + scope capacity match HostPanelLayout authority
  * - Worklet allocates WASM heap once in constructor; render path reuses buffers
  * - Screen telemetry cadence is fixed (frameCount % 20)

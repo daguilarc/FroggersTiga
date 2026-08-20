@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# check_include_guard.sh — tasks.md 1.3.
+# check_include_guard.sh
 #
 # Fails if any -I flag among $1 (a whitespace-separated CPPFLAGS-style
 # string) resolves into the frozen, vendored Sheaf copy at
 # desktop-v2/External/Sheaf ($2, an absolute path). That tree is a plain
-# vendored directory kept only because desktop-v2 is frozen (design D1
-# consequence) — this app must only ever resolve Sheaf headers through the
+# vendored directory kept only because desktop-v2 is frozen
+# — this app must only ever resolve Sheaf headers through the
 # External/Sheaf submodule.
 #
 # Usage: check_include_guard.sh "<cppflags>" "<frozen-vendored-sheaf-abspath>"

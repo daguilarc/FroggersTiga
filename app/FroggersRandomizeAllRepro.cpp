@@ -1,5 +1,5 @@
-// FroggersRandomizeAllRepro.cpp -- headless repro for the
-// operator-confirmed "audio peters out after Randomize All and never
+// FroggersRandomizeAllRepro.cpp -- headless repro for a reported
+// "audio peters out after Randomize All and never
 // returns" bug. NOT part of the regular suite (not wired into app/Makefile's
 // `test` target) -- this is a one-off investigation binary built directly
 // with the same flags app/Makefile's AUDIO_ROUTING_BIN target uses:
@@ -9,7 +9,7 @@
 //     app/FroggersRandomizeAllRepro.cpp External/Sheaf/projects/synth/build/libsynth.a \
 //     -o app/build/froggers_randomize_all_repro
 //
-// Repro steps, exactly as the operator described:
+// Repro steps:
 //   1. Start the transport the real way (SynthRig::StartAt pushes the same
 //      synth::MessageIn::Start(...) through the uiBus that the real Play
 //      button does).
