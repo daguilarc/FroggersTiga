@@ -31,8 +31,9 @@ struct VcoAdsrState
 {
     static constexpr size_t kNumVoices = 3;
     static constexpr float kMinTimeSeconds = 0.0005f;
-    // The sustain minimum guards against audio-rate modulation of envelope
-    // parameters producing silence.
+    // Raised after the report "the sustain minimum value is too low. i'm
+    // concerned that audio rate modulation in some of the envelope
+    // parameters would result in silence."
     //
     // This is the MISSING SIBLING of kMinTimeSeconds. Attack and release are
     // both floored (mapAttack/mapRelease below) precisely so modulation cannot
@@ -57,7 +58,7 @@ struct VcoAdsrState
     // Deliberate parity divergence (same treatment as Fuegoize.hpp's own
     // divergence note): lowered from 2.5s to 1.0s. 1.0s still comfortably
     // covers a slow pad swell; 2.5s was judged unnecessarily long. Lowered
-    // again later, 1.0s -> 0.5f ("that max attack is also way too long,
+    // again later, 1.0s -> 0.5f ("that max attack is also way too long.
     // half a second at most"). Scope is ATTACK
     // ONLY -- see kMaxDecaySeconds's own
     // comment below for why its former "mirrors kMaxAttackSeconds" rationale
@@ -466,16 +467,15 @@ private:
                 // reached with a release still pending (Attack/Decay are
                 // left alone above, so they always run to completion first
                 // -- "at minimum Attack (and Decay) has completed").
-                // Sentinel-conflation bug: this guard is `==
-                // kGraceNotStarted`, not `< 0.0f`. A `< 0.0f` guard would
-                // treat ANY negative value as
-                // "not started" -- but a countdown initialized to a
-                // non-float-exact `graceSeconds * m_sampleRate` (most grace
-                // knobs; only ones landing on an exact integer sample count
-                // are immune) decrements past zero to a small negative,
+                // Sentinel-conflation bug, found and fixed: this guard used
+                // to be `< 0.0f`, which treats ANY negative value as "not
+                // started" -- but a countdown initialized to a non-float-
+                // exact `graceSeconds * m_sampleRate` (most grace knobs;
+                // only ones landing on an exact integer sample count are
+                // immune) decrements past zero to a small negative,
                 // non-sentinel value without ever landing exactly on 0.0f,
-                // so `< 0.0f` would mistake that pending-expiry value for
-                // "not started" and re-arm it to the full grace forever.
+                // and `< 0.0f` mistook that pending-expiry value for "not
+                // started", re-arming it to the full grace forever.
                 // Matching the exact kGraceNotStarted sentinel instead means
                 // only a genuinely fresh countdown re-initializes; a
                 // decremented-negative value falls through untouched to the
@@ -567,10 +567,10 @@ private:
     // regardless of whether init() ever ran. (Separately, init() IS in fact
     // guaranteed to run first in production: FroggersAppCore::PrepareToPlay
     // calls audioAdsr_.init(sampleRate_), and
-    // Sheaf's synth::Engine::Prepare -> app_.PrepareToPlay
-    // [External/Sheaf/projects/synth/include/synth/Engine.hpp:299-300] runs
-    // from Runtime::audioDeviceAboutToStart
-    // [External/Sheaf/projects/synth/runtime/Runtime.hpp:502-511], which the
+    // Sheaf's synth::Engine::Prepare() -> app_.PrepareToPlay() call
+    // (External/Sheaf/projects/synth/include/synth/Engine.hpp) runs
+    // from Runtime::audioDeviceAboutToStart()
+    // (External/Sheaf/projects/synth/runtime/Runtime.hpp), which the
     // host is contractually required to call before the first
     // audioDeviceIOCallback/ProcessBlock -- but that ordering is not what
     // makes this safe; the setGate(true) argument above holds even if it

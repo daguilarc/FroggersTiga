@@ -778,7 +778,7 @@ public:
         modulation_.PrepareBlockClock(quarterNotesPerSample);
 
         // `block.outputs` is `AudioBlock`'s own field
-        // (External/Sheaf/projects/synth/include/synth/AppContext.hpp:70-85)
+        // (External/Sheaf/projects/synth/include/synth/AppContext.hpp:173-201)
         // -- set once for the whole callback, never reassigned inside this
         // function -- so re-testing it every frame below was re-evaluating a
         // loop-invariant up to 48,000x/second. Hoisted here, once per block.
@@ -960,13 +960,13 @@ public:
                 if (TransportTeardownActive(transportRunningNow)) {
                     runStopTeardown();
                 }
-                // T6.1: else -- FreezeLatched() is true, so NONE of
+                // Else -- FreezeLatched() is true, so NONE of
                 // runStopTeardown() above runs. The instrument holds its
                 // sounding state instead of tearing down; see
                 // TransportTeardownActive()'s own comment for why this is
                 // the deliberate exception, not a regression.
             } else if (latchReleasedWhileStopped) {
-                // T6.2: the latch's own release, while already stopped, is
+                // The latch's own release, while already stopped, is
                 // the escape hatch out of the drone the edge above just
                 // held open -- run the exact same teardown that edge would
                 // have run had the latch not suppressed it. (No
@@ -981,8 +981,8 @@ public:
                     // release tail -- cancel instead of wiping it.
                     delayReverbClearPending_ = false;
                 } else if (audioAdsr_.AllIdle() && TransportTeardownActive(transportRunningNow)) {
-                    // T6.1 (deferred-clear site -- the easy miss this gate
-                    // exists to cover): AllIdle() alone used to be
+                    // This is the deferred-clear site -- the easy miss this
+                    // gate exists to cover. AllIdle() alone used to be
                     // sufficient here. It no longer is -- if the latch got
                     // engaged during this release-tail window (armed while
                     // unlatched, then latched before AllIdle() turned true),
@@ -996,8 +996,8 @@ public:
                     // stage comparisons) so the expensive part (every
                     // unit's own Reset(), O(its own state size) each) still
                     // runs exactly once for the whole release, not once per
-                    // block for up to kMaxReleaseSeconds (10s,
-                    // VoiceEnvelope.hpp:36) the way the old policy did.
+                    // block for up to kMaxReleaseSeconds (2.5s,
+                    // VoiceEnvelope.hpp:84) the way the old policy did.
                     ForEachStatefulUnit([](auto& unit, auto) { unit.Reset(); });
                     delayReverbClearPending_ = false;
                 }
@@ -1101,7 +1101,7 @@ public:
                 // above, an individual `block.outputs[channelIx]` is NOT
                 // provably non-null by contract. `AudioBlock::outputs` is
                 // `float* const*` -- "Channel counts are the device's actual
-                // counts" (AppContext.hpp:68-69) says nothing about every
+                // counts" (AppContext.hpp:82-83) says nothing about every
                 // slot in that count being populated, and Sheaf's own two
                 // reference apps that consume this exact contract both guard
                 // the identical way: `apps/braid-4/Braid4Core.hpp:678-689`
@@ -1341,7 +1341,7 @@ private:
     // site for this class. Returns the transport quarter-note position at
     // `absoluteOutputSample`, or nullopt when the transport isn't running or
     // the committed plan doesn't contain the sample. Null-checking
-    // `block.clockPlan` (`AppContext.hpp:84`) is necessary but not
+    // `block.clockPlan` (`AppContext.hpp:187`) is necessary but not
     // sufficient for containment, so this calls the containment-safe
     // `TryTransportQuarterNotesAt` (`MasterClock.hpp:200`) rather than the
     // precondition-carrying `TransportQuarterNotesAt` (`:198`, precondition
@@ -1490,7 +1490,7 @@ private:
         // locks at 0.306814 forever at the drawn Grit 0.8094; decays to
         // 1.98e-7 at Grit 0). Grit 0.0f is its own exact bit-identical
         // bypass by construction (Mangle(x,0,0) - Mangle(0,0,0) == x,
-        // dsp/Reverb.hpp:534-538), so this override is silent by
+        // dsp/Reverb.hpp:526-527), so this override is silent by
         // construction too, same as the others.
         //
         // One shared lookup, not a sixth independent ternary --
@@ -1519,7 +1519,7 @@ private:
         // bypass/unity values.
         constexpr float kStopUnityDriveKnob = 0.5f;  // ExpMapCompute(0.25,4,0.5) == 1.0 (unity) -- shared by all three drive pre-gains.
         constexpr float kStopFreezeKnob = 0.0f;
-        constexpr float kStopGritKnob = 0.0f;  // Mangle(x,0,0) - Mangle(0,0,0) == x (dsp/Reverb.hpp:534-538) -- exact bit-identical bypass, same as Grit's own registered default.
+        constexpr float kStopGritKnob = 0.0f;  // Mangle(x,0,0) - Mangle(0,0,0) == x (dsp/Reverb.hpp:526-527) -- exact bit-identical bypass, same as Grit's own registered default.
         const auto stoppedKnob = [&](FroggersBankId bank, std::size_t slot, float stoppedValue) -> float {
             return TransportTeardownActive(wasTransportRunning_) ? stoppedValue : knob(bank, slot);
         };
@@ -1603,8 +1603,7 @@ private:
         const float bumpWidth = dsp::ExpMapCompute(0.1f, 10.0f, knob(FroggersBankId::Filter, 3));
         filterChain_.peak.SetFreq(bumpFreq);
         // Ceiling lowered
-        // from 10x (+20 dB) to 4x (+12 dB) (same treatment as Fuegoize.hpp's
-        // own D6 note). An audible resonant peak does
+        // from 10x (+20 dB) to 4x (+12 dB). An audible resonant peak does
         // not need a 20 dB multiplier sitting on top of a comb that (post
         // item 1) can still ring for seconds -- 10x was the primary gain
         // offender in the operator's blowout (multiplying the comb's
@@ -2167,11 +2166,11 @@ private:
     // latch state, same idiom as `wasTransportRunning_` just above --
     // remembered so ProcessBlock can detect the latch's own
     // latched->unlatched edge while the transport is already stopped (the
-    // "release the latch" escape hatch out of the T6.1 drone) instead of
-    // only the transport's running->stopped edge.
+    // "release the latch" escape hatch out of the sustained drone) instead
+    // of only the transport's running->stopped edge.
     bool wasFreezeLatched_ = false;
 
-    // ITEM 1 (revised): true while stopped and a clear is still owed --
+    // True while stopped and a clear is still owed --
     // armed either at the running->stopped edge (if a voice was still
     // releasing there) or left false (if the edge's own AllIdle() check
     // already fired the clear directly). Stays true, without re-clearing

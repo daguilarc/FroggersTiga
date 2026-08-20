@@ -16,7 +16,7 @@
 //   2. Render ~1s of steady-state audio (default patch) first.
 //   3. Fire Randomize All the real way: FroggersApp::RequestRandomizeAll()
 //      is the exact method FroggersUiSurface::HandleAction calls for the
-//      "Randomize All" button (app/FroggersUiSurface.hpp:656-658) -- no
+//      "Randomize All" button (app/FroggersUiSurface.hpp:2045-2048) -- no
 //      uiBus message is involved for this action (only Start/Stop go
 //      through uiBus); the request is a plain atomic flag consumed on the
 //      very next audio-thread ProcessFrame() (app/FroggersAppCore.hpp:

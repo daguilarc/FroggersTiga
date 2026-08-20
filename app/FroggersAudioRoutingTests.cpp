@@ -153,7 +153,7 @@ void RequireFiniteStereo(const std::vector<Rig::OutputFrame>& frames) {
 // LONG to wait before measuring (settleSeconds); sample rate, block size,
 // the trailing check-window length, and the silence floor are the same
 // fixed values at all 3 call sites (FroggersApp::Config() sets 48 kHz/
-// 256-sample blocks, FroggersAppCore.hpp:156-157; -60 dBFS: 20*log10(x) =
+// 256-sample blocks, FroggersAppCore.hpp:196-197; -60 dBFS: 20*log10(x) =
 // -60 -> x = 1.0e-3), so only settleSeconds is a parameter here.
 //
 // Deliberately does NOT also fold in the RunBlocks/ClearOutput/PeakAbs/
@@ -298,7 +298,7 @@ TEST_CASE(default_patch_has_audible_band_energy_above_150hz) {
     RequireFiniteStereo(output);
 
     const std::vector<float> left = ExtractChannel(output, 0);
-    // FroggersApp::Config() (app/FroggersAppCore.hpp:156) sets
+    // FroggersApp::Config() (app/FroggersAppCore.hpp:196) sets
     // preferredSampleRate = 48000.0, and this Rig() ctor call above passes
     // no override AudioSettings, so SynthRig negotiates that same rate
     // (SynthRig.hpp:68-70).
@@ -1278,7 +1278,7 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb) {
     // whole span (which would also catch that brief opening transient and
     // never read as silent regardless of how well the fix works).
     // (FroggersApp::Config() sets 48 kHz/256-sample blocks,
-    // FroggersAppCore.hpp:156-157). -60 dBFS: 20*log10(x) = -60 -> x = 1.0e-3.
+    // FroggersAppCore.hpp:196-197). -60 dBFS: 20*log10(x) = -60 -> x = 1.0e-3.
     const auto [settleLeadBlocks, checkWindowBlocks, kSilenceFloorLinear] =
         ComputeSilenceSettleWindow(/*settleSeconds=*/0.25);
 
@@ -1315,15 +1315,16 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb) {
 // explicit 1.0f default but leaves Attack/Release at ParameterConfig's own
 // 0.0f default) -- closing the gate on Stop snaps each voice to Idle almost
 // immediately, so the one-shot delay_.ClearBuffers()/reverb_.Reset() at the
-// running->stopped edge (FroggersAppCore.hpp:452-455) is never re-armed by
-// anything and the test above is silent on arrival.
+// running->stopped edge (FroggersAppCore.hpp's `runStopTeardown()`, the
+// immediate AllIdle() branch) is never re-armed by anything and the test
+// above is silent on arrival.
 //
 // This test instead pushes Envelope Release (bank rows 2/5/8, "Release
 // VCO1-3" -- FroggersParameters.hpp:160-162) to 1.0, mapping through
 // VcoAdsrState::mapRelease (VoiceEnvelope.hpp:94-98) to ~kMaxReleaseSeconds
-// (10.0f, VoiceEnvelope.hpp:36) -- so closing the gate on Stop moves every
-// voice to Stage::Release (VoiceEnvelope.hpp:71) and keeps it producing a
-// slowly-decaying signal for ~10 real seconds, feeding delay_/reverb_ well
+// (2.5f, VoiceEnvelope.hpp:84) -- so closing the gate on Stop moves every
+// voice to Stage::Release (VoiceEnvelope.hpp:139) and keeps it producing a
+// slowly-decaying signal for ~2.5 real seconds, feeding delay_/reverb_ well
 // after the one-shot reset already fired.
 //
 // Delay Time (row 0) is additionally pinned to 0.6 (baseSeconds =
@@ -1333,7 +1334,7 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb) {
 // clamped to 0.98 (Delay.hpp:135), decaying 60 dB unaided takes
 // ln(1e-3)/ln(0.98) ~= 342 delay cycles, ~= 342 * 0.0957s ~= 32.7s here --
 // squarely the "tens of seconds" the operator's Randomize All report and
-// this task's brief describe -- so a settle window shortly after the 10s
+// this task's brief describe -- so a settle window shortly after the ~2.5s
 // release completes sits deep inside that unaided decay tail and cleanly
 // discriminates the one-shot fix (still ringing there) from the
 // keep-clearing-until-Idle fix (already silent there).
@@ -1350,9 +1351,9 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
     // 2:Sustain, 3:Release} (FroggersParameters.hpp:162-164), so rows 3/7/11
     // are Release VCO1-3. Sustain (rows 2/6/10) already defaults to 1.0f;
     // Attack (rows 0/4/8) stays at its fast ~0 default.
-    model.PageParameter(synth_froggers::FroggersBankId::Envelope, 3).SceneCenter(0) = 1.0f;  // Release VCO1 -> ~10s.
-    model.PageParameter(synth_froggers::FroggersBankId::Envelope, 7).SceneCenter(0) = 1.0f;  // Release VCO2 -> ~10s.
-    model.PageParameter(synth_froggers::FroggersBankId::Envelope, 11).SceneCenter(0) = 1.0f;  // Release VCO3 -> ~10s.
+    model.PageParameter(synth_froggers::FroggersBankId::Envelope, 3).SceneCenter(0) = 1.0f;  // Release VCO1 -> ~2.5s.
+    model.PageParameter(synth_froggers::FroggersBankId::Envelope, 7).SceneCenter(0) = 1.0f;  // Release VCO2 -> ~2.5s.
+    model.PageParameter(synth_froggers::FroggersBankId::Envelope, 11).SceneCenter(0) = 1.0f;  // Release VCO3 -> ~2.5s.
 
     // Delay bank: rows per dsp::MapRowsToDelayParams's own comment
     // (Delay.hpp:1088-1119) -- 0=Time, 1=Send, 2=Feedback, 6=Mix.
@@ -1387,8 +1388,8 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
     rig.StopAt(timestamp);
 
     // Settle window: 10.5s from the Stop instant -- generous enough that the
-    // ~10s Release (VcoAdsrState::kMaxReleaseSeconds) has fully finished on
-    // every voice (VcoAdsrState::AllIdle()) plus a 0.5s margin for block
+    // ~2.5s Release (VcoAdsrState::kMaxReleaseSeconds) has fully finished on
+    // every voice (VcoAdsrState::AllIdle()) with roughly 8s to spare for block
     // granularity and the fix's final flush, but far short of the ~32.7s
     // unaided decay tail (see header comment above) the pre-fix one-shot
     // reset leaves behind -- so this window only passes once the delay/
@@ -1411,7 +1412,7 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
     // turns true" policy leave the tanks (and thus the output, both banks
     // set fully wet above) silent by the 10.5s settle window checked below
     // -- that check alone cannot tell them apart. What it cannot see is
-    // that the ~10s Release is supposed to keep ringing wet through
+    // that the ~2.5s Release is supposed to keep ringing wet through
     // delay_/reverb_ the whole time it's live, same as it would with the
     // transport still running (RouteAudioSample() feeds them every sample
     // regardless of transport, ProcessBlock's own comment). Under the old
@@ -1420,10 +1421,10 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
     // output here would already be at/near the settled silence floor; the
     // new policy leaves the tanks alone until AllIdle(), so the release's
     // wet tail must still be clearly audible this soon after Stop, deep
-    // inside the 10s Release and nowhere near AllIdle. 0.3s post-stop is
+    // inside the 2.5s Release and nowhere near AllIdle. 0.3s post-stop is
     // comfortably past the release's own fast opening transient (see the
     // sibling short-release test's comment on that) while still far short
-    // of the ~10s it takes every voice to reach Stage::Idle.
+    // of the ~2.5s it takes every voice to reach Stage::Idle.
     // SUPERSEDED 2026-07-29 — this assertion was inverted, deliberately.
     //
     // It used to require that the release was STILL AUDIBLY RINGING 0.3s
@@ -1536,7 +1537,7 @@ TEST_CASE(stopped_transport_overrides_drive_and_freeze_to_unity_zero_and_resumes
     REQUIRE_TRUE(dsp::Reverb::TankDriveFromKnob(rig.Application().TestLastReverbTankDriveKnobEffective()) == 1.0f);
     REQUIRE_TRUE(rig.Application().TestLastDelayFreezeKnobEffective() == 0.0f);
     // T2.5: Grit's effective value reads 0.0f (its own exact bit-identical
-    // bypass by construction, dsp/Reverb.hpp:534-538), not the commanded
+    // bypass by construction, dsp/Reverb.hpp:526-527), not the commanded
     // MAX -- same override, joining the four above.
     REQUIRE_TRUE(rig.Application().TestLastReverbGritKnobEffective() == 0.0f);
 

@@ -543,7 +543,7 @@ TEST_CASE(global_crunchy_itself_receives_no_fuego_stage) {
 // uiPublishInterval_), so "pump enough blocks" here is about letting
 // ProcessLitePhase2's UIDisplayCenter slew (uiDisplayCenterAlpha, an
 // intentionally slow ~10 Hz one-pole) catch up to the fuegoized cached
-// value, not about the publish throttle itself (Engine.hpp:409).
+// value, not about the publish throttle itself (Engine.hpp:413).
 TEST_CASE(fuegoized_value_is_published_to_ui_state_values) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(64, UseScratchRuntimeDataPaths("fuego_ui_publish"));
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();

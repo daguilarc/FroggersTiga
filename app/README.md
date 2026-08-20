@@ -11,6 +11,12 @@ inside the submodule.
 the only change to the submodule's presence in this repo — everything the
 hook needs is already upstream at the pinned commit.
 
+The pin must always name a commit that exists upstream. Pointing the gitlink
+at a branch that lives only on one machine makes it unresolvable from every
+other checkout and blocks the browser publish. A plain-click dispatch path for
+Draw nodes is held on a local `froggers-fork` branch for that reason, waiting
+to go upstream rather than being pinned here.
+
 **Consequence you will notice:** encoder press and Play/Stop are **double-click**,
 because `Node::doubleClickAction` is the only action hook stock Sheaf dispatches
 for Draw nodes at this pin. When plain-click support lands upstream, flip

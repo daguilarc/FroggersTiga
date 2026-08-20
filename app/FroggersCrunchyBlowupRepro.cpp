@@ -1,6 +1,6 @@
 // FroggersCrunchyBlowupRepro.cpp -- headless repro for a reported
 // "audio still blows out and gets permanently killed" bug
-// that survives the scoopNotch fix (FroggersAppCore.hpp:613-638). NOT part of
+// that survives the scoopNotch fix (FroggersAppCore.hpp:1640-1665). NOT part of
 // the regular suite (not wired into app/Makefile's `test` target) -- a
 // one-off investigation binary, built with the same flags app/Makefile's
 // AUDIO_ROUTING_BIN target uses:
@@ -29,7 +29,7 @@
 //   5. In lock-step with the real engine, run a SHADOW copy of
 //      FroggersAppCore::RouteAudioSample's exact DSP chain (VCOs -> envelope
 //      mix -> Drive -> Filter chain -> Delay -> Reverb, formulas copied
-//      verbatim from FroggersAppCore.hpp:545-681, own dsp:: unit instances,
+//      verbatim from FroggersAppCore.hpp:1391-1801, own dsp:: unit instances,
 //      zero-initialized identically to the real engine's members) fed the
 //      SAME per-sample CachedKnobValue() reads the real RouteAudioSample
 //      consumes. Both paths are deterministic scalar float recursions given
@@ -40,13 +40,13 @@
 //      (this is a read-only investigation; no fix is implemented here).
 //   6. blockSize=1 throughout, so every RunBlocks(1) call corresponds to
 //      exactly one real audio sample (FroggersAppCore::ProcessBlock's
-//      per-frame loop, FroggersAppCore.hpp:381-441) -- the shadow tick reads
+//      per-frame loop, FroggersAppCore.hpp:787) -- the shadow tick reads
 //      CachedKnobValue() immediately after that call, so it sees exactly the
 //      post-fuego/post-modulation values RouteAudioSample used for that same
 //      sample.
 //
 // Note (same caveat FroggersRandomizeAllRepro.cpp documents):
-// SanitizeOutputSample (FroggersAppCore.hpp:698-707) replaces any non-finite
+// SanitizeOutputSample (FroggersAppCore.hpp:1861-1863) replaces any non-finite
 // OUTPUT sample with 0.0f before it reaches the stereo bus, so rig.SawNaN()
 // (which checks captured OUTPUT samples) can never observe an internal NaN
 // directly -- it stays false even when the bug fires. The shadow chain's own
@@ -96,7 +96,7 @@ void PushParamAbsolute(Rig& rig, std::size_t position, float value) {
 }
 
 // -- Shadow DSP chain: a byte-for-byte copy of FroggersAppCore::
-// RouteAudioSample's stage order and formulas (FroggersAppCore.hpp:545-681),
+// RouteAudioSample's stage order and formulas (FroggersAppCore.hpp:1391-1801),
 // with isfinite() checks inserted between stages. Own dsp:: unit instances
 // (never touches the real engine's filterChain_/delay_/reverb_/drive_
 // members), so this is read-only instrumentation, not a modification of any
@@ -134,8 +134,8 @@ struct ShadowChain {
         reverb.Configure(sr);
     }
 
-    // Same threshold SanitizeOutputSample clamps the real output to
-    // (FroggersAppCore.hpp:705, kMaxOutputMagnitude) -- used here to flag a
+    // Same +-1.0 ceiling SanitizeOutputSample() clamps the real output to
+    // (FroggersAppCore.hpp, its trailing std::clamp) -- used here to flag a
     // "large but still finite" excursion, distinct from an outright
     // non-finite one, so a stage that merely gets loud (and would be
     // audibly clipped/blown-out at the real output) is distinguishable from

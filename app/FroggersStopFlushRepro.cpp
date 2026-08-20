@@ -14,7 +14,7 @@
 //
 // Purpose: measure, not fix -- no fix before the recorded root cause.
 // Instruments every unit
-// `RecoverPoisonedUnitState()` (FroggersAppCore.hpp:1377) walks -- via the
+// `RecoverPoisonedUnitState()` (FroggersAppCore.hpp:2062) walks -- via the
 // existing TestXxx() "Test/inspection access" accessors it already exposes,
 // plus TestDelay()/TestReverb() (read-only,
 // mirroring the same convention), and two StateMagnitude() diagnostics
@@ -76,7 +76,7 @@
 //      the WHOLE post-Stop window via `RunBlocksTrackingLiveness()`.
 //      Chunking `RunBlocks(n)` down to n=1 calls is bit-exact with the
 //      original single-call form (`SynthRig::RunBlocks` is just a loop of
-//      `RunOneBlockAt(NextTimestamp())`, support/SynthRig.hpp:96-100), so
+//      `RunOneBlockAt(NextTimestamp())`, support/SynthRig.hpp:102-106), so
 //      this changes nothing about the audio itself, only how often the
 //      harness peeks at the knob. If `max - min` does not clear
 //      `kVoidLivenessThreshold`, the pass prints VOID and the process
@@ -87,7 +87,7 @@
 // at storage capacity, checked below; depth SceneCenter is bipolar -- 0.5
 // knob == zero depth, 1.0 knob == full positive) verified against the
 // existing master_limiter_stays_at_unity_under_live_modulation test,
-// FroggersAudioRoutingTests.cpp:733-759.
+// FroggersAudioRoutingTests.cpp:768-844.
 // ---------------------------------------------------------------------
 //
 // STATUS UPDATE: VOID -- PREMISE ELIMINATED.

@@ -58,6 +58,8 @@
 
 namespace synth_froggers::dsp {
 
+// Answers the question "why can't we just have limiters for reverb
+// and delay?"
 // Tuning for `StereoDelay::wetLimiterL`/`wetLimiterR`
 // below, a per-channel pair of `dsp::OutputLimiter` instances (dsp/
 // Limiter.hpp) inserted on the WET tap (`dL`/`dR`), strictly AFTER the

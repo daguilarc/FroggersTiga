@@ -301,7 +301,7 @@ TEST_CASE(random_sh_depth_encoders_are_bipolar_and_default_neutral) {
 // already carries the correct LaneColor(5)
 // (FroggersModulation.hpp's LaneColor(), same formula as lanes 1-5). The
 // GangedRandomLfoVisualizer reads its plotted color from the LFO's own
-// per-voice UiState (GangedRandomLfoVisualizer.hpp:212/233/242's
+// per-voice UiState (GangedRandomLfoVisualizer.hpp:222/243/252's
 // `voice.color`, populated by GangedRandomLfoProcessor::PublishUiState
 // from `m_voiceColors`, DspRandomLfo.hpp:337-342/369), NOT from
 // ModulatorMetadata::sourceColor -- so before the fix the metadata says

@@ -63,6 +63,8 @@
 
 namespace synth_froggers::dsp {
 
+// Answers the question "why can't we just have limiters for reverb
+// and delay?"
 // Tuning for `Reverb::wetLimiter` below, a single
 // `dsp::OutputLimiter` (dsp/Limiter.hpp) instance inserted on the value
 // `Process()` returns, AFTER both tanks and the dry/wet mix -- NOT inside
@@ -187,7 +189,10 @@ struct Reverb
     // maximum weight applied to the low/high difference at either extreme.
     // Both values were chosen, then the wetLimiter's existing tuning was
     // RE-MEASURED against this stage at its brightest setting to confirm
-    // it still holds.
+    // it still holds -- comparing peak levels at centre versus brightest,
+    // and including a sabotage check proving the measurement could see a
+    // change at all, so a null result meant the tuning held rather than
+    // that the instrument was blind.
     static constexpr float kTiltCrossoverHz = 1000.0f;
     static constexpr float kTiltDepth = 1.0f;
 

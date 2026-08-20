@@ -191,7 +191,7 @@ int main() {
 
         // Fire Randomize All the real way -- FroggersApp::RequestRandomizeAll()
         // is the exact method FroggersUiSurface::HandleAction calls for the
-        // button. ProcessFrame() (FroggersAppCore.hpp:427) is invoked once
+        // button. ProcessFrame() (FroggersAppCore.hpp:617) is invoked once
         // per block, after message drains and BEFORE that block's own audio,
         // and itself calls ComputeAllParameters() once RandomizeAll has run
         // (:534) -- so a single RunBlocks(1) both drains the pending request

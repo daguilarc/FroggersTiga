@@ -119,10 +119,10 @@ struct OutputLimiter
     //     0.9 against ceiling 0.80, |x| = 1.5 returns 41.1 (a 27x gain) and
     //     |x| = 2.0 returns 2203. It stays FINITE until |x| ~ 9.8, so
     //     SawNaN() and RequireFiniteStereo() both pass straight through it.
-    // This is exactly the failure mode the ceiling-narrowing fix above
-    // could silently reintroduce if a threshold were ever left un-narrowed
-    // -- invisible to every runtime guard in the suite, so it is pinned at
-    // compile time instead.
+    // This already happened once: the ceiling-narrowing fix above
+    // reintroduced the very symptom it was written to cure, by leaving a
+    // threshold un-narrowed. It got past every runtime guard in the suite,
+    // because the amplifier stays finite. Hence the compile-time pin.
     static_assert(kDefaultThreshold < kDefaultCeiling,
                   "threshold must stay strictly below ceiling; a negative headroom turns "
                   "DesiredMagnitude into an exponential amplifier that stays finite and "

@@ -237,16 +237,18 @@ struct Vco
 
         carrierPhase = WrapPhase(carrierPhase + phaseIncrement);
 
-        // This struct does not write to the scope itself. If it wrote the
-        // raw sample straight to the reserved scope channel here,
-        // UNCONDITIONALLY, it would write BEFORE the ASR gate
-        // (dsp::MixOscVoices/VcoAdsrState::apply, VoiceEnvelope.hpp) has any
+        // This struct does not write to the scope itself. It used to, and
+        // that was a shipped bug: writing the raw sample straight to the
+        // reserved scope channel here happened BEFORE the ASR gate
+        // (dsp::MixOscVoices/VcoAdsrState::apply, VoiceEnvelope.hpp) had any
         // chance to run, since MixOscVoices is only called by the caller
         // AFTER all three Vco::Process() calls return (FroggersAppCore.hpp's
-        // RouteAudioSample()) -- letting the scope visibly animate before
-        // Play is ever pressed, because this raw, pre-gate `output` is
-        // nonzero regardless of gate state. The write instead happens at
-        // the CALL SITE, after MixOscVoices applies the gate, using the
+        // RouteAudioSample()). The scope visibly animated before Play was
+        // ever pressed -- reported as "i haven't clicked play at all yet,
+        // and the VCO oscilloscope still shows waves moving" -- because this
+        // raw, pre-gate `output` is nonzero regardless of gate state. The
+        // write now happens at the CALL SITE, after MixOscVoices applies
+        // the gate, using the
         // same per-VCO ScopeWriterHolder members FroggersAppCore already
         // owns directly (see RouteAudioSample()); `scopeWriterHolder_`/
         // `SetScopeWriterHolder()` here stay only for `PopulateUIState()`

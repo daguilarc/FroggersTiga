@@ -883,7 +883,7 @@ TEST_CASE(modulation_header_shown_only_while_drilled_in_and_matches_the_level) {
 // coincidentally-empty geometry: the bank tabs row and a populated
 // parameter cell (kModSlotRandomSh6, "Random S&H 6" -- the one modulation
 // source registered `/*connected=*/true` unconditionally,
-// FroggersModulation.hpp:539-540, so it is guaranteed to be a live,
+// FroggersModulation.hpp:549-550, so it is guaranteed to be a live,
 // rendering cell in the drilled-in grid with no patch setup needed) both
 // resolve to real, populated, in-region geometry, AND the header itself is
 // checked for its actual "Modulation Level 1" text, not merely for having
@@ -1179,8 +1179,8 @@ TEST_CASE(bank_carousel_previous_arrow_action_wraps_from_first_bank_to_last) {
 }
 
 // MANDATORY preflight finding: pins the 2.1 drill-level-0 gate itself, not
-// just the arrow nodes' absence. `HandleAction` matches on action NAME with
-// no node-presence check (design's own citation, `:787-792`), so hiding the
+// just the arrow nodes' absence. `HandleAction` (FroggersUiSurface.hpp)
+// matches on action NAME with no node-presence check, so hiding the
 // arrow nodes while drilled (already covered by
 // modulation_header_band_bounds_are_identical_across_drill_states_and_arrows_vanish_while_drilled
 // above) is not sufficient on its own -- a synthetic dispatch of kBankNext
@@ -1393,11 +1393,11 @@ TEST_CASE(encoder_ring_renders_fuegoized_value_not_raw_scene_center) {
 // modulator/gesture badge chips, e.g. "M1"/"M2") emits its own
 // unconditional StrokeRoundedRect outline, entirely unrelated to
 // wantsFrame, and legitimate chrome the operator never asked to remove --
-// grep confirms AppendEncoderCell (FroggersUiSurface.hpp:1049) is the
+// grep confirms AppendEncoderCell (FroggersUiSurface.hpp) is the
 // ONLY call site into BuildEncoderDrawCommands this app's build reaches
 // (desktop-v2/braid-4/miniapp call sites are frozen/unrelated apps), and it
-// sets `state.wantsFrame = false` unconditionally for every cell
-// (FroggersUiSurface.hpp:1006) before that one call, so the
+// sets `state.wantsFrame = false` unconditionally for every cell, before
+// that one call, so the
 // wantsFrame-gated rect (EncoderDraw.hpp:690-694) is provably dead code on
 // this path -- what was still firing was the badge outline.
 //

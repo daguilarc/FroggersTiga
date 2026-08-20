@@ -8,9 +8,10 @@
 // A harness that only exercises Stop while transport-gated modulation is
 // live cannot answer this: gating modulation on the transport means knobs
 // stop MOVING post-Stop, but the mechanism this file targets needs no
-// post-Stop movement. `FroggersAppCore::RouteAudioSample()` skips
-// `modulation_.Step()` once the transport is no longer running, so the
-// slate FREEZES AT LAST VALUES -- a drive
+// post-Stop movement. `FroggersAppCore::ProcessBlock()`'s per-sample loop
+// skips `modulation_.Step()` once the transport is no longer running
+// (RouteAudioSample(), called every sample regardless, is not the gate),
+// so the slate FREEZES AT LAST VALUES -- a drive
 // knob whose modulated value was high at the Stop edge STAYS high. The
 // three parameters this targets -- Delay slot 9 FbDr, Reverb slot 10
 // TkDv, Filter slot 12 CDrv, each a 0.25-4.0 pre-gain on an in-loop
