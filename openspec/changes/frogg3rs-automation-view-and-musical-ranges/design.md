@@ -84,10 +84,13 @@ Also required: `RandomizePage`/`ResetPage` must target the operator's bank,
 not the last automated one; and the existing test asserting the old behavior
 is rewritten to the new contract, not deleted.
 
-**Open decision:** whether the visible bank persists in plugin session state.
-The predecessor added a `sessionExtras` key to the plugin's saved blob for the
+**Decided (operator): the visible bank persists in plugin session state.** The
+predecessor added a `sessionExtras` key to the plugin's saved blob for the
 Freeze latch; under the new semantics the visible page is purely operator-set
-state, which is the argument that made Freeze worth persisting.
+state, which is the same argument that made Freeze worth persisting, so it
+gets the same treatment — a second key in the object that already exists.
+Restore runs through the operator-selection path, since that is the only
+authority over the visible page this change leaves standing.
 
 ## B — Plugin audio input bus
 
@@ -193,10 +196,11 @@ Remaining: `app/vst/` and any Sheaf files this change touches.
 
 The narrowed set also leaves classes it cannot match, recorded rather than
 forgotten: bare dates, packet codenames, `task F.#` and `design E#` forms,
-and — in `FroggersAudioRoutingTests.cpp` — bare letter-number labels
-deliberately kept because that file uses them as running cross-reference
-shorthand, including inside runtime diagnostic strings. Renaming that scheme
-is its own decision.
+and — in `FroggersAudioRoutingTests.cpp` — bare letter-number labels used as
+running cross-reference shorthand, including inside runtime diagnostic
+strings. These are not an open question: they are planning-doc labels in
+comments, which the standing rule already retires. Keep the rationale, drop
+the label, and name what the thing actually is.
 
 Method that worked and should be reused: pre-compute the hit list per file so
 agents skip discovery; classify every hit before changing any; report found

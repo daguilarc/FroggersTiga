@@ -74,9 +74,15 @@ A finding that contradicts a recorded decision stops for the operator.
       top-level parameter, not on a modulation depth — that is the case the
       old `SelectParamBank` push was incidentally covering, and removing it
       is what puts the case at risk.
-- [ ] 2.5 OPERATOR DECISION: does the visible bank persist in plugin session
-      state? The `sessionExtras` mechanism already exists. Decide, implement,
-      test.
+- [ ] 2.5 DECIDED — yes, the visible bank persists in plugin session state.
+      Add it as a second key alongside the Freeze latch in the existing
+      `sessionExtras` object; the mechanism is already there and this is one
+      key plus one restore call. Restore it through the operator-selection
+      path, which this change makes the sole authority over the visible page,
+      so a restored session enters the same way an operator selection does.
+      The saved index comes from a host project file and can name a bank that
+      no longer exists, so bounds-check it on restore and fall back to the
+      default page rather than trusting the document.
 
 ## 3. Plugin audio input bus (design B)
 
@@ -140,10 +146,14 @@ A finding that contradicts a recorded decision stops for the operator.
       "Group 5"/"Group 8" saturation.
 - [ ] 6.2 Any `External/Sheaf` file this change touches, to Sheaf's own
       standards.
-- [ ] 6.3 OPERATOR DECISION: `FroggersAudioRoutingTests.cpp` keeps bare
-      letter-number labels as running cross-reference shorthand, including
-      inside runtime diagnostic strings. Rename the scheme to something
-      self-explanatory, or record it as intentional.
+- [ ] 6.3 Strip `FroggersAudioRoutingTests.cpp`'s bare letter-number labels
+      (`D16`, `B7.5.0`, `M1` and the rest — 81 occurrences), in comments and
+      in runtime diagnostic strings alike. These are planning-doc labels, and
+      the standing rule is that comments explain behavior rather than the
+      history of how it was planned: keep every rationale, drop the label.
+      Say what the thing IS — `D16` is the default patch, `M1` is the route
+      through `FroggersAppCore`'s private context — so a reader who never saw
+      the planning documents loses nothing.
 
 ## 7. Documentation (design F)
 
