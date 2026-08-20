@@ -1,15 +1,13 @@
 #pragma once
 
-// synth_froggers::dsp::{Fuegoize, FuegoStack} -- packet 3 task 3.5 (DSP
-// port). openspec/changes/froggers-sheaf-app/tasks.md section 3, item 3.5;
-// design D6. A **copy** (design D3) of the cascade shape from
-// sim/V2FuegoStack.hpp:9-23 (ApplyGlobal :9-12, ApplyMusicalRow :14-23),
-// but with the scramble transform itself pinned to the DAISY FIRMWARE's
-// defined behavior, NOT sim/Fuegoize.hpp's -- see the discrepancy note
-// below, which is exactly the parity target tasks.md 3.5 calls out.
+// synth_froggers::dsp::{Fuegoize, FuegoStack} -- a **copy** of the cascade
+// shape from sim/V2FuegoStack.hpp:9-23 (ApplyGlobal :9-12, ApplyMusicalRow
+// :14-23), but with the scramble transform itself pinned to the DAISY
+// FIRMWARE's defined behavior, NOT sim/Fuegoize.hpp's -- see the
+// discrepancy note below.
 //
-// PARITY REFERENCE DISCREPANCY (tasks.md reporting item 6, confirmed by
-// direct reading of both files):
+// PARITY REFERENCE DISCREPANCY (confirmed by direct reading of both
+// files):
 //   sim/Fuegoize.hpp:22-23 computes the modulo divisor as
 //     `static_cast<uint8_t>((mask + 1u) ? (mask + 1u) : 1u)`
 //   i.e. the CAST-TO-uint8_t is applied to the ternary's already-selected
@@ -25,9 +23,8 @@
 //   Here the cast is on the RESULT of the modulo, not on the divisor --
 //   `mask + 1` stays at int width (up to 256) for the `%` itself, so the
 //   divisor is never truncated to 0. This is the correct, UB-free formula,
-//   and it is what this file ports. Task 3.5's parity target is
-//   Parameter.hpp:143, not sim/Fuegoize.hpp:23, per design D6's
-//   "resolved" note.
+//   and it is what this file ports: Parameter.hpp:143, not
+//   sim/Fuegoize.hpp:23.
 
 #include <cmath>
 #include <cstdint>
@@ -39,10 +36,9 @@ namespace synth_froggers::dsp {
 // the same signature sim/V2FuegoStack.hpp's Fuegoize already uses, so the
 // cascade below (FuegoStack) reads the same as V2FuegoStack.hpp:9-23.
 //
-// CALLER CONSTRAINT (found while writing this packet's parity tests, not
-// stated in the frozen source): `row` must stay within the encoder-grid
-// domain this app actually uses, 0-15 (design D5a/D6 -- a bank slot index,
-// crispyRow fixed at 14). The algorithm shifts `lowerBits` by `sh` bits,
+// CALLER CONSTRAINT (not stated in the frozen source): `row` must stay
+// within the encoder-grid domain this app actually uses, 0-15 (a bank slot
+// index, crispyRow fixed at 14). The algorithm shifts `lowerBits` by `sh` bits,
 // and `sh` can reach `1 + row` when the fuego knob is high enough to make
 // `mask == 255`; once `sh` reaches a 32-bit int's width the shift is
 // undefined behavior. This is a latent property of the algorithm itself

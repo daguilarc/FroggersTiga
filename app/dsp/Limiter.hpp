@@ -1,11 +1,9 @@
 #pragma once
 
-// synth_froggers::dsp::OutputLimiter -- B5 (openspec/changes/
-// archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/tasks.md, CONSOLIDATED PUSH table
-// and "Group B outcomes"): extracted out of app/FroggersAppCore.hpp (where
-// it was Task 2.8/Item 3, design.md A2/A2a/A4's PRIVATE nested type) so a
-// SECOND, independently-tuned instance can run on the Filter bank's peak
-// branch (FilterFxChain, dsp/FilterFx.hpp) without duplicating the struct.
+// synth_froggers::dsp::OutputLimiter -- extracted out of app/FroggersAppCore.hpp
+// (where it was a PRIVATE nested type) so a SECOND, independently-tuned
+// instance can run on the Filter bank's peak branch (FilterFxChain,
+// dsp/FilterFx.hpp) without duplicating the struct.
 //
 // WHY THIS FILE, NOT dsp/FilterFx.hpp AND NOT FroggersAppCore.hpp:
 // `FroggersAppCore.hpp` includes `dsp/FilterFx.hpp` (never the reverse), so
@@ -19,13 +17,13 @@
 // uses `dsp::OutputLimiter` transitively through that include (and directly,
 // for its own `outputLimiter_` member).
 //
-// CRITICAL, B5's own constraint: the MASTER output limiter's behaviour must
+// CRITICAL constraint: the MASTER output limiter's behaviour must
 // not change by one sample. Before this move, `kThreshold` (0.9) /
 // `kCeiling` (1.0) / `kHeadroom` / `kAttackSeconds` (1ms) / `kReleaseSeconds`
 // (100ms) were `static constexpr`, so every instance of the type shared one
 // tuning -- exactly why a second instance (the peak branch's own limiter)
 // could not just be dropped in verbatim; it would duck identically to the
-// master and be useless there (W2.2-PREP already found this, tasks.md).
+// master and be useless there.
 // Converted to instance fields here. The single-argument `Configure(
 // sampleRate)` overload below reproduces the master's ORIGINAL tuning via
 // the exact same formula, same operand order, same float literals, so
@@ -42,57 +40,55 @@ namespace synth_froggers::dsp {
 // Shared across EVERY per-stage limiter instance (peak branch, delay wet,
 // reverb wet, and the master). These two values are identical at all four
 // sites by design, not by coincidence, so they live here once rather than
-// being re-declared per stage (OMNI §8: 2+ occurrences must be abstracted;
-// they were duplicated 4x and 3x respectively before this consolidation).
+// being re-declared per stage -- they were duplicated 4x and 3x
+// respectively before this consolidation.
 //
 // What is DELIBERATELY NOT shared: each stage's `threshold` and
 // `attackSeconds`. Both are MEASURED per stage and legitimately differ --
 // peak 0.7/5us (single-sample transients from stored biquad energy), delay
 // and reverb 0.9/2us (fast onset at the short-round-trip extreme), master
-// 0.9/1ms (sustained material only). §K.4 records that inferring attack
-// from mechanism shape was wrong twice; it is per-stage evidence, not a
-// shared constant, and must not be folded in here.
+// 0.9/1ms (sustained material only). Inferring attack from mechanism shape
+// was wrong twice: it is per-stage evidence, not a shared constant, and
+// must not be folded in here.
 //
 // `kSharedCeiling` is full scale everywhere: a limiter's ceiling is what it
 // must never let through, and that is 1.0 for every stage regardless of
-// where the stage sits. F2.1b: this stays the MASTER's ceiling only
+// where the stage sits. This stays the MASTER's ceiling only
 // (dsp::OutputLimiter::kDefaultCeiling) -- the master is deliberately
 // unchanged by the retarget below.
 inline constexpr float kSharedCeiling = 1.0f;
-// F2.1b: the ceiling every NON-master per-stage limiter (peak, delay wet,
+// The ceiling every NON-master per-stage limiter (peak, delay wet,
 // reverb wet, Drive's output limiter) budgets to. Before this landed, every
 // per-stage limiter shipped `ceiling = kSharedCeiling = 1.0` while the
 // master's own threshold sits at 0.9, so a correctly-clamped stage could
 // still legitimately deliver above the level the master starts working at
-// -- on the operator's post-RequestRandomizeAll() + Filter Crispy max
-// repro the master's envelope measured duty cycle 1.000 (it NEVER returned
-// to unity across 256 blocks; min 0.9666, mean 0.9784, range 0.0245).
-// Narrowing every per-stage budget to this ceiling is what F2.2's make-up
-// gain (1/kStageCeiling, applied once in FroggersAppCore.hpp) restores the
+// -- a post-RequestRandomizeAll() + Filter Crispy max repro measured the
+// master's envelope duty cycle at 1.000 (it NEVER returned to unity across
+// 256 blocks; min 0.9666, mean 0.9784, range 0.0245). Narrowing every
+// per-stage budget to this ceiling is what the make-up gain
+// (1/kStageCeiling, applied once in FroggersAppCore.hpp) restores the
 // headroom for.
 inline constexpr float kStageCeiling = 0.80f;
-// `kSharedReleaseSeconds`: 100ms at all four sites. B5 derived it from the
+// `kSharedReleaseSeconds`: 100ms at all four sites, derived from the
 // peak's measured residual decay (-60dB in 11.79ms at max Q, so ~8.5x
-// margin) and B6 measured it as correct for delay and reverb too; each
+// margin) and confirmed correct for delay and reverb too; each
 // stage's own comment already said "matches the master". One value.
 inline constexpr float kSharedReleaseSeconds = 0.1f;
 
-// NOTE for B7.1 -- LANDED (F2.1b, this file's kStageCeiling above). The
-// per-stage THRESHOLDS did NOT collapse into one shared value, contrary to
-// what this note originally predicted: peak (0.7, dsp/FilterFx.hpp) and
-// Drive's output limiter (0.7, dsp/Drive.hpp) were already measured
-// strictly below the new ceiling and are unchanged; delay and reverb wet
-// (dsp/Delay.hpp, dsp/Reverb.hpp) were 0.9 -- ABOVE the new 0.80 ceiling,
-// the negative-headroom exponential-amplifier trap F2.1a's static_asserts
-// exist to catch -- and were lowered to 0.72, preserving each one's
+// The per-stage THRESHOLDS did NOT collapse into one shared value: peak
+// (0.7, dsp/FilterFx.hpp) and Drive's output limiter (0.7, dsp/Drive.hpp)
+// were already measured strictly below the new ceiling and are unchanged;
+// delay and reverb wet (dsp/Delay.hpp, dsp/Reverb.hpp) were 0.9 -- ABOVE
+// the new 0.80 ceiling, the negative-headroom exponential-amplifier trap
+// the static_assert below exists to catch -- and were lowered to 0.72,
+// preserving each one's
 // original threshold/ceiling ratio (0.9/1.0 == 0.72/0.80) rather than being
 // re-tuned by accident. Every non-master stage's `ceiling` now points at
 // `kStageCeiling` above instead of `kSharedCeiling`; the master's stays
 // `kSharedCeiling` (1.0) with threshold 0.9, since it remains the backstop
 // that must fire LAST.
 
-// VST/PLUGIN NOTE (operator, 2026-07-29, design.md A2a -- required comment,
-// carried from this struct's original definition site): this stage does NOT
+// VST/PLUGIN NOTE: this stage does NOT
 // need to live inside a future VST/plugin build. A plugin host owns final
 // gain staging on its own output bus and typically supplies its own limiter
 // there, so in a plugin context the MASTER instance of this stage is
@@ -103,36 +99,38 @@ inline constexpr float kSharedReleaseSeconds = 0.1f;
 struct OutputLimiter
 {
     // Pinned defaults for the single-argument Configure(sampleRate) overload
-    // below -- the MASTER output limiter's ORIGINAL tuning (design.md A2a),
-    // UNCHANGED by this extraction. Do not retune these; an independently-
-    // tuned instance (e.g. the peak-branch limiter, B5) calls the five-
-    // argument Configure() overload instead of touching these.
+    // below -- the MASTER output limiter's ORIGINAL tuning, UNCHANGED by
+    // this extraction. Do not retune these; an independently-tuned
+    // instance (e.g. the peak-branch limiter) calls the five-argument
+    // Configure() overload instead of touching these.
     static constexpr float kDefaultThreshold = 0.9f;
     static constexpr float kDefaultCeiling = kSharedCeiling;
-    // F2.1a: threshold < ceiling is a HARD invariant of DesiredMagnitude(),
+    // threshold < ceiling is a HARD invariant of DesiredMagnitude(),
     // not a style preference, and Configure() cannot check it (it takes
     // runtime floats). `headroom = ceiling - threshold`, and the return is
     // `threshold + headroom * (1 - exp(-(absX - threshold) / headroom))`:
     //   headroom == 0 -> +x/0 is +inf, exp(-inf) is 0, the term vanishes and
-    //     this returns exactly `threshold`. A silent brickwall. Not a NaN --
-    //     an earlier version of this plan claimed 0/0 here and was wrong; the
-    //     `absX <= threshold` early return means the numerator is always
-    //     strictly positive by the time the division runs.
+    //     this returns exactly `threshold`. A silent brickwall, not a NaN
+    //     or a 0/0: the `absX <= threshold` early return means the
+    //     numerator is always strictly positive by the time the division
+    //     runs.
     //   headroom < 0  -> the exponent's sign flips and this stops being a
     //     limiter at all. It becomes an EXPONENTIAL AMPLIFIER: at threshold
     //     0.9 against ceiling 0.80, |x| = 1.5 returns 41.1 (a 27x gain) and
     //     |x| = 2.0 returns 2203. It stays FINITE until |x| ~ 9.8, so
     //     SawNaN() and RequireFiniteStereo() both pass straight through it.
-    // That is F2's own symptom, reintroduced by F2's own fix, past every
-    // guard in the suite -- so it is pinned at compile time instead.
+    // This is exactly the failure mode the ceiling-narrowing fix above
+    // could silently reintroduce if a threshold were ever left un-narrowed
+    // -- invisible to every runtime guard in the suite, so it is pinned at
+    // compile time instead.
     static_assert(kDefaultThreshold < kDefaultCeiling,
                   "threshold must stay strictly below ceiling; a negative headroom turns "
                   "DesiredMagnitude into an exponential amplifier that stays finite and "
                   "therefore passes every NaN/finiteness guard in the suite");
-    static constexpr float kDefaultAttackSeconds = 0.001f;  // fast: 1ms, per design.md A2a.
-    static constexpr float kDefaultReleaseSeconds = kSharedReleaseSeconds;  // shared; design.md A2a ("so it does not pump").
+    static constexpr float kDefaultAttackSeconds = 0.001f;  // fast: 1ms.
+    static constexpr float kDefaultReleaseSeconds = kSharedReleaseSeconds;  // shared, so it does not pump.
 
-    // Per-instance tuning (B5: was `static constexpr`, shared by every
+    // Per-instance tuning (was `static constexpr`, shared by every
     // instance of the type -- see this file's header comment for why that
     // had to change). Defaults match the master's original tuning so a
     // freshly-constructed-but-not-yet-`Configure()`'d instance is harmless
@@ -152,25 +150,24 @@ struct OutputLimiter
     // independently-tuned instance (the peak-branch limiter, FilterFx.hpp)
     // calls this overload; the master keeps calling the single-argument
     // overload below, unchanged.
-    // C1 (openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md
-    // F8.1): every production caller of this overload passes an
+    // Every production caller of this overload passes an
     // already-known-positive value. Five are rooted at
     // FroggersAppCore::PrepareToPlay() (the master via the single-argument
     // Configure() below, the peak branch via FilterFxChain::Configure(),
     // delay/reverb wet via StereoDelay::SetSampleRate()/Reverb::Configure(),
-    // Drive's via DriveBlendPhase::Configure()), which now validates the
-    // host's sample rate ONCE before any downstream use (see that method's
-    // own §12 trace). The sixth, FilterFxChain's own constructor
+    // Drive's via DriveBlendPhase::Configure()), which validates the
+    // host's sample rate ONCE before any downstream use. The sixth,
+    // FilterFxChain's own constructor
     // (dsp/FilterFx.hpp, `peakLimiter.Configure(kDefaultAssumedSampleRate,
     // ...)`), never went through PrepareToPlay at all -- it passes a
     // hardcoded, always-positive local constant, so it was never actually
     // relying on this clamp either. No caller can reach this method with a
-    // non-positive value. The `std::max(1.0f, sampleRate)` clamp this used
-    // to apply was also the WRONG fallback for the defect it guarded
-    // against: at sr=1.0 (only reachable if this clamp actually fired),
-    // attackSeconds*sr collapses attack/release to near-instant rather than
-    // producing a working limiter -- 44100.0 (PrepareToPlay's fallback, see
-    // its own comment) is the value that survives that disagreement.
+    // non-positive value. A defensive `std::max(1.0f, sampleRate)` clamp
+    // would not just be redundant here but actively WRONG: at sr=1.0 (the
+    // only value such a clamp could produce), attackSeconds*sr collapses
+    // attack/release to near-instant rather than producing a working
+    // limiter. 44100.0 (PrepareToPlay's fallback) is the value that
+    // actually needs to survive that disagreement.
     void Configure(float sampleRate, float thresholdIn, float ceilingIn, float attackSecondsIn,
                    float releaseSecondsIn)
     {
@@ -239,7 +236,7 @@ struct OutputLimiter
         return x * envelope;
     }
 
-    // Task 2.2-style per-unit recovery: unity gain is this unit's quiescent
+    // Per-unit recovery: unity gain is this unit's quiescent
     // state, the same convention `dsp::DriveBlendPhase::Reset()`
     // (Drive.hpp) uses for its own allpass history -- "no reduction" is this
     // stage's equivalent of "no recursive history". `envelope` cannot

@@ -1,9 +1,7 @@
 #pragma once
 
-// synth_froggers::dsp::Reverb -- packet 3 task 3.8 (extended DSP port,
-// design D15). openspec/changes/froggers-sheaf-app/tasks.md section 3, item
-// 3.8. A **copy** (design D3) of the cited Froggers formulas -- read
-// directly from the frozen source before porting, not from memory.
+// synth_froggers::dsp::Reverb -- a **copy** of the cited Froggers formulas
+// -- read directly from the frozen source before porting, not from memory.
 //
 // Ported (7 of the Reverb page's 9 params -- Wet/dry, Room size, Decay,
 // Pre-delay, Damping, Stereo width, Diffusion) from:
@@ -46,7 +44,7 @@
 // owned by Sheaf's parameter model -- callers of this unit pass already-
 // resolved 0..1 knob values per sample.
 //
-// NOT ported (deliberately, design D15): Mod depth and Hold (Reverb page
+// NOT ported (deliberately): Mod depth and Hold (Reverb page
 // slots 7 and 8). `m_reverbParams->GetParam(7)`/`GetParam(8)` are never
 // read anywhere in FroggersEngine.hpp -- confirmed by grep -- so there is
 // no frozen formula to pin. They are newly authored below, clearly marked,
@@ -55,8 +53,8 @@
 // ported params reproduce ProcessReverb + the Wet/dry blend exactly.
 
 #include "DspMath.hpp"
-#include "Drive.hpp"     // R3 below: reuse dsp::DigitalReorganizer AS-IS for the Grit knob (same reuse Delay.hpp's D10 makes of dsp::SampleRateReducer).
-#include "FilterFx.hpp"  // reuse dsp::PadeSaturator (S2a.1 below; same reuse Delay.hpp's B2 makes).
+#include "Drive.hpp"     // reuse dsp::DigitalReorganizer AS-IS for the Grit knob (same reuse Delay.hpp makes of dsp::SampleRateReducer).
+#include "FilterFx.hpp"  // reuse dsp::PadeSaturator (same reuse Delay.hpp makes).
 #include "Limiter.hpp"
 
 #include <algorithm>
@@ -65,17 +63,16 @@
 
 namespace synth_froggers::dsp {
 
-// B6b (openspec/changes/archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/tasks.md,
-// "Group B outcomes" / operator: "why can't we just have limiters for
-// reverb and delay?"): tuning for `Reverb::wetLimiter` below, a single
+// Tuning for `Reverb::wetLimiter` below, a single
 // `dsp::OutputLimiter` (dsp/Limiter.hpp) instance inserted on the value
 // `Process()` returns, AFTER both tanks and the dry/wet mix -- NOT inside
 // the feedback loop, and it never touches `fb`/Hold's own computation
-// (:238 below is unchanged). Hold (W2.1-MATH-2: `fb` -> ~0.99998 at Hold's
+// (unchanged, see below). Hold (`fb` -> ~0.99998 at Hold's
 // ceiling, ~50,000x steady-state gain, deliberately parked just under
 // self-oscillation) keeps sustaining exactly as before; this stage only
 // caps the LEVEL that escapes toward the master limiter, the same "bound
-// what escapes, don't touch what persists" treatment B6a gives Delay.
+// what escapes, don't touch what persists" treatment Delay's own wet
+// limiter gets.
 //
 // Chosen BY MEASUREMENT (scratch harness driving this exact struct with
 // Hold pinned to 1.0/max, decay knob swept {0,0.5,1.0}, room size knob swept
@@ -93,10 +90,10 @@ namespace synth_froggers::dsp {
 //     measured worst-case TRANSIENT overshoot (at the smallest room size,
 //     shortest tank round trip -- the reverb's analogue of Delay's
 //     shortest-delay-time worst case) was 1.282757 against the 1.0
-//     ceiling, at a 1ms attack. Same failure shape as B6a: the onset is
-//     fast even though the long-run climb is slow.
+//     ceiling, at a 1ms attack. Same failure shape as Delay's own wet
+//     limiter: the onset is fast even though the long-run climb is slow.
 //   - kReverbWetLimiterThreshold (0.9): kept AT the master's value, for the
-//     identical reason B6a's comment gives (dsp/Delay.hpp) -- this stage
+//     identical reason given in dsp/Delay.hpp's own wet-limiter comment -- this stage
 //     runs inside `Reverb::Process`, upstream of `SanitizeOutputSample`'s
 //     master limiter in FroggersAppCore.hpp, so it always reduces first
 //     regardless of where its threshold sits relative to the master's.
@@ -105,25 +102,25 @@ namespace synth_froggers::dsp {
 //     room-size/decay combination above) found the worst-case overshoot
 //     crosses under the 1.0 ceiling between 3us (1.000006) and 2us
 //     (1.000000); 2 microseconds sits at that measured crossing -- the
-//     identical value B6a's own sweep found for Delay's own worst case
+//     identical value Delay's own sweep found for its own worst case
 //     (dsp/Delay.hpp's own comment), not copied from it by analogy.
 //   - kReverbWetLimiterReleaseSeconds (100ms, matches the master): as with
-//     B6a, the worst-case peak is an attack-side effect; release does not
+//     Delay's own wet limiter, the worst-case peak is an attack-side effect; release does not
 //     move it, so it stays at the value this codebase already uses for
 //     "gain reduction that does not pump" (dsp::OutputLimiter::
 //     kDefaultReleaseSeconds, dsp::kPeakLimiterReleaseSeconds,
 //     dsp::kDelayWetLimiterReleaseSeconds) rather than inventing a fourth
 //     number where measurement gave no reason to move it.
-// F2.1b: retargeted from 0.9 to 0.72, preserving the ORIGINAL
+// Retargeted from 0.9 to 0.72, preserving the ORIGINAL
 // threshold/ceiling ratio (0.9/1.0 == 0.72/0.80) rather than picking a
 // round number, so this stage's measured knee (attack/release above) keeps
 // its character instead of being re-tuned by accident. 0.9 was strictly
 // below kSharedCeiling (1.0) but is ABOVE the retargeted kStageCeiling
-// (0.80) -- the negative-headroom exponential-amplifier trap F2.1a's
+// (0.80) -- the negative-headroom exponential-amplifier trap the
 // static_assert below exists to catch -- so it comes down in this same edit.
 inline constexpr float kReverbWetLimiterThreshold = 0.72f;
 inline constexpr float kReverbWetLimiterCeiling = kStageCeiling;
-// F2.1a: see dsp::OutputLimiter::kDefaultThreshold's own static_assert
+// See dsp::OutputLimiter::kDefaultThreshold's own static_assert
 // (dsp/Limiter.hpp).
 static_assert(kReverbWetLimiterThreshold < kReverbWetLimiterCeiling,
               "threshold must stay strictly below ceiling; a negative headroom turns "
@@ -131,11 +128,11 @@ static_assert(kReverbWetLimiterThreshold < kReverbWetLimiterCeiling,
 inline constexpr float kReverbWetLimiterAttackSeconds = 2.0e-6f;   // 2 microseconds -- see comment above.
 inline constexpr float kReverbWetLimiterReleaseSeconds = kSharedReleaseSeconds;  // shared; see Limiter.hpp.
 
-// R1-R6 (strict-executor packet, Reverb slots 9-13 "MdRt"/"TkDv"/"Grit"/
-// "Tilt"/"Tund"): these five parameters were registered by an earlier
-// packet (FroggersParameters.hpp) but never read -- every knob defaulted
+// Reverb slots 9-13 ("MdRt"/"TkDv"/"Grit"/
+// "Tilt"/"Tund"): these five parameters were registered
+// (FroggersParameters.hpp) but never read -- every knob defaulted
 // 0.0f and had no effect. No frozen Froggers original exists for any of
-// them (same footing as Mod depth/Hold above -- design D15's "newly
+// them (same footing as Mod depth/Hold above -- a "newly
 // authored" category), so each mapping below is authored, with its own
 // derivation noted at its call site/setter.
 struct Reverb
@@ -149,11 +146,11 @@ struct Reverb
     // the delay-line indexing.
     static constexpr float kModMaxOffsetSamples = 24.0f;
 
-    // R1 (slot 9, "Mod rate" / "MdRt"): replaces the fixed 0.35 Hz baked
+    // (slot 9, "Mod rate" / "MdRt"): replaces the fixed 0.35 Hz baked
     // into modLfoPhase's own increment below. Range [0.07, 1.75] Hz chosen
     // so the geometric mean lands exactly on today's 0.35 Hz (0.07*1.75 ==
-    // 0.1225 == 0.35^2), the SAME "geometric-mean range" idiom this same
-    // packet's Delay bank already established for its own Mod rate knob
+    // 0.1225 == 0.35^2), the SAME "geometric-mean range" idiom
+    // Delay's own Mod rate knob already established
     // (dsp::StereoDelay::SetModRate, dsp/Delay.hpp: range [0.05, 1.25],
     // 25x ratio, geometric mean 0.25 Hz) -- reused directly, including the
     // 25x lo/hi ratio (0.07*25 == 1.75), not invented fresh. Default knob
@@ -162,39 +159,35 @@ struct Reverb
     static constexpr float kModLfoHzMin = 0.07f;
     static constexpr float kModLfoHzMax = 1.75f;
 
-    // R2 (slot 10, "Tank drive" / "TkDv"): SAME [0.25, 4.0] ExpMapCompute
+    // (slot 10, "Tank drive" / "TkDv"): SAME [0.25, 4.0] ExpMapCompute
     // range and knob-0.5-is-unity convention already established for a
-    // "drive" pre-gain into a saturator elsewhere in this packet (Delay's
+    // "drive" pre-gain into a saturator elsewhere (Delay's
     // Feedback drive, dsp/Delay.hpp SetFeedbackDrive; Filter's Comb drive,
-    // FroggersAppCore.hpp Task E) -- reused, not reinvented. Default knob
+    // FroggersAppCore.hpp) -- reused, not reinvented. Default knob
     // 0.5f reproduces unity (1.0f) exactly: ExpMapCompute(0.25,4,0.5) ==
     // 0.25*sqrt(16) == 1.0.
     static constexpr float kTankDriveMin = 0.25f;
     static constexpr float kTankDriveMax = 4.0f;
 
-    // R5 (slot 13, "Tuned" / "Tund"): a static (non-LFO) offset on dA/dB,
+    // (slot 13, "Tuned" / "Tund"): a static (non-LFO) offset on dA/dB,
     // fed through the SAME offsetSamples/applyMod mechanism Mod depth's
-    // LFO wow already uses below -- per the recorded decision (operator)
-    // that there is no pitch tracker on this control, it is an ordinary
-    // parameter, not a tracked oscillator pitch. Range +-300 samples
-    // (chosen and MEASURED for stability under rapid sweeps -- see R6's
-    // own measurement, reported in the packet report, not asserted here
-    // silently). Default knob 0.5f reproduces an exact zero offset
+    // LFO wow already uses below -- there is no pitch tracker on this
+    // control: it is an ordinary parameter, not a tracked oscillator pitch.
+    // Range +-300 samples
+    // (chosen and MEASURED for stability under rapid sweeps). Default knob 0.5f reproduces an exact zero offset
     // ((2*0.5-1)*300 == 0), i.e. dA/dB unchanged from what Room size alone
     // produces today.
     static constexpr float kTunedMaxOffsetSamples = 300.0f;
 
-    // R4 (slot 12, "Tilt" / "Tilt"): bipolar post-tank tone shave, crossfaded
+    // (slot 12, "Tilt" / "Tilt"): bipolar post-tank tone shave, crossfaded
     // around the knob's centre (0.5f) between a direct lowpass tap and its
     // complementary highpass (input - lowpass(input)). kTiltCrossoverHz is
     // the FIXED corner both taps share (the knob controls only the
     // low/high BALANCE, never the corner itself); kTiltDepth is the
     // maximum weight applied to the low/high difference at either extreme.
     // Both values were chosen, then the wetLimiter's existing tuning was
-    // RE-MEASURED against this stage at its brightest setting -- see the
-    // packet report for the measured peak levels (centre vs. brightest)
-    // and the sabotage check that confirms the measurement can see a
-    // change.
+    // RE-MEASURED against this stage at its brightest setting to confirm
+    // it still holds.
     static constexpr float kTiltCrossoverHz = 1000.0f;
     static constexpr float kTiltDepth = 1.0f;
 
@@ -211,7 +204,7 @@ struct Reverb
     // through the same one-pole state each sample).
     OnePoleLowPass dampFilter;
 
-    // R4 (slot 12, "Tilt"): twin OnePoleLowPass instances sharing the same
+    // (slot 12, "Tilt"): twin OnePoleLowPass instances sharing the same
     // fixed corner (kTiltCrossoverHz, recomputed from `sampleRate` every
     // Process() call, same "recompute fresh, sampleRate is a per-call
     // argument here" idiom modLfoPhase's own increment below already uses)
@@ -230,19 +223,19 @@ struct Reverb
     // Authored Mod depth's own LFO phase (no frozen equivalent).
     float modLfoPhase = 0.0f;
 
-    // B6b: the stage's own output limiter, applied to what Process() (below)
+    // The stage's own output limiter, applied to what Process() (below)
     // returns -- after both tanks and the dry/wet mix, never inside the
     // feedback loop. See this file's header comment (above the struct) for
     // the tuning and its measurement.
     OutputLimiter wetLimiter;
 
-    // B6b: unlike `dsp::StereoDelay` (which is always `SetSampleRate()`'d
+    // Unlike `dsp::StereoDelay` (which is always `SetSampleRate()`'d
     // before any `Process()` call, dsp/Delay.hpp), `Reverb` has no such
     // entry point of its own -- every caller passes `sampleRate` directly
     // into `Process()` each call instead, and several existing tests
     // default-construct a `dsp::Reverb` and call `Process()` immediately
     // with no configuration step at all. Mirrors `FilterFxChain`'s own
-    // constructor (dsp/FilterFx.hpp, B5): pre-configure `wetLimiter` at an
+    // constructor (dsp/FilterFx.hpp): pre-configure `wetLimiter` at an
     // assumed 48kHz here so a bare `dsp::Reverb rv;` still gets this stage's
     // intended threshold/attack/release rather than `OutputLimiter`'s
     // zero-initialized attack/release coefficients (unconfigured, `Process()`
@@ -256,7 +249,7 @@ struct Reverb
         Configure(kDefaultAssumedSampleRate);
     }
 
-    // B6b: sample-rate-dependent configuration for `wetLimiter`, separate
+    // Sample-rate-dependent configuration for `wetLimiter`, separate
     // from the constructor above for the identical reason `FilterFxChain::
     // Configure()` is (dsp/FilterFx.hpp) -- the real sample rate is only
     // known once FroggersAppCore::PrepareToPlay() runs.
@@ -266,7 +259,7 @@ struct Reverb
                               kReverbWetLimiterAttackSeconds, kReverbWetLimiterReleaseSeconds);
     }
 
-    // Task 6.x (Stop-transport reset, app/FroggersAppCore.hpp's ProcessBlock
+    // (Stop-transport reset, app/FroggersAppCore.hpp's ProcessBlock
     // running->stopped edge): zero every member that carries signal energy
     // between calls to Process() -- the recursive comb-ish tank (lineA/
     // lineB), the pre-delay line, all three ring indices, the shared
@@ -274,14 +267,14 @@ struct Reverb
     // coefficient is recomputed from dampKnob01 every Process() call, so
     // leaving it untouched is correct -- this clears state, it does not
     // reconfigure), and the last computed wet outputs. Decay (up to 0.98)
-    // and Hold (:169-174, fb approaching but never reaching 1.0) make this
+    // and Hold (`fb` approaching but never reaching 1.0) make this
     // tank self-sustaining on its own, so without this the reverb keeps
     // ringing after the operator stops the transport.
     //
     // modLfoPhase: reset to 0 too, even though it carries no *signal*
     // energy (it only offsets which sample of the already-zeroed lineA/
-    // lineB gets read back, Sine01(modLfoPhase) at :153) -- silence after
-    // Reset() does not depend on its value. It is zeroed anyway so a
+    // lineB gets read back via `Sine01(modLfoPhase)` in Process() below) --
+    // silence after Reset() does not depend on its value. It is zeroed anyway so a
     // Reset()'d Reverb is in a single deterministic state regardless of how
     // long the instrument had been running before Stop, rather than
     // carrying over an arbitrary phase from the previous run.
@@ -294,7 +287,7 @@ struct Reverb
         indexB = 0;
         preIndex = 0;
         dampFilter.output = 0.0f;
-        // R4: `tiltLowPass`/`tiltHighPass` carry their own recursive
+        // `tiltLowPass`/`tiltHighPass` carry their own recursive
         // one-pole state, same "must reset them too" rationale as
         // `dampFilter.output` just above -- new state sitting downstream of
         // the tank this clear is meant to silence.
@@ -303,14 +296,14 @@ struct Reverb
         wetL = 0.0f;
         wetR = 0.0f;
         modLfoPhase = 0.0f;
-        // B6b: `wetLimiter` carries its own per-sample `envelope` state, so
+        // `wetLimiter` carries its own per-sample `envelope` state, so
         // a buffer clear -- Stop-transport reset or Tier 1 fault recovery,
         // both routed through this same Reset() -- resets it too, the same
-        // treatment B6a gives `StereoDelay::wetLimiterL`/`R` (dsp/Delay.hpp).
+        // treatment `StereoDelay::wetLimiterL`/`R` gets (dsp/Delay.hpp).
         wetLimiter.Reset();
     }
 
-    // Task 2.3 (Tier 1 recovery, app/FroggersAppCore.hpp): Reverb has NO
+    // (Tier 1 recovery, app/FroggersAppCore.hpp): Reverb has NO
     // gate/bypass -- Process() unconditionally writes into lineA/lineB/
     // preLine and unconditionally feeds `input` through dampFilter's shared
     // one-pole state every call, regardless of any parameter -- so a single
@@ -321,9 +314,9 @@ struct Reverb
     // itself goes non-finite, poisons every future sample this Reverb ever
     // produces -- permanently, since nothing else clears it. This is exactly
     // the "audio never comes back" failure mode Tier 1 exists to fix, and
-    // Reverb is just as exposed to it as any Item-2 unit; reuses this
-    // existing Reset() (added packet 3, task "Stop-transport reset") rather
-    // than adding a duplicate.
+    // Reverb is just as exposed to it as any other unit under Tier 1
+    // recovery; reuses this existing Reset() (the Stop-transport reset
+    // above) rather than adding a duplicate.
     bool StateFinite() const
     {
         if (!std::isfinite(dampFilter.output) || !std::isfinite(wetL) || !std::isfinite(wetR) ||
@@ -331,7 +324,7 @@ struct Reverb
         {
             return false;
         }
-        // B6b: fold `wetLimiter`'s own finiteness into this unit's
+        // Fold `wetLimiter`'s own finiteness into this unit's
         // aggregate -- `RecoverIfNonFinite(reverb_)` (FroggersAppCore.hpp)
         // calls this StateFinite()/the Reset() above uniformly, so a
         // poisoned limiter envelope must be visible here.
@@ -349,7 +342,7 @@ struct Reverb
         return true;
     }
 
-    // F3.1 (frogg3rs-blowout-and-drilldown-repair): read-only diagnostic,
+    // Read-only diagnostic,
     // NOT wired into RecoverPoisonedUnitState's Tier 2, same reasoning as
     // dsp::StereoDelay::StateMagnitude()'s own comment (BIBO-stable
     // feedback loop, legitimately large-but-finite under sustained loud
@@ -385,13 +378,13 @@ struct Reverb
     // :459, :574 Damping -- the ExpMap output IS the damping filter's alpha.
     static float DampAlphaFromKnob(float knob01) { return ExpMapCompute(0.001f, 0.2f, 1.0f - knob01); }
 
-    // R1 (slot 9, Mod rate) -- see kModLfoHzMin/Max's own comment above.
+    // (slot 9, Mod rate) -- see kModLfoHzMin/Max's own comment above.
     static float ModRateHzFromKnob(float knob01) { return ExpMapCompute(kModLfoHzMin, kModLfoHzMax, knob01); }
 
-    // R2 (slot 10, Tank drive) -- see kTankDriveMin/Max's own comment above.
+    // (slot 10, Tank drive) -- see kTankDriveMin/Max's own comment above.
     static float TankDriveFromKnob(float knob01) { return ExpMapCompute(kTankDriveMin, kTankDriveMax, knob01); }
 
-    // R5 (slot 13, Tuned) -- see kTunedMaxOffsetSamples's own comment above.
+    // (slot 13, Tuned) -- see kTunedMaxOffsetSamples's own comment above.
     // Identity-shaped around the centre (knob 0.5f -> 0 exactly), same
     // bipolar-around-centre idiom DriveBlendPhase's own aTarget mapping
     // uses (dsp/Drive.hpp), scaled to a sample-count range instead of an
@@ -416,8 +409,8 @@ struct Reverb
                    float sampleRate,
                    float modDepthKnob01 = 0.0f,
                    float holdKnob01 = 0.0f,
-                   // R1-R5 (slots 9-13, strict-executor packet): every
-                   // default below reproduces today's exact pre-packet
+                   // Every
+                   // default below reproduces today's exact prior
                    // behavior bit-for-bit when a caller omits them (see
                    // each default's own derivation at its constant's
                    // comment above) -- so every existing call site in this
@@ -451,14 +444,14 @@ struct Reverb
         // Authored Mod depth: a small sinusoidal wow on the read taps.
         // modDepthKnob01 == 0 -> modOffset == 0 -> dA/dB unchanged, so this
         // never disturbs the parity case.
-        // R1: modLfoHz now knob-driven (was the fixed kModLfoHz == 0.35f
+        // modLfoHz is knob-driven (replacing the fixed kModLfoHz == 0.35f
         // literal) -- modRateKnob01 == 0.5f reproduces exactly 0.35 Hz (see
         // kModLfoHzMin/Max's own comment), so this alone never disturbs the
         // parity case either.
         const float modLfoHz = ModRateHzFromKnob(modRateKnob01);
         modLfoPhase = WrapPhase(modLfoPhase + modLfoHz / sampleRate);
         const float modOffset = modDepthKnob01 * kModMaxOffsetSamples * Sine01(modLfoPhase);
-        // R5: Tuned adds a static (non-LFO) offset through this SAME
+        // Tuned adds a static (non-LFO) offset through this SAME
         // offsetSamples/applyMod mechanism -- tunedKnob01 == 0.5f reproduces
         // exactly a zero offset (see kTunedMaxOffsetSamples's own comment),
         // so dA/dB are unchanged from today's Room-size-only result at the
@@ -491,19 +484,18 @@ struct Reverb
         const float aFb = valB * (1.0f - cross) + valA * cross;
         const float bFb = valA * (1.0f - cross) + valB * cross;
 
-        // S2a.1 (openspec/changes/archive/2026-08-09-frogg3rs-parametric-slew-and-stop-root-cause/
-        // tasks.md; OPERATOR DECISION 2026-08-07: "reverb tank should have
-        // in-loop saturator anyway, the same one, for omni rule purposes").
-        // Mirrors B2 (dsp/Delay.hpp, StereoDelay::Process's own comment)
+        // The reverb tank has an in-loop saturator, the same one used
+        // elsewhere in this codebase, for consistency.
+        // Mirrors the same fix in dsp/Delay.hpp (StereoDelay::Process's own comment)
         // exactly, same reasoning, same fix shape: `aFb`/`bFb` above are
         // unbounded reads straight off lineA/lineB (this tank's own cross-fed
         // taps), so the pre-fix `preOut + aFb * fb` fed a linear, unsaturated
         // loop -- steady state `preOut / (1 - fb)`, and with Hold maxed `fb`
         // (computed just above) -> ~0.99998, i.e. ~50,000x. Wraps each fed-back tap in
         // the SAME `PadeSaturator::Saturate` the comb's own loop
-        // (FilterFx.hpp's Comb::Process) and the delay's B2 fix already use
-        // -- reused, not reimplemented (OMNI §8) -- applied BEFORE the `fb`
-        // multiply, exactly mirroring B2's `fbk * PadeSaturator::Saturate(fbL)`.
+        // (FilterFx.hpp's Comb::Process) and the delay's own fix already use
+        // -- reused, not reimplemented -- applied BEFORE the `fb`
+        // multiply, exactly mirroring that fix's `fbk * PadeSaturator::Saturate(fbL)`.
         // `Saturate` clamps to +-1 unconditionally, so every write to
         // lineA/lineB is now bounded by `|preOut| + fb` regardless of how
         // many round trips have already run -- a per-sample bound, not
@@ -517,13 +509,12 @@ struct Reverb
         // at the same fb-per-round-trip rate as before this fix -- this adds
         // a MAGNITUDE ceiling on a hot tank, not a change to the decay time
         // constant at ordinary levels. Same "bound what can blow up, don't
-        // touch what legitimately persists" split B6b's wetLimiter already
-        // keeps relative to `fb`'s own computation just above (also
+        // touch what legitimately persists" split this file's own wetLimiter
+        // already keeps relative to `fb`'s own computation just above (also
         // untouched by that fix) -- this is that same split, one loop
-        // further in, per the operator's own framing: "a structural guard,
-        // not a tone change."
+        // further in: a structural guard, not a tone change.
         //
-        // R3 (slot 11, Grit): routes aFb/bFb through dsp::DigitalReorganizer
+        // (slot 11, Grit): routes aFb/bFb through dsp::DigitalReorganizer
         // (Drive.hpp), reused AS-IS -- not hand-rolled -- specifically so
         // its own DC-blocked Process() (Mangle(input,·,·) - Mangle(0,·,·))
         // is what runs here, not a copy that would reintroduce the f(0)!=0
@@ -535,18 +526,18 @@ struct Reverb
         // Mangle(x,0,0) - Mangle(0,0,0) == x - 0 == x exactly (Drive.hpp's
         // own Mangle formula reduces to the identity at flip==hashBits==0),
         // an EXACT bit-identical bypass, not merely a small value -- the
-        // pre-packet aFb/bFb pass through this stage unchanged at default.
+        // aFb/bFb signals pass through this stage unchanged at default.
         DigitalReorganizer gritReorganizer;
         gritReorganizer.SetFlip(gritKnob01);
         gritReorganizer.SetHash(gritKnob01);
         const float aFbGrit = gritReorganizer.Process(aFb);
         const float bFbGrit = gritReorganizer.Process(bFb);
-        // R2 (slot 10, Tank drive): pre-gain on the ARGUMENT of Saturate
-        // ONLY, per this task's binding placement requirement -- Saturate's
+        // (slot 10, Tank drive): pre-gain on the ARGUMENT of Saturate
+        // ONLY -- Saturate's
         // own +-1 clamp still bounds this line to `|preOut| + fb` regardless
         // of tankDrive (writing `tankDrive * fb * Saturate(...)` instead
         // would raise that bound; deliberately not done, same reasoning
-        // Delay's own D6/Feedback drive comment gives, dsp/Delay.hpp).
+        // Delay's own Feedback-drive comment gives, dsp/Delay.hpp).
         // tankDriveKnob01 == 0.5f reproduces tankDrive == 1.0f exactly
         // (unity -- see kTankDriveMin/Max's own comment), so this alone
         // never disturbs the parity case either.
@@ -572,7 +563,7 @@ struct Reverb
         const float mix = mixKnob01;  // :455, direct passthrough
         const float mixedOut = (1.0f - mix) * input + mix * wet;  // :846
 
-        // R4 (slot 12, Tilt): bipolar post-tank tone shave, applied to
+        // (slot 12, Tilt): bipolar post-tank tone shave, applied to
         // mixedOut BEFORE wetLimiter.Process() below. tiltLowPass/
         // tiltHighPass share the same fixed corner (kTiltCrossoverHz,
         // recomputed from `sampleRate` every call, same per-call-argument
@@ -592,21 +583,15 @@ struct Reverb
         const float tiltAmount = tiltKnob01 - 0.5f;  // -0.5 (darkest) .. 0 (centre) .. 0.5 (brightest)
         const float tilted = mixedOut + tiltAmount * (tiltHigh - tiltLow) * kTiltDepth;
 
-        // B6b (tasks.md CONSOLIDATED PUSH table; "Group B outcomes" /
-        // operator: "why can't we just have limiters for reverb and
-        // delay?"): applied to the fully mixed dry/wet output, AFTER both
+        // Applied to the fully mixed dry/wet output, AFTER both
         // tanks (`lineA`/`lineB` already written above) and AFTER the mix
         // -- `fb`/Hold's own computation (`const float fb = ...` above) is
-        // untouched [drive-by fix, S2a.1: this line previously cited a
-        // stale ":341-342", already wrong before this edit -- symbol-
-        // anchored per tasks.md's own "cite by SYMBOL, not by line" rule
-        // now], so Hold keeps sustaining exactly as before; this only bounds the
+        // untouched, so Hold keeps sustaining exactly as before; this only bounds the
         // LEVEL that escapes this stage toward the master limiter. See this
         // file's header comment (above the struct) for the tuning and its
-        // measurement. R4: now applied to `tilted` (== `mixedOut` exactly
+        // measurement. Applied to `tilted` (== `mixedOut` exactly
         // at Tilt's centre default) rather than `mixedOut` directly --
-        // MEASURED against the brightest Tilt setting, see the packet
-        // report.
+        // MEASURED against the brightest Tilt setting.
         return wetLimiter.Process(tilted);
     }
 };

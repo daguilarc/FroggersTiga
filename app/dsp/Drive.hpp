@@ -1,14 +1,12 @@
 #pragma once
 
 // synth_froggers::dsp::{PolynomialDrive, SampleRateReducer,
-// DigitalReorganizer, Oversampler2x, FrogBlock, DriveBlendPhase} -- packet
-// 3 task 3.9 (extended DSP port, design D15).
-// openspec/changes/froggers-sheaf-app/tasks.md section 3, item 3.9. A
-// **copy** (design D3) of the cited Froggers formulas -- read directly from
+// DigitalReorganizer, Oversampler2x, FrogBlock, DriveBlendPhase} -- a
+// **copy** of the cited Froggers formulas -- read directly from
 // the frozen source before porting, not from memory.
 //
 // Ported (7 of the Drive page's 9 params -- Drive, Shape [a wavefolder,
-// different from the Audio bank's VCO-morph Shape of task 3.1], SRR 1,
+// different from the Audio bank's VCO-morph Shape], SRR 1,
 // SRR 2, XOR, Bit depth, Fuzz) from:
 //   - src/core/PolynomialDrive.hpp
 //       PolynomialDrive::SetGain/:34   Drive knob -> ExpMap(1,5,knob)
@@ -61,7 +59,7 @@
 // infrastructure owned by Sheaf's parameter model, not DSP. Callers here
 // pass already-resolved 0..1 knob values.
 //
-// NOT ported (deliberately, design D15): Blend and Phase (Drive page slots
+// NOT ported (deliberately): Blend and Phase (Drive page slots
 // 7 and 8). `m_driveParams->GetParam(7)`/`GetParam(8)` are never read
 // anywhere in FroggersEngine.hpp -- confirmed by grep -- so there is no
 // frozen formula to pin. They are newly authored below (DriveBlendPhase),
@@ -69,8 +67,8 @@
 
 #include "DspMath.hpp"
 #include "FilterFx.hpp"  // reuse dsp::PadeSaturator (see note above)
-#include "Limiter.hpp"   // reuse dsp::OutputLimiter (B7.2, see DriveBlendPhase below)
-#include "RecoveryTier.hpp"  // F3.3: dsp::FiniteOnly/dsp::Magnitude, this file's own ForEachStatefulUnit calls below
+#include "Limiter.hpp"   // reuse dsp::OutputLimiter (see DriveBlendPhase below)
+#include "RecoveryTier.hpp"  // dsp::FiniteOnly/dsp::Magnitude, this file's own ForEachStatefulUnit calls below
                               // (already reachable transitively via FilterFx.hpp; included directly since this
                               // file names both types itself, not just through FilterFx.hpp's own use of them).
 
@@ -86,7 +84,7 @@ struct PolynomialDrive
     float gain = 1.0f;
     float coefs[5] = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 
-    // D2 (Drive slot 10, "Link", strict-executor packet): knob-driven
+    // (Drive slot 10, "Link"): knob-driven
     // scalar replacing the hardcoded 0.25f coefs[1]/coefs[3] coupling term
     // below (see SetLink). Default 0.25f -- matches today's literal for any
     // instance that never calls SetLink (e.g. the existing
@@ -97,10 +95,10 @@ struct PolynomialDrive
     // PolynomialDrive.hpp:32-36 (SetGain).
     void SetGain(float gainKnob01) { gain = ExpMapCompute(1.0f, 5.0f, gainKnob01); }
 
-    // D2: linkScalar = knob * 0.5f, linear -- default knob 0.5f reproduces
+    // linkScalar = knob * 0.5f, linear -- default knob 0.5f reproduces
     // exactly 0.25f (today's hardcoded literal: 0.5*0.5==0.25). Doubling to
     // 0.5f at knob==1 is the "pairing unlocked" case already measured
-    // externally per this task's own brief (worst-case |Process| 200.5
+    // externally (worst-case |Process| 200.5
     // today vs 212.1 unlocked, +0.5 dB) -- no further headroom work
     // required. Call before SetCoefs, which reads `link`.
     void SetLink(float linkKnob01) { link = linkKnob01 * 0.5f; }
@@ -131,8 +129,8 @@ struct PolynomialDrive
                         + input4 * coefs[3] + input5 * coefs[4]);
     }
 
-    // D5 (Drive slot 13, "Waveshaper offset" / "Bias", strict-executor
-    // packet): subtract-after-shift construction, generalized from
+    // (Drive slot 13, "Waveshaper offset" / "Bias"): subtract-after-shift
+    // construction, generalized from
     // DigitalReorganizer::Process's own `Mangle(input) - Mangle(0)` shape
     // above in this file (same "compute fresh every call, don't cache"
     // idiom -- `gain`/`coefs` are public fields that can be reassigned
@@ -140,7 +138,7 @@ struct PolynomialDrive
     // every bias setting: Process(0.0f) is always exactly 0.0f for any
     // gain/coefs (every polynomial term multiplies by an increasing power
     // of the input), so at bias==0 this reduces to Process(input) - 0.0f,
-    // bit-identical to the pre-D5 call site.
+    // bit-identical to the original call site.
     float ProcessBiased(float input, float bias) const
     {
         return Process(input + bias) - Process(bias);
@@ -155,7 +153,7 @@ struct Oversampler2x
     bool firstSample = true;
     OnePoleLowPass antiAlias;
 
-    // F3.3 SPEC CORRECTED 2026-08-07: Tier 2's per-unit sustained-over-
+    // Tier 2's per-unit sustained-over-
     // ceiling counter, owned here rather than in FroggersAppCore -- see
     // dsp::Vco::overCeilingSeconds's own comment (Vco.hpp) for the full
     // rationale.
@@ -163,8 +161,8 @@ struct Oversampler2x
 
     Oversampler2x() { antiAlias.SetAlphaFromNatFreq(0.4f); }
 
-    // D1 (Drive slot 9, "Anti-alias brightness" / "ABrt", strict-executor
-    // packet): knob-driven cutoff replacing the constructor's hardcoded
+    // (Drive slot 9, "Anti-alias brightness" / "ABrt"): knob-driven cutoff
+    // replacing the constructor's hardcoded
     // 0.4f above. ExpMapCompute range [0.32, 0.5] cycles/sample -- narrow
     // and centered on today's fixed value, a brightness fine-tune around
     // the original design point rather than an unbounded range that could
@@ -208,7 +206,7 @@ struct Oversampler2x
         return output;
     }
 
-    // Task 2.2 (per-unit recovery, app/FroggersAppCore.hpp): zeros only the
+    // (Per-unit recovery, app/FroggersAppCore.hpp): zeros only the
     // recursive state -- prevInput (the interpolation history) and
     // antiAlias.output (the anti-alias filter's one-pole state) -- and
     // rearms firstSample so the very next Process() call re-enters the
@@ -235,7 +233,7 @@ struct SampleRateReducer
     float phase = 0.0f;
     float output = 0.0f;
 
-    // F3.3 SPEC CORRECTED 2026-08-07: Tier 2's per-unit sustained-over-
+    // Tier 2's per-unit sustained-over-
     // ceiling counter, owned here rather than in FroggersAppCore -- see
     // dsp::Vco::overCeilingSeconds's own comment (Vco.hpp) for the full
     // rationale. This struct has two independent instances (sampleRateReducer1/2
@@ -263,7 +261,7 @@ struct SampleRateReducer
         return output;
     }
 
-    // Task 2.2 (per-unit recovery, app/FroggersAppCore.hpp): zeros only
+    // (Per-unit recovery, app/FroggersAppCore.hpp): zeros only
     // phase/output, the recursive sample-and-hold state -- NOT freq, which
     // is config reassigned every block by the caller's SetFreq(), not
     // signal state.
@@ -286,8 +284,8 @@ struct SampleRateReducer
 // the FROZEN source too (confirmed by reading PolynomialDrive.hpp:135-151
 // directly).
 //
-// FIX, NOT A REPRODUCTION (task "Fix 1a", strict-executor brief): unlike
-// the fuegoize UB (packet 3, sim/Fuegoize.hpp), which is carried forward
+// FIX, NOT A REPRODUCTION: unlike
+// the fuegoize UB (sim/Fuegoize.hpp), which is carried forward
 // because the frozen tree also contains a *correct* reference (the
 // firmware's Parameter.hpp:143) to port instead, there is no such correct
 // reference here -- both PolynomialDrive.hpp:138 in the frozen `src/core/`
@@ -308,9 +306,7 @@ struct SampleRateReducer
 // rather than invoking UB -- see the regression test at input==1.0 in
 // FroggersDspParityTests.cpp.
 //
-// DELIBERATE PARITY DIVERGENCE #2 (openspec/changes/archive/2026-08-09-
-// frogg3rs-parametric-slew-and-stop-root-cause/tasks.md S1.3, proposal.md
-// §2-4 -- same class of operator-approved divergence as
+// DELIBERATE PARITY DIVERGENCE #2 (same class of divergence as
 // dsp::Comb::GetFeedback's +-1.1 -> +-0.95 above (FilterFx.hpp) and the
 // resonant-peak ceiling's 10x -> 4x -> 2x (FilterFx.hpp's
 // kMaxResonantBumpHeight), each carrying its own in-code note):
@@ -321,8 +317,8 @@ struct SampleRateReducer
 // nonzero for any `flip != 0` (exactly -1.0 at flip==128) and also nonzero
 // at flip==0 when hashBits==8. This stage sits upstream of three recursive
 // loops (dsp::Comb, dsp::StereoDelay, dsp::Reverb -- the last with no
-// in-loop saturator), which amplify that seed without bound: this is F3,
-// "Stop doesn't stop" (measured and traced end-to-end, proposal.md §2).
+// in-loop saturator), which amplify that seed without bound -- "Stop
+// doesn't stop," measured and traced end-to-end.
 //
 // PLAINLY: the frozen firmware (src/core/PolynomialDrive.hpp:125-163) has
 // this exact same f(0) != 0 behaviour -- it is a property of the original
@@ -343,22 +339,22 @@ struct SampleRateReducer
 // they were bypassed). At the pass-through configuration (flip==0,
 // hashBits==0), `Mangle(0.0f, 0, 0) == 0.0f` exactly, so the correction
 // term is exactly zero there and this fix is a no-op: `Process(1.0f) ==
-// 1.0f` (Fix 1a's own regression test, above) and every parity case at
-// default flip/hash are unaffected. `FroggersDspParityTests.cpp`'s
+// 1.0f` (the input-clamp fix's own regression test, above) and every parity
+// case at default flip/hash are unaffected. `FroggersDspParityTests.cpp`'s
 // digital_reorganizer_process_matches_bit_scramble_formula pins `Process()`
 // against a hand-transcribed replica of this formula at nonzero flip/hash;
-// it is re-asserted against this corrected behaviour in the same change
-// (see that test's own comment), never deleted.
+// it is re-asserted against this corrected behaviour (see that test's own
+// comment), never deleted.
 struct DigitalReorganizer
 {
     uint8_t flip = 0;
     uint8_t hashBits = 0;
 
-    // The bit-mangle itself -- unchanged from the original formula (Fix 1a's
-    // clamp above still applies); factored out of Process() purely so the
-    // divergence note above can call it twice: once at the real input, once
-    // at silence. OMNI §6: reused (2 call sites) and isolates a distinct
-    // transformation stage. OMNI §8: one definition, so neither call site in
+    // The bit-mangle itself -- unchanged from the original formula (the
+    // input clamp above still applies); factored out of Process() purely so
+    // the divergence note above can call it twice: once at the real input,
+    // once at silence. Reused (2 call sites) and isolates a distinct
+    // transformation stage. One definition, so neither call site in
     // Process() below copies this expression.
     static float Mangle(float input, uint8_t flip, uint8_t hashBits)
     {
@@ -407,26 +403,25 @@ struct FrogBlock
     Oversampler2x oversampler;
     float fuzz = 0.0f;
 
-    // D3 (Drive slot 11, "Fold", strict-executor packet): knob-mapped
+    // (Drive slot 11, "Fold"): knob-mapped
     // divisor for the sinIn fold below, replacing the hardcoded 4.0f.
     // Default 4.0f -- matches today's literal for any instance that never
     // calls SetFold (e.g. frog_block_process_matches_manual_chain_replica,
     // which pins the OLD hardcoded `out / 4.0f` formula directly).
     float foldDivisor = 4.0f;
 
-    // D4 (Drive slot 12, "Tone", strict-executor packet): post-chain
+    // (Drive slot 12, "Tone"): post-chain
     // low-pass. Default alpha 1.0f (bypass -- see SetTone) so an instance
     // that never calls SetTone (same parity test as above) still processes
     // as an exact identity, matching today's FrogBlock exactly.
     OnePoleLowPass tone{1.0f};
 
-    // D5 (Drive slot 13, "Waveshaper offset" / "Bias", strict-executor
-    // packet): default 0.0f (no offset) -- see SetBias /
+    // (Drive slot 13, "Waveshaper offset" / "Bias"): default 0.0f
+    // (no offset) -- see SetBias /
     // PolynomialDrive::ProcessBiased above.
     float bias = 0.0f;
 
-    // F3.3 (openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md):
-    // this struct's own contribution to the "every stateful unit in the
+    // This struct's own contribution to the "every stateful unit in the
     // audio path" enumeration -- lists ONLY the members declared above that
     // RecoverPoisonedUnitState ever watched (not polynomialDrive/
     // digitalReorganizer/fuzz -- see app/FroggersAppCore.hpp's own
@@ -440,11 +435,11 @@ struct FrogBlock
         visit(oversampler, Magnitude{});
     }
 
-    // D3: ExpMapCompute range [1.0, 16.0] -- strictly positive by
+    // ExpMapCompute range [1.0, 16.0] -- strictly positive by
     // construction (ExpMapCompute's floor is `min`, here 1.0, and a
     // positive min raised to any finite power stays strictly positive, so
-    // the divisor can never reach or cross zero), satisfying this task's
-    // binding requirement: `out / 0` would be +-inf, and Sine01's own
+    // the divisor can never reach or cross zero) -- crucial, since
+    // `out / 0` would be +-inf, and Sine01's own
     // `phase - std::floor(phase)` turns that into NaN, which this codebase
     // has already been silenced permanently by once. Default knob 0.5f
     // reproduces exactly 4.0f: ExpMapCompute(1,16,0.5) == sqrt(16) == 4
@@ -452,7 +447,7 @@ struct FrogBlock
     // above).
     void SetFold(float foldKnob01) { foldDivisor = ExpMapCompute(1.0f, 16.0f, foldKnob01); }
 
-    // D4: alpha fed directly (Reverb.hpp's own damping-filter idiom -- "the
+    // Alpha fed directly (Reverb.hpp's own damping-filter idiom -- "the
     // ExpMap output IS the alpha", not run through SetAlphaFromNatFreq).
     // Range [0.02, 1.0]; default knob 1.0f reproduces alpha == 1.0f
     // exactly, which makes OnePoleLowPass::Process an exact identity
@@ -460,7 +455,7 @@ struct FrogBlock
     // at default, not merely approximately.
     void SetTone(float toneKnob01) { tone.alpha = ExpMapCompute(0.02f, 1.0f, toneKnob01); }
 
-    // D5: bias in [-0.02, 0.02] -- MEASURED (packet report): sweeping bias
+    // Bias in [-0.02, 0.02] -- MEASURED: sweeping bias
     // across candidate ranges against PolynomialDrive::Process's own
     // worst-case |output| (several gain/shape settings, representative
     // +-1.2 input) shows peak swing rises with ANY nonzero bias (it cannot
@@ -473,9 +468,9 @@ struct FrogBlock
     void SetBias(float biasKnob01) { bias = 0.02f * (2.0f * biasKnob01 - 1.0f); }
 
     // PolynomialDrive.hpp:187-202 (FrogBlock::Process), same order as
-    // before D3/D4/D5; D5's bias is applied to polynomialDrive's own input
-    // (via ProcessBiased), D3's foldDivisor replaces the old literal
-    // divisor, and D4's tone stage is appended after the ported chain.
+    // before; bias is applied to polynomialDrive's own input
+    // (via ProcessBiased), foldDivisor replaces the old literal
+    // divisor, and the tone stage is appended after the ported chain.
     float Process(float input)
     {
         float output = oversampler.Process(input, [this](float in) -> float {
@@ -493,7 +488,7 @@ struct FrogBlock
 };
 
 // -------------------------------------------------------------------------
-// Authored, NOT ported (design D15): Blend and Phase, Drive page slots 7/8.
+// Authored, NOT ported: Blend and Phase, Drive page slots 7/8.
 // No Froggers original exists (see file header) -- design rationale below.
 //
 // Blend crossfades the dry input against the driven (FrogBlock) signal --
@@ -508,8 +503,7 @@ struct FrogBlock
 // authored stage never disturbs the seven ported params -- callers can
 // drive the ported FrogBlock alone and ignore this struct entirely.
 //
-// Item 3 (new, found while reading the code; revised 2026-07-28): an
-// earlier revision of this struct mapped the knob to the CLOSED interval
+// An earlier revision of this struct mapped the knob to the CLOSED interval
 // [-1, 1] and claimed that "keeps a first-order allpass unconditionally
 // stable (energy-preserving) for any input." That claim is false at the
 // endpoints. Process()'s recurrence is
@@ -523,45 +517,45 @@ struct FrogBlock
 // default: every fresh instance of this app started with its pole sitting
 // on the unit circle, state that never decays once excited. Fixed by
 // scaling the coefficient strictly inside the unit circle (0.98, the same
-// margin dsp::Reverb's own Decay/Hold ceiling uses, Reverb.hpp:136,207) --
+// margin dsp::Reverb's own Decay/Hold ceiling uses, Reverb.hpp's
+// DecayFeedbackFromKnob) --
 // this leaves the audible sweep essentially unchanged (0.98 vs. 1.0 shifts
 // the allpass's frequency-dependent group delay by a negligible amount at
 // every phaseKnob01 value) while guaranteeing every pole strictly inside
 // the unit circle, so the state provably decays instead of only "usually"
-// decaying. This is NOT the kind of clamp task 2.6 forbids -- that task's
-// ban is on guarding an UNREACHABLE zero divisor; here `|a| == 1` is both
+// decaying. This is NOT the kind of clamp this codebase generally avoids --
+// the discouraged pattern guards an UNREACHABLE zero divisor; here `|a| == 1` is both
 // reachable and the shipped default, so the fix changes real, exercised
 // behavior rather than adding dead code.
 // -------------------------------------------------------------------------
 // -------------------------------------------------------------------------
-// B7.2 (openspec/changes/archive/2026-08-06-frogg3rs-modulation-truth-and-voicing/tasks.md
-// §K.1/§K.4): the allpass coefficient `a` below was read fresh from the
+// The allpass coefficient `a` below was read fresh from the
 // Phase knob every sample with NO smoothing. A FIXED-coefficient allpass is
-// unity-gain; a TIME-VARYING one is not -- measured (§K.1), with a bounded
+// unity-gain; a TIME-VARYING one is not -- measured, with a bounded
 // +-1 `wet` input: 1.002 under free random phase, 4.15 under full-bank
-// per-sample-random modulation (`knob()` refreshes every sample,
-// FroggersAppCore.hpp:1008-1009 / tasks.md's "Audio-rate modulation"
-// section -- this is not an edge case, it is what audio-rate noise
+// per-sample-random modulation (`RouteAudioSample()` refreshes every knob
+// read every sample -- this is not an edge case, it is what audio-rate noise
 // modulation of this knob does continuously), and 50.5 under periodic
 // phase/content coincidence (an LFO landing near the note's own period),
 // bounded and plateauing but the largest blowout path measured in the
 // instrument -- 50x dwarfs the comb's ~1.95 and the peak's 1.669.
 //
 // TWO-PART FIX, both measured against a standalone harness reproducing
-// this struct's exact math (not assumed by analogy -- W2.2a's own glide
-// constant was picked by analogy and measured 80% wrong, tasks.md):
+// this struct's exact math (not assumed by analogy -- the comb-trim
+// smoother's own glide constant was picked by analogy and measured 80%
+// wrong):
 //
-// 1. SMOOTH THE COEFFICIENT (root cause, tried first per the brief). A
+// 1. SMOOTH THE COEFFICIENT (root cause, tried first). A
 //    one-pole (`coeffSmoother` below, `dsp::OnePoleLowPass` reused, not a
 //    new smoother) on `a` makes the allpass quasi-static, restoring
 //    near-unity gain. Swept 0.0005-0.5 cycles/sample against two
 //    adversarial patterns: (A) phaseKnob01 AND wet both redrawn uniform
-//    per-sample-random (the §K.1 "full-bank" case) and (B) a periodic
+//    per-sample-random (the "full-bank" case) and (B) a periodic
 //    phase/content coincidence (wet a sine, phaseKnob01 a synced
 //    square-ish LFO at a rational-multiple frequency) that reproduces
-//    §K.1's periodic-coincidence mechanism -- found up to 61.2x unsmoothed
+//    that same periodic-coincidence mechanism -- found up to 61.2x unsmoothed
 //    (exceeds the recorded 50.5x; verified bounded/plateauing to 20M
-//    samples, matching §K.1's own plateau finding, not divergent).
+//    samples, matching that earlier plateau finding, not divergent).
 //    Result: smoothing alone drives pattern B to ~1.0x at any glide <=
 //    ~0.05 (the periodic mechanism needs `a` to track the content in sync;
 //    a lagging coefficient breaks the lock). Pattern A -- persistent full-
@@ -572,31 +566,31 @@ struct FrogBlock
 //    many samples re-creates pattern B's own reinforcement, 1e-5 cyc/samp
 //    -> 1.86x) and faster (approaches the unsmoothed case, 0.45 cyc/samp
 //    -> 3.96x) -- so 0.0035 is a genuine measured minimum, not a monotone
-//    tradeoff. Same class of fix as W2.2a's trim smoothing; costs nothing
-//    tonally, since an unsmoothed per-sample-random coefficient was never
+//    tradeoff. Same class of fix as the comb-trim smoother's trim smoothing;
+//    costs nothing tonally, since an unsmoothed per-sample-random coefficient was never
 //    a musical control (static-Phase output is unchanged, see
 //    FroggersDspParityTests.cpp's static-neutrality pin).
 // 2. LIMIT THE STAGE OUTPUT (only because step 1 proved insufficient --
 //    pattern A's ~1.4-1.7x residual, confirmed against 20 seeds x 2M
 //    samples at the chosen glide, does not close on its own; same
-//    structural finding as the peak branch, B1/B5, where a per-sample
+//    structural finding as the peak branch, where a per-sample
 //    scalar trim alone plateaued at 1.669x and needed its own limiter).
 //    `dsp::OutputLimiter` (Limiter.hpp), five-argument `Configure()`.
 //    Threshold/attack/release swept together (thresholds 0.7-0.9,
 //    attacks 1us-1ms) against both patterns above (10-20 seeds x
-//    500k-2M samples): attack must be MICROSECONDS, not the ~1ms §K
-//    originally guessed for "sustained" excess -- confirming §K.4's
-//    correction (mechanism-shape predicted attack wrong twice already;
+//    500k-2M samples): attack must be MICROSECONDS, not the ~1ms
+//    originally guessed for "sustained" excess -- mechanism-shape predicted
+//    attack wrong twice already;
 //    measurement is what actually decides it, every stage so far has
-//    needed microseconds). 1000x slower (1ms) leaves pattern A at 1.39x,
+//    needed microseconds. 1000x slower (1ms) leaves pattern A at 1.39x,
 //    barely better than smoothing alone; 2us reaches 0.990x. Threshold
 //    0.7 (below the master's 0.9, same headroom logic as the peak
 //    branch's kPeakLimiterThreshold) with `kSharedCeiling`/
 //    `kSharedReleaseSeconds` (Limiter.hpp, reused rather than
-//    re-declared per OMNI §8) rounds out the tuning. FINAL, measured:
+//    re-declared) rounds out the tuning. FINAL, measured:
 //    pattern A worst 0.990x (20 seeds x 2M samples), pattern B worst
 //    0.896x (20M samples) -- both at or below the ~1.0 bound FrogBlock's
-//    own output already respects (W2.1-MATH), so this stage no longer
+//    own output already respects, so this stage no longer
 //    forces the master limiter to engage on its own account.
 // -------------------------------------------------------------------------
 struct DriveBlendPhase
@@ -610,9 +604,9 @@ struct DriveBlendPhase
     // Measured tuning (class comment): below the master's 0.9 threshold,
     // same headroom logic as the peak branch's kPeakLimiterThreshold.
     static constexpr float kOutputLimiterThreshold = 0.7f;
-    // F2.1a/F2.1b: this limiter is Configure()'d against kStageCeiling (see
+    // This limiter is Configure()'d against kStageCeiling (see
     // the outputLimiter.Configure(...) call below, retargeted off
-    // kSharedCeiling by F2.1b), so that is the ceiling the invariant is
+    // kSharedCeiling), so that is the ceiling the invariant is
     // checked against -- unchanged threshold (0.7, MEASURED, class comment
     // above), already strictly below kStageCeiling (0.80). See
     // dsp::OutputLimiter::kDefaultThreshold's own static_assert
@@ -626,7 +620,7 @@ struct DriveBlendPhase
     float allpassX1 = 0.0f;
     float allpassY1 = 0.0f;
 
-    // F3.3 SPEC CORRECTED 2026-08-07: Tier 2's per-unit sustained-over-
+    // Tier 2's per-unit sustained-over-
     // ceiling counter, owned here rather than in FroggersAppCore -- see
     // dsp::Vco::overCeilingSeconds's own comment (Vco.hpp) for the full
     // rationale.
@@ -674,7 +668,7 @@ struct DriveBlendPhase
         // header note), so re-running it here on a later Configure() call
         // is a harmless no-op re-derivation, not a behaviour change.
         coeffSmoother.output = -0.98f;
-        // F2.1b: retargeted from kSharedCeiling to kStageCeiling -- see the
+        // Retargeted from kSharedCeiling to kStageCeiling -- see the
         // static_assert above.
         outputLimiter.Configure(sampleRate, kOutputLimiterThreshold, kStageCeiling, kOutputLimiterAttackSeconds,
                                  kSharedReleaseSeconds);
@@ -687,18 +681,18 @@ struct DriveBlendPhase
         // phaseKnob01 == 1 -> a == 0.98), so the allpass's pole never sits
         // on the unit circle.
         const float aTarget = 0.98f * (2.0f * phaseKnob01 - 1.0f);  // authored mapping -> (-0.98, 0.98)
-        // B7.2 fix 1: smooth the coefficient itself, not the knob input --
+        // Smooth the coefficient itself, not the knob input --
         // see class header comment for the measurement that picked this glide.
         const float a = coeffSmoother.Process(aTarget);
         const float phased = -a * wet + allpassX1 + a * allpassY1;
         allpassX1 = wet;
         allpassY1 = phased;
         const float blended = dry * (1.0f - blendKnob01) + phased * blendKnob01;
-        // B7.2 fix 2: catches the residual smoothing alone cannot close.
+        // Catches the residual smoothing alone cannot close.
         return outputLimiter.Process(blended);
     }
 
-    // Task 2.2 (per-unit recovery, app/FroggersAppCore.hpp): zeros only the
+    // (Per-unit recovery, app/FroggersAppCore.hpp): zeros only the
     // allpass's own recursive history plus the two new stateful units this
     // fix adds (coeffSmoother/outputLimiter), each reset to the same
     // quiescent value their own type's Reset()/constructor already defines

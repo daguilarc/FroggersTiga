@@ -1,9 +1,8 @@
 #pragma once
 
-// synth_froggers::dsp -- shared math substrate for packet 3 (DSP port).
-// openspec/changes/froggers-sheaf-app/tasks.md section "3. DSP port"; design
-// D3 ("copy the Froggers DSP; do not share src/core/"). This header is a
-// **copy**, not an include, of four small frozen-tree utility headers that
+// synth_froggers::dsp -- shared math substrate for the DSP port. This
+// header is a **copy**, not an include, of four small frozen-tree utility
+// headers that
 // several ported units (Vco.hpp, RandomShLane.hpp, FilterFx.hpp) all need.
 // It must never #include anything under src/, sim/, or desktop-v2/ -- see
 // check_no_frozen_includes.sh, which enforces that mechanically for every

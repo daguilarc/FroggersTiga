@@ -1,11 +1,9 @@
 #pragma once
 
-// synth_froggers::dsp::Vco -- packet 3 task 3.1 (DSP port).
-// openspec/changes/froggers-sheaf-app/tasks.md section 3, item 3.1; design
-// D7 ("Froggers VCO topology exposing Sheaf's VCO UIState"). A **copy**
-// (design D3), not an include, of the cited Froggers formulas -- see the
-// per-block citations below, each read directly from the frozen source
-// before porting.
+// synth_froggers::dsp::Vco -- a DSP port of Froggers' VCO, exposing Sheaf's
+// VCO UIState. A **copy**, not an include, of the cited Froggers formulas --
+// see the per-block citations below, each read directly from the frozen
+// source before porting.
 //
 // Ported from:
 //   - src/core/FroggersEngine.hpp:439-441   pitch 20 Hz-20 kHz exp map
@@ -25,7 +23,6 @@
 // way: nothing here *could* reach another VCO's state.
 //
 // ============================================================================
-// Packet 7 (tasks.md section "7. VCO scopes", task 7.1; design D7) --
 // Sheaf's own `WavetableVco<Bits>` (include/synth/DspOscillators.hpp) is the
 // cited shape this struct must conform to: `UIState{connected, scope,
 // scopeChannel, scopeColor}` (:119-124) + `SetScopeWriterHolder()` (:133-135)
@@ -33,23 +30,24 @@
 // is `Process`, not part of the cited UIState surface. Sheaf's own reference
 // struct embeds this directly alongside its DSP `Process()`, in the SAME
 // file/class, rather than through a separate wrapper -- this port mirrors
-// that placement exactly (same reasoning as design D10's ResonantBump/Comb
-// UIState, app/dsp/FilterFx.hpp), which is why this otherwise-pure DSP file
-// now takes on a deliberate, minimal Sheaf dependency: `synth/DspScope.hpp`
-// (ScopeWriter/ScopeWriterHolder, header-only, no link dependency) and
-// `synth/Color.hpp`/`synth/AtomicColor.hpp` (also header-only). This is a
-// widening of the "no Sheaf dependency at all" convention packets 3/6
-// established for app/dsp/*.hpp -- flagged explicitly in the packet report,
-// not silently done; `app/Makefile`'s DSP_TEST_BIN rule gains Sheaf's
-// -I include path accordingly (no link-time dependency: everything reached
-// here is header-only inline).
+// that placement exactly (same reasoning as FilterFx.hpp's ResonantBump/Comb
+// UIState), which is why this otherwise-pure DSP file takes on a deliberate,
+// minimal Sheaf dependency: `synth/DspScope.hpp` (ScopeWriter/
+// ScopeWriterHolder, header-only, no link dependency) and `synth/Color.hpp`/
+// `synth/AtomicColor.hpp` (also header-only). This widens app/dsp/*.hpp's
+// usual no-Sheaf-dependency convention deliberately, not incidentally;
+// `app/Makefile`'s DSP_TEST_BIN rule gains Sheaf's -I include path
+// accordingly (no link-time dependency: everything reached here is
+// header-only inline).
 //
 // Deliberately NOT ported: WavetableVco::Process's cycle-boundary
-// RecordStart/marker bookkeeping (DspOscillators.hpp:158-163). Task 7's own
-// tests only require "scope channels bound" and "connected flag true after
-// processing" -- no marker/cycle-alignment requirement -- so this port
-// writes the raw sample to the scope every Process() call and leaves marker
-// support unimplemented, flagged here rather than silently reproduced.
+// RecordStart/marker bookkeeping (DspOscillators.hpp:158-163). This struct
+// does not write to the scope at all -- FroggersAppCore.hpp writes the
+// gated sample to scopeWriterHolder_ after MixOscVoices runs (see
+// SetScopeWriterHolder() below and RouteAudioSample() in
+// FroggersAppCore.hpp) -- and that call site does not reproduce the
+// marker/cycle-alignment bookkeeping either, so it stays unimplemented
+// throughout, not silently dropped.
 
 #include "DspMath.hpp"
 
@@ -89,8 +87,8 @@ inline float EvalWaveMorph(float phaseWrapped01, float morph)
 // the ported topology with zero cross-VCO terms.
 struct Vco
 {
-    // Task 7.1 (design D7): the cited UIState shape, verbatim member names
-    // and types (DspOscillators.hpp:119-124).
+    // Verbatim member names and types, matching Sheaf's own UIState shape
+    // (DspOscillators.hpp:119-124).
     struct UIState
     {
         std::atomic<bool> connected{false};
@@ -99,8 +97,24 @@ struct Vco
         synth::AtomicColor scopeColor;
     };
 
-    // FroggersEngine.hpp:135-137 (x_pmLfoMinHz/x_pmLfoMaxHz/x_pmLfoDepth).
-    static constexpr float kPmLfoMinHz = 0.05f;
+    // pmRateKnob01 in [0,1] maps exponentially across [kPmLfoMinHz,
+    // kPmLfoMaxHz] (StepPmLfo below): kPmLfoMinHz is the slowest rate the
+    // knob reaches, kPmLfoMaxHz the fastest, and because the map between
+    // them is exponential rather than linear, the knob's middle position
+    // is their geometric mean -- sqrt(kPmLfoMinHz * kPmLfoMaxHz) -- not
+    // the arithmetic average, so moving either endpoint also moves where
+    // the middle of the knob's travel lands. kPmLfoMaxHz and kPmLfoDepth
+    // match the parity reference exactly (FroggersEngine.hpp:136-137,
+    // x_pmLfoMaxHz/x_pmLfoDepth). kPmLfoMinHz does not: the reference's
+    // x_pmLfoMinHz (0.05f, FroggersEngine.hpp:135) is a ~20-second cycle,
+    // slow enough to double as a second off switch. That job already
+    // belongs entirely to each VCO's own PM depth knob, which gates the
+    // offset to exactly zero at/below kPmLfoFloor (PmDepthScale below) --
+    // so this floor's only purpose is to bound how slow an AUDIBLE rate
+    // is allowed to get, never to silence it. A cycle within a few
+    // seconds reads as motion; one that takes tens of seconds reads as
+    // drift.
+    static constexpr float kPmLfoMinHz = 0.3f;  // ~3.3 s/cycle at the floor.
     static constexpr float kPmLfoMaxHz = 20.0f;
     static constexpr float kPmLfoDepth = 0.15f;
 
@@ -108,9 +122,9 @@ struct Vco
     static constexpr float kPmLfoFloor = 0.02f;
     static constexpr float kPmLfoRampWidth = 0.08f;
 
-    // Strict-executor packet (Ring Mod, Audio slots 9-11; task A1): the
-    // internal ring-mod carrier's own frequency range -- deliberately NOT
-    // PitchToPhaseIncrement's 20/20000 Hz pitch literals. 20 Hz-5000 Hz
+    // The internal ring-mod carrier's own frequency range (Ring Mod, Audio
+    // slots 9-11) -- deliberately NOT PitchToPhaseIncrement's 20/20000 Hz
+    // pitch literals. 20 Hz-5000 Hz
     // covers sub-audio "throb" through the classic clangy ring-mod register
     // while staying well below Nyquist at every sample rate this app
     // supports, so the carrier itself never folds into noise before the
@@ -118,7 +132,7 @@ struct Vco
     static constexpr float kRingModMinHz = 20.0f;
     static constexpr float kRingModMaxHz = 5000.0f;
 
-    // Task A2: Ring Mod's OWN zero-off floor/ramp -- a separate pair of
+    // Ring Mod's OWN zero-off floor/ramp -- a separate pair of
     // constants from kPmLfoFloor/kPmLfoRampWidth (not merely a separate
     // call), since a bare product carrier is a much more drastic audible
     // change at any nonzero depth than PM's phase offset, so a slightly
@@ -129,23 +143,19 @@ struct Vco
 
     float carrierPhase = 0.0f;
     float pmLfoPhase = 0.0f;
-    // Task A1: this VCO's own internal ring-mod carrier phase -- stepped the
+    // This VCO's own internal ring-mod carrier phase -- stepped the
     // same way carrierPhase is (WrapPhase(phase + increment)), never derived
     // from or read by any other Vco instance.
     float ringCarrierPhase = 0.0f;
 
-    // F3.3 SPEC CORRECTED 2026-08-07 (openspec/changes/
-    // archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md): Tier
-    // 2's "how many
-    // consecutive seconds has this unit's state stayed over
-    // kMaxUnitStateMagnitude" counter (app/FroggersAppCore.hpp's
-    // RecoverUnitIfNeeded), owned HERE rather than in FroggersAppCore --
-    // it is this unit's own recovery bookkeeping, not shared state, so it
+    // The running count of consecutive seconds this unit's state has stayed
+    // over kMaxUnitStateMagnitude (app/FroggersAppCore.hpp's
+    // RecoverUnitIfNeeded), owned HERE rather than in FroggersAppCore -- it
+    // is this unit's own recovery bookkeeping, not shared state, so it
     // belongs with the rest of this struct's state rather than in a
-    // parallel member on the enumerating parent (the original placement
-    // required a second, address-keyed lookup table to pair a unit back to
-    // its own counter once the enumeration went hierarchical; see this
-    // task's own SPEC CORRECTED note for why that was wrong).
+    // parallel member on the enumerating parent, which would need a second,
+    // address-keyed lookup table to pair a unit back to its own counter
+    // once the enumeration went hierarchical.
     float overCeilingSeconds = 0.0f;
 
     // FroggersEngine.hpp:439-441 -- one VCO's pitch knob (0..1) mapped
@@ -165,15 +175,15 @@ struct Vco
         return TrueZeroDepthTaper(pmKnob01, kPmLfoFloor, kPmLfoRampWidth);
     }
 
-    // Task B (PM rate, Audio slot 12): this VCO's own ring-mod depth taper
-    // uses TrueZeroDepthTaper with Ring Mod's own floor/ramp (task A2) --
-    // NOT kPmLfoFloor/kPmLfoRampWidth, no second copy of the taper itself.
+    // This VCO's own ring-mod depth taper uses TrueZeroDepthTaper with Ring
+    // Mod's own floor/ramp (kRingModFloor/kRingModRampWidth above) -- NOT
+    // kPmLfoFloor/kPmLfoRampWidth, no second copy of the taper itself.
     static float RingModDepthScale(float ringModKnob01)
     {
         return TrueZeroDepthTaper(ringModKnob01, kRingModFloor, kRingModRampWidth);
     }
 
-    // Task A1: ring-mod carrier's phase increment -- same ExpMapCompute
+    // Ring-mod carrier's phase increment -- same ExpMapCompute
     // shape PitchToPhaseIncrement uses for pitch, over kRingModMinHz/MaxHz.
     static float RingModPhaseIncrement(float ringModKnob01, float sampleRate)
     {
@@ -182,11 +192,10 @@ struct Vco
 
     // FroggersEngine.hpp:706-712 (StepIndependentPmLfo) -- advances this
     // VCO's own PM LFO by one sample; returns its PRE-advance sine value.
-    // Strict-executor packet (task B): the RATE argument is now the shared
-    // PM-rate knob (Audio slot 12, one knob feeding all three VCOs'
-    // StepPmLfo calls), decoupled from the per-VCO PM depth knob that used
-    // to drive both -- pmRateKnob01 maps exponentially to [kPmLfoMinHz,
-    // kPmLfoMaxHz], same formula as before, just fed by a different knob.
+    // The RATE argument is the shared PM-rate knob (Audio slot 12, one knob
+    // feeding all three VCOs' StepPmLfo calls), decoupled from the per-VCO
+    // PM depth knob that drives only PmDepthScale -- pmRateKnob01 maps
+    // exponentially to [kPmLfoMinHz, kPmLfoMaxHz].
     float StepPmLfo(float pmRateKnob01, float sampleRate)
     {
         const float hz = ExpMapCompute(kPmLfoMinHz, kPmLfoMaxHz, pmRateKnob01);
@@ -195,11 +204,11 @@ struct Vco
         return lfoValue;
     }
 
-    // FroggersEngine.hpp:735-744, the m_simIndependentPm branch, plus this
-    // packet's Ring Mod (task A) and PM-rate decoupling (task B). pmKnob01
-    // still drives ONLY this VCO's own PM depth (PmDepthScale); pmRateKnob01
-    // is the new shared Audio-slot-12 rate knob; ringModKnob01 is this VCO's
-    // own Ring Mod knob (Audio slot 9/10/11).
+    // FroggersEngine.hpp:735-744, the m_simIndependentPm branch, plus Ring
+    // Mod and PM-rate decoupling on top. pmKnob01 drives ONLY this VCO's
+    // own PM depth (PmDepthScale); pmRateKnob01 is the shared Audio-slot-12
+    // rate knob; ringModKnob01 is this VCO's own Ring Mod knob (Audio slot
+    // 9/10/11).
     float Process(float pitchKnob01, float morphKnob01, float pmKnob01, float pmRateKnob01, float ringModKnob01,
                   float sampleRate)
     {
@@ -210,7 +219,7 @@ struct Vco
         const float modulatedPhase = WrapPhase(carrierPhase + pmOffset);
         const float dry = EvalWaveMorph(modulatedPhase, morphKnob01);
 
-        // Task A: this SAME VCO's own internal ring-mod carrier -- stepped
+        // This SAME VCO's own internal ring-mod carrier -- stepped
         // every sample regardless of depth (same practice as pmLfoPhase
         // above, so raising the knob never causes a phase jump), multiplied
         // against `dry` (the pre-ASR-gate wave-morph output -- this struct
@@ -228,27 +237,25 @@ struct Vco
 
         carrierPhase = WrapPhase(carrierPhase + phaseIncrement);
 
-        // UI-rework ITEM 3 (design.md A3d, tasks.md B.3, 2026-07-29): this
-        // struct used to write every raw sample straight to the reserved
-        // scope channel here, UNCONDITIONALLY -- before the ASR gate
-        // (dsp::MixOscVoices/VcoAdsrState::apply, VoiceEnvelope.hpp) had any
+        // This struct does not write to the scope itself. If it wrote the
+        // raw sample straight to the reserved scope channel here,
+        // UNCONDITIONALLY, it would write BEFORE the ASR gate
+        // (dsp::MixOscVoices/VcoAdsrState::apply, VoiceEnvelope.hpp) has any
         // chance to run, since MixOscVoices is only called by the caller
         // AFTER all three Vco::Process() calls return (FroggersAppCore.hpp's
-        // RouteAudioSample()). That let the scope visibly animate before
-        // Play was ever pressed (operator: "i haven't clicked play at all
-        // yet, and the VCO oscilloscope still shows waves moving"), because
-        // this raw, pre-gate `output` is nonzero regardless of gate state.
-        // The write now happens at the CALL SITE instead, after
-        // MixOscVoices applies the gate, using the same per-VCO
-        // ScopeWriterHolder members FroggersAppCore already owns directly
-        // (see RouteAudioSample()) -- so this struct no longer writes to the
-        // scope itself at all; `scopeWriterHolder_`/`SetScopeWriterHolder()`
-        // stay only for `PopulateUIState()` below, which merely tells the UI
-        // which ScopeWriter/channel to poll, not when to write a sample.
+        // RouteAudioSample()) -- letting the scope visibly animate before
+        // Play is ever pressed, because this raw, pre-gate `output` is
+        // nonzero regardless of gate state. The write instead happens at
+        // the CALL SITE, after MixOscVoices applies the gate, using the
+        // same per-VCO ScopeWriterHolder members FroggersAppCore already
+        // owns directly (see RouteAudioSample()); `scopeWriterHolder_`/
+        // `SetScopeWriterHolder()` here stay only for `PopulateUIState()`
+        // below, which merely tells the UI which ScopeWriter/channel to
+        // poll, not when to write a sample.
         return output;
     }
 
-    // Task 7.1 (design D7): SetScopeWriterHolder/SetScopeColor/PopulateUIState,
+    // SetScopeWriterHolder/SetScopeColor/PopulateUIState,
     // same shape as WavetableVco's (DspOscillators.hpp:133-135,137-139,165-171).
     void SetScopeWriterHolder(synth::ScopeWriterHolder* holder)
     {
@@ -269,15 +276,16 @@ struct Vco
         state.scopeChannel.store(connected ? scopeWriterHolder_->FlatChan() : 0);
     }
 
-    // Task 2.2 (per-unit recovery, app/FroggersAppCore.hpp): zeros only this
+    // Per-unit recovery (see app/FroggersAppCore.hpp): zeros only this
     // VCO's own recursive state (the two running phases) -- does NOT touch
     // scopeWriterHolder_/scopeColor_ (wiring, not signal state) or any knob
     // input, since those are recomputed fresh from the caller's arguments on
     // the very next Process() call regardless. Both phases are ordinarily
-    // kept in [0,1) by WrapPhase, but `carrierPhase + pmOffset` (:155) can
-    // latch non-finite if pmOffset itself ever is (WrapPhase's `floor` of a
-    // NaN is NaN, and NaN then propagates through every subsequent
-    // WrapPhase() forever) -- Reset() is this unit's only way back.
+    // kept in [0,1) by WrapPhase, but `carrierPhase + pmOffset` (the
+    // phase-offset addition inside Process() above) can latch non-finite if
+    // pmOffset itself ever is (WrapPhase's `floor` of a NaN is NaN, and NaN
+    // then propagates through every subsequent WrapPhase() forever) --
+    // Reset() is this unit's only way back.
     void Reset()
     {
         carrierPhase = 0.0f;
@@ -286,9 +294,9 @@ struct Vco
         overCeilingSeconds = 0.0f;
     }
 
-    // Tasks 2.3/2.4 (Tier 1/Tier 2 recovery): all three are pure recursive
-    // state (ringCarrierPhase added by the Ring Mod strict-executor packet,
-    // task A1), no coefficients to exclude.
+    // Read by Tier 1/Tier 2 recovery: all three are pure recursive state
+    // (ringCarrierPhase included, from Ring Mod), no coefficients to
+    // exclude.
     bool StateFinite() const
     {
         return std::isfinite(carrierPhase) && std::isfinite(pmLfoPhase) && std::isfinite(ringCarrierPhase);

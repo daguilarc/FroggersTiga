@@ -4913,17 +4913,55 @@ TEST_CASE(ring_mod_carrier_is_internal_never_reads_another_vco) {
     }
 }
 
-TEST_CASE(pm_rate_default_knob_reproduces_todays_rate_at_pm_depth_knobs_default) {
-    // Task B: today's rate at the PM depth knob's own 0.0f default
-    // (FroggersParameters.hpp PM1/PM2/PM3) is ExpMapCompute(min,max,0.0f)
-    // == kPmLfoMinHz (min^0-power identity, independent of min/max). The
-    // new PMrt slot's own 0.0f default (unset in FroggersParameters.hpp)
-    // reproduces the exact same rate through the exact same formula, now
-    // fed by pmRateKnob01 instead of pmKnob01.
+TEST_CASE(pm_rate_default_knob_sits_at_the_floor_rate) {
+    // ExpMapCompute's min*(max/min)^value shape returns `min` exactly at
+    // value=0.0f, independent of `max` -- so the shared PM-rate knob's
+    // unset (0.0f) default always maps to dsp::Vco::kPmLfoMinHz, whatever
+    // that floor is currently set to.
     const float sr = 48000.0f;
     dsp::Vco vco;
     vco.StepPmLfo(/*pmRateKnob01=*/0.0f, sr);
     REQUIRE_NEAR(vco.pmLfoPhase, dsp::Vco::kPmLfoMinHz / sr, 1e-9);
+}
+
+// Pinned literal for the PM-rate knob's midpoint (knob=0.5) -- NOT derived
+// from dsp::Vco::kPmLfoMinHz/kPmLfoMaxHz, so a change to either constant
+// cannot move this value in lockstep with the production code that reads
+// them. Recompute by hand whenever an endpoint changes intentionally:
+//   sqrt(kPmLfoMinHz * kPmLfoMaxHz) = sqrt(0.3 * 20) = sqrt(6)
+//                                   = 2.449489742783178... Hz
+constexpr float kPmRateMidpointHz = 2.4494897f;
+
+TEST_CASE(pm_rate_knob_midpoint_hz_is_pinned_against_silent_drift) {
+    // Guards the ACTUAL VALUE: a change to either endpoint constant --
+    // accidental or intentional -- moves the knob's real midpoint rate
+    // away from kPmRateMidpointHz above. That literal does not read
+    // dsp::Vco::kPmLfoMinHz/kPmLfoMaxHz, so it cannot follow them: any
+    // endpoint change fails here and forces a human to consciously
+    // recompute and update the literal -- the only way to tell an
+    // intentional change from an accidental one.
+    const float sr = 48000.0f;
+    dsp::Vco vco;
+    vco.StepPmLfo(/*pmRateKnob01=*/0.5f, sr);
+    REQUIRE_NEAR(vco.pmLfoPhase, kPmRateMidpointHz / sr, 1e-6);
+}
+
+TEST_CASE(pm_rate_knob_midpoint_matches_sqrt_of_floor_times_ceiling) {
+    // Guards the SHAPE, not the value: ExpMapCompute is exponential, so
+    // its midpoint (knob=0.5) is the geometric mean of the endpoints, not
+    // their arithmetic mean (10.15 Hz today). Expressed symbolically in
+    // terms of the live constants, this holds for whatever
+    // dsp::Vco::kPmLfoMinHz/kPmLfoMaxHz currently are, so it would catch
+    // the map degrading to a linear interpolation -- but it CANNOT catch
+    // either endpoint drifting, since both sides read the same two
+    // constants and move together. That guarantee belongs to
+    // pm_rate_knob_midpoint_hz_is_pinned_against_silent_drift above, which
+    // asserts against a literal instead of re-deriving one.
+    const float sr = 48000.0f;
+    dsp::Vco vco;
+    vco.StepPmLfo(/*pmRateKnob01=*/0.5f, sr);
+    const float expectedMidPhase = std::sqrt(dsp::Vco::kPmLfoMinHz * dsp::Vco::kPmLfoMaxHz) / sr;
+    REQUIRE_NEAR(vco.pmLfoPhase, expectedMidPhase, 1e-6);
 }
 
 TEST_CASE(pm_rate_is_shared_across_vcos_and_decoupled_from_each_vcos_own_depth_knob) {
@@ -4954,6 +4992,64 @@ TEST_CASE(pm_rate_is_shared_across_vcos_and_decoupled_from_each_vcos_own_depth_k
         }
     }
     REQUIRE_TRUE(sawDivergence);
+}
+
+// Below this rate, one LFO cycle takes long enough that it reads as a slow
+// drift rather than felt motion. kPmLfoMinHz must clear it with room to
+// spare, so the knob's bottom end is unambiguously on the audible side.
+constexpr float kAudibleLfoRateBoundHz = 0.1f;
+
+// Cycles actually travelled by one VCO's PM LFO over `samples` steps at a
+// fixed rate knob, measured from raw per-step phase deltas (each unwrapped
+// by +1 when it goes negative, i.e. when WrapPhase folds it) rather than by
+// re-deriving the answer from ExpMapCompute -- an independent check that
+// the instrument moved at all, not a restatement of the formula under test.
+float MeasurePmLfoCycles(dsp::Vco& vco, float pmRateKnob01, float sr, int samples) {
+    float prevPhase = vco.pmLfoPhase;
+    float cyclesTravelled = 0.0f;
+    for (int i = 0; i < samples; ++i) {
+        vco.StepPmLfo(pmRateKnob01, sr);
+        float delta = vco.pmLfoPhase - prevPhase;
+        if (delta < 0.0f) {
+            delta += 1.0f;
+        }
+        cyclesTravelled += delta;
+        prevPhase = vco.pmLfoPhase;
+    }
+    return cyclesTravelled;
+}
+
+TEST_CASE(pm_rate_floor_clears_the_audible_modulation_bound) {
+    REQUIRE_TRUE(dsp::Vco::kPmLfoMinHz > kAudibleLfoRateBoundHz);
+}
+
+TEST_CASE(pm_rate_floor_positive_control_lfo_moves_and_differs_from_ceiling) {
+    // A "the rate is nonzero" assertion is worthless if the LFO could not
+    // have moved. First prove the floor rate actually completes a cycle
+    // inside the window the audible bound above implies; then prove knob=0
+    // and knob=1 travel measurably different distances over a shared
+    // window. Both are real simulated movement, not trusted formula output,
+    // and both print the measured numbers alongside the pass/fail.
+    const float sr = 48000.0f;
+    const int boundWindowSamples = static_cast<int>(sr / kAudibleLfoRateBoundHz);
+
+    dsp::Vco floorVco;
+    const float floorCycles = MeasurePmLfoCycles(floorVco, /*pmRateKnob01=*/0.0f, sr, boundWindowSamples);
+    std::cout << "  PM rate floor positive control: " << floorCycles << " cycle(s) travelled in "
+              << (boundWindowSamples / sr) << "s at knob=0 (must clear 1.0 within "
+              << (1.0f / kAudibleLfoRateBoundHz) << "s)\n";
+    // Void, not a pass, if the floor rate never even completed one cycle.
+    REQUIRE_TRUE(floorCycles >= 1.0f);
+
+    const int oneSecond = static_cast<int>(sr);
+    dsp::Vco knob0;
+    dsp::Vco knob1;
+    const float cyclesAtKnob0 = MeasurePmLfoCycles(knob0, /*pmRateKnob01=*/0.0f, sr, oneSecond);
+    const float cyclesAtKnob1 = MeasurePmLfoCycles(knob1, /*pmRateKnob01=*/1.0f, sr, oneSecond);
+    std::cout << "  PM rate floor positive control: cycles/second at knob=0 -> " << cyclesAtKnob0
+              << ", knob=1 -> " << cyclesAtKnob1 << "\n";
+    // Measurably different, not just unequal -- a wide, unmistakable gap.
+    REQUIRE_TRUE(cyclesAtKnob1 - cyclesAtKnob0 > 1.0f);
 }
 
 // Task C1: BINDING INVARIANT (operator ruling) -- the WEIGHTS themselves

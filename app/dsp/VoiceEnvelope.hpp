@@ -1,8 +1,7 @@
 #pragma once
 
-// synth_froggers::dsp::{VcoAdsrState, MixOscVoices} -- packet 3 task 3.2
-// (DSP port). openspec/changes/froggers-sheaf-app/tasks.md section 3, item
-// 3.2. A **copy** (design D3) of the cited Froggers formulas.
+// synth_froggers::dsp::{VcoAdsrState, MixOscVoices} -- a **copy** of the
+// cited Froggers formulas.
 //
 // Ported from:
 //   - src/core/VcoAdsrState.hpp (whole file, verbatim -- it already has no
@@ -12,7 +11,7 @@
 //     the `m_vcoAdsr && m_adsrParams` branch at :774-784, plus the plain
 //     average return at :786-788.
 //
-// NOT ported (deliberately, v1 legacy per tasks.md 3.2):
+// NOT ported (deliberately, v1 legacy):
 //   - the `m_pairAr` fallback branch, FroggersEngine.hpp:789-808 (pair
 //     attack/release smoothing + copysign recombination). This app's port
 //     always has an ASR state (VcoAdsrState is unconditional here, unlike
@@ -32,16 +31,15 @@ struct VcoAdsrState
 {
     static constexpr size_t kNumVoices = 3;
     static constexpr float kMinTimeSeconds = 0.0005f;
-    // Operator, 2026-08-07: "the sustain minimum value is too low. i'm
-    // concerned that audio rate modulation in some of the envelope parameters
-    // would result in silence."
+    // The sustain minimum guards against audio-rate modulation of envelope
+    // parameters producing silence.
     //
     // This is the MISSING SIBLING of kMinTimeSeconds. Attack and release are
     // both floored (mapAttack/mapRelease below) precisely so modulation cannot
     // drive them to a degenerate zero; sustain -- the third ASR parameter, and
     // the only per-voice LEVEL control -- was read straight through as
     // `clamp(knob, 0, 1)` with no floor at all. Two of three had the guard,
-    // one did not (OMNI §1: duplication is symmetric, go find the sibling).
+    // one did not.
     //
     // Degenerate at zero is not merely quiet, it is structurally broken:
     // `attackStep` is `sustainLevel / attackTime`, so at sustainLevel 0 the
@@ -53,29 +51,27 @@ struct VcoAdsrState
     //
     // 0.10 is about -20 dB: audible, unmistakably quiet, and far enough above
     // zero that a full-depth modulation trough still passes signal.
-    // TRADE-OFF, operator-accepted: sustain 0 is no longer a hard mute for a
+    // TRADE-OFF: sustain 0 is no longer a hard mute for a
     // voice, it is this floor.
     static constexpr float kMinSustainLevel = 0.10f;
-    // ITEM 4 (design.md A2, 2026-07-29, operator judgement -- deliberate
-    // parity divergence, same treatment as Fuegoize.hpp's own D6 note):
-    // lowered from 2.5s to 1.0s. 1.0s still comfortably covers a slow pad
-    // swell; 2.5s was judged unnecessarily long.
-    // W5 (proposal frogg3rs-stop-isolation-and-legible-labels SS2, operator
-    // ruling 2026-08-17, verbatim: "that max attack is also way too long.
-    // half a second at most"): lowered again, 1.0s -> 0.5f. Scope is ATTACK
-    // ONLY -- the operator named attack alone; see kMaxDecaySeconds's own
+    // Deliberate parity divergence (same treatment as Fuegoize.hpp's own
+    // divergence note): lowered from 2.5s to 1.0s. 1.0s still comfortably
+    // covers a slow pad swell; 2.5s was judged unnecessarily long. Lowered
+    // again later, 1.0s -> 0.5f ("that max attack is also way too long,
+    // half a second at most"). Scope is ATTACK
+    // ONLY -- see kMaxDecaySeconds's own
     // comment below for why its former "mirrors kMaxAttackSeconds" rationale
     // no longer holds and has been rewritten as decay's own judgment.
     static constexpr float kMaxAttackSeconds = 0.5f;
-    // Operator decision 2026-07-29, same deliberate parity divergence: lowered
+    // Deliberate parity divergence: lowered
     // from the frozen firmware's 10.0s to 5.0s. Note this does NOT by itself
     // make Stop responsive -- 5s of release after pressing Stop still reads as
     // broken, which is why FroggersAppCore's stop path forces a ~50ms fade
     // independent of this ceiling (see kStopFadeReleaseKnob there).
     //
-    // B3 (tasks.md CONSOLIDATED PUSH table, 2026-08-05): operator, "sustain
-    // and release maxima are simply too long." Traced before changing
-    // anything (§0's "no fix before the recorded root cause"): `sustainKnob`
+    // A complaint that "sustain
+    // and release maxima are simply too long" was traced before changing
+    // anything: `sustainKnob`
     // is clamped to a LEVEL in [0,1] by `stepVoice` below, not mapped through
     // any seconds-ceiling constant -- there is no `kMaxSustainSeconds` in
     // this file, and none is buildable from a knob that is a level, not a
@@ -83,40 +79,39 @@ struct VcoAdsrState
     // sustain; it is release read through the perceptual lens of "how long
     // the note keeps ringing after I let go" (release governs exactly that,
     // Stage::Release above), so this is treated as a release complaint.
-    // Halved as a starting point, ear-tuned by the operator like the 5.0s
+    // Halved as a starting point, ear-tuned like the 5.0s
     // value it replaces -- this number is not derived from anything.
     static constexpr float kMaxReleaseSeconds = 2.5f;
-    // Strict-executor packet (Envelope slot 1/5/9, Decay). No design-doc
-    // value exists for Decay's own time ceiling (tasks.md T1.1 only
-    // specifies the peak/numerator fix, not a Decay time range) -- this is
+    // (Envelope slot 1/5/9, Decay). No design-doc
+    // value exists for Decay's own time ceiling (the original spec only
+    // specified the peak/numerator fix, not a Decay time range) -- this is
     // an implementer judgment call, reported as such rather than silently
     // asserted. Originally set to mirror kMaxAttackSeconds's then-value
-    // (1.0f); W5 (proposal frogg3rs-stop-isolation-and-legible-labels SS2,
-    // operator ruling 2026-08-17) halved kMaxAttackSeconds to 0.5f for
-    // Attack ALONE -- the operator named attack specifically, not decay --
+    // (1.0f); kMaxAttackSeconds was halved to 0.5f for
+    // Attack ALONE -- attack was named specifically, not decay --
     // so that mirror is now deliberately broken and this value stands on its
     // own judgment: 1.0f, unchanged, kept generous because Decay (like the
     // old mirrored rationale for Attack) is a per-note transient stage that
     // normally completes WHILE the gate is still held, so kMaxReleaseSeconds's
     // own halving rationale ("note keeps ringing after I let go") still does
     // not apply here. If Decay's own ceiling ever needs revisiting, it now
-    // needs its own operator ruling -- it no longer inherits Attack's.
+    // needs its own deliberate re-judgment -- it no longer inherits Attack's.
     static constexpr float kMaxDecaySeconds = 1.0f;
-    // Strict-executor packet (Envelope slot 13, Grace). Another
-    // implementer judgment call (tasks.md T1.4: "needs its own design pass
+    // (Envelope slot 13, Grace). Another
+    // implementer judgment call ("needs its own design pass
     // at implementation time -- this proposal does not fully specify it").
     // 1.0f matches kMaxDecaySeconds's own scale (a generous but bounded
-    // per-note floor, not an open-ended hang). T1.6 (2026-08-17): this used
-    // to also claim a match with kMaxAttackSeconds, which W5 broke by
-    // halving attack to 0.5f -- Grace's own ceiling was not part of that
-    // ruling, so it stays 1.0f on its own judgment, matching decay alone.
+    // per-note floor, not an open-ended hang). This comment used
+    // to also claim a match with kMaxAttackSeconds; halving attack to 0.5f
+    // broke that mirror -- Grace's own ceiling was not part of that
+    // change, so it stays 1.0f on its own judgment, matching decay alone.
     static constexpr float kMaxGraceSeconds = 1.0f;
 
-    // Grace (Envelope slot 13) countdown sentinel (audit-fix F1, 2026-08-17,
-    // omni-rule §8/§10: this was a bare -1.0f literal written/compared at 5
-    // sites -- T1.6's own comment below explains why the 5th site, the
+    // Grace (Envelope slot 13) countdown sentinel. Named rather than
+    // repeated: this was a bare -1.0f literal written/compared at 5
+    // sites -- the comment further below explains why the 5th site, the
     // Hold-branch guard in stepVoice(), must match this value by EXACT
-    // identity (`==`), not by sign or by any arithmetic-derived value).
+    // identity (`==`), not by sign or by any arithmetic-derived value.
     // Named once here, reused at every write and the one read, so a stray
     // -1.f/-1.0/an arithmetic near-miss at any site can no longer silently
     // break the countdown.
@@ -157,12 +152,11 @@ struct VcoAdsrState
         }
     }
 
-    // C1 (openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md
-    // F8.1): this struct's only production caller is
+    // This struct's only production caller is
     // FroggersAppCore::PrepareToPlay() (audioAdsr_.init(sampleRate_), which
-    // calls this), and that method now validates the host's sample rate
-    // ONCE before any downstream use (see its own §12 trace) -- so the
-    // `44100.0f` re-guard this used to duplicate is unreachable. The bare
+    // calls this), and that method validates the host's sample rate
+    // ONCE before any downstream use -- so a defensive
+    // `44100.0f` re-guard here would be unreachable. The bare
     // `m_sampleRate = 44100.0f` default below is a different concern (a
     // harmless pre-`init()` placeholder, not a re-guard of validated input)
     // and is left as is.
@@ -251,14 +245,14 @@ struct VcoAdsrState
         return true;
     }
 
-    // T2.1 (proposal.md SS2 W2, AUDIT-ADDED 2026-08-17): forced release for
+    // Forced release for
     // the transport running->stopped edge, called from
     // FroggersAppCore.hpp beside the delayReverbClearPending_ logic. Every
     // non-idle voice enters Stage::Release IMMEDIATELY, bypassing the Grace
     // minimum-hold (setGate()'s own comment: a play-time gate-false edge
     // only marks m_releasePending[i] and defers the actual transition to
     // stepVoice(), specifically so Grace's Hold-stage countdown can run) and
-    // any in-progress Attack/Decay -- this restores the pre-Grace-packet
+    // any in-progress Attack/Decay -- this restores the pre-Grace
     // `setGate(false)` synchronous-force semantic for Stop ONLY. Play-time
     // gating (setGate()) is completely untouched by this method; it is not
     // called from there, and it does not read or write m_gateHigh.
@@ -351,12 +345,12 @@ private:
 
     // Curve (Envelope slot 12), applied to Attack/Decay/Release alike (all
     // three share this one idiom -- reused 3x, isolates the shape decision
-    // from the stage-transition logic, and keeps that decision traceable in
-    // one place: OMNI SS6's 2-of-4 helper test). curveAmount<=0.0f (the
-    // registered default) takes the FIRST branch, which is the original
-    // linear formula verbatim -- no curve arithmetic is even evaluated, so
-    // the default is bit-identical to the pre-Curve ramp by construction,
-    // not by a formula that merely happens to reduce to it.
+    // from the stage-transition logic, and keeps that decision testable in
+    // one place). curveAmount<=0.0f (the registered default) takes the
+    // FIRST branch, which is the original linear formula verbatim -- no
+    // curve arithmetic is even evaluated, so the default is bit-identical
+    // to the pre-Curve ramp by construction, not by a formula that merely
+    // happens to reduce to it.
     float ComputeRampStep(float from, float target, float stepMagnitude, float curveAmount) const
     {
         if (curveAmount <= 0.0f)
@@ -380,7 +374,7 @@ private:
         const float curvedNext = from + std::copysign(stepMagnitude * onePoleCoefficient, remaining);
         const float blended = linearNext + curveAmount * (curvedNext - linearNext);
 
-        // T1.1 (proposal SS2 W1, root cause 1a): at curveAmount==1.0 the
+        // At curveAmount==1.0 the
         // linear term above vanishes entirely and per-sample progress
         // toward target degenerates to stepMagnitude*onePoleCoefficient ==
         // stepMagnitude^2/absRemaining -- proportional to how FAR from
@@ -396,14 +390,16 @@ private:
         // present while bounding worst-case duration to roughly
         // 1/kCurveMinProgress the knob's mapped linear time; retune by ear
         // if the curve's FEEL needs it -- the bound itself is the
-        // requirement (proposal SS2 W1), not this particular number or
+        // requirement, not this particular number or
         // shape.
         //
-        // 0.4f, not the design doc's illustrative "~0.25" example: measured
-        // against T1.3(b)'s pass-F regression scenario (Decay knob 0.5 /
+        // 0.4f, not an illustrative "~0.25" example: measured
+        // against the stop_silences_curve_one_grace_active_voice_within_bound
+        // regression test's own scenario (Decay knob 0.5 /
         // mid, Grace knob 0.5 / mid, Curve == 1.0 exactly, the transport-
-        // stop path's own forced ~50ms release mapping) -- which this
-        // packet's own tests pin to a hard Stop-to-AllIdle bound of 2.0s --
+        // stop path's own forced ~50ms release mapping,
+        // FroggersHeadlessTests.cpp) -- which that
+        // test pins to a hard Stop-to-AllIdle bound of 2.0s --
         // 0.25f measured ~2.65s serial worst case (Decay ~2.0s + Grace 0.5s
         // + Release ~0.2s), over budget. 0.4f measures ~1.84s, comfortably
         // under, while still leaving a real ease-in dynamic range (the floor
@@ -412,8 +408,8 @@ private:
         // 2.5x its own step-size away from target -- most of a typical
         // ramp's approach to target still runs the unfloored, audibly
         // slow-start shape). If this value is ever retuned by ear, re-check
-        // it against T1.3(b)'s hard-coded 2.0s/2.5s bounds -- they are NOT
-        // independent of this constant.
+        // it against that regression test's hard-coded 2.0s/2.5s bounds --
+        // they are NOT independent of this constant.
         constexpr float kCurveMinProgress = 0.4f;
         const float minProgressMagnitude = stepMagnitude * kCurveMinProgress;
         const float progress = blended - from;
@@ -433,9 +429,9 @@ private:
                     float graceKnob)
     {
         const float sustainLevel = MapSustain(sustainKnob);
-        // Decay (task A): Attack's ceiling is now an independent peak
+        // Attack's ceiling is now an independent peak
         // (1.0f, the same ceiling Vco's own output already has -- no named
-        // constant per the packet brief's explicit instruction) instead of
+        // constant) instead of
         // sustainLevel, so attackStep's NUMERATOR must be 1.0f too, or the
         // realized attack time silently becomes attackTime/sustainLevel (up
         // to 10x longer at kMinSustainLevel=0.10f).
@@ -447,7 +443,7 @@ private:
         const float releaseStep = 1.0f / std::max(mapRelease(releaseKnob) * m_sampleRate, 1.0f);
         const float curveAmount = std::min(std::max(curveKnob, 0.0f), 1.0f);
 
-        // Grace (task B): resolve any deferred gate-false transition BEFORE
+        // Grace: resolve any deferred gate-false transition BEFORE
         // the stage switch below, so the switch this same call already sees
         // the resolved stage -- this is what keeps the grace-inactive
         // (default) case landing on the SAME sample as the old eager
@@ -470,15 +466,16 @@ private:
                 // reached with a release still pending (Attack/Decay are
                 // left alone above, so they always run to completion first
                 // -- "at minimum Attack (and Decay) has completed").
-                // T1.6 (2026-08-17, sentinel-conflation bug): this guard
-                // used to be `< 0.0f`, which treats ANY negative value as
+                // Sentinel-conflation bug: this guard is `==
+                // kGraceNotStarted`, not `< 0.0f`. A `< 0.0f` guard would
+                // treat ANY negative value as
                 // "not started" -- but a countdown initialized to a
                 // non-float-exact `graceSeconds * m_sampleRate` (most grace
                 // knobs; only ones landing on an exact integer sample count
                 // are immune) decrements past zero to a small negative,
                 // non-sentinel value without ever landing exactly on 0.0f,
-                // and `< 0.0f` mistook that pending-expiry value for
-                // "not started", re-arming it to the full grace forever.
+                // so `< 0.0f` would mistake that pending-expiry value for
+                // "not started" and re-arm it to the full grace forever.
                 // Matching the exact kGraceNotStarted sentinel instead means
                 // only a genuinely fresh countdown re-initializes; a
                 // decremented-negative value falls through untouched to the
@@ -543,7 +540,7 @@ private:
     bool m_gateHigh = false;
     std::array<float, kNumVoices> m_level{};
     std::array<Stage, kNumVoices> m_stage{};
-    // Grace (task B) per-voice state. m_releasePending: true from a
+    // Grace per-voice state. m_releasePending: true from a
     // gate-false edge until stepVoice() actually forces Stage::Release (see
     // setGate()/stepVoice()'s own comments -- this is the only new
     // information setGate() itself records, since it lacks the knob values
@@ -551,8 +548,7 @@ private:
     // samples, kGraceNotStarted sentinel meaning "not started yet"; only
     // used while a release is pending AND the voice is in Hold.
     std::array<bool, kNumVoices> m_releasePending{};
-    // Audit-fix F1 lead finding (2026-08-17, verified before acting per
-    // OMNI §12): a bare `{}` here value-initializes every element to 0.0f,
+    // A bare `{}` here value-initializes every element to 0.0f,
     // NOT kGraceNotStarted -- traced whether that is a live bug (the
     // Hold-branch exact-equality guard in stepVoice() above would misread a
     // never-init()'d 0.0f as "expire now" instead of "not started").
@@ -570,7 +566,7 @@ private:
     // already been overwritten with the real sentinel by setGate(true) --
     // regardless of whether init() ever ran. (Separately, init() IS in fact
     // guaranteed to run first in production: FroggersAppCore::PrepareToPlay
-    // calls audioAdsr_.init(sampleRate_) [FroggersAppCore.hpp:322], and
+    // calls audioAdsr_.init(sampleRate_), and
     // Sheaf's synth::Engine::Prepare -> app_.PrepareToPlay
     // [External/Sheaf/projects/synth/include/synth/Engine.hpp:299-300] runs
     // from Runtime::audioDeviceAboutToStart
@@ -592,7 +588,7 @@ private:
     }();
 };
 
-// UI-rework ITEM 3 (design.md A3d, tasks.md B.3, 2026-07-29): the three
+// The three
 // GATED (post-`adsr.apply`) per-voice values, for a caller that needs them
 // for something other than the mixed average below -- specifically,
 // FroggersAppCore::RouteAudioSample()'s post-gate scope tap (see this
@@ -608,10 +604,10 @@ struct GatedVoices
     float v3 = 0.0f;
 };
 
-// Task C (VCO balance, Audio slot 13): a normalized 3-point crossfade that
+// (VCO balance, Audio slot 13): a normalized 3-point crossfade that
 // tilts emphasis VCO1 -> VCO2 -> VCO3 as knob01 sweeps 0 -> 1, replacing
-// MixOscVoices's old hardcoded equal-thirds average. BINDING INVARIANT
-// (operator ruling): the three weights sum to exactly 1 and each stays
+// MixOscVoices's old hardcoded equal-thirds average. BINDING INVARIANT:
+// the three weights sum to exactly 1 and each stays
 // within [0.10, 0.80] at EVERY knob01 -- guaranteed BY CONSTRUCTION, not
 // checked after the fact:
 //   - Below knob01 0.5, the result is a convex combination ((1-u), u for
@@ -657,18 +653,17 @@ inline void ComputeVcoBalanceWeights(float knob01, float& w1, float& w2, float& 
 // adsr[v] rows are (attack, sustain, release) per voice, matching
 // V2EngineSetup::configureAdsrPage's per-VCO triplet row order.
 //
-// `balanceKnob01` (task C, Audio slot 13): drives ComputeVcoBalanceWeights
+// `balanceKnob01` (Audio slot 13): drives ComputeVcoBalanceWeights
 // above, replacing the old hardcoded equal-thirds average. Defaults to 0.5f
 // (this mapping's own centre, which reproduces the exact 1/3-each weights
 // the old average used) so callers that pass neither this nor `outGated`
-// keep their pre-packet mixed-average behaviour unchanged.
+// keep their prior mixed-average behaviour unchanged.
 //
-// `outGated` (UI-rework ITEM 3, design.md A3d, tasks.md B.3, 2026-07-29):
-// optional out-parameter carrying the three post-gate voice values, added
+// `outGated`: optional out-parameter carrying the three post-gate voice values, added
 // so FroggersAppCore::RouteAudioSample() (this function's single
 // production call site) can tap the GATED signal for the scope instead of
-// the pre-gate raw VCO output Vco::Process() used to write directly (OMNI
-// §8: extending this existing single call site rather than re-applying
+// the pre-gate raw VCO output Vco::Process() used to write directly (this
+// extends this existing single call site rather than re-applying
 // `adsr.apply` a second time at a new call site, which would duplicate a
 // ported formula and create two sites that could drift). Defaults to
 // `nullptr` so the two existing test call sites

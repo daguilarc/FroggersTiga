@@ -1,20 +1,19 @@
 #pragma once
 
-// synth_froggers::dsp::VcoEnvelopeFollowers -- packet 3 task 3.3 (DSP port).
-// openspec/changes/froggers-sheaf-app/tasks.md section 3, item 3.3. A
-// **copy** (design D3) of the cited Froggers formula.
+// synth_froggers::dsp::VcoEnvelopeFollowers -- a **copy** of the cited
+// Froggers formula.
 //
 // Ported from sim/V2EnvelopeFollowerBank.hpp:
 //   - attack 0.01 s / release 0.05 s, coeff = 1 - exp(-1/(t*sr))  (:22-25)
 //   - the five per-block targets                                  (:30-35)
 //
 // Only taps 3, 4, 5 (|v1|, |v2|, |v3| -- array slots 0-2 of the frozen
-// bank's 5-wide kNumTaps) are ported: those are the ones that feed the D5
+// bank's 5-wide kNumTaps) are ported: those are the ones that feed the
 // modulation slate (slots 9-11, "VCO 1/2/3 envelope follower"). Taps 6-7 in
 // the frozen bank (targets[3] = |v1+v2|*0.5, targets[4] = |v2+v3|*0.5, the
-// two PAIR envelope followers) are superseded by design D5's slate and are
-// deliberately NOT ported -- porting them would create modulation sources
-// nothing in this app consumes.
+// two PAIR envelope followers) are superseded by the modulation slate and
+// are deliberately NOT ported -- porting them would create modulation
+// sources nothing in this app consumes.
 
 #include <algorithm>
 #include <cmath>
@@ -29,14 +28,13 @@ struct VcoEnvelopeFollowers
     float attackCoeff = 0.05f;
     float releaseCoeff = 0.01f;
 
-    // sim/V2EnvelopeFollowerBank.hpp:19-26 (setSampleRate). C1
-    // (openspec/changes/archive/2026-08-07-frogg3rs-blowout-and-drilldown-repair/tasks.md
-    // F8.1): this struct's only production caller is
-    // FroggersModulationSlate::Prepare(), itself only ever called from
-    // FroggersAppCore::PrepareToPlay(), which now validates the host's
-    // sample rate ONCE before any downstream use (see that method's own
-    // §12 trace) -- so `sampleRate` here is always already positive, and
-    // the `44100.0f` re-guard this used to duplicate is unreachable.
+    // sim/V2EnvelopeFollowerBank.hpp:19-26 (setSampleRate). This struct's
+    // only production caller is FroggersModulationSlate::Prepare(), itself
+    // only ever called from FroggersAppCore::PrepareToPlay(), which
+    // validates the host's sample rate ONCE before any downstream use --
+    // so `sampleRate` here is always already positive; a defensive
+    // `44100.0f` fallback would be unreachable, which is why none is
+    // present.
     void SetSampleRate(float sampleRate)
     {
         constexpr float kAttackSeconds = 0.01f;
@@ -61,9 +59,8 @@ struct VcoEnvelopeFollowers
     }
 };
 
-// Packet 6 (tasks.md section 6, task 6.2; design D5 slot 14, "external audio
-// envelope follower"). The external-audio source is a single channel (task
-// 2.6's confirmed one-input-channel contract), so it needs exactly one of
+// Feeds the "external audio envelope follower" modulation source (slot 14).
+// The external-audio source is a single channel, so it needs exactly one of
 // VcoEnvelopeFollowers's three identical per-tap formulas, not all three --
 // this is that same formula (sim/V2EnvelopeFollowerBank.hpp:19-35),
 // generalized to one channel instead of duplicating VcoEnvelopeFollowers's
@@ -75,10 +72,10 @@ struct SingleEnvelopeFollower
     float attackCoeff = 0.05f;
     float releaseCoeff = 0.01f;
 
-    // C1: same single-caller chain as VcoEnvelopeFollowers::SetSampleRate
+    // Same single-caller chain as VcoEnvelopeFollowers::SetSampleRate
     // above (this app's other production caller of this struct), rooted at
-    // the same now-validating PrepareToPlay() -- the `44100.0f` re-guard is
-    // unreachable for the same reason.
+    // the same sample-rate-validating PrepareToPlay() -- a `44100.0f`
+    // re-guard would be unreachable for the same reason.
     void SetSampleRate(float sampleRate)
     {
         constexpr float kAttackSeconds = 0.01f;
