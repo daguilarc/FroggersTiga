@@ -1,44 +1,28 @@
 #!/usr/bin/env bash
 # RENAMED-ORIGIN GATE. CI-runnable.
 #
-# The app-facing identity was renamed FroggersTiga -> frogg3rs (an app-wide
-# tracked-name sweep). That is independent of, and MUST NOT regress
-# because of, whatever the enclosing git repository/hosting name happens to
-# be at any given moment. This gate greps the
-# ASSEMBLED PACKAGE + CATALOG OUTPUT (the bytes that actually get
-# published) for the retired app identity string.
+# The app-facing identity was renamed FroggersTiga -> frogg3rs. This greps
+# the assembled package + catalog output (the bytes that actually get
+# published) for the retired identity string.
 #
-# The original version
-# used `grep -rIl`, whose `-I` flag SKIPS BINARY FILES ENTIRELY -- so it
-# false-passed on the exact thing it exists to catch. A wasm binary can
-# embed the literal string "FroggersTiga" via DWARF/compiler diagnostics
-# carrying the build machine's absolute source paths, which is a build-path
-# artifact rather than an app-identity defect. A naive "binary files must
-# never contain FroggersTiga" rule would fail on such a build regardless of
-# app-identity correctness, which is not the failure this gate is for. So
-# the policy is split by what the match actually is:
+# `grep -I` skips binary files entirely, so a text-only scan can never
+# catch a compiled binary (e.g. wasm) that embeds the old name. That is
+# why the policy below is split by what the match actually is, not just
+# whether it matches:
 #
-#   1. TEXT files (grep -I, i.e. binaries excluded from this pass): ANY
-#      "FroggersTiga" occurrence -> FAIL. Unchanged intent from before,
-#      now actually reachable since text files were never the problem.
-#   2. ALL files, binaries included (grep -a): an ORIGIN-URL FORM of the
+#   1. Text files (grep -I, binaries excluded): any "FroggersTiga"
+#      occurrence -> FAIL.
+#   2. All files, binaries included (grep -a): an origin-URL form of the
 #      old name (github.com/daguilarc/FroggersTiga,
 #      daguilarc.github.io/FroggersTiga, /daguilarc/FroggersTiga) -> FAIL.
-#      These are the actual publication hazard (a hostname/path a client
-#      could resolve or a human could follow) and are never legitimately
-#      present in build output, compiled or not.
-#   3. Binary files containing the bare "FroggersTiga" string that is NOT
-#      one of the origin-URL forms above (i.e. a compiled-in local
-#      filesystem path, not a URL) -> WARN, non-fatal, printed per file.
-#      These are exactly the build-path embeddings described above, absent
-#      from any checkout whose path does not contain "FroggersTiga" -- which
-#      now includes this machine's own working folder. A match here means the
-#      artifact predates that, so it is a stale-build signal rather than an
-#      app-identity defect: a loud warning, rather than lying green by
-#      skipping the file or failing for a reason unrelated to app identity.
-#   4. Empty-scan guard: if the target directory contains zero files, FAIL
-#      -- a no-op scan (e.g. pointed at a nonexistent or emptied directory)
-#      must never report OK.
+#      These are the actual publication hazard -- a hostname/path a
+#      client could resolve or a human could follow.
+#   3. Binary files containing the bare "FroggersTiga" string that is not
+#      one of the origin-URL forms above (a compiled-in local filesystem
+#      path, not a URL) -> WARN, non-fatal, printed per file: a
+#      build-path artifact, not an app-identity defect.
+#   4. Empty-scan guard: if the target directory contains zero files,
+#      FAIL -- a no-op scan must never report OK.
 set -euo pipefail
 
 SITE_DIR="${1:-$(cd "$(dirname "$0")" && pwd)/dist/site}"
