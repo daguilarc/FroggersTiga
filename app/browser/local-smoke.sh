@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
-# Task 4.1 -- automated local validation of the assembled catalog+package
+# Automated local validation of the assembled catalog+package
 # site. CI-runnable (no browser required for this part): packages,
 # renamed-origin-gates, serves the site on loopback with CORS, and runs
 # Sheaf's OWN deployed-catalog validator
-# (External/Sheaf/projects/synth/browser/src/validate-deployed-catalog.mjs
-# -- the "framework's deployment validator" the spec's "Deployed catalog
-# passes the framework's own deployment validator" scenario names)
+# (External/Sheaf/projects/synth/browser/src/validate-deployed-catalog.mjs)
 # against it, proving cross-origin access, media types, decoded size, and
 # content hash all verify -- entirely over loopback HTTP, which the
 # validator explicitly allows for local tests
@@ -13,8 +11,7 @@
 #
 # This does NOT drive a browser or Sheaf's real launcher UI -- for that
 # manual step (Sheaf's launcher genuinely loading and running frogg3rs
-# locally), see app/browser/dev-harness/ and the operator invocation in
-# the task report.
+# locally), see app/browser/dev-harness/.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"

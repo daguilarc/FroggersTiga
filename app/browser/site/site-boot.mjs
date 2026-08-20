@@ -1,4 +1,4 @@
-// Task 4.3 -- direct-load boot for the dedicated frogg3rs site. Mirrors
+// Direct-load boot for the dedicated frogg3rs site. Mirrors
 // Sheaf's own `launchCatalogApplication`
 // (External/Sheaf/projects/synth/browser/src/main.ts:393-421) MINUS
 // `SheafPatchLauncher`'s picker UI (main.ts:372-391, never imported here):
@@ -29,7 +29,7 @@ import { installMobileStack } from "./mobile-stack.mjs";
 
 const APP_ID = "frogg3rs";
 
-// Group 4c -- installs before the app boots so the very first render frame
+// Installs before the app boots so the very first render frame
 // already carries the mobile stack when narrow. See mobile-stack.mjs's own
 // header comment for the full mechanism and its input-mapping trace.
 installMobileStack(BrowserUiBackend);

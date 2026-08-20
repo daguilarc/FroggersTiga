@@ -2,14 +2,9 @@
 # Builds the frogg3rs browser (wasm) app through Sheaf's GENERIC browser
 # pipeline (External/Sheaf/projects/synth/browser/src/build-browser-apps.mjs),
 # out-of-tree: no Sheaf-side source changes.
-# See openspec/changes/frogg3rs-browser-and-vst-hosts/tasks.md section
-# "2. Browser build of the app (design Part A1)".
 #
-# DEVIATION FROM THE LITERAL TASK TEXT (2.1), disclosed here because the
-# task explicitly says to report rather than silently improvise:
-#
-# The task's prescribed invocation passes an out-of-tree
-# `--output-root <repo>/app/browser/dist`. Empirically (and confirmed by
+# This cannot pass an out-of-tree
+# `--output-root <repo>/app/browser/dist` directly. Empirically (and confirmed by
 # reading build-browser-apps.mjs:147-152), that unconditionally throws
 # "outputRoot must be a dedicated directory beneath dist/wasm": `wasmRoot`
 # is always resolved from `browserRoot` (Sheaf's own
@@ -26,9 +21,8 @@
 # std-only-portability probe, PASSED). So this script builds into an
 # in-tree staging directory inside the Sheaf submodule (gitignored there:
 # External/Sheaf/.gitignore:19) and then copies the two emitted artifacts
-# plus the emissions report into this repo's app/browser/dist/, matching
-# the directory shape the task's "Expected emissions" describes
-# (app/browser/dist/wasm/apps/frogg3rs/{frogg3rs.js,frogg3rs.wasm}).
+# plus the emissions report into this repo's
+# app/browser/dist/wasm/apps/frogg3rs/{frogg3rs.js,frogg3rs.wasm}.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

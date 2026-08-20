@@ -1,6 +1,5 @@
 # Dedicated, CI-runnable build-level test for the frogg3rs browser (wasm)
-# build (task 2.2, openspec/changes/frogg3rs-browser-and-vst-hosts/tasks.md
-# section 2). Deliberately separate from app/Makefile: `cd app && make test`
+# build. Deliberately separate from app/Makefile: `cd app && make test`
 # (279/279 + check_no_juce) must stay untouched by this group. Run this one
 # explicitly via `cd app/browser && make test` (or `make -C app/browser
 # test`).
@@ -14,7 +13,7 @@ test: build
 	@test -s dist/wasm/apps/frogg3rs/frogg3rs.wasm || { echo "frogg3rs.wasm missing or empty" >&2; exit 1; }
 	@echo "frogg3rs browser build-level test: OK ($$(wc -c < dist/wasm/apps/frogg3rs/frogg3rs.js) bytes .js, $$(wc -c < dist/wasm/apps/frogg3rs/frogg3rs.wasm) bytes .wasm)"
 
-# --- Task 4.1: package + catalog + local validation (sibling targets;
+# --- Package + catalog + local validation (sibling targets;
 # deliberately not folded into `test` above, which stays a pure build-level
 # assertion per the header comment). ---
 

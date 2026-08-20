@@ -1,7 +1,7 @@
-// Task 4.3 -- Playwright config for the NEW site's own e2e harness. Idiom
+// Playwright config for the site's own e2e harness. Idiom
 // borrowed from web/playwright.config.ts (the legacy suite's own file,
 // never edited or copied verbatim -- this is a fresh file, chromium-only
-// per the task's machine constraint, workers capped at 2).
+// and workers capped, to stay within this machine's own resource limits).
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -30,8 +30,8 @@ if (!process.env.CI) {
   }
 }
 
-const MOBILE_SPECS = [/link-roles\.spec\.mjs$/, /mobile-stacking\.spec\.mjs$/];
-const DESKTOP_SPECS = [/link-roles\.spec\.mjs$/, /desktop-layout\.spec\.mjs$/];
+const MOBILE_SPECS = [/link-roles\.spec\.mjs$/, /mobile-stacking\.spec\.mjs$/, /visibility\.spec\.mjs$/];
+const DESKTOP_SPECS = [/link-roles\.spec\.mjs$/, /desktop-layout\.spec\.mjs$/, /visibility\.spec\.mjs$/, /blank-frame\.spec\.mjs$/];
 
 export default defineConfig({
   testDir: ".",

@@ -1,4 +1,4 @@
-// Task 4.3 -- Cross-Origin-Isolation shim, needed because GitHub Pages has
+// Cross-Origin-Isolation shim, needed because GitHub Pages has
 // no mechanism to set custom HTTP response headers (no per-path header
 // config of any kind), yet frogg3rs.js is compiled with Emscripten
 // pthreads and unconditionally starts its pthread pool on module load --
@@ -11,7 +11,7 @@
 // empirically: `installSynthBrowserApp` throws
 // `DataCloneError: ... SharedArrayBuffer transfer requires
 // self.crossOriginIsolated` immediately on load when served without either
-// real headers or this shim (see the task report).
+// real headers or this shim.
 //
 // Standard technique for this exact problem (same approach as the
 // widely-used https://github.com/gzuidhof/coi-serviceworker, MIT --

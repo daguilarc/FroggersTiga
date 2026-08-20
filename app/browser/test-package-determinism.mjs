@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Task 4.1 verification: proves the content-addressed-package requirement
+// Proves the content-addressed-package requirement
 // from openspec/specs/froggers-browser-package/spec.md ("Immutable,
 // content-addressed package"):
 //   - same inputs => same build identifier (assembled twice from

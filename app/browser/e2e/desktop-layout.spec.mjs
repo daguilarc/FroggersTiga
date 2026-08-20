@@ -1,4 +1,4 @@
-// Task 4.3 -- desktop-emulated layout sanity. Runs only under the
+// Desktop-emulated layout sanity. Runs only under the
 // "desktop" project (playwright.config.mjs testMatch). Proves the app
 // actually boots and renders its real UI frame over the direct catalog
 // load path (site-boot.mjs) with no picker/launcher UI ever shown, and
@@ -65,7 +65,7 @@ test.describe("desktop layout sanity", () => {
     expect(status ?? "").not.toContain("audio:online");
   });
 
-  // Group 4c FIX 3: mobile-stack.mjs re-applies from a ResizeObserver on
+  // mobile-stack.mjs re-applies from a ResizeObserver on
   // the same host element Sheaf's own fitSurface observes
   // (mobile-stack.mjs's own header comment has the full reasoning), not
   // window "resize" alone -- this drives an actual live resize (starting
@@ -82,8 +82,7 @@ test.describe("desktop layout sanity", () => {
     // turned out to have their own false-positive window, found via this
     // exact test flaking (~40-45% of runs at each single-signal attempt)
     // and traced with a MutationObserver-based instrumentation pass (kept
-    // out of the committed test, see task-g4c-report.md's SHARED-SCALE
-    // addendum for the two traces):
+    // out of the committed test):
     //  - width alone: at WIDE, the grid's own NATIVE (un-stacked) rendered
     //    width is already comfortably above the "0.9x narrow viewport"
     //    threshold (it is a large block regardless of layout), so
@@ -117,7 +116,7 @@ test.describe("desktop layout sanity", () => {
     const sidebarNarrow = await page.locator(SIDEBAR_SELECTOR).boundingBox();
     expect(verticalOverlapPx(sidebarNarrow, gridNarrow)).toBe(0);
     // The sidebar shares the grid's scale rather than being independently
-    // stretched to full width too (operator decision, mobile-stack.mjs's
+    // stretched to full width too (see mobile-stack.mjs's
     // own comment) -- expect it at the grid's shared scale (viewport width
     // over the grid's own live wire width, read live via
     // page.viewportSize() -- already 390 here, set above) times the
@@ -127,12 +126,12 @@ test.describe("desktop layout sanity", () => {
 
     await page.setViewportSize({ width: 1280, height: 800 });
     // Wide-mode settle signal: the shell RELEASES the mount height back to
-    // Sheaf rather than clearing it. mobile-stack.mjs's wide branch used to
-    // write `mount.style.height = ""`, which is exactly the bug that blanked
-    // every wide viewport -- it clobbered the same inline property
+    // Sheaf rather than clearing it. If mobile-stack.mjs's wide branch
+    // wrote `mount.style.height = ""` instead, it would blank
+    // every wide viewport -- clobbering the same inline property
     // fitSurface owns (Sheaf browser/src/ui.ts), collapsing the mount to 0
     // with the stylesheet's `overflow: hidden` clipping the surface away.
-    // So "settled wide" is now: a non-empty px height authored by Sheaf, AND
+    // So "settled wide" is: a non-empty px height authored by Sheaf, AND
     // the stacked blocks' own transforms released.
     await expect
       .poll(

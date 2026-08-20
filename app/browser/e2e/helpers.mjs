@@ -1,8 +1,9 @@
-// Task 4.3 -- shared selectors/helpers for the site e2e suite. Node ids
+// Shared selectors/helpers for the site e2e suite. Node ids
 // mirror FroggersUiSurface.hpp's `FroggersNodeIds` (app/FroggersUiSurface.hpp
 // :109-206) exactly, which is what Sheaf's browser UI backend publishes as
 // each element's `data-synth-node-id` (External/Sheaf/projects/synth/
 // browser/src/ui.ts, `updateNode()`).
+import { expect } from "@playwright/test";
 
 // FroggersNodeIds::kLeftBlock -- scope, transport, scenes, scene-blend, bpm.
 export const LEFT_BLOCK_SELECTOR = '[data-synth-node-id="froggers.layout.left"]';
@@ -18,10 +19,26 @@ export const SURFACE_ROOT_SELECTOR = '[data-synth-node-id="froggers.root"]';
 // runtime-chrome sidebar (Audio/Controllers/Sync/File + CPU meter), a
 // sibling of `froggers.root` under the composite `runtime.main.root`
 // Sheaf's fitSurface actually scales (RuntimeMainComponent.hpp:197-214).
-// Not a FroggersUiSurface node, but Group 4c's mobile stack includes it as
-// a third stacked block per the operator's "everything else above or
-// below the grid" rule.
+// Not a FroggersUiSurface node, but the mobile stack includes it as
+// a third stacked block, alongside everything else above or
+// below the grid.
 export const SIDEBAR_SELECTOR = '[data-synth-node-id="runtime.sidebar.root"]';
+// FroggersNodeIds::kPlay (FroggersUiSurface.hpp:222) -- a plain
+// click-dispatch transport control (ControlStyle::action, not a drag
+// action), the same "reaches the app" path the mobile-stacking suite's
+// own scene-button test already exercises for a different control.
+export const PLAY_SELECTOR = '[data-synth-node-id="froggers.transport.play"]';
+// FroggersNodeIds::Encoder(ix) for the first slot of each of the 4 encoder
+// rows (ix = row * 4 -- FroggersUiSurface.hpp:466-469's own
+// `{RightKind::EncoderRow, 0/4/8/12}` firstEncoderIndex values), one
+// canvas per row: the same per-row sampling convention
+// ENCODER_ROW_SELECTORS above already uses, rather than all 16. Each
+// encoder is a Draw-kind node, which Sheaf's browser UI backend gives
+// exactly one <canvas> child (ui.ts:206) and paints into via a 2D context
+// (ui.ts:433-436, `canvas.getContext("2d")`).
+export const ENCODER_CANVAS_SELECTORS = [0, 4, 8, 12].map(
+  (ix) => `[data-synth-node-id="froggers.encoder.${ix}"] canvas`,
+);
 
 /**
  * Waits for the app to have rendered at least one real UI frame (proof the
@@ -89,4 +106,63 @@ export async function expectedStackedWidth(page, selector) {
  */
 export function verticalOverlapPx(boxA, boxB) {
   return Math.max(0, Math.min(boxA.y + boxA.height, boxB.y + boxB.height) - Math.max(boxA.y, boxB.y));
+}
+
+/**
+ * Waits for the app's own post-click audio activation to finish
+ * (main.ts's `startUserActivation`, dispatched after every UI action --
+ * main.ts:174-177 -- which renders `audio:${started ? "online" : ...}` into
+ * the root's `data-synth-status`, main.ts:275, the same attribute the
+ * desktop-layout suite's own "no audio starts on load" test reads).
+ */
+export async function waitForAudioOnline(page) {
+  await expect
+    .poll(async () => page.locator(SYNTH_ROOT_SELECTOR).getAttribute("data-synth-status"), { timeout: 20_000 })
+    .toContain("audio:online");
+}
+
+/**
+ * True if the given <canvas> element's OWN backing store holds at least
+ * one non-transparent pixel -- read directly via getImageData, not from a
+ * screenshot, so this answers "did paint() ever draw into this canvas"
+ * (ui.ts:433-436) independent of whether the canvas is currently
+ * on-screen. Deliberately scans every pixel rather than a fixed sample
+ * point: encoders draw a filled ring roughly centered in their own
+ * bounds (EncoderDraw.hpp's `BuildEncoderDrawCommands`), but nothing here
+ * should assume a specific coordinate is inside it.
+ */
+export async function canvasHasPaintedPixels(page, canvasSelector) {
+  return page.evaluate((selector) => {
+    const canvas = document.querySelector(selector);
+    if (!(canvas instanceof HTMLCanvasElement) || canvas.width === 0 || canvas.height === 0) return false;
+    const context = canvas.getContext("2d");
+    if (!context) return false;
+    const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+    for (let index = 3; index < data.length; index += 4) {
+      if (data[index] !== 0) return true; // alpha channel of any pixel
+    }
+    return false;
+  }, canvasSelector);
+}
+
+/**
+ * Asserts ONE encoder canvas is both genuinely on-screen and actually
+ * painted -- two independent, both-required signals, not one:
+ *  - toBeInViewport() polls a real IntersectionObserver, which resolves
+ *    intersection against every ancestor's own clipping (unlike
+ *    boundingBox()/getBoundingClientRect(), which reports an element's
+ *    own box regardless of whether an ancestor clips it away -- see
+ *    mobile-stack.mjs's own header comment for the concrete bug this
+ *    distinction guards against: a collapsed, overflow:hidden ancestor
+ *    that clips an otherwise-correctly-sized, correctly-painted child
+ *    completely out of view).
+ *  - canvasHasPaintedPixels reads the canvas's own backing store, which
+ *    an ancestor's clipping does not touch at all -- a canvas that was
+ *    simply never painted into would still report itself "in viewport"
+ *    (its own box is genuinely on-screen), so this half is the ONLY
+ *    signal that would catch that separate failure mode.
+ */
+export async function expectEncoderCanvasVisible(page, canvasSelector) {
+  await expect(page.locator(canvasSelector), canvasSelector).toBeInViewport();
+  await expect.poll(() => canvasHasPaintedPixels(page, canvasSelector), { timeout: 10_000 }).toBe(true);
 }

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-// Task 4.1 (openspec/changes/frogg3rs-browser-and-vst-hosts/tasks.md
-// section 4, design A2) -- assembles the frogg3rs browser build
+// Assembles the frogg3rs browser build
 // (app/browser/dist/wasm/apps/frogg3rs, produced by build-browser.sh) into
 // a spec-conformant, content-addressed, self-hosted package + catalog.
 //
@@ -31,7 +30,7 @@
 //   External/Sheaf/projects/synth/browser/src/catalog.js (compiled from
 //     catalog.ts) `parseCatalog` -- the schema-v1 validator
 //     (External/Sheaf/projects/synth/browser/docs/catalog-schema-v1.md).
-//     This *is* "Sheaf's catalog validator" the brief asks to prefer over
+//     This *is* Sheaf's own catalog validator, preferred here over
 //     reimplementing schema checks; parseCatalog is the same function
 //     Sheaf's own first-party catalog builder
 //     (build-first-party-catalog.mjs:186) and its CatalogClient
@@ -58,11 +57,11 @@
 // publisher identity", froggers-browser-package/spec.md:43-49): already
 // pinned by a previously *committed, git-tracked* artifact --
 // publish/froggers-apps.json and publish/catalogs/daguilarc/catalog.json
-// (git-tracked at commit b2e0a54, from the archived froggers-sheaf-app
-// design D12) -- publisher.id = "daguilarc", publisher.name = "daguilarc".
-// Reused verbatim here, NOT reinvented. This happens to match the brief's
-// own fallback ("daguilarc", the GitHub owner) -- see the task report for
-// the FLAG this identity is permanent once actually published.
+// (git-tracked at commit b2e0a54) -- publisher.id = "daguilarc", publisher.name = "daguilarc".
+// Reused verbatim here, NOT reinvented. This happens to match the
+// GitHub owner ("daguilarc") as a fallback -- this identity is permanent
+// once actually published, so it is flagged here rather than silently
+// assumed.
 //
 // NOTE: that existing publish/ catalog.json is STALE (abiVersion 2; the
 // current Sheaf protocol is abiVersion 4 -- protocol.ts:2) and is left
@@ -80,7 +79,7 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 const BROWSER_ROOT = path.join(REPO_ROOT, "app", "browser");
 const SHEAF_BROWSER_ROOT = path.join(REPO_ROOT, "External", "Sheaf", "projects", "synth", "browser");
 const SHEAF_BROWSER_DIST_SRC = path.join(SHEAF_BROWSER_ROOT, "dist", "src");
-// Task 4.3: the public site shell's own source (index.html + minimal
+// The public site shell's own source (index.html + minimal
 // css/js, app/browser/site/) -- staged verbatim into outputRoot below,
 // alongside unmodified copies of Sheaf's own compiled browser runtime
 // (dist/src/*.js -- the .mjs siblings in that directory are Node-only
@@ -114,8 +113,8 @@ const EMISSIONS_PATH = path.join(BROWSER_ROOT, "dist", "wasm", "apps", "emission
 // catalog-schema-v1.md:56 "Paths are normalized catalog-relative paths"),
 // so this value does not get baked into any published artifact and does
 // not decide, or need to match, the eventual production hosting origin
-// (see task report: that origin/base-path is an operator cutover
-// decision, not fixed by this script).
+// (that origin/base-path is decided at cutover time, not fixed by this
+// script).
 // The exact string is arbitrary (any HTTPS or loopback URL satisfies
 // parseCatalog's trustedCatalogUrl check) and never reaches published
 // bytes -- it exists solely to give the validator something to resolve
@@ -234,7 +233,7 @@ export async function assembleSite({
 
     await writeFile(path.join(catalogRoot, "catalog.json"), `${JSON.stringify(catalog, null, 2)}\n`);
 
-    // Task 4.3: the public site shell (index.html + minimal css/js) plus
+    // The public site shell (index.html + minimal css/js) plus
     // verbatim Sheaf runtime/stylesheet copies, staged alongside the
     // catalog+package output above.
     await stageSiteShell(stagingRoot);

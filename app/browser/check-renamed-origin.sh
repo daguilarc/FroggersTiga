@@ -1,23 +1,21 @@
 #!/usr/bin/env bash
-# RENAMED-ORIGIN GATE (task 4.1, openspec/changes/frogg3rs-browser-and-vst-hosts
-# /tasks.md:94-99, froggers-web-host/spec.md:34-45). CI-runnable.
+# RENAMED-ORIGIN GATE. CI-runnable.
 #
-# The app-facing identity was renamed FroggersTiga -> frogg3rs (task 3's
+# The app-facing identity was renamed FroggersTiga -> frogg3rs (an app-wide
 # tracked-name sweep). That is independent of, and MUST NOT regress
 # because of, whatever the enclosing git repository/hosting name happens to
-# be at any given moment (it flip-flopped between FroggersTiga and
-# frogg3rs during this change -- see the task report). This gate greps the
+# be at any given moment. This gate greps the
 # ASSEMBLED PACKAGE + CATALOG OUTPUT (the bytes that actually get
 # published) for the retired app identity string.
 #
-# CRITICAL FIX (post-review, controller decision): the original version
+# The original version
 # used `grep -rIl`, whose `-I` flag SKIPS BINARY FILES ENTIRELY -- so it
 # false-passed on the exact thing it exists to catch. frogg3rs.wasm is a
 # binary that embeds the literal string "FroggersTiga" via DWARF/compiler
 # diagnostics carrying the *local build machine's* absolute source paths
 # (this dev machine's folder is still literally
 # ~/Desktop/FroggersTiga/... -- that machine-local rename is a separate,
-# operator-coordinated task, tracked independently of this app-identity
+# still-pending task, independent of this app-identity
 # gate). A naive "binary files must never contain FroggersTiga" rule would
 # therefore always fail on THIS machine regardless of app-identity
 # correctness, which is not the failure this gate is for. So the policy is

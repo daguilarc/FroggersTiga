@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Task 4.1 -- local serving path (design A2 "Local smoke"). Serves one or
+// Local serving path. Serves one or
 // more directories on loopback HTTP with permissive CORS and correct
 // media types (wasm -> application/wasm, js -> text/javascript), matching
 // sbac-7 (External/Sheaf/openspec/specs/synth-browser-app-catalog/spec.md
@@ -102,7 +102,7 @@ export function createSiteServer(config) {
     // :134-138). The comment this replaced argued this server must NOT
     // claim isolation headers because "this repo is a catalog/package
     // origin, not the launcher" (sbac-11) -- true when this script's only
-    // job was 4.1's local catalog+package validation, but task 4.3's site
+    // job was local catalog+package validation, but the site
     // shell (index.html + site-boot.mjs) now boots frogg3rs directly, i.e.
     // THIS origin is also the launcher for its own published site. That is
     // not optional: frogg3rs.js is compiled with Emscripten pthreads
@@ -112,17 +112,17 @@ export function createSiteServer(config) {
     // context, that pool creation itself throws
     // (`DataCloneError: ... SharedArrayBuffer transfer requires
     // self.crossOriginIsolated`) before any UI renders, empirically
-    // confirmed serving this same dist/site output without these headers
-    // (see the task report). CORS stays exactly as before: COOP/COEP
+    // confirmed serving this same dist/site output without these headers.
+    // CORS stays exactly as before: COOP/COEP
     // govern how *this* origin's own documents/navigations behave, not who
     // may fetch the catalog/package JSON and binaries cross-origin, so a
     // third-party launcher consuming this origin's catalog is unaffected.
     // `no-store` because this server exists to look at a freshly rebuilt
     // dist/site: without it the browser keeps the previous build's ES
     // modules and serves a MIX of cached and fresh ones after a repackage,
-    // which fails the boot outright (operator hit exactly this: page header
+    // which fails the boot outright -- a confirmed real failure mode: page header
     // and footer rendered, surface never did, and the stale layout module
-    // flickered on resize). Production hosting sets its own caching; this
+    // flickered on resize. Production hosting sets its own caching; this
     // header is a development-server concern only.
     const headers = {
       "Access-Control-Allow-Origin": "*",

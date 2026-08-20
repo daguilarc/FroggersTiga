@@ -1,27 +1,23 @@
-// Task 4.3 -- mobile-emulated stacking assertion (froggers-web-host spec
-// delta, "Mobile viewport stacks around a full-width encoder grid").
+// Mobile-emulated stacking assertion: mobile viewport stacks around a
+// full-width encoder grid.
 //
-// UN-BLOCKED (Group 4c): 4b found host-page CSS cannot restack because
+// Host-page CSS alone cannot restack this layout, because
 // FroggersUiSurface.hpp lays the chrome and grid blocks out as one outer
 // Row (FroggersUiSurface.hpp:856-859, Weight(2)/Weight(4) siblings) that
 // Sheaf's browser UI backend positions as absolutely-bounded, wire-managed
-// DOM nodes an active render loop keeps rewriting (task-g4b-report.md).
-// Group 4c's mechanism sidesteps that instead of fighting it: per-block
-// CSS transforms compose with (rather than override) those wire-managed
+// DOM nodes an active render loop keeps rewriting.
+// Per-block
+// CSS transforms sidestep that instead of fighting it: they compose with (rather than override) those wire-managed
 // properties, reasserted every render frame from the site shell
 // (app/browser/site/mobile-stack.mjs, hooked in site-boot.mjs) -- see that
-// file's own header comment for the full mechanism, and
-// task-g4c-report.md for the input-coordinate trace this was gated on
-// (Sheaf's own ui.ts needed a small drag-delta fix first, to stay
-// transform-robust; see that report's Sheaf-fix section). The stack is
+// file's own header comment for the full mechanism. The stack is
 // THREE blocks, not two: chrome above, grid full-width below it, and
 // Sheaf's own generic runtime sidebar (RIGHT_BLOCK_SELECTOR/
-// SIDEBAR_SELECTOR, helpers.mjs) below THAT -- the operator's "everything
-// else above or below the grid" rule includes the sidebar, so it is not
+// SIDEBAR_SELECTOR, helpers.mjs) below THAT -- everything
+// else above or below the grid includes the sidebar, so it is not
 // left beside anything either.
 //
-// SHARED SCALE (operator decision, superseding this file's earlier
-// per-block-independent scaling): only the GRID is stretched to fill the
+// SHARED SCALE: only the GRID is stretched to fill the
 // viewport width. Chrome and the sidebar render at that SAME scale
 // (mobile-stack.mjs's own comment has the full reasoning: their design
 // widths are roughly half and a sixth of the grid's, so independently
@@ -84,8 +80,8 @@ test.describe("mobile stacking (phone-width layout)", () => {
   });
 
   test("the sidebar stacks below the grid at the grid's shared scale, not full width", async ({ page }) => {
-    // Sheaf's own generic runtime sidebar is "everything else" for the
-    // operator's stacking rule too -- verifies FIX 1: it must be part of
+    // Sheaf's own generic runtime sidebar is "everything else" for
+    // this stacking rule too -- verifies it must be part of
     // the stack (directly below the grid, zero overlap with anything),
     // not left at its native design position where it would otherwise
     // sit beside the app's own content. It shares the grid's scale rather
@@ -99,8 +95,8 @@ test.describe("mobile stacking (phone-width layout)", () => {
   });
 
   test("a transient measurement failure on one block does not disturb the other two", async ({ page }) => {
-    // Regression test for a real bug this suite caught during development
-    // (see task-g4c-report.md's FIX 3 follow-up): mobile-stack.mjs's
+    // Regression test for a real bug this suite caught during development:
+    // mobile-stack.mjs's
     // per-frame stacking pass is supposed to be atomic across the three
     // blocks -- if ONE block's measurement fails on a given frame (e.g.
     // Sheaf's sidebar surface reporting a transient zero-extent bounds
@@ -162,7 +158,7 @@ test.describe("mobile stacking (phone-width layout)", () => {
       .toBeGreaterThan(expectedSidebarWidth * 0.9);
   });
 
-  // sru-52 positive control (Group 4c step 3): proves the drag/press input
+  // Positive control: proves the drag/press input
   // mapping survives the per-block transform above, for one control in
   // EACH stacked block -- not just that the boxes land in the right
   // place, but that the app still genuinely reacts to input inside them.
@@ -172,8 +168,8 @@ test.describe("mobile stacking (phone-width layout)", () => {
     // control (no pointerDragAction) in the chrome block. Selecting it
     // moves FroggersActions::kSceneBlend's own slider to that scene's
     // blend position, a real app-computed value (not something the client
-    // guesses), rendered as the native range input's own value -- the
-    // "drawn value text" positive control the brief describes, for a
+    // guesses), rendered as the native range input's own value -- a
+    // "drawn value text" positive control for a
     // plain click path.
     const blendInput = page.locator('[data-synth-node-id="froggers.scene.blend"] input');
     const before = await blendInput.inputValue();
@@ -184,7 +180,8 @@ test.describe("mobile stacking (phone-width layout)", () => {
   test("an encoder drag in the grid block still reaches the app", async ({ page }) => {
     // FroggersNodeIds::Encoder(0) -- a Draw-kind node whose value is only
     // ever changed via pointerDragAction (ui.ts continuePointerDrag), the
-    // exact code path this whole task's trace gate is about. Playwright's
+    // exact code path a drag-input regression in the mobile-stack transform
+    // would break. Playwright's
     // page.mouse.* does not reliably synthesize the pointerdown/pointermove
     // sequence Chromium's PointerEvent + setPointerCapture flow needs in
     // this headless run (reproduced with zero mobile-stack transforms

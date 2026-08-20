@@ -1,4 +1,4 @@
-/* Task 4.3 -- site shell chrome only. Node styling for the Sheaf-rendered
+/* Site shell chrome only. Node styling for the Sheaf-rendered
    surface itself lives in ./sheaf-public/synth-browser.css (verbatim Sheaf
    stylesheet, loaded before this file so these rules can layer on top of
    it without overriding any `#synth-root [data-synth-node-kind=...]` rule).
@@ -11,7 +11,7 @@
    fall under host-page CSS at all -- a plain stylesheet rule cannot
    reflow those wire-positioned nodes (index.html's header comment has the
    trace) -- so that part ships via JS instead, in ./mobile-stack.mjs
-   (per-block transforms, not a CSS rule), un-blocked in Group 4c. */
+   (per-block transforms, not a CSS rule). */
 
 html,
 body {

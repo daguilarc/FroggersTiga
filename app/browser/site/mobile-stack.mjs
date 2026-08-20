@@ -1,19 +1,19 @@
-// Group 4c -- shell-side per-block transforms for the mobile stacked layout
+// Shell-side per-block transforms for the mobile stacked layout
 // (froggers-web-host spec.md "Mobile viewport stacks around a full-width
 // encoder grid": chrome block above, encoder-grid block below, spanning the
 // full viewport width, with everything else -- Sheaf's own generic sidebar
 // included -- also placed above or below, never beside). The grid is what
 // spans the full viewport width; chrome and the sidebar share ITS scale
-// (operator decision, see applyMobileStack's own comment) rather than each
+// (see applyMobileStack's own comment) rather than each
 // being independently stretched to full width too, so they render at
-// their own smaller, design-proportional size, left-aligned under it. See
-// task-g4c-report.md for the full input-mapping trace this mechanism is
-// gated on (drag/press coordinate math had to be made transform-robust in
-// Sheaf's own ui.ts first -- see that report's Sheaf-fix section) and for
-// why this file hooks `BrowserUiBackend`'s PUBLIC `renderFrame` method
-// (ui.ts:41) rather than fighting CSS at the stylesheet level the way 4b
-// tried and found blocked (see index.html's own header comment, superseded
-// by this file for the mobile case): ui.ts's `updateNode()`
+// their own smaller, design-proportional size, left-aligned under it. The
+// input-mapping this mechanism relies on
+// needed drag/press coordinate math in
+// Sheaf's own ui.ts to be made transform-robust first. This file hooks
+// `BrowserUiBackend`'s PUBLIC `renderFrame` method
+// (ui.ts:41) rather than fighting CSS at the stylesheet level, which cannot
+// reflow the surface's own internal layout (see index.html's own header
+// comment): ui.ts's `updateNode()`
 // unconditionally clears EVERY protocol node's `transform` on every render
 // frame (ui.ts:94, `element.style.transform = "";`), and only
 // `fitSurface()`'s own later, root-only re-application (ui.ts:308-319)
@@ -27,11 +27,11 @@
 // protocol node's wire-managed position/size (`left`/`top`/`width`/
 // `height`) -- the "per-block CONTAINER transform" mechanism: it composes
 // with the wire-managed properties instead of fighting them, which is what
-// makes it survive where 4b's plain-CSS approach could not.
+// makes it survive where a plain-CSS approach could not.
 
 // Legacy site's own mobile breakpoint (web/src/main.ts:300,
 // `window.matchMedia("(max-width: 720px)")`; web/src/style.css:321,507),
-// carried forward as this task's own threshold per the brief.
+// carried forward as this shell's own threshold.
 const NARROW_MAX_WIDTH = 720;
 // Shell's own choice, not a wire value: vertical gap between each stacked
 // block.
@@ -51,7 +51,7 @@ const GRID_BLOCK_SELECTOR = '[data-synth-node-id="froggers.layout.right"]';
 // (RuntimeMainComponent.hpp:197-214,212: `root.bounds = {..., appRootWidth
 // + Layout::kSidebarWidth, appRootHeight}`, `root.children = {contentTree
 // ...front().id, sidebarTree...front().id}`). It is "everything else" for
-// the operator's "chrome above, grid full-width, everything else above or
+// the "chrome above, grid full-width, everything else above or
 // below" rule -- stacked here as a third block, below the grid.
 const SIDEBAR_SELECTOR = '[data-synth-node-id="runtime.sidebar.root"]';
 
@@ -88,8 +88,8 @@ function wireExtent(element) {
 // fitSurface() scales, and does not try to neutralize any ancestor's
 // transform. Sheaf's generic runtime shell wraps the app's own tree in a
 // further composite root (`runtime.main.root`, see SIDEBAR_SELECTOR's own
-// comment above) that fitSurface actually scales -- confirmed empirically
-// (task-g4c-report.md's mechanism section has the trace). Rather than
+// comment above) that fitSurface actually scales -- confirmed empirically.
+// Rather than
 // special-case that ancestor (fragile if Sheaf's composite structure ever
 // changes further), every measurement here is taken with the block's OWN
 // transform cleared but every ancestor's transform left exactly as Sheaf
@@ -151,8 +151,7 @@ function applyStackedTransform(measurement, scale, targetLeft, targetTop) {
 // verifiably was not -- a forced-failure e2e test caught it reverting
 // chrome/grid to something close to their NATIVE, un-stacked size even
 // though the restore code ran, because what it captured and restored was
-// already the cleared value, not the real one. See task-g4c-report.md's
-// FIX 3 follow-up section for the full trace and the test that caught it.)
+// already the cleared value, not the real one.)
 // `lastGoodMountHeight` is the same idea for the mount's own height:
 // ui.ts's `fitSurface()` (also inside the original renderFrame, also
 // always running before this module) unconditionally rewrites
@@ -262,8 +261,7 @@ export function applyMobileStack() {
   const viewportWidth = mount.clientWidth;
   const mountRect = mount.getBoundingClientRect();
 
-  // ONE shared scale for the WHOLE stack (operator decision, superseding
-  // this file's earlier per-block-independent scaling): each block used
+  // ONE shared scale for the WHOLE stack: each block used
   // to be stretched to its OWN full viewport width, but the grid's design
   // width (~600 of the 900 design box) is roughly double the chrome
   // block's (~300, FroggersUiSurface.hpp:464-467's 4:2 weighting), so
@@ -297,7 +295,7 @@ export function applyMobileStack() {
   // fitSurface's own mount height (sized for its own, un-stacked scale) no
   // longer applies; reserve exactly the stacked content's own extent
   // (chrome + grid + sidebar, all three now stacked -- "everything else"
-  // per the operator's rule, not just the two Froggers blocks) so the
+  // per the stacking rule, not just the two Froggers blocks) so the
   // shell's own footer chrome sits right below the sidebar, and clip
   // whatever of Sheaf's own composite tree (e.g. its own outer margin)
   // would otherwise peek out under `overflow: visible`.

@@ -1,5 +1,5 @@
-// Task 4.3 -- link-role regression (froggers-web-host spec delta, "Site
-// links carry the legacy roles under new references"). Runs under BOTH the
+// Link-role regression: site
+// links carry the legacy roles under the new repository references. Runs under BOTH the
 // mobile and desktop projects (playwright.config.mjs) since link presence
 // and target correctness do not depend on viewport. Never starts audio --
 // no control is clicked here at all.
