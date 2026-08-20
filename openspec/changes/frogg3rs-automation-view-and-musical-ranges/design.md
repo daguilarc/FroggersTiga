@@ -260,6 +260,44 @@ saw, and do not sell the product back to them. A comparison to the Daisy Field
 firmware IS legitimate — it exists, it has a manual in this repository, and a
 reader arriving from it needs to know which features are absent here.
 
+## H — Repo hygiene, step zero
+
+Hygiene opens every change now (omni-rule §13.0), and what the sweep finds is
+fixed inside the change that found it. This tree had accumulated enough to make
+the point on its own.
+
+**Gates nothing invokes.** Twenty-nine gate scripts exist under `app/`,
+`scripts/`, `sim/` and `desktop/scripts/`, totalling about 1,715 lines. About
+1,017 of those lines are in scripts NO workflow, Makefile, package.json or other
+script calls. The largest single cluster — `check_subagent_packet_gates.sh` and
+the three `check_desktop_v2_*` gates it is the only caller of, 325 lines
+together — guards desktop-v2, which is frozen. Four `check_vcv_*` gates, 235
+lines, guard a frozen VCV tree the same way.
+
+**Orphan status is established by searching for the INVOCATION, not the file.**
+A first pass here matched call sites by path prefix and concluded
+`check-renamed-origin.sh` was dead. It is not: it runs from
+`app/browser/Makefile`, `app/browser/local-smoke.sh` and
+`.github/workflows/pages.yml`, and only a bare-name search finds all three.
+Deleting on that first answer would have removed a live CI gate. Search by bare
+name AND by path, every time — this is §8's operand rule wearing different
+clothes.
+
+**Load-bearing hygiene is sequenced, not skipped.** `SIM_MANUAL.md` is the clear
+case: redundant as prose, still feeding release-note rendering, a release
+metadata check, four generated mirrors, two CMake resource embeds and the
+in-app and website Manual viewers. It cannot be deleted where it is redundant;
+it is deleted where it stops being load-bearing, which is the cutover. Same for
+the desktop release product name, the frozen trees, and the `froggerstiga-v1`
+tag. That is what group 10 is: not a separate change, the same principle applied
+at the point in the plan where it becomes safe.
+
+**Also swept:** five tracked correspondence artifacts at the repository root
+(four upstream email drafts and a patch file), and — machine-local and
+untracked, but worth clearing while here — a 178 MB Node distribution with its
+tarball, a 22 MB Rack SDK, and a 1.6 GB emsdk whose cache still records the
+pre-rename absolute path.
+
 ## Gates
 
 `cd app && nice make -j2 test`; plugin builds VST3 + AU; browser build and
@@ -279,10 +317,12 @@ either stalls on a pre-existing red or launders one.
 ## G — For the post-testing merge into main
 
 Once this change is tested and accepted, the v2 branch merges into main and
-both the desktop and wasm trees are updated as part of that work. The item
-below is carried into that merge plan rather than handled here: it lives in
-a tree this change does not touch, and the merge is where that tree is
-already being opened.
+both the desktop and wasm trees are updated as part of that work. That merge
+is now group 10 of this change's own task list rather than a future plan:
+it is gated on the operator accepting groups 1–9, and it carries the hygiene
+that is load-bearing until the merge opens those trees — the desktop release
+product name, the `SIM_MANUAL.md` retirement, the frozen trees, and the item
+below.
 
 Found while tracing a dangling comment citation during the predecessor's
 close-out, and recorded here because this is the live change someone will

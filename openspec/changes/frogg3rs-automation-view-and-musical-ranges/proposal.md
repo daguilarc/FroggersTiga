@@ -57,8 +57,22 @@ operator raised while it was closing.
   generated-mirror source, an embedded resource in two out-of-scope trees, and
   a named requirement in three live specs — see design F.
 
+- **Hygiene is step zero, and this tree had a backlog.** About 1,017 lines of
+  gate scripts are invoked by nothing at all — the largest cluster guarding a
+  frozen desktop-v2 — alongside five tracked correspondence artifacts at the
+  repository root and a retired product name still in the release path. Under
+  omni-rule §13.0 that is not a follow-up proposal; it opens this change.
+
 ## What Changes
 
+- **Repo hygiene (group 0, first)**: delete the gate scripts nothing invokes,
+  trim the one that is still live, clear the root correspondence artifacts and
+  the stale machine-local SDK caches.
+- **Cutover (group 10, gated on operator acceptance)**: the merge to main, the
+  desktop release product rename, the `SIM_MANUAL.md` retirement with its three
+  spec deltas, the frozen-tree retirement, and the simulator's fuegoize
+  divide-by-zero. The same hygiene principle, applied where the thing being
+  removed is load-bearing until then.
 - **froggers-vst-host** (delta): ADDED — automation delivers to its own bank
   without moving the visible page; MODIFIED — the plugin presents an optional
   audio input bus feeding the external-audio sources.
@@ -87,6 +101,8 @@ operator raised while it was closing.
   and `External/Sheaf`; the plugin-editor half of pre-audio legibility; the
   machine-local working-folder rename; operator smoke; and the change-level
   postflight.
-- Explicitly NOT in scope: the frozen `desktop/`, `desktop-v2/`, `web/`,
-  `wasm/`, `sim/`, `src/` trees. `src/` remains the DSP parity reference, and
-  the envelope work diverges from it deliberately.
+- Scope boundary, now sequenced rather than absolute: groups 1–9 do not touch
+  the frozen `desktop/`, `desktop-v2/`, `web/`, `wasm/`, `sim/`, `src/` trees.
+  Group 10 does, because the merge opens them and that is where their cleanup
+  becomes safe. `src/` remains the DSP parity reference throughout, and the
+  envelope work diverges from it deliberately.

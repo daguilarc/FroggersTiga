@@ -9,6 +9,50 @@ Anchors in design.md cite symbols, not line numbers — locate by symbol.
 Standing rule: anything found during execution is fixed inside this change.
 A finding that contradicts a recorded decision stops for the operator.
 
+## 0. Repo hygiene (design H) — STEP ZERO, before any other group
+
+Hygiene is step 0 of every change (omni-rule §13.0). Nothing here is deferred
+to a follow-up; what the sweep finds is fixed in this change, except where an
+item is still load-bearing, which sequences it to group 10 rather than
+excusing it.
+
+- [ ] 0.1 Delete the gate scripts nothing invokes. Confirmed orphan by
+      searching for the INVOCATION — bare name AND path, across workflows,
+      Makefiles, package.json and other scripts — not by the file existing:
+      `scripts/check_subagent_packet_gates.sh` plus the three
+      `scripts/check_desktop_v2_*` scripts it is the only caller of;
+      `scripts/check_host_artifact_hygiene.sh`;
+      `scripts/check_openspec_hygiene.sh`; `scripts/verify_clean_rebuild.sh`;
+      `sim/check_common_core_wrappers.sh`;
+      `sim/check_firmware_toolchain_parity.sh`; and the four
+      `sim/check_vcv_*` scripts. About 1,017 lines, over half of it guarding
+      frozen trees. RE-VERIFY each one's orphan status at execution time
+      before deleting it — this list was traced on 2026-08-20 and a call site
+      added since would make it wrong. Report found versus changed.
+- [ ] 0.2 `app/browser/check-renamed-origin.sh` is NOT an orphan — it runs
+      from `app/browser/Makefile`, `app/browser/local-smoke.sh` and
+      `.github/workflows/pages.yml`. Keep it as the regression guard against
+      old-name URLs returning to published bytes, but trim it: 95 lines, of
+      which roughly 45 are commentary about a rename that has now happened.
+      Keep the three-tier policy, drop the history.
+- [ ] 0.3 Root-level correspondence artifacts, all tracked and none of them
+      repo content: `upstream-email-external-audio-draft.md`,
+      `upstream-email-jvictor0-draft.md`,
+      `upstream-email-jvictor0-2-draft.md`,
+      `upstream-email-jvictor0-3-drilldown-answer-draft.md`, and
+      `sheaf-audioconfig-labels.patch`. Confirm each has been sent or landed
+      upstream, then remove it; anything still pending moves under `docs/`
+      rather than staying at the root.
+- [ ] 0.4 Machine-local, untracked, not repo bloat but worth clearing while
+      here: `node-v22.16.0-darwin-arm64/` (178 MB) and its `.tar.gz`,
+      `Rack-SDK/` (22 MB), and `.emsdk/` (1.6 GB). `.emsdk`'s cache still
+      records the pre-rename absolute path, which the next wasm build is the
+      first thing to notice — clear or regenerate it rather than waiting to
+      be surprised.
+- [ ] 0.5 Report the sweep: found versus changed per item, and name anything
+      deliberately kept with the reason. A partial cleanup that reads as
+      complete is worse than none.
+
 ## 1. Bank-addressed parameter write (design A) — the framework half
 
 - [ ] 1.1 Trace and confirm design A's claims against current source: that
@@ -157,7 +201,8 @@ A finding that contradicts a recorded decision stops for the operator.
 
 ## 7. Documentation (design F)
 
-- [ ] 7.1 OPERATOR DECISION, and do not start by deleting anything:
+- [ ] 7.1 DECIDED — the deletion lands at cutover (group 10), not here.
+      `SIM_MANUAL.md` is a build and CI input, not only prose:
       `SIM_MANUAL.md` is a build and CI input, not only prose. It feeds
       release-note rendering and a release-metadata CI check, is the source of
       four generated mirrors enforced by a pre-commit hook and a sync check,
@@ -167,8 +212,9 @@ A finding that contradicts a recorded decision stops for the operator.
       `froggers-host-master`, `global-strip-marbles-label`) that this change
       has no deltas for. Full trace in design F. Either this change takes on
       those deltas and re-points the release-notes and mirror inputs at
-      `MANUAL.md`, or the deletion moves to the §G merge where those trees are
-      already open. Decide first; the rest of group 7 does not depend on it.
+      `MANUAL.md`. That work is sequenced to group 10, where the release
+      tooling and the frozen trees are open anyway. This group delivers the
+      `MANUAL.md` content it does not depend on: 7.2 through 7.5 proceed now.
 - [ ] 7.2 `MANUAL.md`: confirm it covers what frogg3rs is and what it runs
       in; every global control; every bank parameter by parameter.
 - [ ] 7.3 Add the audio and MIDI configuration section — absent today.
@@ -211,3 +257,44 @@ A finding that contradicts a recorded decision stops for the operator.
       the pin, and CI builds from it. Sheaf commits append to the existing
       open pull request.
 - [ ] 9.5 Archive with spec sync. Sync only what is delivered.
+
+## 10. Cutover (design G) — GATED on group 9's operator acceptance
+
+Same hygiene principle as group 0, applied where the thing being cleaned up
+is still load-bearing until now. Nothing here starts before the operator has
+tested and accepted groups 1–9: every item removes or renames something a
+shipping path currently depends on.
+
+- [ ] 10.1 Merge v2 into main.
+- [ ] 10.2 Rename the desktop release product. The asset filenames come from
+      the build, not from GitHub, so there is no rename step as such: the
+      product name in `desktop/`'s CMake and Inno packaging produces
+      `FroggersTiga.dmg` / `FroggersTiga-Setup.exe`, the workflow uploads
+      those exact paths, and `web/index.html`'s two download links must
+      change in the SAME commit or both downloads 404 the moment the release
+      is replaced. Trace all four before touching any.
+- [ ] 10.3 OPERATOR DECISION: the `froggerstiga-v1` tag. `AGENTS.md` permits
+      exactly one desktop channel under that name and forbids creating other
+      tags, so renaming the tag means amending that rule. Keep the legacy tag
+      name, or amend — this is a decision, not an executor's call.
+- [ ] 10.4 Move the release-notes source and the release-metadata version
+      heading off `SIM_MANUAL.md` and onto `MANUAL.md`
+      (`desktop/scripts/render-release-notes.sh`,
+      `desktop/scripts/verify-release-metadata.sh`).
+- [ ] 10.5 Re-point every remaining `SIM_MANUAL.md` consumer at `MANUAL.md`:
+      the mirror sync and its pre-commit hook and parity check, the desktop
+      Help menu, the website's Manual modal, and the two CMake resource
+      embeds. Then delete `SIM_MANUAL.md`, and write the three spec deltas it
+      is named in (`sim-operator-doc-parity`, `froggers-host-master`,
+      `global-strip-marbles-label`).
+- [ ] 10.6 Retire the frozen trees the merge makes redundant — `desktop-v2/`
+      alone is 165 tracked files with no consumer. Trace each tree's
+      consumers first and report found versus changed; "frozen" is not
+      "removable" until nothing builds from it.
+- [ ] 10.7 Fix `sim/Fuegoize.hpp`'s divide-by-zero at full fuego (design G):
+      move the cast off the divisor so it matches the firmware's form, and
+      add a test that drives fuego to maximum. Nothing exercises that path
+      today, so it needs its own coverage.
+- [ ] 10.8 Update the desktop and wasm trees as part of the merge, per
+      design G. Re-run group 0's sweep afterward: a merge that opens frozen
+      trees is exactly when new orphans appear.
