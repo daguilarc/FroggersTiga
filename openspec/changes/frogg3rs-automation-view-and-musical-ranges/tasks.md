@@ -297,17 +297,25 @@ performed). Both, not either.
       Pages site, and the frozen desktop app's embedded Help — all go with
       this group. One document with no copies has no parity to keep.
 - [ ] 10.1 Merge v2 into main.
-- [ ] 10.2 Rename the desktop release product. The asset filenames come from
-      the build, not from GitHub, so there is no rename step as such: the
-      product name in `desktop/`'s CMake and Inno packaging produces
-      `FroggersTiga.dmg` / `FroggersTiga-Setup.exe`, the workflow uploads
-      those exact paths, and `web/index.html`'s two download links must
-      change in the SAME commit or both downloads 404 the moment the release
-      is replaced. Trace all four before touching any.
-- [ ] 10.3 OPERATOR DECISION: the `froggerstiga-v1` tag. `AGENTS.md` permits
-      exactly one desktop channel under that name and forbids creating other
-      tags, so renaming the tag means amending that rule. Keep the legacy tag
-      name, or amend — this is a decision, not an executor's call.
+- [ ] 10.2 DECIDED — the new desktop app is `frogg3rs_v2`, and the old
+      naming convention is dropped rather than carried forward. Assets become
+      `frogg3rs.dmg` / `frogg3rs-Setup.exe` (confirm the exact Windows form
+      when building). The filenames come from the build, not from GitHub, so
+      there is no rename step as such: the product name in the packaging
+      produces them, the workflow uploads those exact paths, and
+      `web/index.html`'s two download links must change in the SAME commit or
+      both downloads 404 the moment the release is replaced. Trace all four
+      before touching any.
+- [ ] 10.3 DECIDED — the release tag is `froggers_v2`, replacing
+      `froggerstiga-v1`. Amend `AGENTS.md` in the same commit: it currently
+      names `froggerstiga-v1` as the one permitted desktop channel and
+      forbids creating other tags, so the rule has to move with the tag or
+      the next release violates it.
+      CONFIRM BEFORE TAGGING: the operator gave the tag as `froggers_v2` and
+      the app as `frogg3rs_v2`, in consecutive messages — the two spellings
+      differ by exactly the leetspeak substitution this repository just spent
+      a rename adopting. A published tag is effectively permanent, so ask
+      once rather than inferring which spelling was meant.
 - [ ] 10.4 Move the release-notes source and the release-metadata version
       heading off `SIM_MANUAL.md` and onto `MANUAL.md`
       (`desktop/scripts/render-release-notes.sh`,
