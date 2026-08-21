@@ -86,7 +86,7 @@ operator raised while it was closing.
   appended to the open upstream pull request.
 - Code: `app/vst/` (bank-addressed writes, input bus), `app/dsp/VoiceEnvelope.hpp`
   (exponential maps, sustain floor), `app/FroggersAppCore.hpp` (filter bounds),
-  `UPSTREAM-SHEAF-ASK.md` (stale rows), and the documentation set.
+  and the documentation set.
 
 ## Impact
 

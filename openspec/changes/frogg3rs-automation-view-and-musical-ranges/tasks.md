@@ -245,8 +245,12 @@ excusing it.
 - [ ] 8.1 Assert the plugin editor renders parameters before the host ever
       calls `processBlock` — the site half is covered, this half was never
       asserted.
-- [ ] 8.2 Correct `UPSTREAM-SHEAF-ASK.md`'s stale ask-8 rows: the routed
-      signal landed at the pinned commit.
+- [x] 8.2 DONE — `UPSTREAM-SHEAF-ASK.md` retired rather than corrected. It
+      tracked what to ask upstream and what had landed; that record is now
+      the open pull request, jvictor0/Sheaf#9 ("Fix out-of-tree app gaps",
+      branch `fix-out-of-tree-app-gaps`, the branch the submodule is pinned
+      to). Correcting rows in a document the PR supersedes is maintaining a
+      second source of truth.
 - [ ] 8.3 OPERATOR-COORDINATED, machine-local: rename the working folder
       `~/Desktop/FroggersTiga` to `~/Desktop/frogg3rs` at a session
       boundary; it invalidates a running session's absolute paths.
