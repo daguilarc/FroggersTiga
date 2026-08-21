@@ -369,8 +369,6 @@ explicitly requested.
 
 Subagents are not allowed to run git commands. Any git inspection, staging, committing, branching, worktree setup, or pushing is handled only by the primary agent when explicitly requested.
 
-Path hygiene uses `scripts/repo_path_policy.sh` to keep local caches, generated build output, local-only product surfaces, and published docs mirrors classified in one place.
-
 Shared DSP/control logic belongs in `src/core/` or `sim/` first. `src/common/` is a firmware compatibility layer; headers mirroring `src/core/<name>.hpp` stay as thin include wrappers, while firmware adapter files such as `App.hpp`, `DaisyIO.hpp`, and `Include.hpp` remain firmware-side exceptions.
 
 Existing build outputs under `src/FroggersTiga/build`, `src/TestControl/build`, and `src/Blink/build` are firmware-scoped leftovers, not host cleanup targets. A separate firmware cleanup should decide whether to keep, remove, or ignore them.

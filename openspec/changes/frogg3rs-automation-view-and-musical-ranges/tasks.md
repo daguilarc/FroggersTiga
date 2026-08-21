@@ -16,7 +16,7 @@ to a follow-up; what the sweep finds is fixed in this change, except where an
 item is still load-bearing, which sequences it to group 10 rather than
 excusing it.
 
-- [ ] 0.1 Delete the gate scripts nothing invokes. Confirmed orphan by
+- [x] 0.1 Delete the gate scripts nothing invokes. Confirmed orphan by
       searching for the INVOCATION — bare name AND path, across workflows,
       Makefiles, package.json and other scripts — not by the file existing:
       `scripts/check_subagent_packet_gates.sh` plus the three
@@ -29,13 +29,13 @@ excusing it.
       frozen trees. RE-VERIFY each one's orphan status at execution time
       before deleting it — this list was traced on 2026-08-20 and a call site
       added since would make it wrong. Report found versus changed.
-- [ ] 0.2 `app/browser/check-renamed-origin.sh` is NOT an orphan — it runs
+- [x] 0.2 `app/browser/check-renamed-origin.sh` is NOT an orphan — it runs
       from `app/browser/Makefile`, `app/browser/local-smoke.sh` and
       `.github/workflows/pages.yml`. Keep it as the regression guard against
       old-name URLs returning to published bytes, but trim it: 95 lines, of
       which roughly 45 are commentary about a rename that has now happened.
       Keep the three-tier policy, drop the history.
-- [ ] 0.3 Root-level correspondence artifacts, all tracked and none of them
+- [x] 0.3 Root-level correspondence artifacts, all tracked and none of them
       repo content: `upstream-email-external-audio-draft.md`,
       `upstream-email-jvictor0-draft.md`,
       `upstream-email-jvictor0-2-draft.md`,
@@ -43,15 +43,36 @@ excusing it.
       `sheaf-audioconfig-labels.patch`. Confirm each has been sent or landed
       upstream, then remove it; anything still pending moves under `docs/`
       rather than staying at the root.
-- [ ] 0.4 Machine-local, untracked, not repo bloat but worth clearing while
+- [x] 0.4 Machine-local, untracked, not repo bloat but worth clearing while
       here: `node-v22.16.0-darwin-arm64/` (178 MB) and its `.tar.gz`,
       `Rack-SDK/` (22 MB), and `.emsdk/` (1.6 GB). `.emsdk`'s cache still
       records the pre-rename absolute path, which the next wasm build is the
       first thing to notice — clear or regenerate it rather than waiting to
       be surprised.
-- [ ] 0.5 Report the sweep: found versus changed per item, and name anything
-      deliberately kept with the reason. A partial cleanup that reads as
-      complete is worse than none.
+- [x] 0.5 DONE — sweep result, found versus changed:
+      **Deleted, 15 scripts.** The 13 planned orphans, plus two the sweep
+      itself produced: `scripts/repo_path_policy.sh`, whose only consumer was
+      the hygiene gate deleted in 0.1, and `scripts/open-desktop-v2.sh`,
+      dead since a 2026-07-28 proposal listed it for removal and never did
+      it. Deleting a consumer orphans its dependency, so the sweep was re-run
+      against every remaining script in `scripts/` after the first pass;
+      everything else is reachable from `web/package.json`, `pages.yml` or
+      `build-wasm.sh`.
+      **Kept, with reason.** `app/browser/check-renamed-origin.sh` runs from
+      three places and was trimmed instead (0.2). The four `check_vcv_*`
+      gates were restored on operator instruction and moved into the vcv
+      tree's own `vcv/scripts/`, where they now pass against real inputs —
+      6 SVG files, 72/36 HP parsed — having previously been run by nothing.
+      **Documentation repaired**, not just code: 6 live documents named the
+      deleted scripts, plus the `froggers-host-master` verification block and
+      `SIM_MANUAL.md`'s launcher instruction. Archived changes keep theirs.
+      **Root cleared** of 5 correspondence artifacts and `UPSTREAM-SHEAF-ASK.md`.
+      **Machine-local:** the 178 MB Node tarball is gone, a pure duplicate of
+      the directory beside it. `.emsdk` (1.6 GB), `node-v22…` (178 MB) and
+      `Rack-SDK` (22 MB) are KEPT — untracked build inputs whose removal
+      forces re-downloads that need install approval and would take the
+      browser build gate red. `.emsdk`'s cache holds a pre-rename path;
+      emscripten re-derives it on next run.
 
 ## 1. Bank-addressed parameter write (design A) — the framework half
 
@@ -73,6 +94,12 @@ excusing it.
       write today, so add that primitive too. No existing signature or
       behavior changes. Nothing frogg3rs-specific in the name, comments, or
       rationale.
+      Sheaf runs its own OpenSpec: every code change in PR #9 carries a
+      change directory under `External/Sheaf/openspec/changes/`. Write one
+      for this work in Sheaf's own style before the code, not after.
+      Sheaf's `AGENTS.md` also keeps `main` clean and expects feature work on
+      a branch — the submodule is already on `fix-out-of-tree-app-gaps`, at
+      `80c4eab8`, matching the PR head exactly, so commits append there.
 - [ ] 1.3 Decide, and record, what the new path does about the two behaviors
       the slot path performs and this one does not inherit: the
       `GetCurrentModifier() == Modifier::None` gate, and

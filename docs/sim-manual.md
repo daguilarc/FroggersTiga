@@ -8,7 +8,7 @@ On-screen knob names match this manual. For Daisy Field hardware, see `DAISY_MAN
 
 1. **Web:** wait for **Engine ready — click Play**, then click **Play**.
 2. **Desktop v1:** open the standalone app and click **Play**.
-3. **Desktop v2:** open **FroggersTigaV2** (Release build via `./scripts/open-desktop-v2.sh`) and click **Play** in the top transport row. Internal VCOs drive sound immediately — no MIDI note or running sequencer required.
+3. **Desktop v2:** open **FroggersTigaV2** from the Release build and click **Play** in the top transport row. Internal VCOs drive sound immediately — no MIDI note or running sequencer required.
 4. **Stop** halts audio output.
 
 You hear the three VCOs with **External / Ext. In.** off. On desktop v2 cold start, VCO1–VCO3 default to **30 Hz** with **sine / square / saw** morphs. Turn knobs on the visible page to shape the sound.

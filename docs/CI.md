@@ -61,17 +61,6 @@ sim/check_host_display_projections.sh
 sim/check_mod_source_labels.sh
 ```
 
-## Path Classes
-
-`scripts/repo_path_policy.sh` is the shared local source for hygiene path classes:
-
-- public repo source: reviewed project code, scripts, docs, and intentional Pages output
-- generated publication output: `docs/` and `web/public/` mirrors/assets
-- local cache/build output: build directories, downloaded Node runtimes, Emscripten SDK, Rack SDK, JUCE/CMake caches
-- local-only product surfaces: VCV development paths that are not public release surfaces yet
-- local-only planning state: `openspec/`
-- firmware exclusions: Daisy firmware/source surfaces that are outside host cleanup
-
 ## Shared Code Boundary
 
 Shared DSP, parameter, display-name, and control logic should land in `src/core/` or `sim/` first. `src/common/` remains a firmware compatibility layer: headers that share a name with `src/core/<name>.hpp` are expected to be two-line include wrappers, and firmware/hardware adapter files such as `App.hpp`, `DaisyIO.hpp`, and `Include.hpp` are treated as firmware-side exceptions.
