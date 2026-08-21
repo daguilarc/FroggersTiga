@@ -1118,13 +1118,44 @@ TEST_CASE(silent_while_transport_is_stopped) {
 }
 
 // -----------------------------------------------------------------------
-// A tempo-change-tracking test: gate/advance period follows a
-// SetTempoBpm change. A high base tempo (6000 BPM -> quarter note = 480
-// samples @ 48kHz) keeps the test fast while still giving the ASR's fast
-// (ExpMap-floor) attack/release plenty of headroom to reach a clean
-// silent floor every half-quarter-note. Doubling tempo halves the
-// quarter-note period, so the number of gate-open cycles observed over
-// the SAME sample window should roughly double.
+// A tempo-change-tracking test, in two parts.
+//
+// Part 1 asserts the thing this test is named for, directly: the
+// transport's own quarter-note gate period halves when tempo doubles.
+// Read straight from MasterClock::QuarterNotesPerSample() (a rate set by
+// SetTempoBpm, independent of any envelope/audio rendering), the period in
+// samples is deterministic arithmetic -- sampleRate * 60 / bpm -- so the
+// doubling is exact to floating-point rounding, not merely "roughly".
+//
+// Part 2 keeps an audio-domain check, because a clock read alone does not
+// prove the tempo change reaches anything audible -- CountRisingEdges
+// still counts threshold crossings in the real rendered output. Its
+// tempos are chosen so the ASR envelope can actually complete a full
+// attack/decay/hold cycle before every gate transition, at BOTH tempos,
+// with real headroom to the new ExpMap floors (VoiceEnvelope.hpp:
+// kMinAttackSeconds 1ms, kMinDecaySeconds/kMinReleaseSeconds 5ms each):
+//   - kBaseTempoBpm = 1500 -> quarter note = 1920 samples @ 48kHz, each
+//     half = 20ms.
+//   - kDoubledTempoBpm = 3000 -> quarter note = 960 samples, each half =
+//     10ms -- the tighter of the two halves, and still the one that
+//     matters: Attack (1ms floor) + Decay (5ms floor) = 6ms fits inside
+//     the 10ms open half more than 1.6x over, so Decay always finishes
+//     and Hold is reached at the exact sustain floor (0.25) before the
+//     gate closes -- release then only has to fall 0.25 of the 5ms
+//     release floor, ~1.25ms, comfortably inside (>2x over) even a
+//     conservative ~4ms fall-from-sustain estimate, let alone the full
+//     10ms closed half available. Both tempos land the SAME clean
+//     attack->decay->hold->release shape per cycle, at 2x the cycle rate,
+//     so CountRisingEdges' per-cycle multiplier (extra rising edges from
+//     the audio oscillator itself, gated open during Hold) stays close to
+//     constant across the doubling instead of collapsing the way it did
+//     at 12000 BPM, where the 2.5ms closed half was shorter than the
+//     release floor could complete in from a not-yet-settled level.
+// Measured on this build at 128 blocks (32768 samples) per tempo:
+// base=59, doubled=105 (ratio ~1.78). The bound below is pinned around
+// that measurement, tight enough to fail on a collapse like the one this
+// test caught (ratios well under 1.3), not loose enough to accept
+// whatever the code happens to do.
 // -----------------------------------------------------------------------
 TEST_CASE(gate_period_tracks_tempo_change) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("tempo_tracks_gate"));
@@ -1132,24 +1163,33 @@ TEST_CASE(gate_period_tracks_tempo_change) {
     model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;
     model.PageParameter(synth_froggers::FroggersBankId::Audio, 0).SceneCenter(0) = 0.5f;
 
-    constexpr double kBaseTempoBpm = 6000.0;
+    constexpr double kBaseTempoBpm = 1500.0;
+    constexpr double kDoubledTempoBpm = kBaseTempoBpm * 2.0;
+
+    // Part 1: the clock's own gate period, read directly, halves exactly.
     REQUIRE_TRUE(rig.Engine().Clock().SetTempoBpm(kBaseTempoBpm));
+    const double basePeriodSamples = 1.0 / rig.Engine().Clock().QuarterNotesPerSample();
     rig.StartAt(0);
-    rig.RunBlocks(64);
+    rig.RunBlocks(128);
     const std::size_t baseTransitions = CountRisingEdges(rig.Output());
 
     rig.ClearOutput();
-    constexpr double kDoubledTempoBpm = kBaseTempoBpm * 2.0;
     REQUIRE_TRUE(rig.Engine().Clock().SetTempoBpm(kDoubledTempoBpm));
-    rig.RunBlocks(64);
+    const double doubledPeriodSamples = 1.0 / rig.Engine().Clock().QuarterNotesPerSample();
+    rig.RunBlocks(128);
     const std::size_t doubledTransitions = CountRisingEdges(rig.Output());
 
+    // basePeriodSamples/doubledPeriodSamples is exact rational arithmetic
+    // (sampleRate*60/bpm for each), so this tolerance only absorbs
+    // double-precision rounding, not any real slack in the relationship.
+    REQUIRE_TRUE(std::fabs(basePeriodSamples - doubledPeriodSamples * 2.0) < 1.0e-6);
+
+    // Part 2: the audio-domain proxy still moves with tempo, at tempos
+    // where the envelope actually tracks (see this TEST_CASE's own
+    // header comment for the headroom numbers).
     REQUIRE_TRUE(baseTransitions > 0);
-    // Generous tolerance (1.3x-3x, not exactly 2x) -- ASR attack/release
-    // smoothing at the transition edges makes an exact doubling too strict
-    // a bound for a black-box audio-domain measurement.
-    REQUIRE_TRUE(static_cast<double>(doubledTransitions) > static_cast<double>(baseTransitions) * 1.3);
-    REQUIRE_TRUE(static_cast<double>(doubledTransitions) < static_cast<double>(baseTransitions) * 3.0);
+    REQUIRE_TRUE(static_cast<double>(doubledTransitions) > static_cast<double>(baseTransitions) * 1.6);
+    REQUIRE_TRUE(static_cast<double>(doubledTransitions) < static_cast<double>(baseTransitions) * 2.0);
 }
 
 // -----------------------------------------------------------------------

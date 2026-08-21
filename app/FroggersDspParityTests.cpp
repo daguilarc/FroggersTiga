@@ -248,17 +248,18 @@ TEST_CASE(vco_adsr_state_attacks_holds_and_releases) {
 // does), then lowered again to 0.5f: even a 1.0s max attack was judged too
 // long musically -- half a second at most. The assertion itself is already
 // keyed to the constant via `dsp::VcoAdsrState::MapSustain`, so only this
-// prose needed updating, not the code. stepVoice()'s attack ramp is LINEAR
-// (`attackStep = sustainLevel / (mapAttack(knob)*sampleRate)`), and
-// `mapAttack(1.0) == kMinTimeSeconds + 1.0*(kMaxAttackSeconds -
-// kMinTimeSeconds) == kMaxAttackSeconds` exactly (the kMinTimeSeconds terms
-// cancel at knob==1.0) -- so at the maximum attack knob, the ramp completes
-// in EXACTLY kMaxAttackSeconds worth of samples, no time-constant fuzz to
-// account for. At 2.0s of held-gate samples: under the ORIGINAL 2.5s
-// ceiling the level would still be mid-ramp (2.0/2.5 == 80% of the way
-// there, NOT at sustain -- a 2.5s ceiling would fail this assertion);
-// under the CURRENT 0.5f ceiling the ramp finished at 0.5s and Hold has
-// been clamping the level at sustain for a further 1.5s since.
+// prose needed updating, not the code. mapAttack is now dsp::ExpMapCompute
+// (`min * (max/min)^knob`), and at knob==1.0 that is `min * (max/min)` --
+// mathematically max, and close enough to it in floating point that the
+// ramp still finishes with room to spare inside this test's 2.0s budget;
+// this test does not depend on that endpoint being bit-exact -- the floor/
+// midpoint/ceiling pinning tests further below are where an endpoint-
+// exactness claim belongs, not this one. At 2.0s
+// of held-gate samples: under the ORIGINAL 2.5s ceiling the level would
+// still be mid-ramp (2.0/2.5 == 80% of the way there, NOT at sustain -- a
+// 2.5s ceiling would fail this assertion); under the CURRENT 0.5f ceiling
+// the ramp finishes at ~0.5s and Hold has been clamping the level at
+// sustain for a further ~1.5s since.
 // -----------------------------------------------------------------------
 TEST_CASE(max_attack_knob_reaches_sustain_within_the_current_half_second_ceiling) {
     constexpr float kSampleRate = 48000.0f;
@@ -269,12 +270,12 @@ TEST_CASE(max_attack_knob_reaches_sustain_within_the_current_half_second_ceiling
 
     float level = 0.0f;
     const int samplesAt2s = static_cast<int>(2.0f * kSampleRate);
-    // decayKnob=0.0f (the fastest mapped decay time, kMinTimeSeconds)
-    // isolates THIS test's own concern -- attack's ceiling/timing -- from
-    // decay's, which is not what this test is about. At 0.0f decay, Decay
-    // completes in well under a millisecond once Attack's 1.0s finishes,
-    // so it cannot meaningfully eat into the 2.0s budget this test
-    // measures against.
+    // decayKnob=0.0f (the fastest mapped decay time, kMinDecaySeconds, now
+    // 5 ms) isolates THIS test's own concern -- attack's ceiling/timing --
+    // from decay's, which is not what this test is about. At 0.0f decay,
+    // Decay completes in a handful of milliseconds once Attack's ~0.5s
+    // finishes, so it cannot meaningfully eat into the 2.0s budget this
+    // test measures against.
     for (int i = 0; i < samplesAt2s; ++i) {
         level = adsr.apply(0, 1.0f, /*attack=*/1.0f, /*decay=*/0.0f, /*sustain=*/kSustain, /*release=*/0.0f);
     }
@@ -411,19 +412,20 @@ float RuntimeFloat(float value) {
 }
 
 // Same formula ComputeRampStep's private mapAttack/mapDecay/mapRelease use
-// (VoiceEnvelope.hpp), recomputed independently here from the PUBLIC
-// kMinTimeSeconds/kMax*Seconds constants -- never read from the private
-// helpers themselves, so a test using this can never silently pass against
-// a moved constant it re-typed a stale copy of (dsp::VcoAdsrState::
+// (VoiceEnvelope.hpp, dsp::ExpMapCompute), recomputed independently here from
+// the PUBLIC kMin*Seconds/kMax*Seconds constants -- never read from the
+// private helpers themselves, so a test using this can never silently pass
+// against a moved constant it re-typed a stale copy of (dsp::VcoAdsrState::
 // MapSustain's own header comment records this project already shipping
-// exactly that bug once). Both inputs are routed through RuntimeFloat (see
-// that function's own comment) so this always matches genuine runtime
+// exactly that bug once). All three inputs are routed through RuntimeFloat
+// (see that function's own comment) so this always matches genuine runtime
 // evaluation, never the compiler's constant-expression interpreter.
-float MapKnobToSeconds(float knob, float maxSeconds) {
+float MapKnobToSeconds(float knob, float minSeconds, float maxSeconds) {
     const float k = RuntimeFloat(knob);
-    const float m = RuntimeFloat(maxSeconds);
+    const float lo = RuntimeFloat(minSeconds);
+    const float hi = RuntimeFloat(maxSeconds);
     const float clamped = std::min(std::max(k, 0.0f), 1.0f);
-    return dsp::VcoAdsrState::kMinTimeSeconds + clamped * (m - dsp::VcoAdsrState::kMinTimeSeconds);
+    return dsp::ExpMapCompute(lo, hi, clamped);
 }
 
 // dsp::VcoAdsrState::MapSustain, called through RuntimeFloat (see that
@@ -449,6 +451,163 @@ long ConservativeStageCap(float distance, float stepMagnitude) {
 }
 
 }  // namespace
+
+// =========================================================================
+// Attack/Decay/Release/Sustain map floor, geometric midpoint and ceiling,
+// pinned against LITERAL expected values -- not the kMin*/kMax* constants
+// the production code itself reads. A test that re-derives its expectation
+// from those same constants cannot catch an endpoint being moved (see
+// MapSustain's own header comment, and dsp::kMaxResonantBumpHeight's, for
+// this project already shipping exactly that regression once). mapAttack/
+// mapDecay/mapRelease are private, so there is no direct call surface for
+// them the way MapSustain (public) offers -- each is instead measured
+// through the ramp's own observable timing -- see kMapMeasureSampleRate's
+// own comment for why 96kHz, not an extreme rate, is the accurate choice.
+// =========================================================================
+
+namespace {
+
+// 96kHz, not an extreme rate: ComputeRampStep's curve==0 branch is plain
+// per-sample float accumulation, and measured (empirically, at the values
+// this pins) the two error sources pull in opposite directions -- a too-low
+// rate under-samples the shortest ramps (the floor cases, coarse ceil()
+// quantization on a handful of steps), while a too-high rate accumulates
+// float32 rounding error over the very large step count the longest ramps
+// need (the ceiling cases, hundreds of thousands of additions). 96kHz -- an
+// ordinary audio rate, not a measurement-only extreme -- keeps every floor/
+// midpoint/ceiling measured here within a few tenths of a percent of the
+// analytic value, well inside kMapMeasureRelTol below.
+constexpr float kMapMeasureSampleRate = 96000.0f;
+
+// Attack ramps 0 -> 1.0 at a constant per-sample step (curve==0) of
+// `1/(mapAttack(knob)*sampleRate)` (clamped to sampleRate>=1 step/sample,
+// unreachable at this sample rate for any knob in range), so the sample
+// count to cross 1.0 is exactly ceil(mapAttack(knob)*sampleRate) -- decay/
+// sustain knobs are irrelevant to Attack's own stage, so fixed, uninvolved
+// values are passed for them.
+float MeasureMappedAttackSeconds(float attackKnob) {
+    dsp::VcoAdsrState adsr;
+    adsr.init(kMapMeasureSampleRate);
+    adsr.setGate(true);
+    const long cap = static_cast<long>(3.0 * kMapMeasureSampleRate);
+    const long samples = StepUntilLevelCrosses(adsr, attackKnob, /*decay=*/0.0f, /*sustain=*/0.5f,
+                                                /*release=*/0.0f, /*curve=*/0.0f, /*ascending=*/true, 1.0f, cap)
+                              .samples;
+    return static_cast<float>(samples) / kMapMeasureSampleRate;
+}
+
+// Decay ramps 1.0 -> sustainLevel at a constant per-sample step of
+// `(1-sustainLevel)/(mapDecay(knob)*sampleRate)`, so the sample count to
+// cross from 1.0 down to sustainLevel is exactly ceil(mapDecay(knob)*
+// sampleRate) regardless of sustainLevel's own value (it cancels: distance
+// (1-sustainLevel) divided by a step proportional to (1-sustainLevel) yields
+// a ratio independent of sustainLevel) -- sustainKnob=0.0f (sustainLevel at
+// its own floor) is used only so the warm-up-to-Decay's-start below is fast.
+float MeasureMappedDecaySeconds(float decayKnob) {
+    dsp::VcoAdsrState adsr;
+    adsr.init(kMapMeasureSampleRate);
+    adsr.setGate(true);
+    // Warm up Attack (knob 0, curve 0, so it is itself the fastest possible)
+    // to reach the 1.0 peak Decay starts descending from.
+    StepUntilLevelCrosses(adsr, /*attack=*/0.0f, /*decay=*/0.0f, /*sustain=*/0.0f, /*release=*/0.0f, /*curve=*/0.0f,
+                           /*ascending=*/true, 1.0f, static_cast<long>(kMapMeasureSampleRate));
+    const float sustainLevel = dsp::VcoAdsrState::MapSustain(0.0f);
+    const long cap = static_cast<long>(3.0 * kMapMeasureSampleRate);
+    const long samples = StepUntilLevelCrosses(adsr, 0.0f, decayKnob, /*sustain=*/0.0f, /*release=*/0.0f,
+                                                /*curve=*/0.0f, /*ascending=*/false, sustainLevel, cap)
+                              .samples;
+    return static_cast<float>(samples) / kMapMeasureSampleRate;
+}
+
+// Release ramps sustainLevel -> 0.0 at a constant per-sample step of
+// `1/(mapRelease(knob)*sampleRate)` -- a FULL-SCALE (0..1) rate, unlike
+// Decay's, so the sample count to cross from sustainLevel down to 0.0 is
+// `sustainLevel * mapRelease(knob) * sampleRate`, not mapRelease(knob)*
+// sampleRate alone. sustainKnob=1.0 makes sustainLevel MapSustain(1.0) --
+// read from the real, public MapSustain (not re-derived) and divided back
+// out below, so this measurement is exact regardless of whether that
+// endpoint happens to land on precisely 1.0f.
+float MeasureMappedReleaseSeconds(float releaseKnob) {
+    dsp::VcoAdsrState adsr;
+    adsr.init(kMapMeasureSampleRate);
+    adsr.setGate(true);
+    StepUntilLevelCrosses(adsr, /*attack=*/0.0f, /*decay=*/0.0f, /*sustain=*/1.0f, /*release=*/0.0f, /*curve=*/0.0f,
+                           /*ascending=*/true, 1.0f, static_cast<long>(kMapMeasureSampleRate));
+    const StageResult holdReached = StepUntilLevelStabilizes(adsr, 0.0f, 0.0f, /*sustain=*/1.0f, 0.0f, 0.0f,
+                                                               static_cast<long>(kMapMeasureSampleRate));
+    const float sustainLevel = holdReached.level;
+    adsr.setGate(false);  // graceKnob defaults to 0.0f -> inactive -> immediate Release.
+    const long cap = static_cast<long>(3.0 * kMapMeasureSampleRate);
+    const long samples = StepUntilLevelCrosses(adsr, 0.0f, 0.0f, /*sustain=*/1.0f, releaseKnob, /*curve=*/0.0f,
+                                                /*ascending=*/false, 0.0f, cap)
+                              .samples;
+    return (static_cast<float>(samples) / kMapMeasureSampleRate) / sustainLevel;
+}
+
+}  // namespace
+
+// A generous relative tolerance against the 1MHz measurement's own ceil()
+// quantization plus the ramp's finishing-step snap-to-target -- tight
+// enough to catch an endpoint or curve-shape regression, loose enough not
+// to fail on sub-microsecond measurement noise.
+constexpr double kMapMeasureRelTol = 5e-3;
+
+void RequireNearRelative(float measured, double expected, double relTol) {
+    const double tol = std::max(relTol * std::fabs(expected), 1e-7);
+    REQUIRE_NEAR(measured, expected, tol);
+}
+
+TEST_CASE(attack_decay_release_time_maps_pin_literal_floor_midpoint_and_ceiling_seconds) {
+    // Attack: floor 1ms, geometric midpoint sqrt(0.001*0.5), ceiling 0.5s.
+    RequireNearRelative(MeasureMappedAttackSeconds(0.0f), 0.001, kMapMeasureRelTol);
+    RequireNearRelative(MeasureMappedAttackSeconds(0.5f), 0.0223606798, kMapMeasureRelTol);
+    RequireNearRelative(MeasureMappedAttackSeconds(1.0f), 0.5, kMapMeasureRelTol);
+
+    // Decay: floor 5ms, geometric midpoint sqrt(0.005*1.0), ceiling 1.0s.
+    RequireNearRelative(MeasureMappedDecaySeconds(0.0f), 0.005, kMapMeasureRelTol);
+    RequireNearRelative(MeasureMappedDecaySeconds(0.5f), 0.0707106781, kMapMeasureRelTol);
+    RequireNearRelative(MeasureMappedDecaySeconds(1.0f), 1.0, kMapMeasureRelTol);
+
+    // Release: floor 5ms, geometric midpoint sqrt(0.005*2.5), ceiling 2.5s.
+    RequireNearRelative(MeasureMappedReleaseSeconds(0.0f), 0.005, kMapMeasureRelTol);
+    RequireNearRelative(MeasureMappedReleaseSeconds(0.5f), 0.1118033989, kMapMeasureRelTol);
+    RequireNearRelative(MeasureMappedReleaseSeconds(1.0f), 2.5, kMapMeasureRelTol);
+}
+
+TEST_CASE(sustain_map_pins_literal_floor_midpoint_and_ceiling_level) {
+    // MapSustain is public, so read directly rather than through the
+    // indirect ramp-timing measurement the private attack/decay/release
+    // maps above need.
+    REQUIRE_NEAR(dsp::VcoAdsrState::MapSustain(0.0f), 0.25f, 1e-6);   // floor
+    REQUIRE_NEAR(dsp::VcoAdsrState::MapSustain(0.5f), 0.5f, 1e-6);    // geometric midpoint, sqrt(0.25*1.0)
+    REQUIRE_NEAR(dsp::VcoAdsrState::MapSustain(1.0f), 1.0f, 1e-6);    // ceiling
+}
+
+// mapGrace(0) must still be exactly 0 seconds (kept LINEAR, deliberately not
+// moved to ExpMapCompute -- see mapGrace's own header comment: an
+// exponential map cannot reach zero at any finite knob, and Grace's "at
+// default this is a no-op" requirement depends on bit-exact zero). mapGrace
+// is private, so this is read the same indirect way as the time maps above:
+// at graceKnob==0.0f, a gate-false edge during Hold must force Release on
+// the SAME stepVoice() call (stepVoice()'s graceInactive branch, gated on
+// `mapGrace(graceKnob) <= 0.0f`) -- the level must already be strictly below
+// sustainLevel after exactly one more apply() call, not held at sustainLevel
+// waiting on a countdown the way an active grace (graceKnob>0, covered by
+// this file's other Grace tests) would.
+TEST_CASE(grace_knob_zero_still_maps_to_exactly_zero_seconds_and_releases_immediately) {
+    constexpr float kSampleRate = 48000.0f;
+    dsp::VcoAdsrState adsr;
+    adsr.init(kSampleRate);
+    adsr.setGate(true);
+    StepUntilLevelCrosses(adsr, 0.3f, 0.3f, 0.6f, 0.3f, 0.0f, true, 1.0f, static_cast<long>(kSampleRate));
+    const StageResult holdReached =
+        StepUntilLevelStabilizes(adsr, 0.3f, 0.3f, 0.6f, 0.3f, 0.0f, static_cast<long>(kSampleRate));
+    const float sustainLevel = holdReached.level;
+
+    adsr.setGate(false);  // marks pending; graceKnob below is 0.0f -> inactive.
+    const float afterOneMoreCall = adsr.apply(0, 1.0f, 0.3f, 0.3f, 0.6f, 0.3f, /*curve=*/0.0f, /*grace=*/0.0f);
+    REQUIRE_TRUE(afterOneMoreCall < sustainLevel);
+}
 
 // -----------------------------------------------------------------------
 // T1.3(c) -- bit-identity at curve == 0. ComputeRampStep's `curveAmount <=
@@ -476,12 +635,12 @@ TEST_CASE(compute_ramp_step_curve_zero_is_bit_identical_to_the_untouched_linear_
 
     const float sustainLevel = MapSustainRuntime(sustainKnob);
     const float attackStep =
-        1.0f / std::max(MapKnobToSeconds(attackKnob, dsp::VcoAdsrState::kMaxAttackSeconds) * kSampleRate, 1.0f);
+        1.0f / std::max(MapKnobToSeconds(attackKnob, dsp::VcoAdsrState::kMinAttackSeconds, dsp::VcoAdsrState::kMaxAttackSeconds) * kSampleRate, 1.0f);
     const float decayStep = (1.0f - sustainLevel) /
-                             std::max(MapKnobToSeconds(decayKnob, dsp::VcoAdsrState::kMaxDecaySeconds) * kSampleRate,
+                             std::max(MapKnobToSeconds(decayKnob, dsp::VcoAdsrState::kMinDecaySeconds, dsp::VcoAdsrState::kMaxDecaySeconds) * kSampleRate,
                                        1.0f);
     const float releaseStep =
-        1.0f / std::max(MapKnobToSeconds(releaseKnob, dsp::VcoAdsrState::kMaxReleaseSeconds) * kSampleRate, 1.0f);
+        1.0f / std::max(MapKnobToSeconds(releaseKnob, dsp::VcoAdsrState::kMinReleaseSeconds, dsp::VcoAdsrState::kMaxReleaseSeconds) * kSampleRate, 1.0f);
 
     enum class RefStage { Attack, Decay, Hold, Release, Idle };
     RefStage refStage = RefStage::Attack;
@@ -564,13 +723,13 @@ TEST_CASE(compute_ramp_step_bounds_every_stage_duration_across_curve_and_knob_gr
                     adsr.init(sampleRate);
                     adsr.setGate(true);
                     const float step =
-                        1.0f / std::max(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMaxAttackSeconds) * sampleRate,
+                        1.0f / std::max(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMinAttackSeconds, dsp::VcoAdsrState::kMaxAttackSeconds) * sampleRate,
                                         1.0f);
                     const long cap = ConservativeStageCap(1.0f, step);
                     const long samples =
                         StepUntilLevelCrosses(adsr, knob, 0.0f, kSustainKnob, 0.0f, curve, true, 1.0f, cap).samples;
                     const double linearSamples =
-                        std::max(static_cast<double>(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMaxAttackSeconds)) *
+                        std::max(static_cast<double>(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMinAttackSeconds, dsp::VcoAdsrState::kMaxAttackSeconds)) *
                                      sampleRate,
                                  1.0);
                     const double multiple = static_cast<double>(samples) / linearSamples;
@@ -590,7 +749,7 @@ TEST_CASE(compute_ramp_step_bounds_every_stage_duration_across_curve_and_knob_gr
                     StepUntilLevelCrosses(adsr, /*attackKnob=*/0.0f, 0.0f, kSustainKnob, 0.0f, /*curveKnob=*/0.0f,
                                            true, 1.0f, static_cast<long>(sampleRate));  // warm-up, ample cap.
                     const float step = (1.0f - sustainLevel) /
-                                        std::max(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMaxDecaySeconds) *
+                                        std::max(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMinDecaySeconds, dsp::VcoAdsrState::kMaxDecaySeconds) *
                                                       sampleRate,
                                                   1.0f);
                     const long cap = ConservativeStageCap(1.0f - sustainLevel, step);
@@ -598,7 +757,7 @@ TEST_CASE(compute_ramp_step_bounds_every_stage_duration_across_curve_and_knob_gr
                                                                 sustainLevel, cap)
                                              .samples;
                     const double linearSamples =
-                        std::max(static_cast<double>(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMaxDecaySeconds)) *
+                        std::max(static_cast<double>(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMinDecaySeconds, dsp::VcoAdsrState::kMaxDecaySeconds)) *
                                      sampleRate,
                                  1.0);
                     const double multiple = static_cast<double>(samples) / linearSamples;
@@ -621,14 +780,15 @@ TEST_CASE(compute_ramp_step_bounds_every_stage_duration_across_curve_and_knob_gr
                                            static_cast<long>(sampleRate));
                     adsr.setGate(false);  // graceKnob defaults to 0.0f below -> inactive -> immediate Release.
                     const float step =
-                        1.0f / std::max(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMaxReleaseSeconds) * sampleRate,
+                        1.0f / std::max(MapKnobToSeconds(knob, dsp::VcoAdsrState::kMinReleaseSeconds, dsp::VcoAdsrState::kMaxReleaseSeconds) * sampleRate,
                                         1.0f);
                     const long cap = ConservativeStageCap(sustainLevel, step);
                     const long samples =
                         StepUntilLevelCrosses(adsr, 0.0f, 0.0f, kSustainKnob, knob, curve, false, 0.0f, cap).samples;
                     const double linearSamples =
                         std::max(sustainLevel * static_cast<double>(MapKnobToSeconds(
-                                                     knob, dsp::VcoAdsrState::kMaxReleaseSeconds)) *
+                                                     knob, dsp::VcoAdsrState::kMinReleaseSeconds,
+                                                     dsp::VcoAdsrState::kMaxReleaseSeconds)) *
                                      sampleRate,
                                  1.0);
                     const double multiple = static_cast<double>(samples) / linearSamples;
@@ -817,12 +977,12 @@ TEST_CASE(grace_countdown_with_float_inexact_values_expires_within_grace_plus_a_
 // active grace still completes Attack and Decay before Release begins --
 // the approved main-spec Grace behaviour ("a short gate cannot clip a note
 // before its envelope completes Attack and Decay"), unaffected by T1.1's
-// floor. Attack knob near-max (kMaxAttackSeconds, W5's new 0.5f ceiling) so
-// a naive "gate released mid-attack forces Release" bug would be obvious:
-// the gate here closes after 1ms, far short of any mapped attack time.
+// floor. Attack knob at max (kMaxAttackSeconds, 0.5f ceiling) so a naive
+// "gate released mid-attack forces Release" bug would be obvious: the gate
+// here closes after 1ms, far short of any mapped attack time.
 TEST_CASE(short_gate_with_long_attack_and_active_grace_completes_attack_and_decay_before_release) {
     constexpr float kSampleRate = 48000.0f;
-    constexpr float attackKnob = 1.0f;   // mapped to kMaxAttackSeconds == 0.5f exactly.
+    constexpr float attackKnob = 1.0f;   // mapped to (very close to) kMaxAttackSeconds == 0.5f.
     constexpr float decayKnob = 0.5f;
     constexpr float sustainKnob = 0.6f;
     constexpr float releaseKnob = 0.3f;

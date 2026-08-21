@@ -1485,16 +1485,26 @@ private:
         // enough to avoid a click; an instantaneous cut would click.
         //
         // Derived from VcoAdsrState's own mapping rather than hardcoded, so it
-        // stays a true 50ms if kMaxReleaseSeconds is ever retuned again:
-        //   mapRelease(k) = kMinTimeSeconds + k*(kMaxReleaseSeconds - kMinTimeSeconds)
+        // stays a true 50ms if kMaxReleaseSeconds/kMinReleaseSeconds are ever
+        // retuned again. mapRelease is now dsp::ExpMapCompute (deliberate
+        // parity divergence, VoiceEnvelope.hpp), so this is that map's
+        // inverse:
+        //   mapRelease(k) = min * (max/min)^k
+        //   k = ln(target/min) / ln(max/min)
+        // `static const`, not `constexpr`: std::log is not a constant
+        // expression on this toolchain, so the inversion is computed once on
+        // this function's first call (function-local static init, no data
+        // race -- audio processing is single-threaded) rather than every
+        // sample, unlike the old linear inverse this replaces, which the
+        // compiler folded to a literal at compile time.
         //
         // `wasTransportRunning_` is written earlier in this same per-sample
         // iteration (ProcessBlock's edge check, above this call), so it holds
         // THIS sample's transport state, not the previous one's.
         constexpr float kStopFadeSeconds = 0.05f;
-        constexpr float kStopFadeReleaseKnob =
-            (kStopFadeSeconds - dsp::VcoAdsrState::kMinTimeSeconds) /
-            (dsp::VcoAdsrState::kMaxReleaseSeconds - dsp::VcoAdsrState::kMinTimeSeconds);
+        static const float kStopFadeReleaseKnob =
+            std::log(kStopFadeSeconds / dsp::VcoAdsrState::kMinReleaseSeconds) /
+            std::log(dsp::VcoAdsrState::kMaxReleaseSeconds / dsp::VcoAdsrState::kMinReleaseSeconds);
         // While the transport is
         // STOPPED, override effective knob values for the release knob
         // (releaseKnob, below -- already existed) PLUS the three drive

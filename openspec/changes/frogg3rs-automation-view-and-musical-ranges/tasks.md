@@ -224,17 +224,17 @@ excusing it.
 
 ## 4. Envelope times map exponentially (design C)
 
-- [ ] 4.1 Move `mapAttack`, `mapDecay`, `mapRelease` to `dsp::ExpMapCompute`
+- [x] 4.1 DONE — three separate floors replace the single kMinTimeSeconds (attack 1 ms, decay and release 5 ms); mapGrace left linear. Move `mapAttack`, `mapDecay`, `mapRelease` to `dsp::ExpMapCompute`
       and raise their floors per design C. **Leave `mapGrace` linear** — its
       zero is a real setting.
-- [ ] 4.2 Sustain: exponential over `[0.25, 1.0]`. Report the measured
+- [x] 4.2 DONE — measured mean 0.5410 over 100k samples against design C's predicted 0.541. Sustain: exponential over `[0.25, 1.0]`. Report the measured
       random mean and confirm it lands near today's 0.550.
-- [ ] 4.3 Tests: each mapping's floor, midpoint and ceiling pinned against
+- [x] 4.3 DONE — floor/midpoint/ceiling pinned against literals in FroggersDspParityTests.cpp; attack floor and sustain floor each observed RED by moving the constant, then restored. Tests: each mapping's floor, midpoint and ceiling pinned against
       literal expected values, not re-derived from the same constants the
       production code reads — a symbolic re-derivation cannot detect an
       endpoint change. Prove each new assertion red by moving a constant,
       live, then restore.
-- [ ] 4.4 Re-run the parity tests that reference these constants; report
+- [x] 4.4 DONE — parity tests re-run, 130/130; divergence from the linear src/core reference recorded at the constants themselves. Re-run the parity tests that reference these constants; report
       results rather than assuming. Record the divergence from `src/core` in
       the code, in plain terms.
 

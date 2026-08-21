@@ -19,6 +19,8 @@
 //     takes the :774-784 branch and then the plain-average return at
 //     :786-788 -- the exact code path the citation says to keep.
 
+#include "DspMath.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -30,17 +32,17 @@ namespace synth_froggers::dsp {
 struct VcoAdsrState
 {
     static constexpr size_t kNumVoices = 3;
-    static constexpr float kMinTimeSeconds = 0.0005f;
     // Raised after the report "the sustain minimum value is too low. i'm
     // concerned that audio rate modulation in some of the envelope
     // parameters would result in silence."
     //
-    // This is the MISSING SIBLING of kMinTimeSeconds. Attack and release are
-    // both floored (mapAttack/mapRelease below) precisely so modulation cannot
-    // drive them to a degenerate zero; sustain -- the third ASR parameter, and
-    // the only per-voice LEVEL control -- was read straight through as
-    // `clamp(knob, 0, 1)` with no floor at all. Two of three had the guard,
-    // one did not.
+    // This is the MISSING SIBLING of the attack/decay/release floors
+    // (kMinAttackSeconds/kMinDecaySeconds/kMinReleaseSeconds below). Attack
+    // and release are both floored (mapAttack/mapRelease below) precisely so
+    // modulation cannot drive them to a degenerate zero; sustain -- the
+    // third ASR parameter, and the only per-voice LEVEL control -- was read
+    // straight through as `clamp(knob, 0, 1)` with no floor at all. Two of
+    // three had the guard, one did not.
     //
     // Degenerate at zero is not merely quiet, it is structurally broken:
     // `attackStep` is `sustainLevel / attackTime`, so at sustainLevel 0 the
@@ -50,11 +52,20 @@ struct VcoAdsrState
     // falling sustain, so audio-rate modulation does not ride the envelope --
     // it hard-gates it to zero on every trough.
     //
-    // 0.10 is about -20 dB: audible, unmistakably quiet, and far enough above
-    // zero that a full-depth modulation trough still passes signal.
+    // Deliberate parity divergence from the frozen `src/core` reference,
+    // which is linear over [0.10, 1.0]: MapSustain below is exponential over
+    // [kMinSustainLevel, 1.0], and this floor moved from 0.10 (-20 dB) to
+    // 0.25 (-12 dB) to go with it. A straight exponential over the OLD
+    // [0.10, 1.0] range would have made a randomized sustain quieter on
+    // average, not louder -- raising the floor to 0.25 alongside the curve
+    // change keeps the random mean statistically unchanged from the old
+    // linear mapping while raising the worst-case random draw from -20 dB to
+    // -12 dB. The floor's own reason for existing is unchanged: it is
+    // audible, unmistakably quiet, and far enough above zero that a
+    // full-depth modulation trough still passes signal.
     // TRADE-OFF: sustain 0 is no longer a hard mute for a
     // voice, it is this floor.
-    static constexpr float kMinSustainLevel = 0.10f;
+    static constexpr float kMinSustainLevel = 0.25f;
     // Deliberate parity divergence (same treatment as Fuegoize.hpp's own
     // divergence note): lowered from 2.5s to 1.0s. 1.0s still comfortably
     // covers a slow pad swell; 2.5s was judged unnecessarily long. Lowered
@@ -64,6 +75,19 @@ struct VcoAdsrState
     // comment below for why its former "mirrors kMaxAttackSeconds" rationale
     // no longer holds and has been rewritten as decay's own judgment.
     static constexpr float kMaxAttackSeconds = 0.5f;
+    // Deliberate parity divergence from the frozen `src/core` reference,
+    // which maps Attack/Decay/Release LINEARLY: mapAttack/mapDecay/mapRelease
+    // below moved to dsp::ExpMapCompute (every other time/frequency control in
+    // the instrument already maps exponentially; these three were the odd
+    // ones out). A single shared kMinTimeSeconds floor (0.5 ms) does not fit
+    // an exponential map the way it fit a linear one -- on a linear map the
+    // floor barely matters, but on an exponential map a uniform random knob
+    // spends HALF its draws below the geometric midpoint, so a 0.5 ms floor
+    // put a meaningful fraction of randomized attacks at a floor low enough
+    // to click. Each of the three stages gets its own named floor instead.
+    // Attack's own floor, 1 ms, is fast enough to read as instant while
+    // staying clear of a literal zero-length ramp.
+    static constexpr float kMinAttackSeconds = 0.001f;
     // Deliberate parity divergence: lowered
     // from the frozen firmware's 10.0s to 5.0s. Note this does NOT by itself
     // make Stop responsive -- 5s of release after pressing Stop still reads as
@@ -83,6 +107,11 @@ struct VcoAdsrState
     // Halved as a starting point, ear-tuned like the 5.0s
     // value it replaces -- this number is not derived from anything.
     static constexpr float kMaxReleaseSeconds = 2.5f;
+    // mapRelease's own floor for the exponential map (see kMinAttackSeconds's
+    // own comment for why a shared kMinTimeSeconds no longer fits). 5 ms,
+    // same as kMinDecaySeconds below -- both are transient-completion stages
+    // rather than the attack onset, so neither needs Attack's tighter 1 ms.
+    static constexpr float kMinReleaseSeconds = 0.005f;
     // (Envelope slot 1/5/9, Decay). No design-doc
     // value exists for Decay's own time ceiling (the original spec only
     // specified the peak/numerator fix, not a Decay time range) -- this is
@@ -98,6 +127,10 @@ struct VcoAdsrState
     // not apply here. If Decay's own ceiling ever needs revisiting, it now
     // needs its own deliberate re-judgment -- it no longer inherits Attack's.
     static constexpr float kMaxDecaySeconds = 1.0f;
+    // mapDecay's own floor for the exponential map -- see kMinAttackSeconds's
+    // own comment for why a shared kMinTimeSeconds no longer fits three
+    // different stages. 5 ms, same as kMinReleaseSeconds.
+    static constexpr float kMinDecaySeconds = 0.005f;
     // (Envelope slot 13, Grace). Another
     // implementer judgment call ("needs its own design pass
     // at implementation time -- this proposal does not fully specify it").
@@ -290,54 +323,64 @@ struct VcoAdsrState
     }
 
     // The third of the three ASR range maps, and the one that was missing.
-    // Same shape as mapAttack/mapRelease below: clamp the knob, then map onto
-    // [floor, max] so the floor cannot be modulated through. See
-    // kMinSustainLevel's own comment for why zero is degenerate here.
+    // Exponential over [kMinSustainLevel, 1.0] -- see kMinSustainLevel's own
+    // comment for why zero is degenerate here, and for the parity divergence
+    // from the frozen linear reference. No longer `constexpr`: ExpMapCompute
+    // goes through std::pow, which is not a constant expression on this
+    // toolchain.
     //
     // PUBLIC and static, unlike its two private siblings, for one reason: the
     // parity tests assert the settled level a given sustain KNOB produces, and
-    // they must read that from this one function rather than re-deriving
-    // `kMinSustainLevel + knob * (1 - kMinSustainLevel)` themselves. A test
-    // that retypes the formula is a second definition site of it, and would go
-    // on passing against the old shape if this map were ever changed (e.g. to
-    // an exponential curve). dsp::kMaxResonantBumpHeight's own comment records
-    // this project already shipping exactly that bug: a test that computed its
-    // expectation with its own hardcoded copy of the constant and therefore
-    // passed unchanged when the real value moved.
-    static constexpr float MapSustain(float knob)
+    // they must read that from this one function rather than re-deriving the
+    // formula themselves. A test that retypes the formula is a second
+    // definition site of it, and would go on passing against the old shape if
+    // this map were ever changed. dsp::kMaxResonantBumpHeight's own comment
+    // records this project already shipping exactly that bug: a test that
+    // computed its expectation with its own hardcoded copy of the constant and
+    // therefore passed unchanged when the real value moved.
+    static float MapSustain(float knob)
     {
         const float clamped = std::min(std::max(knob, 0.0f), 1.0f);
-        return kMinSustainLevel + clamped * (1.0f - kMinSustainLevel);
+        return ExpMapCompute(kMinSustainLevel, 1.0f, clamped);
     }
 
 private:
+    // Exponential, not linear -- see kMinAttackSeconds's own comment. Every
+    // other time/frequency control in the instrument already maps this way;
+    // a uniform random knob on the old linear map put half its draws above
+    // the geometric midpoint, giving no transient on half of all randomized
+    // voices.
     float mapAttack(float knob) const
     {
         const float clamped = std::min(std::max(knob, 0.0f), 1.0f);
-        return kMinTimeSeconds + clamped * (kMaxAttackSeconds - kMinTimeSeconds);
+        return ExpMapCompute(kMinAttackSeconds, kMaxAttackSeconds, clamped);
     }
 
+    // Exponential -- see mapAttack's own comment.
     float mapRelease(float knob) const
     {
         const float clamped = std::min(std::max(knob, 0.0f), 1.0f);
-        return kMinTimeSeconds + clamped * (kMaxReleaseSeconds - kMinTimeSeconds);
+        return ExpMapCompute(kMinReleaseSeconds, kMaxReleaseSeconds, clamped);
     }
 
-    // Decay (Envelope slot 1/5/9). Same floored shape as mapAttack/mapRelease
-    // -- see kMaxDecaySeconds's own comment for why that constant's value is
+    // Decay (Envelope slot 1/5/9). Exponential, same reasoning as mapAttack's
+    // own comment -- see kMaxDecaySeconds's own comment for why that constant's value is
     // an implementer judgment call, not a recorded design number.
     float mapDecay(float knob) const
     {
         const float clamped = std::min(std::max(knob, 0.0f), 1.0f);
-        return kMinTimeSeconds + clamped * (kMaxDecaySeconds - kMinTimeSeconds);
+        return ExpMapCompute(kMinDecaySeconds, kMaxDecaySeconds, clamped);
     }
 
     // Grace (Envelope slot 13). Deliberately NOT the mapAttack/mapRelease/
-    // mapDecay shape: those floor at kMinTimeSeconds so a modulated knob can
-    // never drive a ramp to a degenerate zero-length step. Grace is the
-    // opposite: knob==0 (the registered default, FroggersParameters.hpp) must
-    // map to EXACTLY 0.0f seconds, because the "Grace at default is a no-op"
-    // requirement depends on this being bit-exact zero, not a small floor.
+    // mapDecay shape, and deliberately left LINEAR even though those three
+    // moved to ExpMapCompute: those floor at a small positive time so a
+    // modulated knob can never drive a ramp to a degenerate zero-length step.
+    // Grace is the opposite: knob==0 (the registered default,
+    // FroggersParameters.hpp) must map to EXACTLY 0.0f seconds, because the
+    // "Grace at default is a no-op" requirement depends on this being
+    // bit-exact zero, not a small floor -- and an exponential map, by
+    // construction, cannot reach zero at any finite knob value.
     float mapGrace(float knob) const
     {
         const float clamped = std::min(std::max(knob, 0.0f), 1.0f);
@@ -435,7 +478,7 @@ private:
         // constant) instead of
         // sustainLevel, so attackStep's NUMERATOR must be 1.0f too, or the
         // realized attack time silently becomes attackTime/sustainLevel (up
-        // to 10x longer at kMinSustainLevel=0.10f).
+        // to 4x longer at kMinSustainLevel=0.25f).
         const float attackStep = 1.0f / std::max(mapAttack(attackKnob) * m_sampleRate, 1.0f);
         // Decay ramps DOWN from that same 1.0f peak to sustainLevel; its
         // numerator is that range, following attackStep/releaseStep's own
