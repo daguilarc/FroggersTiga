@@ -328,7 +328,18 @@ pre-rename absolute path.
 ## Gates
 
 `cd app && nice make -j2 test`; plugin builds VST3 + AU; browser build and
-e2e green; Sheaf's own suite for the framework change. Never above `-j2`,
+e2e green;
+
+**That first command does NOT cover `app/vst/`.** `app/Makefile`'s `test`
+target lists ten binaries and not one of them is a VST target, so the plugin
+tests — where this change's automation, input-bus and editor coverage all
+live — are never executed by it. Treating the plugin as a BUILD check only
+would let the whole change read green while every new plugin test sat unrun.
+The plugin's own CMake test targets are a separate, required gate:
+`FroggersVstHostTests`, `FroggersVstSmokeTest`, `FroggersVstEditorTest`, run
+from `app/vst/build`. Baseline for the host tests at this group's close:
+27/27.
+ Sheaf's own suite for the framework change. Never above `-j2`,
 always `nice`. Baseline at this change's open: 290/290 for the app suite,
 verified from the predecessor's own close-out record.
 

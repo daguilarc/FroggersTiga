@@ -55,12 +55,18 @@
 //      UNCHANGED (this group's report cites that CTest run); the check here
 //      is a second, explicit, redundant confirmation of the same property
 //      from this binary.
-//   5. Bank-selection agreement after host automation (group 8, carry-
-//      forward from the group 7 review): a host write into a non-visible
-//      bank must leave ActiveBankIndex(), the rendered/selected bank tab,
-//      and a page-scoped action (Reset Page) all agreeing on the SAME real
-//      bank -- see that TEST_CASE's own header comment for the full trace
-//      of the bug this proves fixed.
+//   5. Host automation addressing: PumpHostParameterBridge()
+//      (FroggersPluginProcessor.cpp) resolves every host write directly
+//      against its own entry's bank (MessageIn::ParamSetAbsoluteOnBank),
+//      never through the shared BankSlot's current selection -- five
+//      TEST_CASEs below cover a non-visible-bank write landing there while
+//      the operator's own page/tab/page-scoped-action stays put, two banks
+//      written in one pump not oscillating the visible page, an open
+//      modulation drilldown surviving a cross-bank write, a same-bank write
+//      during a drilldown landing on the top-level parameter rather than
+//      whatever depth cell the drilldown maps that same encoder to, and a
+//      positive control proving the operator's OWN bank-select action does
+//      move the page.
 //   6. Plugin-mode surface tree end-to-end (task 8.2): the REAL processor's
 //      surface (not a bare hand-built one) renders Play/Stop/Record absent,
 //      Freeze + its "FREEZE" label present, and BPM as a display-only
@@ -860,26 +866,18 @@ TEST_CASE(host_write_produces_a_bounded_number_of_notifications_not_an_endless_l
     processor.releaseResources();
 }
 
-// -- 5. Carry-forward (group 7 review, addressed group 8): bank-selection
-// agreement after host automation --------------------------------------
-// The g7 bridge's host -> core direction (PumpHostParameterBridge(),
-// FroggersPluginProcessor.cpp) pushes MessageIn::SelectParamBank directly
-// onto engine_.UiBus() to keep the bank-select and the immediately-following
-// ParamSetAbsolute write ordered within the SAME ProcessBlock() call (see
-// that method's own header comment for why a plain RequestBankSelect()-only
-// fix would land the switch one block late). That direct push alone never
-// touched FroggersAppCore's own activeBankIx_/drillIn_ (RequestBankSelect()'s
-// own pending-atomic, drained by ProcessFrame() -- FroggersAppCore.hpp:
-// 557-568,622-664) -- so ActiveBankIndex()/ActiveDrillIn() (read by
-// RandomizePage()/ResetPage(), FroggersAppCore.hpp:687-706) went stale after
-// any cross-bank host write, even though the REAL selection authority
-// (BankSlot::SelectedBank(), and therefore FroggersUiSurface::
-// CurrentBankIndex() -- what the editor actually renders, task 8.1's
-// render-host seam trace) was always correct. Fixed by ALSO calling
-// RequestBankSelect() at the same call site (FroggersPluginProcessor.cpp's
-// own comment there has the full trace); this test proves the fix from the
-// OUTSIDE, driving only real production seams.
-TEST_CASE(host_automation_in_a_non_visible_bank_keeps_active_bank_and_page_actions_in_sync) {
+// -- 5. Host automation addressing: bank-scoped writes, never through the
+// operator's own visible page --------------------------------------------
+// PumpHostParameterBridge() (FroggersPluginProcessor.cpp) resolves a host
+// write directly against its own entry's bank (MessageIn::
+// ParamSetAbsoluteOnBank -> synth::Bank::HandleSetAbsoluteOnTopLevel, see
+// that method's own header comment). It never selects a bank on the shared
+// BankSlot and never touches FroggersAppCore::activeBankIx_/drillIn_ at
+// all. This proves the write reaches its target bank's real parameter
+// while the operator's own view -- ActiveBankIndex(), the rendered/
+// selected bank tab, and a page-scoped action (Reset Page) -- all stay on
+// the bank the OPERATOR is looking at, never the one automation last wrote.
+TEST_CASE(host_automation_in_a_non_visible_bank_lands_there_and_leaves_the_operators_page_untouched) {
     frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("bank_agreement"));
     processor.setRateAndBufferSizeDetails(48000.0, 256);
     processor.prepareToPlay(48000.0, 256);
@@ -900,88 +898,334 @@ TEST_CASE(host_automation_in_a_non_visible_bank_keeps_active_bank_and_page_actio
     };
 
     // FroggersParameterModel::Init() selects bank 0 by default
-    // (FroggersPluginProcessor.hpp's own comment on
-    // lastSelectedBankIxForHostWrites_).
+    // (`slot_->SelectBank(banks_[0])`).
     REQUIRE_TRUE(processor.ApplicationForTest().ActiveBankIndex() == 0);
 
-    // Bank 3, slot 2 -- an arbitrary non-zero target, same "prove
-    // SelectParamBank actually ran" reasoning as
-    // host_write_round_trips_through_the_core_parameter_authority above.
+    // Bank 3, slot 2 -- an arbitrary non-visible target. Bank 0 (the
+    // operator's own, active-by-default bank), slot 6 ("Ph.mod 1") is also
+    // driven, so the Reset-Page check below has an unambiguous before/after
+    // on the bank that action must actually affect. Slot 6 is deliberately
+    // NOT one of the Audio bank's slots 0-2/3-5 (ApplyAudioBankOverlay,
+    // FroggersModulation.hpp) -- those carry a default-patch modulation
+    // overlay of their own, so their post-Reset UIDisplayCenter is not a
+    // stable, single constant to assert against.
     constexpr std::size_t kTargetBank = 3;
     constexpr std::size_t kTargetSlot = 2;
+    constexpr std::size_t kOperatorSlot = 6;
     juce::AudioProcessorParameter* target = FindHostParamById(processor, "bank3.slot2");
+    juce::AudioProcessorParameter* operatorBankTarget = FindHostParamById(processor, "bank0.slot6");
     REQUIRE_TRUE(target != nullptr);
+    REQUIRE_TRUE(operatorBankTarget != nullptr);
 
-    // Comfortably away from 0.0 -- see the Reset-Page assertion below for
-    // why 0.0 (not each parameter's registered defaultValue) is the target
-    // this test checks against; a value this far from it is an unambiguous
-    // positive control (omni-rule 9.1) no matter which page parameter
-    // "bank3.slot2" happens to be.
     constexpr float kHostTarget = 0.81f;
-
+    constexpr float kOperatorBankHostTarget = 0.65f;
     target->setValue(kHostTarget);
-    // ONE pump applies both the bridge's writes (SelectParamBank +
-    // ParamSetAbsolute, drained by DrainMessageBus) and ProcessFrame's own
-    // pendingBankSelect_ drain (RequestBankSelect(), this carry-forward's
-    // fix) -- both inside the SAME upcoming ProcessBlock() call (see
-    // PumpHostParameterBridge()'s own header comment on why both land in
-    // one block); pumpAndSettle() also lets the slew fully converge before
-    // the readback assertion below.
+    operatorBankTarget->setValue(kOperatorBankHostTarget);
     pumpAndSettle();
 
-    synth::Parameter& targetCoreParam = processor.ApplicationForTest().Parameters().PageParameter(kTargetBank, kTargetSlot);
     constexpr float kTolerance = 0.01f;
+    synth::Parameter& targetCoreParam =
+        processor.ApplicationForTest().Parameters().PageParameter(kTargetBank, kTargetSlot);
+    synth::Parameter& operatorBankParam =
+        processor.ApplicationForTest().Parameters().PageParameter(0, kOperatorSlot);
     REQUIRE_TRUE(std::fabs(targetCoreParam.UIDisplayCenter(0) - kHostTarget) < kTolerance);  // the write landed.
+    REQUIRE_TRUE(std::fabs(operatorBankParam.UIDisplayCenter(0) - kOperatorBankHostTarget) < kTolerance);
 
-    // -- The carry-forward's own claim: activeBankIx_ (and therefore
-    // drillIn_, reconstructed alongside it -- FroggersAppCore.hpp:622-641)
-    // now agrees with the real selection, not stuck at the pre-automation
-    // default.
-    REQUIRE_TRUE(processor.ApplicationForTest().ActiveBankIndex() == kTargetBank);
+    // -- The operator's own bank never moved --------------------------------
+    REQUIRE_TRUE(processor.ApplicationForTest().ActiveBankIndex() == 0);
 
-    // -- The REAL authority (BankSlot::SelectedBank(), published via
-    // ParameterManager::PopulateUIState to uiState->banks[].selected --
-    // Sheaf ParameterModulation.cpp:3716-3733) agrees too, and this is
-    // SPECIFICALLY what the editor renders: FroggersUiSurface::
-    // CurrentBankIndex() (app/FroggersUiSurface.hpp:1872-1882) reads this
-    // live state directly, never ActiveBankIndex() -- see task 8.1's report
-    // for the full render-host seam trace. Read via the SAME BuildTree()
-    // call the editor's PortableComponent makes every refresh.
+    // -- The REAL selection authority (BankSlot::SelectedBank(), published
+    // via ParameterManager::PopulateUIState to uiState->banks[].selected)
+    // agrees too, and this is SPECIFICALLY what the editor renders:
+    // FroggersUiSurface::CurrentBankIndex() (app/FroggersUiSurface.hpp:
+    // 1872-1882) reads this live state directly, never ActiveBankIndex().
+    // Read via the SAME BuildTree() call the editor's PortableComponent
+    // makes every refresh.
     const synth::ui::NodeTree tree = processor.ApplicationForTest().PortableSurface().BuildTree();
     const synth::ui::Node* targetBankTab =
         FindNodeById(tree, synth_froggers::FroggersNodeIds::BankButton(kTargetBank));
     REQUIRE_TRUE(targetBankTab != nullptr);
-    REQUIRE_TRUE(targetBankTab->selected);
+    REQUIRE_TRUE(!targetBankTab->selected);  // never flipped to the automated bank.
     const synth::ui::Node* startingBankTab = FindNodeById(tree, synth_froggers::FroggersNodeIds::BankButton(0));
     REQUIRE_TRUE(startingBankTab != nullptr);
-    REQUIRE_TRUE(!startingBankTab->selected);  // not still showing the stale pre-automation bank.
+    REQUIRE_TRUE(startingBankTab->selected);  // still the operator's own bank.
 
-    // -- Page-scoped action (Reset Page) targets the SAME bank -----------
+    // -- Page-scoped action (Reset Page) targets the OPERATOR's bank -------
     // RandomizePage/ResetPage both act on *drillIn_ (FroggersAppCore.hpp:
-    // 691-694/705-706), which the carry-forward's fix keeps bound to the
-    // REAL active bank. Reset (not Randomize) gives an unambiguous,
-    // deterministic observable: FroggersModulation.hpp's
-    // ResetParameterValueAndDepths (ResetPage's own per-parameter helper,
-    // level 0) calls `parameter.HandleSetAbsolute(pole, 0.0f)` for BOTH
-    // scene poles -- a HARDCODED normalized 0.0, not each parameter's own
-    // registered defaultValue (that field only seeds the value at
-    // construction/Randomize time, per FroggersParameters.hpp; Reset does
-    // not read it at all) -- so the correct post-Reset expectation is
-    // exactly 0.0, verified directly against the same in-domain constant
-    // ResetParameterValueAndDepths itself writes, not re-derived from a
-    // different source that could silently drift from it.
-    constexpr float kResetPageTarget = 0.0f;
+    // 692-694/708-709), which only ever moves via RequestBankSelect() -- no
+    // longer called anywhere on the host-automation path -- so it stays
+    // bound to the real active bank (0) regardless of where automation last
+    // wrote. At drill level 0, ResetPage reverts the whole bank via
+    // ResetBankToDefaultPatch -> ApplyBankDefaultPatch (FroggersModulation.hpp),
+    // which sets each page parameter back to its OWN registered
+    // FroggersParamSpec::defaultValue -- read directly from that same
+    // in-domain source below, not re-derived or assumed to be 0.0.
+    const float kResetPageTarget = synth_froggers::FroggersBankLayouts()[0].params[kOperatorSlot].defaultValue;
     processor.ApplicationForTest().RequestResetPage();
     pumpAndSettle();
 
-    REQUIRE_TRUE(std::fabs(targetCoreParam.UIDisplayCenter(0) - kResetPageTarget) < kTolerance);
-    REQUIRE_TRUE(std::fabs(target->getValue() - kResetPageTarget) < kTolerance);  // host readback agrees too.
+    REQUIRE_TRUE(std::fabs(operatorBankParam.UIDisplayCenter(0) - kResetPageTarget) < kTolerance);  // reset bank 0.
+    REQUIRE_TRUE(std::fabs(targetCoreParam.UIDisplayCenter(0) - kHostTarget) < kTolerance);  // bank 3 untouched.
+    REQUIRE_TRUE(std::fabs(target->getValue() - kHostTarget) < kTolerance);  // host readback still agrees.
 
-    std::cout << "  [carry-forward] host automation in bank " << kTargetBank << " slot " << kTargetSlot
-              << ": ActiveBankIndex()=" << processor.ApplicationForTest().ActiveBankIndex()
-              << ", rendered-selected bank tab agrees, and RequestResetPage() reset THIS bank's parameter (-> "
-              << targetCoreParam.UIDisplayCenter(0)
-              << ") rather than leaving it at the host-automated " << kHostTarget << ".\n";
+    std::cout << "  [host automation] wrote bank " << kTargetBank << " slot " << kTargetSlot
+              << " -> ActiveBankIndex() stayed " << processor.ApplicationForTest().ActiveBankIndex()
+              << ", and RequestResetPage() reset THAT bank's own parameter (-> "
+              << operatorBankParam.UIDisplayCenter(0) << ") while leaving bank " << kTargetBank << " at "
+              << targetCoreParam.UIDisplayCenter(0) << ".\n";
+
+    processor.releaseResources();
+}
+
+// -- Two banks automated in the same pump must not oscillate the visible
+// page -- there is no bank-select message on this path at all any more
+// (see PumpHostParameterBridge()'s own header comment), so there is
+// nothing left here that could move it, no matter how many banks a single
+// pump's worth of host writes touches.
+TEST_CASE(host_automation_of_two_banks_in_one_pump_does_not_move_the_visible_page) {
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("bank_no_oscillate"));
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+    auto runBlock = [&] {
+        buffer.clear();
+        processor.processBlock(buffer, midi);
+    };
+    auto pumpAndSettle = [&] {
+        for (int i = 0; i < 45; ++i) {
+            processor.PumpMessageThreadForTest();
+            for (int b = 0; b < 7; ++b) {
+                runBlock();
+            }
+        }
+    };
+
+    REQUIRE_TRUE(processor.ApplicationForTest().ActiveBankIndex() == 0);
+
+    juce::AudioProcessorParameter* targetA = FindHostParamById(processor, "bank2.slot1");
+    juce::AudioProcessorParameter* targetB = FindHostParamById(processor, "bank4.slot6");
+    REQUIRE_TRUE(targetA != nullptr);
+    REQUIRE_TRUE(targetB != nullptr);
+
+    constexpr float kTargetAValue = 0.33f;
+    constexpr float kTargetBValue = 0.77f;
+    // Both host writes are visible to PumpHostParameterBridge() the SAME
+    // pump -- it walks all of hostParams_ in one pass, so this is exactly
+    // the "two different banks in one pump" case.
+    targetA->setValue(kTargetAValue);
+    targetB->setValue(kTargetBValue);
+    pumpAndSettle();
+
+    constexpr float kTolerance = 0.01f;
+    synth::Parameter& coreA = processor.ApplicationForTest().Parameters().PageParameter(2, 1);
+    synth::Parameter& coreB = processor.ApplicationForTest().Parameters().PageParameter(4, 6);
+    REQUIRE_TRUE(std::fabs(coreA.UIDisplayCenter(0) - kTargetAValue) < kTolerance);  // both writes landed.
+    REQUIRE_TRUE(std::fabs(coreB.UIDisplayCenter(0) - kTargetBValue) < kTolerance);
+
+    // -- Neither write, nor their combination, moved the visible page ------
+    REQUIRE_TRUE(processor.ApplicationForTest().ActiveBankIndex() == 0);
+    const synth::ui::NodeTree tree = processor.ApplicationForTest().PortableSurface().BuildTree();
+    REQUIRE_TRUE(FindNodeById(tree, synth_froggers::FroggersNodeIds::BankButton(0))->selected);
+    REQUIRE_TRUE(!FindNodeById(tree, synth_froggers::FroggersNodeIds::BankButton(2))->selected);
+    REQUIRE_TRUE(!FindNodeById(tree, synth_froggers::FroggersNodeIds::BankButton(4))->selected);
+
+    std::cout << "  [no oscillation] bank2.slot1=" << coreA.UIDisplayCenter(0) << ", bank4.slot6="
+              << coreB.UIDisplayCenter(0) << ", ActiveBankIndex() stayed "
+              << processor.ApplicationForTest().ActiveBankIndex() << " throughout.\n";
+
+    processor.releaseResources();
+}
+
+// -- An open modulation drilldown survives a cross-bank host write --------
+// The operator's own bank (0) is drilled into one of its own parameters; a
+// host write lands in a DIFFERENT bank (3). Since that write never selects
+// a bank and never touches FroggersAppCore::drillIn_ (see
+// PumpHostParameterBridge()'s own header comment), the open drilldown must
+// still be open, on the same selected parameter, afterward.
+TEST_CASE(open_modulation_drilldown_survives_a_cross_bank_host_write) {
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("drilldown_survives_cross_bank"));
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+    auto runBlock = [&] {
+        buffer.clear();
+        processor.processBlock(buffer, midi);
+    };
+    auto pumpAndSettle = [&] {
+        for (int i = 0; i < 45; ++i) {
+            processor.PumpMessageThreadForTest();
+            for (int b = 0; b < 7; ++b) {
+                runBlock();
+            }
+        }
+    };
+
+    REQUIRE_TRUE(processor.ApplicationForTest().ActiveBankIndex() == 0);
+
+    // Drill into bank 0's own slot 5 -- the real operator press seam
+    // (FroggersAppCore::RequestEncoderPress(), drained by ProcessFrame() on
+    // the very next block; see FroggersModulation.hpp's
+    // FroggersModulationDrillIn::PressEncoder()).
+    constexpr std::size_t kDrilledSlot = 5;
+    processor.ApplicationForTest().RequestEncoderPress(kDrilledSlot);
+    runBlock();
+
+    synth::Bank& bank0 = processor.ApplicationForTest().ActiveDrillIn().BankRef();
+    synth::Parameter& drilledParam = processor.ApplicationForTest().Parameters().PageParameter(0, kDrilledSlot);
+    REQUIRE_TRUE(bank0.ShowingModulation());
+    REQUIRE_TRUE(bank0.SelectedParameter() == &drilledParam);
+    REQUIRE_TRUE(processor.ApplicationForTest().ActiveDrillIn().Level() == 1);
+
+    // -- Cross-bank host write ----------------------------------------------
+    juce::AudioProcessorParameter* target = FindHostParamById(processor, "bank3.slot2");
+    REQUIRE_TRUE(target != nullptr);
+    constexpr float kHostTarget = 0.81f;
+    target->setValue(kHostTarget);
+    pumpAndSettle();
+
+    constexpr float kTolerance = 0.01f;
+    synth::Parameter& targetCoreParam = processor.ApplicationForTest().Parameters().PageParameter(3, 2);
+    REQUIRE_TRUE(std::fabs(targetCoreParam.UIDisplayCenter(0) - kHostTarget) < kTolerance);  // the write landed.
+
+    // -- The drilldown is untouched -----------------------------------------
+    REQUIRE_TRUE(processor.ApplicationForTest().ActiveBankIndex() == 0);
+    REQUIRE_TRUE(bank0.ShowingModulation());
+    REQUIRE_TRUE(bank0.SelectedParameter() == &drilledParam);
+    REQUIRE_TRUE(processor.ApplicationForTest().ActiveDrillIn().Level() == 1);
+
+    std::cout << "  [drilldown survives] bank 3 slot 2 automated to " << kHostTarget
+              << "; bank 0's drilldown on slot " << kDrilledSlot << " is still open.\n";
+
+    processor.releaseResources();
+}
+
+// -- THE IMPORTANT CASE: a same-bank host write during a drilldown must
+// land on the TOP-LEVEL parameter, never on the modulation-depth cell the
+// SAME physical encoder maps to while drilled in --------------------------
+// The operator's own bank (0) is drilled into slot 5's modulation view;
+// that view remaps EVERY physical encoder (Bank::OpenModulationView,
+// External/Sheaf/projects/synth/src/ParameterModulation.cpp:2833-2879) to a
+// modulation-depth cell, including slot 0 -- the position this test then
+// automates. Removing the MessageIn::SelectParamBank push (task 2.1) -- it
+// used to force the bank's visible page back to top level as a side effect
+// -- puts this case at risk: MessageIn::ParamSetAbsoluteOnBank must resolve
+// against bankIx's own TOP-LEVEL mapping (synth::Bank::
+// HandleSetAbsoluteOnTopLevel) regardless of what the bank currently has
+// visible, or the write would silently land on whatever depth cell slot 0
+// happens to show instead.
+TEST_CASE(host_automation_of_the_viewed_banks_own_parameter_lands_on_top_level_not_the_drilldowns_depth_cell) {
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("same_bank_write_during_drilldown"));
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+    auto runBlock = [&] {
+        buffer.clear();
+        processor.processBlock(buffer, midi);
+    };
+    auto pumpAndSettle = [&] {
+        for (int i = 0; i < 45; ++i) {
+            processor.PumpMessageThreadForTest();
+            for (int b = 0; b < 7; ++b) {
+                runBlock();
+            }
+        }
+    };
+
+    REQUIRE_TRUE(processor.ApplicationForTest().ActiveBankIndex() == 0);
+
+    // Drill into slot 5 -- distinct from slot 0, the position this test
+    // writes below, so top-level and depth-cell targets are unambiguously
+    // different parameters.
+    constexpr std::size_t kDrilledSlot = 5;
+    processor.ApplicationForTest().RequestEncoderPress(kDrilledSlot);
+    runBlock();
+
+    synth::Bank& bank0 = processor.ApplicationForTest().ActiveDrillIn().BankRef();
+    synth::Parameter& drilledParam = processor.ApplicationForTest().Parameters().PageParameter(0, kDrilledSlot);
+    REQUIRE_TRUE(bank0.ShowingModulation());
+    REQUIRE_TRUE(bank0.SelectedParameter() == &drilledParam);
+
+    // Slot 0's own physical encoder now shows the drilled-in parameter's
+    // modulation-depth cell for modulator 0 (Random S&H 1 -- registered
+    // `connected=true` unconditionally, FroggersModulation.hpp's
+    // RegisterSources(), so this cell is always materialized, never null).
+    synth::Parameter* depthCellAtSlot0 = drilledParam.ModulationDepthParameter(0);
+    REQUIRE_TRUE(depthCellAtSlot0 != nullptr);
+    REQUIRE_TRUE(bank0.VisibleParameter(0) == depthCellAtSlot0);
+    const float depthBefore = depthCellAtSlot0->UIDisplayCenter(0);
+
+    synth::Parameter& topLevelSlot0Param = processor.ApplicationForTest().Parameters().PageParameter(0, 0);
+    const float topLevelBefore = topLevelSlot0Param.UIDisplayCenter(0);
+
+    // -- Automate slot 0, in THIS same, currently-drilled-into bank --------
+    juce::AudioProcessorParameter* target = FindHostParamById(processor, "bank0.slot0");
+    REQUIRE_TRUE(target != nullptr);
+    constexpr float kHostTarget = 0.81f;
+    // An unambiguous positive control (omni-rule 9.1): the target is far
+    // from both the top-level parameter's and the depth cell's own current
+    // values, so whichever one actually moved is unmistakable.
+    REQUIRE_TRUE(std::fabs(topLevelBefore - kHostTarget) > 0.1f);
+    REQUIRE_TRUE(std::fabs(depthBefore - kHostTarget) > 0.1f);
+    target->setValue(kHostTarget);
+    pumpAndSettle();
+
+    constexpr float kTolerance = 0.01f;
+    // The write landed on the TOP-LEVEL parameter...
+    REQUIRE_TRUE(std::fabs(topLevelSlot0Param.UIDisplayCenter(0) - kHostTarget) < kTolerance);
+    // ...and the depth cell the drilldown shows at that same physical
+    // position is untouched.
+    REQUIRE_TRUE(std::fabs(depthCellAtSlot0->UIDisplayCenter(0) - depthBefore) < kTolerance);
+    // The drilldown itself is still exactly where it was.
+    REQUIRE_TRUE(bank0.ShowingModulation());
+    REQUIRE_TRUE(bank0.SelectedParameter() == &drilledParam);
+
+    std::cout << "  [top-level not depth-cell] bank0.slot0 automated to " << kHostTarget << " -> top-level="
+              << topLevelSlot0Param.UIDisplayCenter(0) << " (target), depth cell stayed "
+              << depthCellAtSlot0->UIDisplayCenter(0) << " (was " << depthBefore << ").\n";
+
+    processor.releaseResources();
+}
+
+// -- POSITIVE CONTROL: the operator's OWN bank-select action does move the
+// visible page -- without this, every "the page did not move" assertion
+// above would prove only that nothing moves anything (omni-rule 9.1).
+TEST_CASE(operator_selecting_a_bank_does_move_the_visible_page) {
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("operator_bank_select_moves_page"));
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+    auto runBlock = [&] {
+        buffer.clear();
+        processor.processBlock(buffer, midi);
+    };
+
+    REQUIRE_TRUE(processor.ApplicationForTest().ActiveBankIndex() == 0);
+
+    constexpr std::size_t kOperatorTargetBank = 4;
+    // The exact same public seam FroggersUiSurface.hpp's own bank buttons
+    // call (app/FroggersUiSurface.hpp:2012/2030/2041).
+    processor.ApplicationForTest().RequestBankSelect(kOperatorTargetBank);
+    runBlock();  // ProcessFrame() drains the pending request -- ActiveBankIndex() itself moves this block.
+    REQUIRE_TRUE(processor.ApplicationForTest().ActiveBankIndex() == kOperatorTargetBank);
+
+    // BuildTree() below reads synth::ParameterManager::UIState, which
+    // Engine::ProcessBlock() only re-publishes every uiPublishInterval_
+    // blocks (Engine.hpp's own UI-state publish throttle) -- run a handful
+    // more blocks so at least one publish has definitely landed before
+    // reading it.
+    for (int i = 0; i < 10; ++i) {
+        runBlock();
+    }
+    const synth::ui::NodeTree tree = processor.ApplicationForTest().PortableSurface().BuildTree();
+    REQUIRE_TRUE(FindNodeById(tree, synth_froggers::FroggersNodeIds::BankButton(kOperatorTargetBank))->selected);
+    REQUIRE_TRUE(!FindNodeById(tree, synth_froggers::FroggersNodeIds::BankButton(0))->selected);
+
+    std::cout << "  [positive control] RequestBankSelect(" << kOperatorTargetBank << ") -> ActiveBankIndex()="
+              << processor.ApplicationForTest().ActiveBankIndex() << ".\n";
 
     processor.releaseResources();
 }

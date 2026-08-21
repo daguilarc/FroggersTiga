@@ -163,21 +163,21 @@ excusing it.
 
 ## 2. Automation stops moving the visible page (design A) — the app half
 
-- [ ] 2.1 Use the new write in the plugin bridge for ALL host automation, not
+- [x] 2.1 DONE — bridge pushes only ParamSetAbsoluteOnBank now; SelectParamBank push, RequestBankSelect call, needsBankSelect and lastSelectedBankIxForHostWrites_ all removed. Use the new write in the plugin bridge for ALL host automation, not
       only cross-bank writes — a write to the visible bank must not depend on
       that bank's drill-down state either. Drop the `MessageIn::SelectParamBank`
       push and the `RequestBankSelect` call from that path, and remove the
       state that existed only to gate them (`needsBankSelect`,
       `lastSelectedBankIxForHostWrites_`) rather than leaving it dead.
-- [ ] 2.2 `RandomizePage`/`ResetPage` must target the operator's bank, not
+- [x] 2.2 DONE — verified by reading: RandomizePage/ResetPage act on *drillIn_, reconstructed only when pendingBankSelect_ drains, set only by RequestBankSelect, whose only remaining callers are operator surfaces. No core change needed. `RandomizePage`/`ResetPage` must target the operator's bank, not
       the last automated one. Verify and test.
-- [ ] 2.3 Rewrite the existing test that asserts the OLD contract (visible
+- [x] 2.3 DONE — rewritten, not deleted, as host_automation_in_a_non_visible_bank_lands_there_and_leaves_the_operators_page_untouched. Rewrite the existing test that asserts the OLD contract (visible
       page follows automation, page actions hit the automated bank) to the
       new one — it is
       `host_automation_in_a_non_visible_bank_keeps_active_bank_and_page_actions_in_sync`
       in `app/vst/FroggersVstHostTests.cpp` — name, header comment, and
       assertions. Do not delete it.
-- [ ] 2.4 Tests: a write to a non-visible bank lands correctly and the page
+- [x] 2.4 DONE — 27/27 in FroggersVstHostTests. The drilled-in case was observed RED by restoring the old SelectParamBank path, then restored byte-identical. Positive control present: operator_selecting_a_bank_does_move_the_visible_page. Tests: a write to a non-visible bank lands correctly and the page
       does not move; two banks automated at once do not oscillate it; **an
       open modulation drill-down survives a cross-bank write** — this is the
       defect the framework route was chosen to prevent, so prove it.
@@ -328,7 +328,11 @@ excusing it.
 ## 9. Verify and hand off for testing
 
 - [ ] 9.1 Full suite green; browser build and e2e green; plugin builds VST3
-      and AU; Sheaf's suite green. Counts reported.
+      and AU **and its own test targets RUN, not merely built** —
+      `FroggersVstHostTests`, `FroggersVstSmokeTest`, `FroggersVstEditorTest`
+      from `app/vst/build`, because `cd app && make test` builds none of them
+      and this change's plugin coverage lives there; Sheaf's suite green
+      (920/2, never a zero exit). Counts reported.
 - [ ] 9.2 Change-level postflight: implementation versus proposal
       divergence, plus a fresh duplication pass against the WHOLE diff for
       every new named concept this change introduces — a new name

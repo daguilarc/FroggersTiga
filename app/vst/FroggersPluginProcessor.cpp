@@ -670,14 +670,14 @@ void FroggersPluginProcessor::timerCallback() {
         hostClockEngaged_ = false;
     }
 
-    // -- 7.1: stable-ID host parameter surface, both directions -------------
-    // Same message-thread-only discipline as 6.1/6.3 above: this is the
-    // ONLY place that pushes MessageIn::SelectParamBank/ParamSetAbsolute or
-    // calls DispatchAction(kFreeze) for a host-driven write, and the ONLY
-    // place that reads the per-parameter UIState snapshots processBlock()
-    // (audio thread) publishes into hostParams_[i].uiState -- see
-    // PumpHostParameterBridge()'s own comment for the full bidirectional
-    // trace.
+    // -- Stable-ID host parameter surface, both directions -------------
+    // Message-thread-only, same discipline as the transport/tempo handling
+    // above: this is the ONLY place that pushes
+    // MessageIn::ParamSetAbsoluteOnBank or calls DispatchAction(kFreeze) for
+    // a host-driven write, and the ONLY place that reads the per-parameter
+    // UIState snapshots processBlock() (audio thread) publishes into
+    // hostParams_[i].uiState -- see PumpHostParameterBridge()'s own comment
+    // for the full bidirectional trace.
     PumpHostParameterBridge();
 
     // DAW session-state persistence: independent of the host-parameter
@@ -747,7 +747,6 @@ void FroggersPluginProcessor::BuildHostParameterInventory() {
             entry.coreParam = &coreParam;
             entry.bankIx = bankIx;
             entry.position = paramIx;
-            entry.needsBankSelect = true;
             entry.uiState = std::make_unique<synth::Parameter::UIState>();
             // voiceCapacity=1 (FroggersParameterModel::kNumVoices, D4's mono
             // model); this bridge needs no modulator/gesture color info, so
@@ -787,7 +786,6 @@ void FroggersPluginProcessor::BuildHostParameterInventory() {
             entry.coreParam = &coreParam;
             entry.bankIx = bankIx;
             entry.position = synth_froggers::kFroggersCrispySlot;
-            entry.needsBankSelect = true;
             entry.uiState = std::make_unique<synth::Parameter::UIState>();
             entry.uiState->Configure(1, 0, 0);
             // Crispy's own RegisterParameter call never sets `.defaultValue`
@@ -817,9 +815,8 @@ void FroggersPluginProcessor::BuildHostParameterInventory() {
         HostParamEntry entry;
         entry.kind = HostParamEntry::Kind::kCrunchy;
         entry.coreParam = &coreParam;
-        entry.bankIx = 0;  // Unused for addressing (needsBankSelect is false); any bank resolves the same Parameter*.
+        entry.bankIx = 0;  // Arbitrary: this Parameter* is at position 15 in every bank's own top-level mapping.
         entry.position = synth_froggers::kFroggersCrunchySlot;
-        entry.needsBankSelect = false;
         entry.uiState = std::make_unique<synth::Parameter::UIState>();
         entry.uiState->Configure(1, 0, 0);
         // Crunchy's own RegisterParameter call never sets `.defaultValue`
@@ -874,80 +871,29 @@ void FroggersPluginProcessor::BuildHostParameterInventory() {
 //   last agreed with it (`juceParam->getValue() != entry.shadowNormalized`
 //   beyond a small float epsilon), push exactly the write a real host
 //   automation event or MIDI-mapped-by-the-DAW controller move would
-//   produce -- MessageIn::ParamSetAbsolute at this entry's (slotIx=0,
-//   position), preceded by MessageIn::SelectParamBank when (and only when)
-//   the target bank is not already the one this class itself last selected
-//   (lastSelectedBankIxForHostWrites_). Both messages land on the SAME
-//   engine_.UiBus() this class has pushed onto since group 6 (6.1/6.3),
-//   applied in push order within ONE MessageInBus::Process() call inside
-//   the next engine_.ProcessBlock() (Engine.hpp's DrainMessageBus(uiBus_,
-//   ...) step) -- so the select is guaranteed to land before the set it
-//   precedes, even though bank selection ALSO has its own, separate,
-//   audio-thread Request*/pending*_ bridge (FroggersAppCore::
-//   RequestBankSelect(), applied inside ProcessFrame() -- traced and
-//   deliberately NOT used AS A REPLACEMENT here: ProcessFrame() runs AFTER
-//   DrainMessageBus(uiBus_, ...) within one Engine::ProcessBlock() call
-//   (Engine.hpp's own binding step order), so a RequestBankSelect() pushed
-//   IN PLACE OF the direct push, in the same pump as a ParamSetAbsolute,
-//   would apply ONE BLOCK LATE relative to the value write it was meant to
-//   precede -- landing the write on whatever bank was selected BEFORE this
-//   pump instead of the intended target. MessageIn::SelectParamBank has no
-//   such gap: it drains through the exact same uiBus_ queue, in the exact
-//   same DrainMessageBus() call, as ParamSetAbsolute itself).
+//   produce -- MessageIn::ParamSetAbsoluteOnBank at this entry's
+//   (bankIx, slotIx=0, position). This resolves directly against bankIx's
+//   own top-level parameter mapping (synth::Bank::HandleSetAbsoluteOnTopLevel,
+//   via ParameterManager::HandleSetAbsoluteOnBank) -- it never touches the
+//   shared BankSlot's selection, and never depends on which bank is
+//   currently selected or how deep that bank is drilled into a modulation
+//   view. A host write therefore always lands on the entry's own
+//   parameter, whether or not that entry's bank happens to be the one an
+//   operator is currently looking at, and never moves the visible bank or
+//   disturbs an open drilldown.
 //
-//   CARRY-FORWARD (group 7 review, addressed group 8): the direct
-//   MessageIn::SelectParamBank push above updates BankSlot::SelectedBank()
-//   (the real selection authority, ParameterManager::SelectBankForSlot) but
-//   -- on its own -- never touched FroggersAppCore::activeBankIx_/drillIn_
-//   at all, since those are updated ONLY by RequestBankSelect()'s own
-//   pending-atomic, drained inside ProcessFrame() (FroggersAppCore.hpp:
-//   557-568, 622-664, which ALSO reconstructs drillIn_ for the new bank).
-//   Consequence: after any cross-bank host write, ActiveBankIndex()/
-//   ActiveDrillIn() went stale, and RandomizePage()/ResetPage()
-//   (FroggersAppCore.hpp:687-706), which act on *drillIn_, silently kept
-//   targeting whatever bank was active BEFORE the automation -- even though
-//   FroggersUiSurface::CurrentBankIndex() (app/FroggersUiSurface.hpp:
-//   1872-1882, what the editor actually renders -- task 8.1's render-host
-//   seam trace) reads the real BankSlot selection directly and was NEVER
-//   stale. Fix: ALSO call RequestBankSelect() here, at the same "bank
-//   actually changed" gate the direct push already uses -- both this call
-//   and the direct push above are applied within the SAME upcoming
-//   ProcessBlock() call (DrainMessageBus runs first and re-selects the
-//   already-selected bank, a harmless no-op per BankSlot::SelectBank's own
-//   early-exit; ProcessFrame runs after and reconstructs drillIn_ for the
-//   real target bank), so this closes the staleness gap without
-//   reintroducing the one-block-late defect the comment above rules out for
-//   a REPLACEMENT. Single-slot coalescing (RequestBankSelect()'s own
-//   contract) means multiple different-bank writes batched into one pump
-//   still converge correctly: the LAST RequestBankSelect() call in program
-//   order is also the LAST SelectParamBank message DrainMessageBus applies,
-//   so both paths agree on the same final bank either way. No core header
-//   edit needed: RequestBankSelect() is an existing PUBLIC
-//   FroggersAppCore method already called from FroggersUiSurface.hpp;
-//   this is a new call site, not a new core capability. Verified by
-//   FroggersVstHostTests.cpp's
-//   host_automation_in_a_non_visible_bank_keeps_active_bank_and_page_actions_in_sync.
+//   This is pushed onto engine_.UiBus() (the message bus) rather than
+//   applied through the audio-thread Request*/pending*_ bridge
+//   (FroggersAppCore::RequestBankSelect() and friends, applied inside
+//   ProcessFrame()) because engine_.ProcessBlock() drains the message bus
+//   BEFORE running ProcessFrame() (Engine.hpp's own binding step order): a
+//   Request* write queued this pump would not apply until the block AFTER
+//   the one a message-bus write applies in, landing one block late relative
+//   to a value meant to take effect immediately.
 //
-//   Crunchy needs no SelectParamBank at all (needsBankSelect is false --
-//   see HostParamEntry::needsBankSelect's own comment); the shared bank
-//   selection is deliberately left wherever the write leaves it afterward
-//   (no "restore the previous bank" step). AUDIT CORRECTION (was: "with no
-//   editor in this group, nothing observes the shared BankSlot's current
-//   selection except this bridge itself" -- true when this bridge was
-//   written in group 6, false today): group 8 added the real editor, and
-//   FroggersUiSurface::CurrentBankIndex() (cited above) reads this exact
-//   selection, so a host automation write to a bank other than the one
-//   currently showing now visibly flips the editor to it, with no
-//   restore. Whether that is the right behavior -- vs. restoring the
-//   previously-viewed bank, or some other policy -- is a product decision
-//   this bridge does not make unilaterally: it belongs to
-//   openspec/changes/frogg3rs-host-state-and-visibility's "Cross-bank
-//   automation policy" task group (design D), which owns tracing the
-//   options and getting an operator decision before this behavior changes.
-//   Until then, this bridge's own behavior is unchanged: the bank a host
-//   automation event most recently touched stays selected, which also
-//   mirrors what a real user turning that specific parameter's own
-//   encoder would leave behind.
+//   Crunchy's bankIx is arbitrary (HostParamEntry::bankIx's own comment):
+//   the same Parameter object is registered at position 15 in every bank's
+//   top-level mapping, so any bankIx resolves it correctly.
 //
 //   core -> host: reached only when the host did NOT just write this
 //   parameter THIS pump (host writes always win a same-pump race, and
@@ -975,11 +921,13 @@ void FroggersPluginProcessor::BuildHostParameterInventory() {
 //   bit-exact fixed point in finite time (the update term shrinks below the
 //   float ULP at that magnitude and the stored value stops changing bit for
 //   bit) -- so this is not merely "unlikely to loop forever," it provably
-//   goes to a fixed count of notifies and stops. Task 7.2's own
-//   no-feedback test proves this by pumping well past that settle window
-//   and asserting the notify count has gone flat, plus a positive control
-//   (a genuine core-side change DOES still notify) proving the guard
-//   discriminates rather than just suppressing everything.
+//   goes to a fixed count of notifies and stops.
+//   FroggersVstHostTests.cpp's
+//   host_write_produces_a_bounded_number_of_notifications_not_an_endless_loop
+//   proves this by pumping well past that settle window and asserting the
+//   notify count has gone flat, plus a positive control (a genuine
+//   core-side change DOES still notify) proving the guard discriminates
+//   rather than just suppressing everything.
 void FroggersPluginProcessor::PumpHostParameterBridge() {
     constexpr float kEpsilon = 1.0e-5f;
 
@@ -1017,22 +965,11 @@ void FroggersPluginProcessor::PumpHostParameterBridge() {
 
         const float hostValue = entry.juceParam->getValue();
         if (std::fabs(hostValue - entry.shadowNormalized) > kEpsilon) {
-            // host -> core.
-            if (entry.needsBankSelect && entry.bankIx != lastSelectedBankIxForHostWrites_) {
-                engine_.UiBus().Push(synth::MessageIn::SelectParamBank(NowMicros(), /*slotIx=*/0, entry.bankIx));
-                // Carry-forward (group 7 review, see this method's own
-                // header comment for the full trace): ALSO keep
-                // FroggersAppCore::activeBankIx_/drillIn_ in sync via the
-                // core's own request bridge -- both this call and the
-                // direct push above land within the SAME upcoming
-                // ProcessBlock() call, so the value write immediately below
-                // still resolves against the correct, freshly-selected
-                // bank exactly as before this fix.
-                engine_.Application().RequestBankSelect(entry.bankIx);
-                lastSelectedBankIxForHostWrites_ = entry.bankIx;
-            }
-            engine_.UiBus().Push(
-                synth::MessageIn::ParamSetAbsolute(NowMicros(), /*slotIx=*/0, entry.position, hostValue));
+            // host -> core: resolves directly against entry.bankIx's own
+            // top-level mapping (see this method's own header comment) --
+            // never touches the shared BankSlot's selection.
+            engine_.UiBus().Push(synth::MessageIn::ParamSetAbsoluteOnBank(
+                NowMicros(), entry.bankIx, /*slotIx=*/0, entry.position, hostValue));
             entry.shadowNormalized = hostValue;
             continue;
         }

@@ -490,19 +490,20 @@ private:
         synth::Parameter* coreParam = nullptr;
 
         // Addressing for the host -> core write direction (see
-        // PumpHostParameterBridge()'s own comment for the full trace of why
-        // ParamSetAbsolute needs both of these, and why Crunchy/Freeze need
-        // neither): bankIx/position identify WHICH Parameter this entry
-        // targets on synth::ParameterManager's single physical BankSlot
-        // (slotIx is always 0 -- FroggersParameterModel::Init() creates
-        // exactly one). needsBankSelect is false only for kCrunchy (the
-        // SAME Parameter object is registered at position 15 in every bank,
-        // so any currently-selected bank resolves it correctly) and
-        // kFreeze (bypasses the BankSlot/ParameterManager surface
-        // entirely).
+        // PumpHostParameterBridge()'s own comment): bankIx/position identify
+        // WHICH Parameter this entry targets, resolved directly against
+        // bankIx's own top-level mapping (MessageIn::ParamSetAbsoluteOnBank)
+        // regardless of which bank the shared BankSlot currently has
+        // selected, or how deep that bank is drilled into a modulation
+        // view (slotIx is always 0 -- FroggersParameterModel::Init() creates
+        // exactly one BankSlot; it contributes only the encoder layout used
+        // to resolve position). kCrunchy's bankIx is arbitrary (0): the SAME
+        // Parameter object is registered at position 15 in every bank's own
+        // top-level mapping, so any bankIx resolves it. kFreeze needs
+        // neither field -- it bypasses the BankSlot/ParameterManager surface
+        // entirely.
         std::size_t bankIx = 0;
         std::size_t position = 0;
-        bool needsBankSelect = false;
 
         // Audio-thread-published (processBlock(), every block, via
         // Parameter::PopulateUIState() -- see processBlock()'s own comment)
@@ -542,15 +543,6 @@ private:
     void PumpStatePersistence();
 
     std::vector<HostParamEntry> hostParams_;
-    // Message-thread-owned shadow of which bank this class itself last
-    // selected on the shared BankSlot via a host-driven write (see
-    // PumpHostParameterBridge()'s own comment) -- lets repeated writes to
-    // the SAME bank skip a redundant MessageIn::SelectParamBank push.
-    // FroggersParameterModel::Init() selects bank 0 by default
-    // (`slot_->SelectBank(banks_[0])`), so this starts in agreement with
-    // that real initial selection rather than forcing an unnecessary first
-    // select.
-    std::size_t lastSelectedBankIxForHostWrites_ = 0;
 
     // Group 8: see SetEditorRepaintHook()'s own comment above for the full
     // precedent trace. Empty (default-constructed, falsy) whenever no
