@@ -1,8 +1,8 @@
 #pragma once
 
-// frogg3rs_vst::FroggersPluginProcessor -- Group 5 (VST/AU plugin skeleton)
-// of the frogg3rs-browser-and-vst-hosts change. This is the ONLY JUCE-facing
-// wrapper over the JUCE-free app core (synth_froggers::FroggersApp,
+// frogg3rs_vst::FroggersPluginProcessor -- the VST/AU plugin skeleton. This
+// is the ONLY JUCE-facing wrapper over the JUCE-free app core
+// (synth_froggers::FroggersApp,
 // app/Froggers.hpp) -- every file under app/vst/ may see JUCE; the core
 // under app/ and its check_no_juce gate (app/Makefile) stay untouched.
 //
@@ -36,11 +36,10 @@
 // SetRuntimeDataPaths + Initialize(), once; prepareToPlay(): Prepare(),
 // every call; processBlock(): ProcessBlock(), every callback) without any
 // of Runtime.hpp's device-manager/MIDI-connection/window machinery -- none
-// of that is needed to drive the core, so none of it is duplicated (the
-// group 5 brief's BLOCKED condition, "core cannot be driven headlessly
-// without launcher-session machinery," does not apply: synth::Engine<App>
-// is the seam, and it is already JUCE-free and driven exactly this way by
-// SynthRig.hpp's own JUCE-free tests).
+// of that is needed to drive the core, so none of it is duplicated: the core
+// is not blocked on launcher-session machinery to run headlessly --
+// synth::Engine<App> is the seam, and it is already JUCE-free and driven
+// exactly this way by SynthRig.hpp's own JUCE-free tests.
 //
 // Data path: reuses the SAME "frogg3rs" stable app id and shared
 // ~/Library/Sheaf data root FroggersMain.cpp's direct-launch app uses
@@ -49,16 +48,15 @@
 // (synth_runtime::SheafUserApplicationDataRoot(), HostDataPaths.cpp) rather
 // than duplicating its logic -- that helper depends only on juce_core (a
 // plugin dependency anyway) and owns no window/device/thread state, so
-// reusing it is not "launcher-code" in the sense the brief's BLOCKED
-// condition means.
+// reusing it does not pull launcher machinery into this class.
 //
 // Transport: FroggersAppCore's ASR gate stays closed (silence) until the
 // transport is started via synth::MessageIn::Start + SetDesiredTransportRunning
 // (FroggersAppCore.hpp's ProcessBlock()/TransportQuarterNotesAt() gating
-// comment). Group 5 wired no DAW-host transport source at all and added no
-// note handling (group 5 brief: MIDI buffer accepted and ignored).
+// comment). This class adds no note handling: the MIDI buffer is accepted
+// and ignored (see acceptsMidi() below).
 //
-// Group 6: the DAW is now the transport AND tempo authority. Both producers
+// Host transport and tempo: the DAW is the transport AND tempo authority. Both producers
 // below are driven from `getPlayHead()`, and both obey the SAME
 // audio-thread-safety trace (see the header comment on
 // pendingTransportEdge_ below for the full citation chain):
@@ -72,29 +70,29 @@
 // read-modify-write of `tail_`, safe for exactly one producer) already
 // claimed by that same thread's Push calls in every other host of this
 // surface -- so processBlock() must never call Push() itself, on pain of a
-// second concurrent producer racing the first. The split this group uses
-// throughout: processBlock() (audio thread) ONLY reads the playhead and
+// second concurrent producer racing the first. The split used throughout
+// this class: processBlock() (audio thread) ONLY reads the playhead and
 // republishes what it saw into lock-free atomics; timerCallback() (message
-// thread, wired per carry-forward 2 below) is the ONLY thing that ever
+// thread, wired via the private juce::Timer override below, see its own
+// comment) is the ONLY thing that ever
 // calls engine_.UiBus().Push() or engine_.RequestSyncConfiguration() from
 // this class, reading those atomics to decide what to push.
 //
-// TestStartTransport()/TestStopTransport() below still exist (retained, not
-// retired -- carry-forward 3's first option) purely for
+// TestStartTransport()/TestStopTransport() below still exist purely for
 // FroggersVstSmokeTest.cpp's existing headless "no host at all" smoke
 // coverage; the REAL producer (host playhead edge-trigger + host-tempo
 // clock-tick synthesis) is exercised by app/vst/FroggersVstHostTests.cpp
-// (task 6.4) via a fake AudioPlayHead and PumpMessageThreadForTest(), the
+// via a fake AudioPlayHead and PumpMessageThreadForTest(), the
 // deterministic stand-in for a real juce::Timer firing (a headless CTest
 // binary runs no message loop, so juce::Timer callbacks never fire on
 // their own -- see PumpMessageThreadForTest()'s own comment).
 //
-// Group 7 (frogg3rs-vst-host spec, "Parameters are external via a stable
-// automation surface"): every user parameter of the six-bank model
+// Host parameters (frogg3rs-vst-host spec, "Parameters are external via a
+// stable automation surface"): every user parameter of the six-bank model
 // (FroggersParameterModel, app/FroggersParameters.hpp) is exposed as a
 // juce::AudioProcessorParameter with a flat stable ID, bridged
 // BIDIRECTIONALLY to FroggersParameterModel -- the app's single parameter
-// authority -- plus Freeze (already wired via DispatchAction in group 6).
+// authority -- plus Freeze (already wired via DispatchAction).
 // SAME audio-thread/message-thread split as 6.1/6.3 above, extended, not
 // replaced: processBlock() (audio thread) additionally publishes each
 // parameter's current value into a per-parameter atomic UIState snapshot
@@ -166,14 +164,14 @@ public:
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) override;
 
-    // Task 3.2: fires once per actual bus-layout change (never once per
+    // Fires once per actual bus-layout change (never once per
     // processBlock()) -- see this method's own comment in the .cpp for the
     // full JUCE-callback trace and why this, not processBlock() or
     // isBusesLayoutSupported(), is where "is an input actually routed in"
     // gets recomputed.
     void processorLayoutsChanged() override;
 
-    // Group 8: the real portable-surface editor (FroggersPluginEditor.hpp)
+    // The real portable-surface editor (FroggersPluginEditor.hpp)
     // -- defined out-of-line in the .cpp so this header does not need to
     // include the JUCE-GUI-heavy PortableJuceBackend.hpp chain, and so
     // FroggersPluginEditor.hpp (which itself needs this class's full
@@ -189,8 +187,8 @@ public:
     const juce::String getName() const override { return "Frogg3rs"; }
     // NEEDS_MIDI_INPUT TRUE (CMakeLists.txt) declares MIDI input accepted;
     // acceptsMidi() must agree. The buffer is ignored every block (see
-    // processBlock()) -- group 5 brief: "a synth that declares MIDI input
-    // accepted is fine; no note wiring."
+    // processBlock()): a synth that declares MIDI input accepted is fine
+    // with no note wiring.
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
@@ -233,7 +231,7 @@ public:
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
 
-    // --- 5.2 test seam (retained, carry-forward 3) -----------------------
+    // --- Test seam (retained) ---------------------------------------------
     // Dispatches the exact same kPlay/kStop actions
     // (FroggersUiSurface.hpp:1826-1876, via
     // engine_.Application().PortableSurface().DispatchAction()) the real
@@ -266,35 +264,33 @@ public:
     // code path, just a second caller.
     void PumpMessageThreadForTest() { timerCallback(); }
 
-    // Review fix, Important 2: public (not private, unlike the activity/
-    // counter state it gates) specifically so
-    // app/vst/FroggersVstHostTests.cpp's staleness-teardown test can drive
-    // exactly this window rather than hardcoding a second copy of the
-    // number that could silently drift from timerCallback()'s own.
+    // Public (not private, unlike the activity/counter state it gates)
+    // specifically so app/vst/FroggersVstHostTests.cpp's staleness-teardown
+    // test can drive exactly this window rather than hardcoding a second
+    // copy of the number that could silently drift from timerCallback()'s
+    // own.
     //
-    // Carry-forward (group 6 re-review): this used to be a FIXED PUMP COUNT
-    // (kStaleProcessBlockPumpThreshold == 3, ~100ms at this class's 30Hz
-    // pump) -- flagged as an unvalidated heuristic: a scheduling-jitter
-    // spike, or a host that legitimately pauses processBlock() delivery for
-    // just over 100ms while still very much alive (briefly idling a track,
-    // a slow buffer-size renegotiation, etc.), would trip the exact same
-    // "host is gone" disengage as a real teardown -- producing a visible
-    // tempo-display blip (disengage, then immediately re-engage on the next
-    // usable block) for no real host departure. Replaced with a TIME-based
-    // window, using the SAME NowMicros() clock this class already uses
-    // everywhere else (startTime_-relative monotonic microseconds -- see
-    // that member's own comment), widened to ~1 second: far outside
-    // ordinary pump-scheduling jitter (a full second is ~30 missed 30Hz
-    // pumps in a row, not a handful), while still disengaging within one
-    // second of an actual teardown -- "prompt" is enough here because
-    // nothing audio-critical depends on this deadline: this only gates the
-    // host-tempo *display* slave (6.3), not audio output silencing, which
-    // is FroggersAppCore's own transport-gated ASR, unaffected by this
-    // window. The immediate releaseResourcesSeen_ path (below) is
-    // UNCHANGED by this carry-forward: it remains the primary, fast
-    // teardown trigger for the ordinary "host cleanly tore the track down"
-    // case; this window only covers the case releaseResources() is never
-    // called at all (see releaseResourcesSeen_'s own comment).
+    // Uses a TIME-based window rather than a fixed pump count: a fixed
+    // count is an unvalidated heuristic -- a scheduling-jitter spike, or a
+    // host that legitimately pauses processBlock() delivery for a while but
+    // is still very much alive (briefly idling a track, a slow buffer-size
+    // renegotiation, etc.), would trip the exact same "host is gone"
+    // disengage as a real teardown, producing a visible tempo-display blip
+    // (disengage, then immediately re-engage on the next usable block) for
+    // no real host departure. Uses the SAME NowMicros() clock this class
+    // already uses everywhere else (startTime_-relative monotonic
+    // microseconds -- see that member's own comment), widened to ~1 second:
+    // far outside ordinary pump-scheduling jitter (a full second is ~30
+    // missed 30Hz pumps in a row, not a handful), while still disengaging
+    // within one second of an actual teardown -- "prompt" is enough here
+    // because nothing audio-critical depends on this deadline: this only
+    // gates the host-tempo *display* slave, not audio output silencing,
+    // which is FroggersAppCore's own transport-gated ASR, unaffected by
+    // this window. The immediate releaseResourcesSeen_ path (below) remains
+    // the primary, fast teardown trigger for the ordinary "host cleanly
+    // tore the track down" case; this window only covers the case
+    // releaseResources() is never called at all (see
+    // releaseResourcesSeen_'s own comment).
     static constexpr std::uint64_t kStaleActivityWindowMicros = 1'000'000;
 
     // Test-only accessors (6.4): the real consumer/producer state
@@ -306,15 +302,15 @@ public:
     // FroggersAppCore API, see that file's own comments). UiBusPendingCount
     // ForTest() reads engine_.UiBus().Size() (MessageInBus::Size(),
     // ParameterModulation.hpp:1022) -- the actual SPSC ring buffer 6.1/6.3
-    // push onto, letting a test count messages AT THE BUS, per task 6.4's
-    // own instruction, without draining them (draining only happens inside
+    // push onto, letting a test count messages AT THE BUS, without draining
+    // them (draining only happens inside
     // engine_.ProcessBlock(), i.e. only when the test itself calls
     // processBlock() again).
     synth_froggers::FroggersApp& ApplicationForTest() { return engine_.Application(); }
     // Not const: engine_.UiBus() itself has no const overload (Engine.hpp).
     std::size_t UiBusPendingCountForTest() { return engine_.UiBus().Size(); }
 
-    // Task 3.4 test-only accessor: the canonical input-selection index a
+    // Test-only accessor: the canonical input-selection index a
     // test asserts against, rather than reaching into the portable
     // surface's own rendered copy (SetInputOptions()'s own comment,
     // FroggersUiSurface.hpp, on why that copy exists at all). 0 is always
@@ -350,7 +346,7 @@ public:
     static bool ResolveSelectedInputChannel(const float* const* channels, int numChannels, int selection,
                                              int numSamples, float* out);
 
-    // Task 7.2 tests need no new test-only accessors beyond what's already
+    // The host-parameter surface tests need no new test-only accessors beyond what's already
     // public: every exposed host parameter is a plain
     // juce::AudioProcessorParameter reachable via the standard
     // juce::AudioProcessor::getParameters() (public JUCE API, this class
@@ -363,7 +359,7 @@ public:
     // test itself) is the right tool to observe this bridge's
     // setValueNotifyingHost() traffic rather than a bespoke counter here.
 
-    // -- Group 8: editor render-host seam -----------------------------------
+    // -- Editor render-host seam ---------------------------------------------
     // The exact synth::ui::Surface& FroggersPluginEditor renders through
     // synth_juce::PortableComponent -- the SAME instance DispatchAction()/
     // TestStartTransport()/PumpHostParameterBridge() already drive via
@@ -402,11 +398,11 @@ private:
     // juce::Timer override (private per the private-inheritance idiom
     // Sheaf's own Runtime.hpp uses, `class Runtime : private
     // juce::AudioIODeviceCallback, private juce::Timer` -- Runtime.hpp:100).
-    // Carry-forward 2 (group 5 review): pumps engine_.MessageThreadTick()
-    // every tick, same call Runtime.hpp's own timerCallback() makes first
-    // (Runtime.hpp:975) -- non-realtime-safe work (patch IO, serialization
-    // arena growth, MIDI-out processor pumps) that must never run on the
-    // audio thread. Also the ONLY place this class calls
+    // Pumps engine_.MessageThreadTick() every tick, same call Runtime.hpp's
+    // own timerCallback() makes first (Runtime.hpp:975) -- non-realtime-safe
+    // work (patch IO, serialization arena growth, MIDI-out processor pumps)
+    // that must never run on the audio thread. Also the ONLY place this
+    // class calls
     // engine_.UiBus().Push() or engine_.RequestSyncConfiguration() -- see
     // this file's header comment on why processBlock() itself must not.
     void timerCallback() override;
@@ -469,7 +465,7 @@ private:
     bool hostClockEngaged_ = false;
     std::uint64_t nextHostClockTickMicros_ = 0;
 
-    // Review fix, Important 1: releaseResources() (any/unspecified thread,
+    // releaseResources() (any/unspecified thread,
     // see hostClockEngaged_'s own comment) sets ONLY this atomic; it never
     // touches hostClockEngaged_/nextHostClockTickMicros_/hostTempoValid_
     // itself. timerCallback() (message thread, sole owner of the fields
@@ -479,7 +475,7 @@ private:
     // for it.
     std::atomic<bool> releaseResourcesSeen_{false};
 
-    // Review fix, Important 2 (teardown gap): the "disengage once
+    // Teardown gap: the "disengage once
     // hostTempoUsable goes false" logic silently assumed processBlock()
     // keeps being called at all -- if a host suspends/disables this track
     // WITHOUT calling releaseResources(), processBlock() simply stops, so
@@ -499,8 +495,8 @@ private:
     // is the last processBlockCounter_ value this pump observed CHANGE;
     // lastActivityMicros_ is the NowMicros() timestamp of the pump that last
     // observed that change -- i.e. "how long ago did processBlock() last
-    // actually run," the carry-forward's time-based replacement for the old
-    // fixed pump-count streak (staleProcessBlockPumpStreak_, removed).
+    // actually run," replacing the old fixed pump-count streak
+    // (staleProcessBlockPumpStreak_, removed).
     // Zero-initialized: at construction time NowMicros() is itself ~0 (it is
     // relative to startTime_, set in the same constructor), so the very
     // first pump's elapsed-time computation starts from "just built," not
@@ -575,7 +571,7 @@ private:
     void BuildHostParameterInventory();
     // Message-thread-only (called from timerCallback(), see this file's
     // header comment on the audio-thread/message-thread split this class
-    // has maintained since group 6): both directions of the bridge, one
+    // maintains): both directions of the bridge, one
     // pass over hostParams_ per pump. See this method's own comment (in the
     // .cpp) for the full bidirectional trace and feedback-guard design.
     void PumpHostParameterBridge();
@@ -588,7 +584,7 @@ private:
 
     std::vector<HostParamEntry> hostParams_;
 
-    // Group 8: see SetEditorRepaintHook()'s own comment above for the full
+    // See SetEditorRepaintHook()'s own comment above for the full
     // precedent trace. Empty (default-constructed, falsy) whenever no
     // editor is open -- the `if (editorRepaintHook_)` check in
     // timerCallback() then costs one branch and no repaint work.
@@ -635,7 +631,7 @@ private:
 
     std::uint64_t NowMicros() const;
 
-    // Task 3.2: this plugin's own storage for the "is an input actually
+    // This plugin's own storage for the "is an input actually
     // routed in" signal FroggersAppCore reads via synth::AppContext::
     // InputRouted()/SetInputRoutedChangedCallback() -- the exact same
     // synth::InputRoutingSignal type and seam the standalone host's
@@ -649,17 +645,17 @@ private:
     // down, i.e. destroyed AFTER it, i.e. declared BEFORE it here.
     synth::InputRoutingSignal inputRoutingSignal_;
 
-    // Task 3.4: derives this plugin's input-channel option list from the
+    // Derives this plugin's input-channel option list from the
     // LIVE JUCE bus (isEnabled()/getNumberOfChannels()/getCurrentLayout(),
     // never a cached copy) -- index 0 is always "NONE"; indices 1..N are
     // one entry per channel the bus currently provides (name via
     // juce::AudioChannelSet); index N+1 is "SUM", present only when N > 1.
     // Called fresh every time the option set might have changed -- never
-    // cached across a layout change, the exact discipline design.md section
-    // B requires ("never read a channel because a stored value names it").
+    // cached across a layout change, the exact discipline required ("never
+    // read a channel because a stored value names it").
     std::vector<std::string> ComputeInputOptionLabels() const;
 
-    // Task 3.4: the single write path for the operator's input-channel
+    // The single write path for the operator's input-channel
     // selection, called from three places that must all funnel through the
     // SAME re-validation -- the constructor (seeds "None" against the
     // bus's initial, disabled shape), processorLayoutsChanged() (re-derives
@@ -672,13 +668,13 @@ private:
     // it, or a restored session named one the current bus does not have)
     // falls back to index 0 ("None"), never left pointing at nothing.
     // Publishes the resulting connected state -- selection != None, NEVER
-    // bus-enabled-with-channels -- into inputRoutingSignal_ (the phantom-
-    // input defect design.md section B exists to prevent), and pushes the
-    // freshly-derived labels/selection into the portable surface so the
-    // rendered control never lags what was just computed.
+    // bus-enabled-with-channels -- into inputRoutingSignal_ (avoiding the
+    // phantom-input defect a stale, unrevalidated selection would cause),
+    // and pushes the freshly-derived labels/selection into the portable
+    // surface so the rendered control never lags what was just computed.
     void ApplyInputSelection(int selectionIndex);
 
-    // Task 3.4: this plugin's own canonical copy of the operator's
+    // This plugin's own canonical copy of the operator's
     // input-channel selection -- an index into ComputeInputOptionLabels()'s
     // own return value (0 == "None", the default). Read directly by
     // PumpStatePersistence()'s snapshot side and InputSelectionForTest();

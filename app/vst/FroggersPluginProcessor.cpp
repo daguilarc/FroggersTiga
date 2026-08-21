@@ -1,6 +1,6 @@
 #include "FroggersPluginProcessor.hpp"
 
-// Group 8: the real editor createEditor() below constructs, and the
+// The real editor createEditor() below constructs, and the
 // FroggersUiSurface downcast the constructor uses to call
 // SetPluginHostMode() (see that call site's own comment).
 #include "FroggersPluginEditor.hpp"
@@ -68,7 +68,7 @@ synth::RuntimeDataPaths ProductionDataPaths() {
 // requirement the governing spec states. Freeze is not part of the model at
 // all (see HostParamEntry::Kind::kFreeze's own comment); "crunchy" needs no
 // bank/slot qualifier since exactly one exists, globally, in the whole
-// model (task 4.2/4.6, FroggersParameters.hpp).
+// model (FroggersParameters.hpp).
 juce::String HostParamStableId(std::size_t bankIx, std::size_t paramIx) {
     return "bank" + juce::String(static_cast<int>(bankIx)) + ".slot" + juce::String(static_cast<int>(paramIx));
 }
@@ -171,7 +171,7 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
     // in audioDeviceAboutToStart (Runtime.hpp:230,594-599).
     engine_.Initialize();
 
-    // Group 8 (task 8.1): this is SetPluginHostMode()'s first PRODUCTION
+    // This is SetPluginHostMode()'s first PRODUCTION
     // call site (app/FroggersUiSurface.hpp's own comment on that method
     // names this exact call: "The plugin host (group 8's editor) calls
     // SetPluginHostMode(true) before/at attach time" -- previously
@@ -196,15 +196,15 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
     // (`FroggersUiSurface ui_;`, Froggers.hpp:55) -- so the object
     // PortableSurface() returns a reference to is ALWAYS, provably, a
     // FroggersUiSurface; a runtime check here would guard a branch that
-    // cannot exist without an edit to Froggers.hpp itself (omni-rule
-    // defensive-code guidance: protect only against real edge cases; a
-    // proven-safe static relationship is this codebase's own established
-    // idiom for exactly this shape, e.g. app/FroggersMain.cpp's own
-    // "T5.3c" comment on activeSession_'s concrete type).
+    // cannot exist without an edit to Froggers.hpp itself -- protect only
+    // against real edge cases; a proven-safe static relationship is this
+    // codebase's own established idiom for exactly this shape, e.g.
+    // app/FroggersMain.cpp's own comment on activeSession_'s concrete
+    // type).
     static_cast<synth_froggers::FroggersUiSurface&>(engine_.Application().PortableSurface())
         .SetPluginHostMode(true);
 
-    // Task 3.4: the operator's input-channel selector, same downcast
+    // The operator's input-channel selector, same downcast
     // reasoning and same instance as SetPluginHostMode() immediately above.
     // The callback is the surface's only write path back to this class
     // (the operator's tap, HandleAction's kInputSelect branch,
@@ -229,7 +229,7 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
     // inputRoutingSignal_ rather than assumed.
     ApplyInputSelection(inputSelection_);
 
-    // Group 7 (task 7.1): FroggersParameterModel's Parameters (and
+    // FroggersParameterModel's Parameters (and
     // FroggersApp's production DispatchAction seam, for Freeze) only exist
     // once engine_.Initialize() has returned (app_.Init() runs inside it,
     // this file's header comment) -- so the host parameter inventory is
@@ -287,19 +287,19 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
         }
     }
 
-    // Carry-forward 2 (group 5 review): pump engine_.MessageThreadTick()
-    // from a message-thread juce::Timer, same as Sheaf Runtime.hpp
-    // (Runtime.hpp:343 starts it at `config.uiFrameHz > 0 ? ... : 30`; this
-    // plugin has no equivalent config knob, so 30Hz directly). Started once,
-    // here, in the constructor -- mirrors Runtime::Start() calling
-    // startTimerHz() once (Runtime.hpp:343), not per prepareToPlay().
+    // Pump engine_.MessageThreadTick() from a message-thread juce::Timer,
+    // same as Sheaf Runtime.hpp (Runtime.hpp:343 starts it at
+    // `config.uiFrameHz > 0 ? ... : 30`; this plugin has no equivalent
+    // config knob, so 30Hz directly). Started once, here, in the
+    // constructor -- mirrors Runtime::Start() calling startTimerHz() once
+    // (Runtime.hpp:343), not per prepareToPlay().
     //
-    // Review fix, Minor 3: juce::Timer::startTimer() (which startTimerHz()
-    // calls) itself asserts JUCE_ASSERT_MESSAGE_MANAGER_EXISTS in Debug
-    // builds (juce_Timer.cpp:372-377, "If you're calling this before (or
-    // after) the MessageManager is running, then you're not going to get
-    // any timer callbacks!") -- true for every headless CTest binary in
-    // this group's own test suite (FroggersVstSmokeTest.cpp/
+    // juce::Timer::startTimer() (which startTimerHz() calls) itself asserts
+    // JUCE_ASSERT_MESSAGE_MANAGER_EXISTS in Debug builds
+    // (juce_Timer.cpp:372-377, "If you're calling this before (or after)
+    // the MessageManager is running, then you're not going to get any
+    // timer callbacks!") -- true for every headless CTest binary in this
+    // app/vst/ test suite (FroggersVstSmokeTest.cpp/
     // FroggersVstHostTests.cpp construct this class directly, no host, no
     // juce::MessageManager ever created). Guarded rather than left to trip:
     // a real host is guaranteed to have a MessageManager running before it
@@ -324,7 +324,7 @@ FroggersPluginProcessor::~FroggersPluginProcessor() {
     stopTimer();
 }
 
-// Group 8 (task 8.1): one FroggersPluginEditor per call, exactly the
+// One FroggersPluginEditor per call, exactly the
 // juce::AudioProcessor::createEditor() contract (a fresh juce::Component the
 // HOST owns and destroys -- see juce_AudioProcessor.h's own doc comment).
 // Defined here rather than inline in the header so the header itself never
@@ -332,7 +332,7 @@ FroggersPluginProcessor::~FroggersPluginProcessor() {
 // (PortableJuceBackend.hpp et al.) -- every OTHER app/vst/ translation unit
 // that only needs FroggersPluginProcessor.hpp (FroggersVstSmokeTest.cpp,
 // most of FroggersVstHostTests.cpp) stays exactly as GUI-free to compile as
-// it was before this group.
+// before.
 juce::AudioProcessorEditor* FroggersPluginProcessor::createEditor() { return new FroggersPluginEditor(*this); }
 
 void FroggersPluginProcessor::getStateInformation(juce::MemoryBlock& destData) {
@@ -391,21 +391,21 @@ void FroggersPluginProcessor::releaseResources() {
     // transport-gated ASR (FroggersAppCore.hpp) is what silences output on
     // transport stop, not a host-driven teardown call.
     //
-    // Review fix, Important 1: this USED to write hostClockEngaged_/
-    // hostTempoValid_ directly. JUCE gives releaseResources() no thread
-    // guarantee at all (juce_AudioProcessor.h's own declaration carries no
-    // thread annotation, unlike processBlock()'s explicit audio-thread
-    // contract), while this class's 30Hz Timer fires independently on the
-    // message thread -- two plain writers on two possibly-different,
-    // unsynchronized threads racing to decide the SAME engage/disengage
-    // state is a real bug (could leave the clock re-engaged immediately
-    // after this call thought it had disengaged it), not just an untidy
-    // one. Fixed by making this call set ONLY its own dedicated atomic
-    // request (releaseResourcesSeen_) -- timerCallback() (message thread)
-    // remains the sole reader/writer of hostClockEngaged_/
-    // nextHostClockTickMicros_/hostTempoValid_, exactly like every other
-    // piece of 6.1/6.3 state that crosses threads in this class (see this
-    // file's own header comment on the audio-thread/message-thread split).
+    // This must not write hostClockEngaged_/hostTempoValid_ directly: JUCE
+    // gives releaseResources() no thread guarantee at all
+    // (juce_AudioProcessor.h's own declaration carries no thread
+    // annotation, unlike processBlock()'s explicit audio-thread contract),
+    // while this class's 30Hz Timer fires independently on the message
+    // thread -- two plain writers on two possibly-different, unsynchronized
+    // threads racing to decide the SAME engage/disengage state is a real
+    // bug (could leave the clock re-engaged immediately after this call
+    // thought it had disengaged it), not just an untidy one. Instead, this
+    // call sets ONLY its own dedicated atomic request
+    // (releaseResourcesSeen_) -- timerCallback() (message thread) remains
+    // the sole reader/writer of hostClockEngaged_/nextHostClockTickMicros_/
+    // hostTempoValid_, exactly like every other piece of transport/tempo
+    // state that crosses threads in this class (see this file's own header
+    // comment on the audio-thread/message-thread split).
     releaseResourcesSeen_.store(true, std::memory_order_release);
 }
 
@@ -426,10 +426,10 @@ bool FroggersPluginProcessor::isBusesLayoutSupported(const BusesLayout& layouts)
 
 std::vector<std::string> FroggersPluginProcessor::ComputeInputOptionLabels() const {
     // Index 0 is always "None" -- the only option when the bus is disabled
-    // or (defensively) reports zero channels, and design.md section B's own
-    // required first entry regardless of bus shape ("the only option is
-    // None, and the control reads as unavailable rather than pretending to
-    // offer something").
+    // or (defensively) reports zero channels, and required as the first
+    // entry regardless of bus shape ("the only option is None, and the
+    // control reads as unavailable rather than pretending to offer
+    // something").
     std::vector<std::string> labels{"None"};
     const juce::AudioProcessor::Bus* inputBus = getBus(true, 0);
     if (inputBus == nullptr || !inputBus->isEnabled()) {
@@ -443,15 +443,15 @@ std::vector<std::string> FroggersPluginProcessor::ComputeInputOptionLabels() con
     // live layout (getCurrentLayout()), never assumed from the bus's
     // declared type, so this stays correct whichever layout the host
     // negotiates. Named via juce::AudioChannelSet's own
-    // channel-type vocabulary (task 3.4's own instruction), not an
+    // channel-type vocabulary, not an
     // invented "Ch<N>" scheme.
     const juce::AudioChannelSet layout = inputBus->getCurrentLayout();
     for (int channel = 0; channel < numChannels; ++channel) {
         labels.push_back(
             juce::AudioChannelSet::getAbbreviatedChannelTypeName(layout.getTypeOfChannel(channel)).toStdString());
     }
-    // Sum, only when the bus provides more than one channel -- design.md
-    // section B: "two or more -- None, each channel, and their sum."
+    // Sum, only when the bus provides more than one channel: two or more
+    // means None, each channel, and their sum.
     if (numChannels > 1) {
         labels.push_back("Sum");
     }
@@ -474,8 +474,8 @@ void FroggersPluginProcessor::ApplyInputSelection(int selectionIndex) {
     // lag what this method just validated.
     static_cast<synth_froggers::FroggersUiSurface&>(engine_.Application().PortableSurface())
         .SetInputOptions(labels, inputSelection_);
-    // "Connected is consent, never channel presence" (design.md section
-    // B): true only when the OPERATOR has selected something other than
+    // "Connected is consent, never channel presence": true only when the
+    // OPERATOR has selected something other than
     // "None" -- never merely because the host left the bus enabled with
     // channels. The SAME seam the standalone host uses to report its own
     // routed-input state (Runtime.hpp's RefreshInputRoutedState()/
@@ -540,8 +540,8 @@ void FroggersPluginProcessor::processorLayoutsChanged() {
     // thread, called every callback regardless of whether the layout
     // changed since the previous one). This is therefore the right, and
     // only, place to re-derive the option set and re-validate the current
-    // selection against it (design.md section B: "Re-validate against the
-    // current bus on every layout change and fall back to None").
+    // selection against it: re-validate against the current bus on every
+    // layout change and fall back to None.
     // Re-applying the SAME index the operator (or a restore) last chose is
     // deliberate: ApplyInputSelection() re-derives the option list fresh
     // from the bus every call, so a channel that no longer exists falls
@@ -551,13 +551,13 @@ void FroggersPluginProcessor::processorLayoutsChanged() {
 
 void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) {
     juce::ScopedNoDenormals noDenormals;
-    // Group 5 brief: "the plugin does NOT consume notes (buffer accepted and
-    // ignored)". No note/MIDI wiring exists in FroggersAppCore's ProcessBlock
+    // The plugin does NOT consume notes: the buffer is accepted and
+    // ignored. No note/MIDI wiring exists in FroggersAppCore's ProcessBlock
     // at all -- draining nothing out of `midiMessages` here is deliberate,
     // not an oversight.
     juce::ignoreUnused(midiMessages);
 
-    // Review fix, Important 2 (teardown gap): a pure liveness heartbeat for
+    // Teardown gap: a pure liveness heartbeat for
     // timerCallback()'s staleness detection -- incremented unconditionally,
     // every call, regardless of whether a playhead is present this block
     // (see processBlockCounter_'s own header comment for why this exists:
@@ -568,7 +568,7 @@ void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
     // read only for inequality against a previously observed value.
     processBlockCounter_.fetch_add(1, std::memory_order_relaxed);
 
-    // Group 6 (tasks 6.1/6.3): read the host playhead HERE, and only here --
+    // Read the host playhead HERE, and only here --
     // juce::AudioPlayHead::getPosition()'s own doc comment: "You can ONLY
     // call this from your processBlock() method! Calling it at other times
     // will produce undefined behaviour ... some hosts will almost certainly
@@ -586,9 +586,9 @@ void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
             if (!haveHostPlayingBaseline_) {
                 // The FIRST observation establishes the baseline rather than
                 // firing: there is no prior state to TRANSITION from yet
-                // (group 6 brief: "on host play-state TRANSITIONS only"), so
-                // a plugin instantiated mid-playback stays silent (matches
-                // group 5's own "silent by construction" default) until the
+                // (only on host play-state TRANSITIONS), so a plugin
+                // instantiated mid-playback stays silent (matches this
+                // class's own "silent by construction" default) until the
                 // host's transport next actually toggles.
                 haveHostPlayingBaseline_ = true;
                 lastHostIsPlaying_ = isPlayingNow;
@@ -622,11 +622,10 @@ void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
         }
     } else {
         // No playhead at all (standalone hosting, or this file's own
-        // no-host test constructions) -- group 6 brief: "Handle absent
-        // playhead (standalone hosting) gracefully: no messages." The
-        // transport baseline is deliberately left untouched (nothing to
+        // no-host test constructions): handled gracefully -- no messages.
+        // The transport baseline is deliberately left untouched (nothing to
         // compare against changed this block); tempo is marked not-usable,
-        // which is also what drives 6.3's teardown disengage in
+        // which is also what drives the teardown disengage in
         // timerCallback() below.
         hostTempoValid_.store(false, std::memory_order_release);
     }
@@ -699,7 +698,7 @@ void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
 
     engine_.ProcessBlock(block, NowMicros());
 
-    // Group 7 (task 7.1): publish every host-exposed parameter's current
+    // Publish every host-exposed parameter's current
     // display value into its own atomic UIState snapshot, for
     // PumpHostParameterBridge() (message thread) to read. AFTER
     // engine_.ProcessBlock() (so this block's own ProcessSamplePhase1/2
@@ -739,9 +738,8 @@ void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
     // from here -- it performs non-realtime-safe work (patch IO, heap
     // growth), exactly like Runtime.hpp, which drives it from a
     // message-thread juce::Timer (:975 call site), never the audio
-    // callback. Carry-forward 2 (group 5 review) wires the same pump for
-    // this plugin: see timerCallback() below (started in the constructor
-    // via startTimerHz(30)).
+    // callback. This plugin wires the same pump: see timerCallback() below
+    // (started in the constructor via startTimerHz(30)).
 }
 
 void FroggersPluginProcessor::timerCallback() {
@@ -772,7 +770,7 @@ void FroggersPluginProcessor::timerCallback() {
     }
 
     // -- 6.3: host tempo via the existing external-clock slave path ---------
-    // Trace (task 6.3): MasterClock::SetTempoBpm no-ops unconditionally
+    // Trace: MasterClock::SetTempoBpm no-ops unconditionally
     // while `syncConfig_.receiveClock` is true (src/MasterClock.cpp:
     // 963-965) -- that suppression is a property of the flag, not of HOW
     // the tempo estimate itself gets updated. MasterClock::
@@ -785,8 +783,8 @@ void FroggersPluginProcessor::timerCallback() {
     // mechanism requires SYNTHESIZING that tick stream -- calling
     // RequestTempoBpm(hostBpm) instead would funnel into the very
     // SetTempoBpm that no-ops while slaved, so it cannot be what updates
-    // the tempo once slaved; the brief's two candidates are not actually
-    // interchangeable once receiveClock is engaged, which is why this group
+    // the tempo once slaved; the two candidate approaches are not actually
+    // interchangeable once receiveClock is engaged, which is why this class
     // synthesizes ticks rather than requesting tempo directly.
     //
     // Zero core edits either way: RouteRealtimeBatch already routes any
@@ -795,14 +793,14 @@ void FroggersPluginProcessor::timerCallback() {
     // Engine::RequestSyncConfiguration is an existing lock-free atomic
     // request already applied once per block by ProcessBlock's own
     // ApplySyncConfig call (Engine.hpp:346-349, 489-495) -- both pre-date
-    // this group. grep across app/ and the runtime shell turned up no
+    // this class. grep across app/ and the runtime shell turned up no
     // OTHER production caller of RequestSyncConfiguration at all: this
     // plugin is the first thing that ever engages external-clock slaving
     // outside a test rig (FroggersSurfaceTests.cpp:2095's SetSyncConfig is
     // a synchronous test-only bypass), so there is no existing "how
     // MIDI-clock slaving engages" production call site to defer to beyond
     // this mechanism itself.
-    // Review fix, Important 2 (teardown gap): hostTempoValid_ on its own
+    // Teardown gap: hostTempoValid_ on its own
     // only tells us what processBlock() last PUBLISHED -- if processBlock()
     // stops being called at all (host suspends/disables this track without
     // ever calling releaseResources()), that published value simply freezes
@@ -813,8 +811,8 @@ void FroggersPluginProcessor::timerCallback() {
     // (lastActivityMicros_, using the same NowMicros() clock as everywhere
     // else in this class); once that elapsed time reaches
     // kStaleActivityWindowMicros (~1 second -- see that constant's own
-    // comment for the carry-forward that widened this from a fixed 3-pump
-    // count to this time-based window and why), the host is treated as
+    // comment for why this uses a time-based window rather than a fixed
+    // 3-pump count), the host is treated as
     // gone. At this class's own 30Hz pump rate (~33ms/pump) and a typical
     // real-world audio block far shorter than that (e.g. 256 samples @
     // 48kHz ~= 5.3ms), processBlock() ordinarily fires several times BETWEEN
@@ -823,7 +821,7 @@ void FroggersPluginProcessor::timerCallback() {
     // normal scheduling jitter and reliably means processBlock() has
     // stopped being called at all.
     //
-    // releaseResourcesSeen_ (review fix, Important 1: see its own header
+    // releaseResourcesSeen_ (see its own header
     // comment) is folded into the SAME staleness signal rather than
     // handled as a separate branch -- releaseResources() is simply a
     // stronger, immediate version of "the host is gone," so it forces
@@ -894,7 +892,7 @@ void FroggersPluginProcessor::timerCallback() {
             }
         }
     } else if (hostClockEngaged_) {
-        // -- Teardown (task 6.3's "mind teardown") ---------------------------
+        // -- Teardown -------------------------------------------------------
         // MasterClock's OWN external-source staleness check
         // (ExpireExternalSource/ClearExternalSource, src/MasterClock.cpp:
         // 350-393) is reactive, not ambient: it only runs from inside
@@ -908,7 +906,7 @@ void FroggersPluginProcessor::timerCallback() {
         // SyncConfiguration().receiveClock directly) would stay stuck true,
         // permanently suppressing the BPM slider with no live source
         // driving it. There is no existing production disengage call site
-        // to mirror (this group is the first production caller of
+        // to mirror (this plugin is the first production caller of
         // RequestSyncConfiguration at all) -- so this IS the disengage,
         // reached by EITHER of two independent triggers folded into
         // hostTempoUsable above (both handled entirely on this, the message
@@ -941,7 +939,7 @@ void FroggersPluginProcessor::timerCallback() {
     // does not affect correctness.
     PumpStatePersistence();
 
-    // Group 8: repaint the editor, if one is open, LAST -- after every other
+    // Repaint the editor, if one is open, LAST -- after every other
     // state mutation this pump makes above (message tick, transport, tempo,
     // parameter bridge) -- so a live editor's RefreshFromSurface() rebuilds
     // its tree from THIS pump's freshest state, never a stale mid-pump
@@ -953,19 +951,20 @@ void FroggersPluginProcessor::timerCallback() {
 }
 
 void FroggersPluginProcessor::TestStartTransport() {
-    // Carry-forward 3 (group 5 review): group 5's version of this seam
-    // pushed MessageIn::Start/SetDesiredTransportRunning directly, missing
-    // the T7.7 Freeze-latch disarm the real Play button performs
-    // (FroggersUiSurface.hpp:1826-1846). Routed through DispatchAction (the
-    // production seam, see timerCallback()'s own comment) instead of a
-    // second hand-mirrored fix, so this seam and the real 6.1 producer
-    // cannot independently drift from HandleAction's actual kPlay branch.
+    // Routed through DispatchAction (the production seam, see
+    // timerCallback()'s own comment) rather than pushing
+    // MessageIn::Start/SetDesiredTransportRunning directly: a direct push
+    // would miss the Freeze-latch disarm the real Play button performs
+    // (FroggersUiSurface.hpp:1826-1846), and hand-mirroring that fix a
+    // second time would let this seam and the real transport-edge-trigger
+    // producer independently drift from HandleAction's actual kPlay
+    // branch.
     engine_.Application().PortableSurface().DispatchAction(
         synth::ui::Action::Named(synth_froggers::FroggersActions::kPlay));
 }
 
 void FroggersPluginProcessor::TestStopTransport() {
-    // Carry-forward 3: see TestStartTransport()'s own comment.
+    // See TestStartTransport()'s own comment.
     engine_.Application().PortableSurface().DispatchAction(
         synth::ui::Action::Named(synth_froggers::FroggersActions::kStop));
 }
@@ -976,7 +975,7 @@ void FroggersPluginProcessor::BuildHostParameterInventory() {
     const auto& layouts = synth_froggers::FroggersBankLayouts();
 
     // Sized from the model's OWN enumeration constants, never a hardcoded
-    // literal (governing spec, task 7.2's own "Count" requirement) -- 6
+    // literal (the governing spec's own "Count" requirement) -- 6
     // banks * 14 page parameters + 6 per-bank Crispy + 1 shared Crunchy + 1
     // Freeze.
     hostParams_.reserve(synth_froggers::kFroggersBankCount * synth_froggers::kFroggersParamsPerBank
@@ -1002,8 +1001,8 @@ void FroggersPluginProcessor::BuildHostParameterInventory() {
             entry.bankIx = bankIx;
             entry.position = paramIx;
             entry.uiState = std::make_unique<synth::Parameter::UIState>();
-            // voiceCapacity=1 (FroggersParameterModel::kNumVoices, D4's mono
-            // model); this bridge needs no modulator/gesture color info, so
+            // voiceCapacity=1 (FroggersParameterModel::kNumVoices; this is a
+            // mono model); this bridge needs no modulator/gesture color info, so
             // both those capacities are 0 -- Parameter::UIState::Configure()
             // (ParameterModulation.cpp) accepts 0 for either with no error,
             // it simply allocates zero-length arrays for them.
@@ -1030,7 +1029,7 @@ void FroggersPluginProcessor::BuildHostParameterInventory() {
             hostParams_.push_back(std::move(entry));
         }
 
-        // Crispy (position kFroggersCrispySlot==14): per-bank (D5a), so
+        // Crispy (position kFroggersCrispySlot==14): per-bank, so
         // still needs bank selection like an ordinary page parameter.
         {
             synth::Parameter& coreParam = model.Crispy(bankIx);
@@ -1058,8 +1057,8 @@ void FroggersPluginProcessor::BuildHostParameterInventory() {
     }
 
     // Crunchy (position kFroggersCrunchySlot==15): ONE Parameter object,
-    // the SAME pointer registered at slot 15 in every bank (task 4.2/4.6,
-    // FroggersParameters.hpp) -- so unlike page parameters/Crispy, writing
+    // the SAME pointer registered at slot 15 in every bank
+    // (FroggersParameters.hpp) -- so unlike page parameters/Crispy, writing
     // it needs no bank selection at all: whichever bank the shared BankSlot
     // currently has selected, position 15 always resolves to this same
     // Parameter*.
@@ -1086,15 +1085,15 @@ void FroggersPluginProcessor::BuildHostParameterInventory() {
         hostParams_.push_back(std::move(entry));
     }
 
-    // Freeze: NOT a ParameterManager parameter (governing brief: "group 6
-    // wired kFreeze via DispatchAction; the host parameter must drive the
-    // same production seam and preserve SetFreezeLatched semantics") --
-    // coreParam/uiState stay null; PumpHostParameterBridge()'s Freeze
-    // branch reads FroggersAppCore::FreezeLatched() (already an atomic,
-    // acquire-load getter -- FroggersAppCore.hpp -- safe cross-thread with
-    // no PopulateUIState snapshot needed) and writes via
-    // PortableSurface().DispatchAction(kFreeze), the EXACT seam group 6's
-    // 6.1 transport edge-trigger and this file's own TestStartTransport()
+    // Freeze: NOT a ParameterManager parameter -- kFreeze is wired via
+    // DispatchAction, so the host parameter must drive the same production
+    // seam and preserve SetFreezeLatched semantics. coreParam/uiState stay
+    // null; PumpHostParameterBridge()'s Freeze branch reads
+    // FroggersAppCore::FreezeLatched() (already an atomic, acquire-load
+    // getter -- FroggersAppCore.hpp -- safe cross-thread with no
+    // PopulateUIState snapshot needed) and writes via
+    // PortableSurface().DispatchAction(kFreeze), the EXACT seam the
+    // transport edge-trigger and this file's own TestStartTransport()
     // already use, and the exact seam the real Freeze button itself uses
     // (FroggersUiSurface.hpp's kFreeze branch). No plugin-side MIDI
     // mapping/learn is introduced anywhere by this -- Freeze becomes
@@ -1416,8 +1415,7 @@ void FroggersPluginProcessor::PumpStatePersistence() {
                 // inputSelection_ exactly where it already is (0, "None" --
                 // its NSDMI, unchanged by construction unless the operator
                 // or a valid restore sets it), which is exactly the "opt-in
-                // audio defaults off" contract design.md section B
-                // requires. Bounds-checked HERE, against a FRESH
+                // audio defaults off" contract requires. Bounds-checked HERE, against a FRESH
                 // ComputeInputOptionLabels() (the CURRENT bus, which a
                 // project reopened on a different host/layout may not
                 // match), before ever reaching ApplyInputSelection() --

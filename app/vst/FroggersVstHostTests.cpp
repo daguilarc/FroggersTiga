@@ -1,18 +1,16 @@
-// FroggersVstHostTests.cpp -- task 6.4 (froggers-vst-host delta, group 6:
-// DAW-external transport, host tempo, plugin-mode editor row), extended by
-// group 8 (task 8.2: the carry-forward bank-agreement test and an
-// end-to-end plugin-mode-surface test through the real processor). CTest-
+// FroggersVstHostTests.cpp -- tests DAW-external transport, host tempo, and
+// the plugin-mode editor row, extended with a bank-agreement test and an
+// end-to-end plugin-mode-surface test through the real processor. CTest-
 // wired via app/vst/CMakeLists.txt's add_test(), same "drive the REAL
 // compiled FroggersPluginProcessor, not a second copy" shape as
 // FroggersVstSmokeTest.cpp (links the same FroggersVst shared-code target).
-// The one thing group 8 does NOT test in this binary is the real
-// FroggersPluginEditor's own construction/destruction -- that needs a
-// juce::Component, not just a juce::AudioProcessor, and is isolated in its
-// own CTest binary instead (FroggersVstEditorTest.cpp's own header comment
-// explains why).
+// This binary does NOT test the real FroggersPluginEditor's own
+// construction/destruction -- that needs a juce::Component, not just a
+// juce::AudioProcessor, and is isolated in its own CTest binary instead
+// (FroggersVstEditorTest.cpp's own header comment explains why).
 //
 // Six things this file needs proven, each its own section below:
-//   1. Transport edges (task 6.1): a fake juce::AudioPlayHead drives
+//   1. Transport edges: a fake juce::AudioPlayHead drives
 //      processBlock()'s real edge-detector; PumpMessageThreadForTest()
 //      (timerCallback() itself, since a headless CTest binary runs no
 //      message loop to fire a real juce::Timer -- see
@@ -26,25 +24,27 @@
 //      comment on it), so transitions arriving faster than this class's
 //      ~33ms (30Hz) pump rate collapse to the latest one, by design, not
 //      tested here.
-//   2. Freeze semantics (task 6.4): engaged via the real production seam
+//   2. Freeze semantics: engaged via the real production seam
 //      (PortableSurface().DispatchAction(kFreeze), the same call
 //      FroggersUiSurface's Freeze button itself makes), mirroring the
-//      DIRECTION of app/FroggersAudioRoutingTests.cpp's T7.3(a)
-//      (freeze_alone_holds_the_ring_above_an_audible_floor_and_stops_the_
-//      transport) -- transport reads stopped, FreezeLatched() true, audio
-//      stays audible past stopping_transport_silences_...'s own settle
-//      window -- on the DEFAULT patch rather than that test's specially
-//      tuned self-sustaining delay/reverb ring: FroggersAppCore forces
-//      `setGate(gateOpen || FreezeLatched())` while latched (that file's own
-//      T7.1 comment), so the envelope holds open regardless of patch
-//      tuning -- the ring recipe exists to prove something ELSE (recirculating
-//      energy persists), not to make the gate stay open, so this simpler
-//      setup still exercises the actual property task 6.4 asks for.
-//   3. Tempo-follow (task 6.3): host bpm -> DisplayTempoBpm()/
+//      DIRECTION of app/FroggersAudioRoutingTests.cpp's
+//      freeze_alone_holds_the_ring_above_an_audible_floor_and_stops_the_
+//      transport test -- transport reads stopped, FreezeLatched() true,
+//      audio stays audible past stopping_transport_silences_...'s own
+//      settle window -- on the DEFAULT patch rather than that test's
+//      specially tuned self-sustaining delay/reverb ring: FroggersAppCore
+//      forces `setGate(gateOpen || FreezeLatched())` while latched (that
+//      file's own comment on why a single Freeze press both engages the
+//      latch and stops the transport), so the envelope holds open
+//      regardless of patch tuning -- the ring recipe exists to prove
+//      something ELSE (recirculating energy persists), not to make the gate
+//      stay open, so this simpler setup still exercises the actual property
+//      needed here.
+//   3. Tempo-follow: host bpm -> DisplayTempoBpm()/
 //      TempoExternallyClocked(), RequestTempoBpm() rejected while slaved,
 //      both directions (works before engaging, rejected while slaved, works
 //      again after disengaging).
-//   4. Surface row (task 6.2): app/FroggersUiSurface.hpp's own
+//   4. Surface row: app/FroggersUiSurface.hpp's own
 //      FroggersUiSurface, attached context-free (mirrors
 //      FroggersSurfaceTests.cpp's BuildFroggersTreeAt/FindNodeById --
 //      app/vst/ cannot include that .cpp, a standalone binary with its own
@@ -52,9 +52,8 @@
 //      imported) -- default mode byte-identical children, plugin mode
 //      thinned to Freeze + label. The REAL default-mode identity proof is
 //      running app/FroggersSurfaceTests.cpp and the rest of the app suite
-//      UNCHANGED (this group's report cites that CTest run); the check here
-//      is a second, explicit, redundant confirmation of the same property
-//      from this binary.
+//      UNCHANGED; the check here is a second, explicit, redundant
+//      confirmation of the same property from this binary.
 //   5. Host automation addressing: PumpHostParameterBridge()
 //      (FroggersPluginProcessor.cpp) resolves every host write directly
 //      against its own entry's bank (MessageIn::ParamSetAbsoluteOnBank),
@@ -67,13 +66,13 @@
 //      whatever depth cell the drilldown maps that same encoder to, and a
 //      positive control proving the operator's OWN bank-select action does
 //      move the page.
-//   6. Plugin-mode surface tree end-to-end (task 8.2): the REAL processor's
+//   6. Plugin-mode surface tree end-to-end: the REAL processor's
 //      surface (not a bare hand-built one) renders Play/Stop/Record absent,
 //      Freeze + its "FREEZE" label present, and BPM as a display-only
 //      StatusText while the host clock is engaged -- proving production
 //      code actually calls SetPluginHostMode(true) (section 4's own test
 //      never constructs a real processor, so it cannot see that call at
-//      all), combined with 6.3's host-tempo-slaving.
+//      all), combined with item 3's host-tempo-slaving.
 
 #include "FroggersPluginProcessor.hpp"
 
@@ -148,7 +147,7 @@ synth::RuntimeDataPaths ScratchDataPaths(const char* testName) {
 }
 
 // A minimal juce::AudioPlayHead test double: exactly the two PositionInfo
-// fields tasks 6.1/6.3 read (isPlaying, bpm). getPosition()'s own JUCE doc
+// fields the transport/tempo bridge reads (isPlaying, bpm). getPosition()'s own JUCE doc
 // comment restricts real callers to processBlock() (see
 // FroggersPluginProcessor.cpp's own citation of that comment) -- this class
 // makes no such promise itself, it is only ever driven from this test's own
@@ -166,7 +165,7 @@ private:
     PositionInfo info_;
 };
 
-// -- 1. Transport edges (task 6.1) -------------------------------------------
+// -- 1. Transport edges -------------------------------------------------------
 // run -> stop -> run: exactly one message per transition, none while
 // holding, counted at the bus (UiBusPendingCountForTest()), not inferred.
 TEST_CASE(transport_edges_run_stop_run_produce_exactly_one_message_per_transition) {
@@ -183,8 +182,8 @@ TEST_CASE(transport_edges_run_stop_run_produce_exactly_one_message_per_transitio
         processor.processBlock(buffer, midi);
     };
 
-    // First observation establishes the baseline (group 6 brief: "on host
-    // play-state TRANSITIONS only") -- must NOT itself produce a message.
+    // First observation establishes the baseline (only on host play-state
+    // TRANSITIONS) -- must NOT itself produce a message.
     playHead.SetPlaying(false);
     runBlock();
     processor.PumpMessageThreadForTest();
@@ -239,8 +238,7 @@ TEST_CASE(transport_edges_run_stop_run_produce_exactly_one_message_per_transitio
 }
 
 // Absent playhead (standalone hosting) must never synthesize a transport
-// message -- group 6 brief: "Handle absent playhead ... gracefully: no
-// messages."
+// message: handled gracefully -- no messages.
 TEST_CASE(transport_absent_playhead_produces_no_messages) {
     frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("transport_absent_playhead"));
     // No setPlayHead() call at all -- getPlayHead() returns nullptr, exactly
@@ -263,9 +261,11 @@ TEST_CASE(transport_absent_playhead_produces_no_messages) {
 }
 
 // -- 2. Freeze semantics -----------------------------------------------------
-// Mirrors the DIRECTION of app/FroggersAudioRoutingTests.cpp's T7.3(a) --
-// see this file's own header comment for why the default patch already
-// exercises the property under test (setGate(gateOpen || FreezeLatched())).
+// Mirrors the DIRECTION of app/FroggersAudioRoutingTests.cpp's
+// freeze_alone_holds_the_ring_above_an_audible_floor_and_stops_the_transport
+// test -- see this file's own header comment for why the default patch
+// already exercises the property under test (setGate(gateOpen ||
+// FreezeLatched())).
 TEST_CASE(freeze_via_production_seam_holds_audio_and_reads_stopped_like_t7_3a) {
     frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("freeze_semantics"));
     processor.setRateAndBufferSizeDetails(48000.0, 256);
@@ -303,7 +303,7 @@ TEST_CASE(freeze_via_production_seam_holds_audio_and_reads_stopped_like_t7_3a) {
     // (PortableSurface().DispatchAction(kFreeze), the exact call the Freeze
     // button itself makes -- FroggersUiSurface.hpp's kFreeze branch: latch
     // engage + Stop push + SetDesiredTransportRunning(false), all in one
-    // press, per T7.1.)
+    // press.)
     processor.ApplicationForTest().PortableSurface().DispatchAction(
         synth::ui::Action::Named(synth_froggers::FroggersActions::kFreeze));
     // One block to drain+apply the Stop the Freeze press pushed.
@@ -311,12 +311,12 @@ TEST_CASE(freeze_via_production_seam_holds_audio_and_reads_stopped_like_t7_3a) {
     processor.processBlock(buffer, midi);
 
     REQUIRE_TRUE(processor.ApplicationForTest().FreezeLatched());
-    REQUIRE_TRUE(!processor.ApplicationForTest().TransportRunning());  // T7.3(a): transport reads stopped.
+    REQUIRE_TRUE(!processor.ApplicationForTest().TransportRunning());  // transport reads stopped.
 
     // Past the settle window a plain (unlatched) Stop would have silenced
     // within: the gate is forced open by FreezeLatched(), so output must
     // STAY audible.
-    const float heldPeak = runBlocksMeasuringPeak(94);  // ~0.5s, same window group 5's own pre-start check uses.
+    const float heldPeak = runBlocksMeasuringPeak(94);  // ~0.5s, same window FroggersVstSmokeTest.cpp's own pre-start check uses.
     REQUIRE_TRUE(heldPeak >= kSilenceFloorLinear);
     REQUIRE_TRUE(processor.ApplicationForTest().FreezeLatched());  // still latched -- nothing released it.
     REQUIRE_TRUE(!processor.ApplicationForTest().TransportRunning());  // still stopped.
@@ -325,12 +325,12 @@ TEST_CASE(freeze_via_production_seam_holds_audio_and_reads_stopped_like_t7_3a) {
               << " (>= silence floor " << kSilenceFloorLinear << ")\n";
 
     // Cleanup: release the latch and stop cleanly (does not restart
-    // transport, T7.1 -- not asserted further here, out of this test's
+    // transport -- not asserted further here, out of this test's
     // scope).
     processor.releaseResources();
 }
 
-// -- 3. Tempo-follow (task 6.3) ----------------------------------------------
+// -- 3. Tempo-follow -----------------------------------------------------------
 TEST_CASE(host_tempo_follows_and_suppresses_user_requests_while_slaved_both_directions) {
     frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("tempo_follow"));
     FakePlayHead playHead;
@@ -384,7 +384,7 @@ TEST_CASE(host_tempo_follows_and_suppresses_user_requests_while_slaved_both_dire
     REQUIRE_TRUE(processor.ApplicationForTest().TempoExternallyClocked());
 
     // -- Positive control, direction 2: disengage, user tempo works again ---
-    // Task 6.3's teardown concern: the host stops reporting a usable tempo
+    // The teardown concern: the host stops reporting a usable tempo
     // (here, no bpm at all) -- mirrors "the DAW vanishes."
     playHead.ClearBpm();
     runBlock();                            // hostTempoValid_ -> false.
@@ -401,7 +401,7 @@ TEST_CASE(host_tempo_follows_and_suppresses_user_requests_while_slaved_both_dire
     std::cout << "  [6.3] user request suppressed while slaved; both positive controls pass.\n";
 }
 
-// -- 3b. Teardown (review fix, Important 1 & 2) ------------------------------
+// -- 3b. Teardown --------------------------------------------------------------
 // Shared "get to a known-engaged state" fixture for the two teardown tests
 // below -- factored out (unlike the tempo-follow test above, which predates
 // this fix and is left as-is) since both new tests need the identical
@@ -422,7 +422,7 @@ struct EngagedClockFixture {
         processor.processBlock(buffer, midi);
     }
 
-    // Engages host-tempo slaving (task 6.3) and confirms it before
+    // Engages host-tempo slaving and confirms it before
     // returning -- both teardown tests below start from this known state.
     void EngageAt(double bpm) {
         processor.setPlayHead(&playHead);
@@ -435,7 +435,7 @@ struct EngagedClockFixture {
     }
 };
 
-// Review fix, Important 1 (data race): releaseResources() must be able to
+// Data race: releaseResources() must be able to
 // disengage the clock ON ITS OWN, immediately, without relying on
 // processBlockCounter_'s staleness streak ever accumulating -- proving that
 // requires a scenario where the streak provably never reaches
@@ -449,7 +449,7 @@ TEST_CASE(release_resources_alone_disengages_the_clock_with_no_further_process_b
     fixture.EngageAt(120.0);
     REQUIRE_TRUE(fixture.processor.ApplicationForTest().TempoExternallyClocked());
 
-    fixture.processor.releaseResources();  // sets releaseResourcesSeen_ only (Important 1's fix).
+    fixture.processor.releaseResources();  // sets releaseResourcesSeen_ only.
     fixture.processor.PumpMessageThreadForTest();  // consumes it, forces disengage on THIS one pump.
     fixture.RunBlock();  // lets ApplySyncConfig() apply the disengage -- verification only.
 
@@ -459,10 +459,10 @@ TEST_CASE(release_resources_alone_disengages_the_clock_with_no_further_process_b
                  "(no staleness streak needed).\n";
 }
 
-// Review fix, Important 2 (teardown gap): if the host simply stops calling
+// Teardown gap: if the host simply stops calling
 // processBlock() at all -- no releaseResources() either -- the clock must
 // still disengage once REAL elapsed time (not pump count -- see the
-// carry-forward comment on kStaleActivityWindowMicros,
+// comment on kStaleActivityWindowMicros,
 // FroggersPluginProcessor.hpp) reaches kStaleActivityWindowMicros with the
 // counter unmoved. A single settling pump first is needed for a robust test
 // (not part of the scenario under test): EngageAt()'s own last
@@ -471,8 +471,8 @@ TEST_CASE(release_resources_alone_disengages_the_clock_with_no_further_process_b
 // pump here syncs it, so the test below starts its own timing from a clean
 // baseline regardless of EngageAt()'s internal call pattern.
 //
-// Proves BOTH triggers independently, per the carry-forward's own
-// instruction: (1) a POSITIVE CONTROL well before the ~1s window elapses --
+// Proves BOTH triggers independently: (1) a POSITIVE CONTROL well before
+// the ~1s window elapses --
 // a handful of quick pumps must NOT disengage the clock, proving this is
 // genuinely time-gated rather than a fixed pump count in a different shape
 // -- then (2) the actual time-based trigger, reached only after sleeping
@@ -507,7 +507,7 @@ TEST_CASE(clock_disengages_after_the_time_based_staleness_window_when_process_bl
                  "under that window).\n";
 }
 
-// -- 4. Surface row (task 6.2) -----------------------------------------------
+// -- 4. Surface row -------------------------------------------------------------
 // Context-free surface build, mirroring app/FroggersSurfaceTests.cpp's own
 // BuildFroggersTreeAt/FindNodeById technique (that file's own lines 84-127,
 // 309-318) -- reproduced here rather than included, since that file is a
@@ -547,9 +547,8 @@ TEST_CASE(plugin_mode_transport_row_thins_to_freeze_and_label_only) {
     const synth::ui::NodeTree tree = BuildFroggersTree(/*pluginHostMode=*/true);
     const synth::ui::Node* row = FindNodeById(tree, synth_froggers::FroggersNodeIds::kTransportRow);
     REQUIRE_TRUE(row != nullptr);
-    // Task 3.4 (design.md section B): a third child joined Freeze/its
-    // label in the freed row space -- the plugin's own input-channel
-    // selection control.
+    // A third child joined Freeze/its label in the freed row space -- the
+    // plugin's own input-channel selection control.
     REQUIRE_TRUE(row->children.size() == 3);
     REQUIRE_TRUE(row->children[0].value == synth_froggers::FroggersNodeIds::kFreeze);
     REQUIRE_TRUE(row->children[1].value == synth_froggers::FroggersNodeIds::kFreezeLabel);
@@ -571,7 +570,7 @@ TEST_CASE(plugin_mode_transport_row_thins_to_freeze_and_label_only) {
     // that struct's own comment); a Label node's displayed text is `text`.
     REQUIRE_TRUE(label->text == "FREEZE");
 
-    // Task 3.4: a bare-context surface (app_ == nullptr, this function's
+    // A bare-context surface (app_ == nullptr, this function's
     // own Attach() call) never had SetInputOptions() called on it, so it
     // renders its own default -- just "None" -- the same "unavailable"
     // reading a disabled bus produces (inputOptionLabels_'s own NSDMI
@@ -585,7 +584,7 @@ TEST_CASE(plugin_mode_transport_row_thins_to_freeze_and_label_only) {
     REQUIRE_TRUE(inputSelect->label == "IN: NONE");
 }
 
-// -- 5. Stable-ID host parameter surface (task 7.2) --------------------------
+// -- 5. Stable-ID host parameter surface --------------------------------------
 // Every helper below reconstructs the SAME structural facts
 // FroggersPluginProcessor::BuildHostParameterInventory() itself uses
 // (kFroggersBankCount/kFroggersParamsPerBank/kFroggersCrispySlot/
@@ -668,8 +667,8 @@ TEST_CASE(host_parameter_ids_are_stable_structural_and_identical_across_construc
         const std::string idB = rangedB->getParameterID().toStdString();
 
         // Two independently constructed processors produce the IDENTICAL
-        // ordered ID list (task 7.2's own "construct the processor twice"
-        // requirement).
+        // ordered ID list (the governing requirement to "construct the
+        // processor twice").
         REQUIRE_TRUE(idA == idB);
         // ...and match the structural expectation derived from the model's
         // own constants (this section's header comment).
@@ -1126,7 +1125,7 @@ TEST_CASE(open_modulation_drilldown_survives_a_cross_bank_host_write) {
 // that view remaps EVERY physical encoder (Bank::OpenModulationView,
 // External/Sheaf/projects/synth/src/ParameterModulation.cpp:2833-2879) to a
 // modulation-depth cell, including slot 0 -- the position this test then
-// automates. Removing the MessageIn::SelectParamBank push (task 2.1) -- it
+// automates. Removing the MessageIn::SelectParamBank push -- it
 // used to force the bank's visible page back to top level as a side effect
 // -- puts this case at risk: MessageIn::ParamSetAbsoluteOnBank must resolve
 // against bankIx's own TOP-LEVEL mapping (synth::Bank::
@@ -1182,7 +1181,7 @@ TEST_CASE(host_automation_of_the_viewed_banks_own_parameter_lands_on_top_level_n
     juce::AudioProcessorParameter* target = FindHostParamById(processor, "bank0.slot0");
     REQUIRE_TRUE(target != nullptr);
     constexpr float kHostTarget = 0.81f;
-    // An unambiguous positive control (omni-rule 9.1): the target is far
+    // An unambiguous positive control: the target is far
     // from both the top-level parameter's and the depth cell's own current
     // values, so whichever one actually moved is unmistakable.
     REQUIRE_TRUE(std::fabs(topLevelBefore - kHostTarget) > 0.1f);
@@ -1209,7 +1208,7 @@ TEST_CASE(host_automation_of_the_viewed_banks_own_parameter_lands_on_top_level_n
 
 // -- POSITIVE CONTROL: the operator's OWN bank-select action does move the
 // visible page -- without this, every "the page did not move" assertion
-// above would prove only that nothing moves anything (omni-rule 9.1).
+// above would prove only that nothing moves anything.
 TEST_CASE(operator_selecting_a_bank_does_move_the_visible_page) {
     frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("operator_bank_select_moves_page"));
     processor.setRateAndBufferSizeDetails(48000.0, 256);
@@ -1249,15 +1248,15 @@ TEST_CASE(operator_selecting_a_bank_does_move_the_visible_page) {
 }
 
 // -- 6. Plugin-mode surface tree, end-to-end through the REAL processor
-// (task 8.2) --------------------------------------------------------------
+// ----------------------------------------------------------------------------
 // The existing plugin_mode_transport_row_thins_to_freeze_and_label_only
 // test above already proves FroggersUiSurface's OWN branching logic is
 // correct GIVEN pluginHostMode_ == true, using a bare, hand-constructed
 // surface THIS FILE sets the flag on directly (BuildFroggersTree()). What
 // that test cannot prove -- because it never constructs a real
 // FroggersPluginProcessor at all -- is that PRODUCTION actually calls
-// SetPluginHostMode(true) anywhere (task 8.1's first production caller,
-// FroggersPluginProcessor.cpp's constructor). This test drives the REAL
+// SetPluginHostMode(true) anywhere (FroggersPluginProcessor.cpp's
+// constructor is its first production caller). This test drives the REAL
 // processor and reads the REAL engine_.Application().PortableSurface() --
 // the exact instance the editor's PortableComponent renders -- to close
 // that gap, and combines it with an ENGAGED host clock (EngagedClockFixture,
@@ -1265,18 +1264,20 @@ TEST_CASE(operator_selecting_a_bank_does_move_the_visible_page) {
 // BPM control's "display-only while slaved" rendering (governed entirely by
 // TempoExternallyClocked(), AppendBpmControl() -- app/FroggersUiSurface.hpp:
 // 1272-1300 -- independent of pluginHostMode_ itself) still works correctly
-// for a plugin-hosted surface. Extends, not duplicates, g6's own coverage.
+// for a plugin-hosted surface. Extends, not duplicates, the branching-logic
+// coverage above.
 TEST_CASE(production_processor_surface_is_plugin_mode_with_bpm_display_only_while_host_tempo_engaged) {
     EngagedClockFixture fixture("plugin_mode_surface_tree");
     fixture.EngageAt(128.0);
 
     const synth::ui::NodeTree tree = fixture.processor.ApplicationForTest().PortableSurface().BuildTree();
 
-    // -- Plugin-mode row shape: belt-and-suspenders confirmation of g6's own
-    // branching-logic proof, now through the REAL production object graph.
+    // -- Plugin-mode row shape: belt-and-suspenders confirmation of the
+    // branching-logic proof above, now through the REAL production object
+    // graph.
     const synth::ui::Node* row = FindNodeById(tree, synth_froggers::FroggersNodeIds::kTransportRow);
     REQUIRE_TRUE(row != nullptr);
-    // Task 3.4: a third child joined Freeze/its label -- see
+    // A third child joined Freeze/its label -- see
     // plugin_mode_transport_row_thins_to_freeze_and_label_only's own
     // updated comment for why.
     REQUIRE_TRUE(row->children.size() == 3);
@@ -1289,7 +1290,7 @@ TEST_CASE(production_processor_surface_is_plugin_mode_with_bpm_display_only_whil
     const synth::ui::Node* freezeLabel = FindNodeById(tree, synth_froggers::FroggersNodeIds::kFreezeLabel);
     REQUIRE_TRUE(freezeLabel != nullptr && freezeLabel->text == "FREEZE");
 
-    // -- BPM display-only while host-tempo-slaved (task 8.2's own explicit
+    // -- BPM display-only while host-tempo-slaved (the governing explicit
     // requirement) -- AppendBpmControl() emits a StatusText (not a Slider)
     // and no adjacent kBpmLabel while TempoExternallyClocked() is true.
     const synth::ui::Node* bpm = FindNodeById(tree, synth_froggers::FroggersNodeIds::kBpm);
@@ -2081,8 +2082,7 @@ TEST_CASE(state_information_session_extras_without_bank_key_restores_freeze_latc
                  "its default (ActiveBankIndex()=0).\n";
 }
 
-// -- 7. Optional audio input bus and its input-channel selection (task 3.4,
-// design.md section B) --------------------------------------------------
+// -- 7. Optional audio input bus and its input-channel selection ------------
 // Same -60dBFS silence floor and ~1s settle budget every other audio-
 // producing test in this file uses (see the Freeze section's own citation
 // of FroggersVstSmokeTest.cpp's kSilenceFloorLinear). Each TEST_CASE below
@@ -2264,8 +2264,8 @@ TEST_CASE(input_bus_returning_to_none_makes_the_external_sources_inert_again) {
                  "beforehand).\n";
 }
 
-// The defect this whole design exists to prevent (design.md section B,
-// "Connected is consent, never channel presence"): a host may enable the
+// The defect this whole design exists to prevent
+// ("Connected is consent, never channel presence"): a host may enable the
 // optional input bus on its own, with nothing routed in and no operator
 // selection -- e.g. a DAW that activates every optional bus on
 // instantiation. Deriving "connected" from bus-enabled-with-channels
@@ -2320,8 +2320,8 @@ TEST_CASE(input_bus_layout_change_removing_the_selected_channel_falls_back_to_no
 
     // The host changes the layout mid-session, disabling the bus outright
     // -- the channel index 1 named is now gone. processorLayoutsChanged()
-    // (fired synchronously by enable(), design.md section B: "Re-validate
-    // against the current bus on every layout change") re-derives the
+    // (fired synchronously by enable(): "Re-validate against the current
+    // bus on every layout change") re-derives the
     // option list (now just "None") and re-validates the selection against
     // it.
     REQUIRE_TRUE(inputBus->enable(false));

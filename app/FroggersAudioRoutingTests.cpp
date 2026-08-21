@@ -1,6 +1,6 @@
 // FroggersAudioRoutingTests.cpp -- the real audio path. Proves
 // FroggersApp::ProcessBlock produces non-silent, finite stereo output for
-// (a) a deliberately non-default patch and (b) the D16 default patch
+// (a) a deliberately non-default patch and (b) the default patch
 // untouched, while the master clock's transport is running -- explicitly
 // stronger than the finiteness check in FroggersHeadlessTests.cpp,
 // which silence also satisfies -- and produces silence while the transport
@@ -89,14 +89,14 @@ synth::RuntimeDataPaths UseScratchRuntimeDataPaths(const char* testName) {
 using Rig = synth_rig::SynthRig<synth_froggers::FroggersApp>;
 namespace dsp = synth_froggers::dsp;
 
-// B7.5.0: SceneCenter writes are applied through a SMOOTHED periodic Compute
+// SceneCenter writes are applied through a SMOOTHED periodic Compute
 // (Parameter::ProcessSamplePhase1, alpha 0.0994 every 16 samples), so a patch
 // is only ~81% applied one block after it is written. ComputeAllParameters()
 // passes smoothTargetCenter=false and therefore converges exactly, in one
 // call. Call this after the SceneCenter writes and before the first
 // RunBlocks() whenever a test asserts on a patch rather than on a ramp.
 //
-// Route verified against FroggersAppCore.hpp (M1): `context_` is private
+// Route verified against FroggersAppCore.hpp: `context_` is private
 // with no public accessor, so there is no `rig.Application().Context()` to
 // call through. `TestParameterManager()` (FroggersAppCore.hpp, beside
 // TestOutputLimiter()) is the narrow test-only accessor added for this.
@@ -184,7 +184,7 @@ SilenceSettleWindow ComputeSilenceSettleWindow(double settleSeconds) {
 }
 
 // -----------------------------------------------------------------------
-// Band-limited energy check (6.2's mandatory "not RMS" assertion) -- a
+// Band-limited energy check (a mandatory "not RMS" assertion) -- a
 // naive single-frequency Goertzel evaluated at arbitrary (non-bin-aligned)
 // frequencies over a fixed-length window. Standard Goertzel recurrence
 // (e.g. https://en.wikipedia.org/wiki/Goertzel_algorithm's "power" form):
@@ -207,8 +207,7 @@ double GoertzelPower(const std::vector<float>& samples, double freqHz, double sa
 }
 
 // `BandEnergy` (a summed sweep over freqStartHz..freqEndHz) used to live
-// here for the pre-task-6.12 version of
-// default_patch_has_audible_band_energy_above_150hz; that test now sums
+// here; default_patch_has_audible_band_energy_above_150hz now sums
 // `GoertzelPower` directly at specific fundamentals instead (see its own
 // comment), leaving `BandEnergy` with no caller, so it was removed.
 
@@ -222,8 +221,8 @@ std::vector<float> ExtractChannel(const std::vector<Rig::OutputFrame>& frames, s
 }
 
 // -----------------------------------------------------------------------
-// The default patch (D16) must produce audio: a freshly started app
-// should make sound with no user input. D16 sets three VCO Shapes, six
+// The default patch must produce audio: a freshly started app
+// should make sound with no user input. It sets three VCO Shapes, six
 // cross-VCO modulation depths, and Drive to 20% -- all applied once from
 // FroggersApp::Init() via ApplyFroggersDefaultPatch(), with no test-side
 // parameter mutation here at all.
@@ -232,7 +231,7 @@ TEST_CASE(default_patch_produces_non_silent_finite_audio) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("default_patch"));
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
 
-    // Confirm this really is D16's default patch before trusting the
+    // Confirm this really is the default patch before trusting the
     // energy assertion below to mean anything -- Drive (Drive bank, slot 0)
     // reads 20% of range, and at least one cross-VCO modulation depth is
     // materialized (ApplyFroggersDefaultPatch is called unconditionally
@@ -333,24 +332,25 @@ TEST_CASE(default_patch_has_audible_band_energy_above_150hz) {
     // replaced) was over a whole 150 Hz-2000 Hz sweep, which includes
     // considerable harmonic leakage from the broken 20 Hz fundamentals
     // (saw/square harmonics from Audio bank slots 4-5's Shape defaults,
-    // D16); measuring directly AT the fundamentals themselves (rather than
+    // the default patch); measuring directly AT the fundamentals themselves (rather than
     // a swept band that partially captures both) should separate them by
     // at least as much. 10x is picked as a threshold comfortably inside
     // that ~25x figure -- large enough to unambiguously distinguish
     // "VCOs at 110/220/330 Hz" from "VCOs at 20/40/60 Hz", small enough to
     // leave real margin against incidental drift from future Shape/Drive
-    // default changes (D16-tuned parameters this test does not own).
+    // default changes (default-patch-tuned parameters this test does not own).
     constexpr double kMinimumFundamentalToBrokenRatio = 10.0;
     REQUIRE_TRUE(expectedPower > brokenPower * kMinimumFundamentalToBrokenRatio);
 }
 
 // -----------------------------------------------------------------------
 // A deliberately non-default patch: nonzero Drive (well past
-// D16's own 20%), a nonzero VCO level (D16 leaves VCO pitch itself
-// untouched, only Shape), and at least one active modulation depth. Also
-// pushes the Filter/Reverb/Delay banks (which D16 never touches) away from
-// their neutral defaults, exercising more of section 6a's routing surface
-// than the default-patch test above.
+// the default patch's own 20%), a nonzero VCO level (the default patch
+// leaves VCO pitch itself untouched, only Shape), and at least one active
+// modulation depth. Also pushes the Filter/Reverb/Delay banks (which the
+// default patch never touches) away from their neutral defaults,
+// exercising more of the routing surface than the default-patch test
+// above.
 // -----------------------------------------------------------------------
 TEST_CASE(non_default_patch_produces_non_silent_finite_audio) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("non_default_patch"));
@@ -358,7 +358,7 @@ TEST_CASE(non_default_patch_produces_non_silent_finite_audio) {
 
     synth::Parameter& vco1Pitch = model.PageParameter(synth_froggers::FroggersBankId::Audio, 0);
     // "At least one modulation depth active" -- the six cross-VCO depths
-    // D16's default patch already materializes satisfy this
+    // the default patch already materializes satisfy this
     // without any drill-in machinery here; asserted explicitly rather than
     // assumed.
     REQUIRE_TRUE(vco1Pitch.ModulationDepthParameter(synth_froggers::kModSlotVco2Audio) != nullptr);
@@ -388,7 +388,7 @@ TEST_CASE(non_default_patch_produces_non_silent_finite_audio) {
 
 // -----------------------------------------------------------------------
 // Push the Filter bank's Comb feedback to its self-oscillating extreme
-// (knob=1.0 -> dsp::Comb::GetFeedback's +0.95 branch -- item 1,
+// (knob=1.0 -> dsp::Comb::GetFeedback's +0.95 branch,
 // deliberately below the frozen firmware's +1.1, Comb.hpp:66-76) with the
 // Comb/Peak blend turned fully toward Comb, and the Reverb bank's
 // authored Hold control pushed to its ceiling -- the exact
@@ -399,7 +399,7 @@ TEST_CASE(self_oscillating_comb_and_near_unity_reverb_hold_stays_finite_and_boun
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("comb_self_oscillation"));
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
 
-    model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95 (item 1).
+    model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95.
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 7).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 8).SceneCenter(0) = 1.0f;  // Hold -> ceiling.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;  // Wet/dry fully wet.
@@ -433,7 +433,7 @@ TEST_CASE(self_oscillating_comb_and_near_unity_reverb_hold_stays_finite_and_boun
 // square wave; the new ceiling (1.0f, float full scale) must never be
 // exceeded even under the same deliberately overdriven patch the test above
 // uses (self-oscillating Comb, Reverb Hold at its ceiling, maximum Drive),
-// AND a normal-level (D16 default) patch's output -- which never approaches
+// AND a normal-level (default) patch's output -- which never approaches
 // either ceiling -- must be completely unaffected by the constant change:
 // asserted here as "every sample stays under 1.0", which is only possible
 // if the clamp never engages for it, i.e. passthrough is unchanged.
@@ -442,7 +442,7 @@ TEST_CASE(output_clamp_bounds_overdriven_patch_to_full_scale) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("output_clamp_overdriven"));
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
 
-    model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95 (item 1).
+    model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95.
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 7).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 8).SceneCenter(0) = 1.0f;  // Hold -> ceiling.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;  // Wet/dry fully wet.
@@ -464,8 +464,8 @@ TEST_CASE(output_clamp_bounds_overdriven_patch_to_full_scale) {
 TEST_CASE(output_clamp_never_engages_for_normal_level_default_patch) {
     // A normal-level signal passes through the clamp bit-identical: since
     // SanitizeOutputSample's clamp is a no-op for any |x| already <=
-    // kMaxOutputMagnitude, proving every sample of the untouched D16
-    // default patch stays strictly under the NEW (tighter) 1.0f ceiling
+    // kMaxOutputMagnitude, proving every sample of the untouched default
+    // patch stays strictly under the NEW (tighter) 1.0f ceiling
     // proves the clamp never fires for it -- so this change could not have
     // altered a single one of its samples.
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("output_clamp_normal_level"));
@@ -515,7 +515,7 @@ TEST_CASE(limiter_passes_below_threshold_signal_bit_identical) {
 }
 
 // -----------------------------------------------------------------------
-// UI-rework ITEM 0 correction (2026-07-29): this test's own name says
+// This test's own name says
 // "reduces gain smoothly, not squared off" -- it does NOT say "never
 // exceeds 1.0". That ceiling claim belongs to
 // output_clamp_bounds_overdriven_patch_to_full_scale (:391 above), which
@@ -593,12 +593,12 @@ TEST_CASE(limiter_reduces_gain_smoothly_not_squared_off) {
 }
 
 // -----------------------------------------------------------------------
-// B7.5 Step 1 (2026-08-06 ruling): re-homed from
-// limiter_engages_on_overdriven_patch_and_stays_bounded (below), which
-// bundled two properties -- "the limiter itself does real gain reduction,
-// not a no-op" and "this particular hostile patch runs the master hot
-// enough to need it". The second is F2/B7.1's symptom (see
-// overdriven_patch_stays_bounded's comment below) and was struck from the
+// Re-homed from limiter_engages_on_overdriven_patch_and_stays_bounded
+// (below), which bundled two properties -- "the limiter itself does real
+// gain reduction, not a no-op" and "this particular hostile patch runs the
+// master hot enough to need it". The second is the continuous-gain-
+// reduction symptom (see overdriven_patch_stays_bounded's comment below)
+// and was struck from the
 // chain-level test. This property is independent of gain staging, so it
 // moves here, driven directly via TestOutputLimiter() -- same convention as
 // limiter_passes_below_threshold_signal_bit_identical (:448 above) and
@@ -626,12 +626,11 @@ TEST_CASE(limiter_engages_and_envelope_drops_below_unity) {
 }
 
 // -----------------------------------------------------------------------
-// ITEM 3 -- the same deliberately overdriven patch
+// The same deliberately overdriven patch
 // output_clamp_bounds_overdriven_patch_to_full_scale uses (self-oscillating
-// Comb, Reverb Hold at ceiling, maximum Drive). B7.5 Step 1 (2026-08-06
-// ruling): this test used to also assert `minEnvelopeSeen < 0.999f` --
-// "the master limiter engages on this patch". That assertion IS F2/B7.1's
-// symptom: it pins the master sitting in continuous gain reduction on an
+// Comb, Reverb Hold at ceiling, maximum Drive). This test used to also
+// assert `minEnvelopeSeen < 0.999f` --
+// "the master limiter engages on this patch". That assertion pins the master sitting in continuous gain reduction on an
 // ordinary hostile patch, which is precisely what the per-stage headroom
 // architecture (C = 0.80) exists to remove -- so it was destined to fail
 // the moment the real fix landed. The "limiter genuinely does gain
@@ -646,17 +645,17 @@ TEST_CASE(overdriven_patch_stays_bounded) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("limiter_overdriven_engages"));
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
 
-    model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95 (item 1).
+    model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95.
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 7).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 8).SceneCenter(0) = 1.0f;  // Hold -> ceiling.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;  // Wet/dry fully wet.
     model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 1.0f;   // maximum Drive.
 
     rig.StartAt(0);
-    // 256 blocks: the boundedness-stress window measured by W2.2a. No
+    // 256 blocks: the boundedness-stress window. No
     // longer sampled per-block -- that per-block loop existed only to track
-    // `minEnvelopeSeen` for the engagement assertion removed above (B7.5
-    // Step 1), so it collapses to a single call.
+    // `minEnvelopeSeen` for the engagement assertion removed above, so it
+    // collapses to a single call.
     rig.RunBlocks(256);
 
     REQUIRE_TRUE(!rig.SawNaN());
@@ -670,11 +669,11 @@ TEST_CASE(overdriven_patch_stays_bounded) {
 }
 
 // -----------------------------------------------------------------------
-// B7.5: the master limiter is the BACKSTOP, not the gain-staging
+// The master limiter is the BACKSTOP, not the gain-staging
 // mechanism. With every stage bounded to C, a hostile patch must not
 // engage it at all. This test is the only end-to-end proof of that; every
 // other limiter test in this file measures one stage under synthetic
-// input (M3).
+// input.
 TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("b7_5_hostile"));
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
@@ -693,7 +692,7 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
     // own `crispy_` array (FroggersParameters.hpp:413-414), and
     // PageParameter(Filter, 14) throws std::out_of_range.
     model.Crispy(synth_froggers::FroggersBankId::Filter).SceneCenter(0) = 1.0f;
-    // B7.5.0: a SceneCenter write is only ~81% applied after one block
+    // A SceneCenter write is only ~81% applied after one block
     // (Parameter::ProcessSamplePhase1's periodic smoothed Compute, alpha
     // 0.0994 every 16 samples). This test must measure the patch it declares,
     // not a ramp into it, so apply it exactly before the first block.
@@ -720,16 +719,17 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
 }
 
 // -----------------------------------------------------------------------
-// B7.5 Step 6 (2026-08-06): the test above proves the master stays at unity
+// The test above proves the master stays at unity
 // under STATIC knobs only. This change's own acceptance criterion is "all
-// maxima, modulation live" -- section K.1 measured DriveBlendPhase's allpass
-// coefficient (read fresh every sample from the Drive/Phase knob) at 50.5x
-// under periodic phase/content coincidence, the largest known blowout path
-// in the instrument, and no static-knob test exercises it. This is the SAME
-// hostile patch as master_limiter_stays_at_unity_across_hostile_patch, PLUS
-// deep audio-rate modulation on Drive slot 8 (Phase, K.1's 50x path) and
-// Filter slot 5 (Comb feedback, W2.2a's trim smoother was tuned against
-// rand() sweeps, never real modulation). Deliberately kept as a SEPARATE
+// maxima, modulation live" -- measurement showed DriveBlendPhase's allpass
+// coefficient (read fresh every sample from the Drive/Phase knob) hitting
+// 50.5x under periodic phase/content coincidence, the largest known
+// blowout path in the instrument, and no static-knob test exercises it.
+// This is the SAME hostile patch as
+// master_limiter_stays_at_unity_across_hostile_patch, PLUS deep audio-rate
+// modulation on Drive slot 8 (Phase, that 50x path) and Filter slot 5 (Comb
+// feedback, whose trim smoother was tuned against rand() sweeps, never real
+// modulation). Deliberately kept as a SEPARATE
 // test rather than folded into the one above: the two discriminate
 // different failures (static gain staging vs. modulation-driven
 // transients).
@@ -737,16 +737,17 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
 // SOURCE: kModSlotVco1Audio, not kModSlotNoise. First attempt used
 // kModSlotNoise and measured minEnvelopeSeen=0.985726 -- statistically
 // indistinguishable from the static test's 0.985796 -- which is a genuine
-// end-to-end confirmation of K.1's *free random phase* figure (1.002x, not
-// the 50.5x figure), not a null result: K.1's 50.5x is specifically
-// "periodic phase/content coincidence", and a per-sample-random noise
-// source (NoiseModulatorProcessor::Process() -> random_.UniformOpen01(),
-// DspNoise.hpp:69-71) structurally cannot produce periodic coincidence.
-// kModSlotVco1Audio (vco1AudioSource_ = NormalizeBipolarToUnit(vco1Raw),
-// FroggersModulation.hpp:384, registered at :535-536) IS periodic at the
-// note frequency and locked to the note's period by construction -- it IS
-// the note passing through DriveBlendPhase, so the coincidence K.1 measured
-// is exact rather than approximate. This is the corrected source for both
+// end-to-end confirmation of the free-random-phase measurement's figure
+// (1.002x, not the 50.5x figure), not a null result: that 50.5x figure is
+// specifically from "periodic phase/content coincidence", and a
+// per-sample-random noise source (NoiseModulatorProcessor::Process() ->
+// random_.UniformOpen01(), DspNoise.hpp:69-71) structurally cannot produce
+// periodic coincidence. kModSlotVco1Audio (vco1AudioSource_ =
+// NormalizeBipolarToUnit(vco1Raw), FroggersModulation.hpp:384, registered
+// at :535-536) IS periodic at the note frequency and locked to the note's
+// period by construction -- it IS the note passing through DriveBlendPhase,
+// so the coincidence that earlier measurement captured is exact rather
+// than approximate. This is the corrected source for both
 // modulated parameters below; kModSlotNoise is not used anywhere in this
 // test.
 //
@@ -793,7 +794,7 @@ TEST_CASE(master_limiter_stays_at_unity_under_live_modulation) {
     REQUIRE_TRUE(combFeedbackDepth != nullptr);
     combFeedbackDepth->SceneCenter(0) = 1.0f;
 
-    // B7.5.0: apply the patch (including the modulation-depth SceneCenter
+    // Apply the patch (including the modulation-depth SceneCenter
     // writes above) before the first block, exactly as the static test does.
     ApplyPatchNow(rig);
 
@@ -827,7 +828,7 @@ TEST_CASE(master_limiter_stays_at_unity_under_live_modulation) {
 // shadow/copy of the DSP chain.
 //
 // Per draw: render a full second of audio (one full quarter-note gate
-// cycle or more at any ordinary tempo, since Item 4's attack/release
+// cycle or more at any ordinary tempo, since the attack/release
 // ceilings and RandomizeAll's own scope never touch the master clock's
 // BPM -- only the six parameter banks), then assert (a) finite throughout,
 // (b) never sustained above full scale (the limiter's own bound, with the
@@ -839,8 +840,7 @@ TEST_CASE(master_limiter_stays_at_unity_under_live_modulation) {
 // Deliberately does NOT stop at the first failure (unlike REQUIRE_TRUE
 // elsewhere in this file): tallies failures across all 200+ draws so a
 // nonzero rate is reported precisely rather than only "it failed once
-// somewhere", per this item's own instruction to report a real finding
-// rather than loosen the assertion.
+// somewhere" -- report a real finding rather than loosen the assertion.
 // -----------------------------------------------------------------------
 TEST_CASE(randomize_all_storm_test_never_blows_out_or_permanently_silences) {
     constexpr int kNumDraws = 200;
@@ -912,7 +912,7 @@ TEST_CASE(randomize_all_storm_test_never_blows_out_or_permanently_silences) {
 // block regardless of what the operator changed the knobs to. Injects a
 // non-finite value directly into ONE unit's state (the Filter bank's peak
 // ResonantBump -- the same kind of unit the scoopNotch self-oscillation bug
-// actually hit) via the task-2.2/2.3 test accessors, and asserts (a) that
+// actually hit) via the test accessors, and asserts (a) that
 // unit recovers within a handful of blocks and (b) a DIFFERENT unit's state
 // is completely untouched -- proving recovery is per-unit, not global (this
 // class's own design decision: a global reset would cut the reverb tail and
@@ -968,7 +968,7 @@ TEST_CASE(finiteness_recovery_resets_only_the_poisoned_unit_and_audio_recovers) 
 }
 
 // -----------------------------------------------------------------------
-// Tasks 2.4/2.5 (Tier 2, magnitude recovery) -- "sustained" defined and
+// Tier 2, magnitude recovery -- "sustained" defined and
 // justified: a unit's state magnitude must exceed kMaxUnitStateMagnitude
 // (100.0, derived beside the constant in FroggersAppCore.hpp) for at least
 // kSustainedOverCeilingSeconds (0.01s == 10ms) of continuous real time,
@@ -1073,7 +1073,7 @@ TEST_CASE(full_range_endpoint_sweep_stays_finite_and_not_permanently_silenced) {
     sweepOneParam(model.Crunchy());  // shared Crunchy (slot 15), swept once.
 
     // Not permanently silenced: with every parameter now left at a neutral
-    // 0.5 (not the D16 default, but nonzero/non-degenerate everywhere), the
+    // 0.5 (not the default, but nonzero/non-degenerate everywhere), the
     // instrument must still be capable of producing real, audible output --
     // proving the sweep (including whatever transient recovery it may have
     // triggered along the way) did not leave anything permanently poisoned.
@@ -1348,7 +1348,7 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb) {
     REQUIRE_TRUE(staysSilentPeak < kSilenceFloorLinear);
 }
 
-// ITEM 1 (post-just-landed-fix defect): the test above
+// Post-just-landed-fix defect: the test above
 // (stopping_transport_silences_self_sustaining_delay_and_reverb) sets no
 // Envelope-bank parameters, so every VcoAdsrState voice's Release sits at
 // its ~0 default (FroggersParameters.hpp's Envelope layout gives Sustain an
@@ -1373,8 +1373,8 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb) {
 // demonstrate the bug within a boundable test window): with feedback
 // clamped to 0.98 (Delay.hpp:135), decaying 60 dB unaided takes
 // ln(1e-3)/ln(0.98) ~= 342 delay cycles, ~= 342 * 0.0957s ~= 32.7s here --
-// squarely the "tens of seconds" the operator's Randomize All report and
-// this task's brief describe -- so a settle window shortly after the ~2.5s
+// squarely the "tens of seconds" the operator's Randomize All report
+// describes -- so a settle window shortly after the ~2.5s
 // release completes sits deep inside that unaided decay tail and cleanly
 // discriminates the one-shot fix (still ringing there) from the
 // keep-clearing-until-Idle fix (already silent there).
@@ -1439,13 +1439,14 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
     // ComputeSilenceSettleWindow) because this test alone also reuses them
     // below for its own separate afterStopSeconds -> afterStopBlocks
     // conversion (a single-occurrence computation, not part of the 3x
-    // duplicated settle-window concept F2 flagged).
+    // duplicated settle-window concept ComputeSilenceSettleWindow() already
+    // extracts).
     constexpr double kSampleRateHz = 48000.0;
     constexpr double kBlockSizeSamples = 256.0;
     const auto [settleLeadBlocks, checkWindowBlocks, kSilenceFloorLinear] =
         ComputeSilenceSettleWindow(/*settleSeconds=*/10.5);
 
-    // ITEM 1 (clear-once-at-AllIdle, not clear-every-block): this is the
+    // Clear-once-at-AllIdle, not clear-every-block: this is the
     // assertion that actually distinguishes the two policies. Both the
     // old "wipe delay_/reverb_ every block for as long as any voice is
     // releasing" policy and the new "wipe once, only when AllIdle() first
@@ -1465,7 +1466,7 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
     // comfortably past the release's own fast opening transient (see the
     // sibling short-release test's comment on that) while still far short
     // of the ~2.5s it takes every voice to reach Stage::Idle.
-    // SUPERSEDED 2026-07-29 — this assertion was inverted, deliberately.
+    // This assertion is inverted from what it used to be, deliberately.
     //
     // It used to require that the release was STILL AUDIBLY RINGING 0.3s
     // after Stop, as proof that the delay/reverb tanks were not being wiped

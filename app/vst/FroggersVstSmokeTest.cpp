@@ -1,4 +1,4 @@
-// FroggersVstSmokeTest.cpp -- group 5.2: headless processBlock smoke test,
+// FroggersVstSmokeTest.cpp -- headless processBlock smoke test,
 // CTest-wired via app/vst/CMakeLists.txt's add_test(). Constructs
 // FroggersPluginProcessor directly (no host, no editor, no JUCE app/window),
 // calls prepareToPlay(), then drives the exact seam
@@ -9,8 +9,7 @@
 // core's own test suite (app/FroggersRandomizeAllRepro.cpp's header comment
 // cites the same pattern).
 //
-// A #9.1-style positive control (see this repo's own #9.1 convention, cited
-// in the group 5 brief): asserts output is (near-)silent BEFORE the
+// A positive control: asserts output is (near-)silent BEFORE the
 // transport is ever started, THEN asserts it is clearly non-silent after --
 // so "nonzero after" cannot be trivially true (e.g. a broken gate that is
 // simply always open). kSilenceFloorLinear below reuses the exact constant

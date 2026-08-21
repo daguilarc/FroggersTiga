@@ -1,8 +1,7 @@
-// FroggersVstEditorTest.cpp -- task 8.2 (froggers-vst-host delta, group 8:
-// plugin editor construction/destruction), extended by the finishing pass
-// that verified the post-8.1 review fix (the action-handler seam,
-// FroggersPluginEditor.hpp/.cpp's own "Refresh cadence" header comment) and
-// added a headless coordinate-transform guard. Isolated in its OWN CTest
+// FroggersVstEditorTest.cpp -- plugin editor construction/destruction
+// tests, extended to verify the action-handler seam
+// (FroggersPluginEditor.hpp/.cpp's own "Refresh cadence" header comment) and
+// a headless coordinate-transform guard. Isolated in its OWN CTest
 // binary, deliberately separate from FroggersVstHostTests.cpp's cases: this
 // is the ONE place in the app/vst/ test suite that constructs a real
 // juce::Component (FroggersPluginEditor, via synth_juce::PortableComponent)
@@ -30,14 +29,14 @@
 // here rather than re-discovered by trial and error.
 //
 // Three things this file proves, each its own TEST_CASE below:
-//   1. Lifecycle (task 8.1): FroggersPluginEditor's constructor and
+//   1. Lifecycle: FroggersPluginEditor's constructor and
 //      destructor both run to completion, twice in a row on the SAME
 //      processor, including a resized() call at a NON-design size (the
 //      scale-to-fit transform path) and one repaint-hook tick via the real
 //      production timerCallback() seam. Does NOT prove absence of a leak
 //      (needs a sanitizer/leak-checker run) or correct on-screen appearance
-//      (needs a real window -- group 9's operator DAW smoke gate).
-//   2. Action-handler wiring (review fix, post-8.1): dispatching an action
+//      (needs a real window -- a real operator DAW smoke gate).
+//   2. Action-handler wiring: dispatching an action
 //      through the REAL processor.EditorSurface() -- the same surface
 //      FroggersPluginEditor's constructor registers its action handler on
 //      -- must eventually refresh the RENDERER (an actual rendered JUCE
@@ -52,7 +51,7 @@
 //      transport controls are hand-painted Draw nodes with no queryable
 //      value at all (see PortableJuceBackend.hpp's RetainedDrawComponent,
 //      a private nested class not even nameable from outside).
-//      Positive control (omni-rule 9.1): kSceneBlend's value is DSP-engine-
+//      Positive control: kSceneBlend's value is DSP-engine-
 //      owned (ParameterModulation.cpp:3700 is the ONLY writer of
 //      uiState->sceneBlend, published from inside Engine::ProcessBlock,
 //      throttled to once every uiPublishInterval_ blocks -- Engine.hpp:
@@ -202,16 +201,16 @@ void PumpPendingCallAsync() {
 #endif
 }
 
-// -- 1. Lifecycle (task 8.1) --------------------------------------------------
+// -- 1. Lifecycle --------------------------------------------------------------
 // What this DOES prove, if it passes: FroggersPluginEditor's constructor and
 // destructor both run to completion, twice in a row on the SAME processor
-// (task 8.1: "constructed/destroyed repeatedly by hosts; must not leak or
-// double-register"), including a resized() call at a NON-design size (so the
-// scale-to-fit transform path runs at least once) and one repaint-hook tick
-// via the real production timerCallback() seam. What it does NOT prove:
-// absence of a leak (needs a sanitizer/leak-checker run, out of this
-// binary's own scope) or correct on-screen appearance (needs a real window
-// -- group 9's own operator DAW smoke gate).
+// (the governing requirement: "constructed/destroyed repeatedly by hosts;
+// must not leak or double-register"), including a resized() call at a
+// NON-design size (so the scale-to-fit transform path runs at least once)
+// and one repaint-hook tick via the real production timerCallback() seam.
+// What it does NOT prove: absence of a leak (needs a sanitizer/leak-checker
+// run, out of this binary's own scope) or correct on-screen appearance
+// (needs a real window -- a real operator DAW smoke gate).
 TEST_CASE(editor_constructs_and_destructs_cleanly_twice_headless) {
     frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("lifecycle"));
 
@@ -228,8 +227,8 @@ TEST_CASE(editor_constructs_and_destructs_cleanly_twice_headless) {
     }  // ~FroggersPluginEditor: must clear both the repaint hook and the
        // action handler (see FroggersPluginEditor.cpp's destructor comment).
 
-    // Second construct/destruct cycle on the SAME processor -- task 8.1's
-    // own lifecycle requirement. If either hook were left dangling from the
+    // Second construct/destruct cycle on the SAME processor -- the lifecycle
+    // requirement above. If either hook were left dangling from the
     // first editor, this would not necessarily crash (both are single-slot,
     // so the second editor's hooks just silently replace stale ones) --
     // what THIS run proves is that a second cycle completes cleanly with no
@@ -243,7 +242,7 @@ TEST_CASE(editor_constructs_and_destructs_cleanly_twice_headless) {
     std::cout << "  [8.1] editor constructs/destructs cleanly, twice, on one processor.\n";
 }
 
-// -- 2. Action-handler wiring (review fix, post-8.1) --------------------------
+// -- 2. Action-handler wiring ---------------------------------------------------
 // See this file's own header comment, item 2, for the full trace and the
 // positive-control reasoning. Short version: dispatch a real action through
 // the real surface, prove the surface's OWN state actually changed (so a
@@ -316,7 +315,7 @@ TEST_CASE(dispatching_an_action_refreshes_the_renderer_through_the_action_handle
     processor.EditorSurface().DispatchAction(
         synth::ui::Action::WithValue(synth_froggers::FroggersActions::kSceneBlend, targetLiteral));
 
-    // -- Positive control (omni-rule 9.1) ------------------------------------
+    // -- Positive control ------------------------------------------------------
     // Prove the dispatched value actually propagated into the surface's own
     // live state before drawing any conclusion from the renderer's silence.
     // Bounded to comfortably clear the computed 6-block publish throttle
