@@ -403,16 +403,12 @@ performed). Both, not either.
       `web/index.html`'s two download links must change in the SAME commit or
       both downloads 404 the moment the release is replaced. Trace all four
       before touching any.
-- [ ] 10.3 DECIDED — the release tag is `froggers_v2`, replacing
-      `froggerstiga-v1`. Amend `AGENTS.md` in the same commit: it currently
-      names `froggerstiga-v1` as the one permitted desktop channel and
-      forbids creating other tags, so the rule has to move with the tag or
-      the next release violates it.
-      CONFIRM BEFORE TAGGING: the operator gave the tag as `froggers_v2` and
-      the app as `frogg3rs_v2`, in consecutive messages — the two spellings
-      differ by exactly the leetspeak substitution this repository just spent
-      a rename adopting. A published tag is effectively permanent, so ask
-      once rather than inferring which spelling was meant.
+- [ ] 10.3 DECIDED — the release tag is `frogg3rs_v2`, replacing
+      `froggerstiga-v1`. Everything carries the one spelling: app
+      `frogg3rs_v2`, tag `frogg3rs_v2`, assets `frogg3rs.*`. Amend
+      `AGENTS.md` in the same commit — it names `froggerstiga-v1` as the one
+      permitted desktop channel and forbids creating other tags, so the rule
+      moves with the tag or the next release violates it.
 - [ ] 10.4 Move the release-notes source and the release-metadata version
       heading off `SIM_MANUAL.md` and onto `MANUAL.md`
       (`desktop/scripts/render-release-notes.sh`,
