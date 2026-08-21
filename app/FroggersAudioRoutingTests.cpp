@@ -1521,7 +1521,8 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
 }
 
 // =========================================================================
-// T2.3(a) pins T2.2 directly -- while the transport is stopped, the
+// This test pins the stopped-transport override directly -- while the
+// transport is stopped, the
 // three drive pre-gains (Delay slot 9 "Feedback drive", Reverb slot 10
 // "Tank drive", Filter slot 12 "Comb drive") and Freeze (Delay slot 4)
 // resolve to their unity/zero effective values regardless of the commanded
@@ -1535,14 +1536,15 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
 // POST-ExpMapCompute value); Reverb Tank drive and the Freeze knob have no
 // such member (Reverb::Process computes tankDrive as a Process()-local, and
 // DelayParams::dfrz lives on a RouteAudioSample()-local DelayParams), so
-// T2.2 added TestLastReverbTankDriveKnobEffective()/
-// TestLastDelayFreezeKnobEffective() (FroggersAppCore.hpp) for this test.
+// this override needed TestLastReverbTankDriveKnobEffective()/
+// TestLastDelayFreezeKnobEffective() (FroggersAppCore.hpp) added for this
+// test.
 //
-// T2.5 extends this SAME test rather than adding a new one: Grit (Reverb
-// slot 11) joins the override, resolving to 0.0f (its exact bit-identical
-// bypass by construction -- dsp::DigitalReorganizer at default, Reverb.hpp)
-// -- same "no member to read back" situation as Tank drive/Freeze, so
-// TestLastReverbGritKnobEffective() was added the same way.
+// The Grit case reuses this SAME test rather than adding a new one: Grit
+// (Reverb slot 11) joins the override, resolving to 0.0f (its exact
+// bit-identical bypass by construction -- dsp::DigitalReorganizer at
+// default, Reverb.hpp) -- same "no member to read back" situation as Tank
+// drive/Freeze, so TestLastReverbGritKnobEffective() was added the same way.
 // =========================================================================
 TEST_CASE(stopped_transport_overrides_drive_and_freeze_to_unity_zero_and_resumes_bit_exact) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("stop_overrides_drive_freeze"));
@@ -1553,7 +1555,7 @@ TEST_CASE(stopped_transport_overrides_drive_and_freeze_to_unity_zero_and_resumes
     model.PageParameter(FroggersBankId::Delay, 9).SceneCenter(0) = 1.0f;    // Feedback drive commanded MAX.
     model.PageParameter(FroggersBankId::Reverb, 10).SceneCenter(0) = 1.0f;  // Tank drive commanded MAX.
     model.PageParameter(FroggersBankId::Delay, 4).SceneCenter(0) = 1.0f;    // Freeze commanded MAX.
-    // T2.5: Grit (Reverb slot 11) commanded MAX -- joins the same
+    // Grit (Reverb slot 11) commanded MAX -- joins the same
     // stopped-state override this test already pins for the other four.
     model.PageParameter(FroggersBankId::Reverb, 11).SceneCenter(0) = 1.0f;  // Grit commanded MAX.
     ApplyPatchNow(rig);
@@ -1577,7 +1579,7 @@ TEST_CASE(stopped_transport_overrides_drive_and_freeze_to_unity_zero_and_resumes
     REQUIRE_TRUE(rig.Application().TestLastReverbTankDriveKnobEffective() == 0.5f);
     REQUIRE_TRUE(dsp::Reverb::TankDriveFromKnob(rig.Application().TestLastReverbTankDriveKnobEffective()) == 1.0f);
     REQUIRE_TRUE(rig.Application().TestLastDelayFreezeKnobEffective() == 0.0f);
-    // T2.5: Grit's effective value reads 0.0f (its own exact bit-identical
+    // Grit's effective value reads 0.0f (its own exact bit-identical
     // bypass by construction, dsp/Reverb.hpp:526-527), not the commanded
     // MAX -- same override, joining the four above.
     REQUIRE_TRUE(rig.Application().TestLastReverbGritKnobEffective() == 0.0f);
@@ -1606,7 +1608,7 @@ TEST_CASE(stopped_transport_overrides_drive_and_freeze_to_unity_zero_and_resumes
     REQUIRE_TRUE(dsp::Reverb::TankDriveFromKnob(rig.Application().TestLastReverbTankDriveKnobEffective()) ==
                  kExpectedMaxDrive);
     REQUIRE_TRUE(rig.Application().TestLastDelayFreezeKnobEffective() == 1.0f);
-    // T2.5: Grit's commanded MAX (1.0f) reaches the DSP unit bit-exactly on
+    // Grit's commanded MAX (1.0f) reaches the DSP unit bit-exactly on
     // resume too -- the override was never a write to the parameter model,
     // so `stoppedKnob` just returns `knob(bank, slot)` unchanged the instant
     // `wasTransportRunning_` is true again, same as the other four.
@@ -1614,20 +1616,24 @@ TEST_CASE(stopped_transport_overrides_drive_and_freeze_to_unity_zero_and_resumes
 }
 
 // =========================================================================
-// T2.3(b) pins T2.1's forced-release addition directly, isolated from
-// T1.1's ramp bound -- Curve (Envelope
+// This test pins the forced-release-on-Stop behavior directly, isolated
+// from the ramp-progress-floor behavior -- Curve (Envelope
 // slot 12) stays at its default 0.0f (the untouched linear ComputeRampStep
 // path, no ramp-progress-floor arithmetic even runs), so a pass here can
-// only be T2.1's doing. Attack VCO1 (slot 0) is pinned near its own
+// only be the forced-release behavior's doing. Attack VCO1 (slot 0) is
+// pinned near its own
 // ceiling (kMaxAttackSeconds, 0.25f) and the run is stopped well
 // inside that 0.25s window, so the voice is still genuinely mid-Attack (not
 // yet Hold) at the moment Stop lands. Grace (slot 13) is pinned to its own
-// ceiling (kMaxGraceSeconds, 1.0f): WITHOUT T2.1, a pending release
+// ceiling (kMaxGraceSeconds, 1.0f): WITHOUT the forced-release behavior, a
+// pending release
 // deliberately defers through Attack/Decay to Hold and only THEN starts
 // this 1.0s countdown (VoiceEnvelope.hpp's own Grace comment) -- stage
 // completion (>=0.4s remaining Attack + Decay) plus this 1.0s grace puts
-// pre-T2.1 AllIdle comfortably past 2s, matching this task's own "NOT
-// stage-completion + grace (~2s+)" framing. T2.1 forces Release
+// AllIdle, without the forced-release behavior, comfortably past 2s,
+// matching this test's own "NOT
+// stage-completion + grace (~2s+)" framing. The forced-release behavior
+// forces Release
 // immediately at the edge instead, bounded only by the existing ~50ms
 // kStopFadeReleaseKnob fade -- AllIdle within the fade time (~0.1s).
 // =========================================================================
@@ -1641,8 +1647,8 @@ TEST_CASE(stop_forces_release_from_mid_attack_bypassing_grace_and_stage_completi
     model.PageParameter(FroggersBankId::Envelope, 0).SceneCenter(0) = 1.0f;   // Attack VCO1: ceiling (~0.25s).
     model.PageParameter(FroggersBankId::Envelope, 13).SceneCenter(0) = 1.0f;  // Grace: ceiling (~1.0s).
     // Curve (slot 12) left at its 0.0f default -- explicit per this test's
-    // own "isolated from T1.1" framing, not merely relying on the registered
-    // default silently.
+    // own "isolated from the ramp-progress-floor behavior" framing, not
+    // merely relying on the registered default silently.
     model.PageParameter(FroggersBankId::Envelope, 12).SceneCenter(0) = 0.0f;
     ApplyPatchNow(rig);
 
@@ -1663,12 +1669,13 @@ TEST_CASE(stop_forces_release_from_mid_attack_bypassing_grace_and_stage_completi
     REQUIRE_TRUE(!rig.SawNaN());
     // Precondition this test needs: still genuinely non-idle (mid-Attack),
     // not already settled -- otherwise the AllIdle() check below would pass
-    // vacuously regardless of T2.1.
+    // vacuously regardless of the forced-release behavior.
     REQUIRE_TRUE(!rig.Application().TestAudioAdsr().AllIdle());
 
     rig.StopAt(timestamp);
 
-    // T2.1's bound: AllIdle within the fade time, generously budgeted to
+    // The forced-release behavior's bound: AllIdle within the fade time,
+    // generously budgeted to
     // 0.2s (comfortably above the ~50ms+wet-tail-irrelevant fade, since
     // AllIdle() only measures the ADSR stage, not delay/reverb) -- NOT the
     // pre-fix ~2s+ (stage completion + grace).
@@ -1677,19 +1684,25 @@ TEST_CASE(stop_forces_release_from_mid_attack_bypassing_grace_and_stage_completi
 }
 
 // =========================================================================
-// T6: T2.4's claim above -- "latching the
-// Freeze button while stopped is a no-op on the audio" -- is SUPERSEDED and
+// This section overturns an earlier claim -- "latching the
+// Freeze button while stopped is a no-op on the audio" -- which is
 // exactly backwards: the sustained-drive drone the button exists to
 // reproduce only ever existed with the transport stopped, and
-// T2.1/T2.2/T2.4 together made it unreachable. The old test above
+// earlier changes (forcing Release immediately on Stop, overriding the
+// drive and freeze knobs to unity/zero while stopped, and the deleted
+// freeze-latch-is-a-no-op test itself) together made it unreachable. The
+// old test above
 // (deleted) proved the latch was a no-op by engaging it AFTER Stop, onto
 // an already-silenced instrument --
 // which is still true (nothing to hold once already torn down) but was
-// never the operator's scenario and does not exercise T6.1/T6.2 at all.
+// never the operator's scenario and does not exercise the
+// latch-holds-through-stop or latch-release-while-stopped requirements at
+// all.
 // spec.md's own scenario order is latch-THEN-Stop; the three tests below
-// (T6.4 a/b/c) follow that order instead.
+// follow that order instead.
 //
-// T7: T6 reached the drone only via Freeze+Stop, and left the latch armed
+// A further fix: the drone used to be reachable only via Freeze+Stop, and
+// the latch stayed armed
 // through Stop -- so a button labelled Stop could conditionally sustain
 // instead of silence. Freeze is now SELF-CONTAINED: engaging it stops the
 // transport itself (FroggersUiSurface.hpp's kFreeze branch pushes
@@ -1700,13 +1713,15 @@ TEST_CASE(stop_forces_release_from_mid_attack_bypassing_grace_and_stage_completi
 // unconditionally. Both handler branches are driven through the real
 // DispatchAction -> HandleAction path below (PressFreeze/PressStop), never
 // SetFreezeLatched() directly: a direct flag write bypasses the exact
-// handler logic T7.1/T7.2 add.
+// handler logic the Freeze-stops-the-transport and Stop-disarms-the-latch
+// fixes add.
 // =========================================================================
 
 // Drives the Freeze/Stop transport BUTTONS through the real UI action path
 // (DispatchAction -> FroggersUiSurface::HandleAction) rather than the app
-// flags directly -- see this section's own T7 comment above for why that
-// distinction matters for these particular two buttons.
+// flags directly -- see the comment above about the Freeze-stops-the-
+// transport and Stop-disarms-the-latch fixes for why that distinction
+// matters for these particular two buttons.
 void PressFreeze(Rig& rig) {
     rig.Application().PortableSurface().DispatchAction(
         synth::ui::Action::Named(synth_froggers::FroggersActions::kFreeze));
@@ -1717,27 +1732,31 @@ void PressStop(Rig& rig) {
         synth::ui::Action::Named(synth_froggers::FroggersActions::kStop));
 }
 
-// T7.7: Play, through the same real action path, for the one branch T7's
-// own tests left unpinned.
+// Drives Play through the same real action path, for the one handler
+// branch (Play disarming the freeze latch) the tests above don't yet pin.
 void PressPlay(Rig& rig) {
     rig.Application().PortableSurface().DispatchAction(
         synth::ui::Action::Named(synth_froggers::FroggersActions::kPlay));
 }
 
-// Shared setup for T6.4(a)/(b)/(c): the SAME self-sustaining-ring recipe as
+// Shared setup for the freeze-holds-the-ring, latch-release, and
+// encoder-edit-while-frozen tests below: the SAME self-sustaining-ring
+// recipe as
 // stopping_transport_silences_self_sustaining_delay_and_reverb above
 // (feedback/hold pushed to their near-unity extremes, so there is real
 // recirculating energy for the latch to hold), but with the Freeze BUTTON
 // pressed WHILE RUNNING -- spec.md's "The Freeze button alone reaches the
-// sustained drone" scenario (T7). Leaves the rig stopped-and-latched, with
+// sustained drone" scenario. Leaves the rig stopped-and-latched, with
 // the ring already confirmed audible immediately beforehand (the
 // ringingPeak check below), so every caller starts from a genuinely live
 // drone, not an assumed one.
-// Same value the deleted T2.4 test and stopping_transport_silences_self_
+// Same value the deleted freeze-latch-is-a-no-op test and
+// stopping_transport_silences_self_
 // sustaining_delay_and_reverb both used for "actually ringing" (~-40 dBFS)
 // -- named distinctly from those tests' own LOCAL kRingingFloorLinear so
 // this one file-scope constant can be shared by BuildLatchedRingHeldAcrossStop
-// and every T6.4 test below without colliding with those unrelated locals.
+// and every test below that uses it without colliding with those unrelated
+// locals.
 constexpr float kFrozenRingFloorLinear = 1.0e-2f;
 
 std::uint64_t BuildLatchedRingHeldAcrossStop(Rig& rig) {
@@ -1767,17 +1786,19 @@ std::uint64_t BuildLatchedRingHeldAcrossStop(Rig& rig) {
     const float ringingPeak = PeakAbs(rig.Output());
     REQUIRE_TRUE(ringingPeak > kFrozenRingFloorLinear);  // actually ringing before trusting anything below.
 
-    // T7.1: a single Freeze press now both engages the latch AND stops the
+    // With the Freeze-stops-the-transport fix, a single Freeze press now
+    // both engages the latch AND stops the
     // transport (FroggersUiSurface.hpp's kFreeze branch) -- no separate Stop
-    // press needed or wanted here anymore (T6's version of this helper
+    // press needed or wanted here anymore (an earlier version of this
+    // helper
     // pushed SetFreezeLatched(true) directly, then a separate rig.StopAt(...);
-    // both are wrong under T7).
+    // both are wrong now).
     PressFreeze(rig);
 
     return timestamp;
 }
 
-// T7.3(a): Freeze pressed while playing, with NO Stop press -- the
+// Freeze pressed while playing, with NO Stop press -- the
 // transport reads
 // stopped (TransportRunning() false) AND output stays above an audible
 // floor PAST the bound an unlatched Stop must meet (stopping_transport_
@@ -1785,7 +1806,8 @@ std::uint64_t BuildLatchedRingHeldAcrossStop(Rig& rig) {
 // inverse of that test's own silence assertion. Checked twice (settle mark,
 // then a further stretch) to prove the drone HOLDS rather than merely
 // decaying slower. Was named ..._before_stop_...; BuildLatchedRingHeldAcrossStop
-// no longer presses Stop at all (T7.1), so the old name is now false --
+// no longer presses Stop at all (the Freeze-stops-the-transport fix), so
+// the old name is now false --
 // renamed rather than left describing a step this test no longer takes.
 TEST_CASE(freeze_alone_holds_the_ring_above_an_audible_floor_and_stops_the_transport) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("freeze_alone_holds_ring_stops_transport"));
@@ -1796,9 +1818,10 @@ TEST_CASE(freeze_alone_holds_the_ring_above_an_audible_floor_and_stops_the_trans
     (void)kSilenceFloorLinear;  // Not the assertion here -- this test asserts the INVERSE.
 
     rig.RunBlocks(settleLeadBlocks);
-    // T7.1: the Freeze press itself (inside BuildLatchedRingHeldAcrossStop,
+    // The Freeze-stops-the-transport fix: the Freeze press itself (inside
+    // BuildLatchedRingHeldAcrossStop,
     // no separate Stop press) must have stopped the transport -- this is
-    // the "transport reads stopped" half of T7.3(a)'s two-part claim.
+    // the "transport reads stopped" half of this test's two-part claim.
     REQUIRE_TRUE(!rig.Application().TransportRunning());
     rig.ClearOutput();
     rig.RunBlocks(checkWindowBlocks);
@@ -1820,13 +1843,14 @@ TEST_CASE(freeze_alone_holds_the_ring_above_an_audible_floor_and_stops_the_trans
     REQUIRE_TRUE(!rig.Application().TransportRunning());  // still stopped -- nothing restarted it.
 }
 
-// T6.4(b) is still a live scenario under T7: Freeze pressed again tears
+// The latch-release-while-stopped scenario is still live under the
+// current handling: Freeze pressed again tears
 // down and silences, with the transport staying stopped. A second Freeze
 // press, releasing the latch while stopped, is the escape hatch out of the
 // drone -- it must silence within the SAME bound an unlatched Stop
 // guarantees. Now driven
 // through PressFreeze() (DispatchAction -> HandleAction) rather than a
-// direct SetFreezeLatched(false) call, per this task's rule that these
+// direct SetFreezeLatched(false) call, per the rule that these
 // tests exercise the real handler, not the flag.
 TEST_CASE(freeze_latch_release_while_stopped_silences_within_the_bound) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("freeze_latch_release_while_stopped_silences"));
@@ -1846,7 +1870,7 @@ TEST_CASE(freeze_latch_release_while_stopped_silences_within_the_bound) {
     REQUIRE_TRUE(PeakAbs(rig.Output()) > kFrozenRingFloorLinear);
 
     // Release the latch with a second Freeze press -- still stopped, no
-    // Play in between. T7.1: RELEASE does not start the transport.
+    // Play in between. Releasing the latch does not start the transport.
     PressFreeze(rig);
 
     rig.RunBlocks(settleLeadBlocks);
@@ -1856,15 +1880,18 @@ TEST_CASE(freeze_latch_release_while_stopped_silences_within_the_bound) {
     const auto& silencedOutput = rig.Output();
     RequireFiniteStereo(silencedOutput);
     REQUIRE_TRUE(PeakAbs(silencedOutput) < kSilenceFloorLinear);
-    REQUIRE_TRUE(!rig.Application().TransportRunning());  // T7.1: release never starts the transport.
+    REQUIRE_TRUE(!rig.Application().TransportRunning());  // release never starts the transport.
 }
 
-// T7.3(b): the NEW behaviour T6 got backwards -- Stop, pressed while
+// This pins the behaviour the earlier handling got backwards -- Stop,
+// pressed while
 // Freeze is engaged and the drone is sustaining, must disarm the latch AND
 // silence within the bound, exactly as any other Stop (spec.md's "Stop
-// always means stop" scenario). Under T6 this used to SUSTAIN instead;
-// this is the direct regression test for that bug, distinct from T6.4(b)
-// above (which exits the drone via a second Freeze press, not Stop).
+// always means stop" scenario). The earlier handling used to SUSTAIN
+// instead;
+// this is the direct regression test for that bug, distinct from the
+// latch-release-while-stopped test above (which exits the drone via a
+// second Freeze press, not Stop).
 TEST_CASE(stop_disarms_the_latch_and_silences_the_held_drone_within_the_bound) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("stop_disarms_latch_silences_drone"));
     BuildLatchedRingHeldAcrossStop(rig);
@@ -1890,13 +1917,14 @@ TEST_CASE(stop_disarms_the_latch_and_silences_the_held_drone_within_the_bound) {
     const auto& silencedOutput = rig.Output();
     RequireFiniteStereo(silencedOutput);
     REQUIRE_TRUE(PeakAbs(silencedOutput) < kSilenceFloorLinear);
-    REQUIRE_TRUE(!rig.Application().FreezeLatched());  // T7.2: Stop disarms the latch.
+    REQUIRE_TRUE(!rig.Application().FreezeLatched());  // Stop disarms the latch.
     REQUIRE_TRUE(!rig.Application().TransportRunning());
 }
 
-// T7.3(c): no sequence of Freeze/Stop presses may leave the
-// instrument sounding after a Stop -- exercises the three sequences the
-// task names at minimum, each on a fresh rig with the same self-sustaining
+// No sequence of Freeze/Stop presses may leave the
+// instrument sounding after a Stop -- exercises the three sequences
+// spec.md names at minimum, each on a fresh rig with the same
+// self-sustaining
 // recipe BuildLatchedRingHeldAcrossStop's ring uses (inlined here rather
 // than reusing that helper, since two of the three sequences below need a
 // DIFFERENT press order than the helper's own "Freeze once" shape).
@@ -1910,7 +1938,7 @@ void RequireSilentAfter(Rig& rig, const char* label) {
     const auto& output = rig.Output();
     RequireFiniteStereo(output);
     const float peak = PeakAbs(output);
-    std::cout << "T7.3(c) " << label << ": peak after final Stop=" << peak << "\n";
+    std::cout << "Freeze/Stop sequence " << label << ": peak after final Stop=" << peak << "\n";
     REQUIRE_TRUE(peak < kSilenceFloorLinear);
     REQUIRE_TRUE(!rig.Application().FreezeLatched());
     REQUIRE_TRUE(!rig.Application().TransportRunning());
@@ -1973,10 +2001,11 @@ TEST_CASE(no_freeze_stop_press_sequence_leaves_the_instrument_sounding_after_sto
     }
 }
 
-// T7.3(d): releasing Freeze must NOT restart the transport --
+// Releasing Freeze must NOT restart the transport --
 // the operator resumes with Play, not by releasing the latch.
-// T7.7 (operator 2026-08-17, found in the built app: "why does clicking play
-// not de-select freeze"). Play disarms the latch for the same reason Stop
+// (Operator-reported 2026-08-17, found in the built app: "why does
+// clicking play
+// not de-select freeze".) Play disarms the latch for the same reason Stop
 // does -- and more urgently, because a latched Freeze holds the voice gate
 // open unconditionally (FroggersAppCore's `setGate(gateOpen ||
 // FreezeLatched())`). Starting the transport with the latch still engaged
@@ -1984,7 +2013,8 @@ TEST_CASE(no_freeze_stop_press_sequence_leaves_the_instrument_sounding_after_sto
 // still at its latch overdrive, so Play would not actually return the
 // instrument to playing.
 //
-// This was the single behaviour T7's own tests did not pin: the
+// This was the single behaviour the Freeze-stops-the-transport and
+// Stop-disarms-the-latch fix's own tests did not pin: the
 // Play branch was written last, by hand, and every other Freeze/Stop
 // sequence had a test while this one did not. Without this case, deleting
 // `SetFreezeLatched(false)` from the kPlay handler leaves the whole suite
@@ -2013,7 +2043,7 @@ TEST_CASE(releasing_freeze_does_not_restart_the_transport) {
     BuildLatchedRingHeldAcrossStop(rig);
 
     rig.RunBlocks(4);
-    REQUIRE_TRUE(!rig.Application().TransportRunning());  // Freeze engage stopped it (T7.1).
+    REQUIRE_TRUE(!rig.Application().TransportRunning());  // Freeze engage stopped it.
 
     PressFreeze(rig);  // release.
     rig.RunBlocks(4);
@@ -2021,7 +2051,7 @@ TEST_CASE(releasing_freeze_does_not_restart_the_transport) {
     REQUIRE_TRUE(!rig.Application().TransportRunning());  // still stopped -- release did not restart it.
 }
 
-// T6.4(c): parameter edits stay live while frozen -- an encoder edit made
+// Parameter edits stay live while frozen -- an encoder edit made
 // while the drone is held must change the output measurably, with a
 // positive control proving the drone was live immediately before the edit
 // (a null result from an already-dead instrument would be void). Edits
@@ -2062,7 +2092,7 @@ TEST_CASE(encoder_edit_while_frozen_changes_the_output_measurably) {
     // write exercises the real path an operator's encoder turn uses.
     model.PageParameter(FroggersBankId::Delay, 6).SceneCenter(0) = 0.0f;  // Mix: fully wet -> fully dry.
 
-    // B7.5.0's periodic smoothed Compute (alpha 0.0994 every 16 samples,
+    // The periodic smoothed Compute (alpha 0.0994 every 16 samples,
     // this file's own ApplyPatchNow comment) converges geometrically;
     // patch_change_still_reaches_dsp_while_transport_stopped's own comment
     // works the math for 50 blocks x 256 samples -- comfortably converged
@@ -2090,17 +2120,17 @@ TEST_CASE(encoder_edit_while_frozen_changes_the_output_measurably) {
     // the measured noise floor and comfortably below the measured true
     // effect, so this cannot pass on drift alone.
     const float peakDiff = std::fabs(peakBeforeEdit - peakAfterEdit);
-    std::cout << "T6.4(c) encoder-edit-while-frozen: peakBeforeEdit=" << peakBeforeEdit
+    std::cout << "encoder-edit-while-frozen: peakBeforeEdit=" << peakBeforeEdit
               << " peakAfterEdit=" << peakAfterEdit << " diff=" << peakDiff << "\n";
     constexpr float kMeasurableChangeLinear = 0.05f;  // noise floor 0.0063, true effect 0.538 (both measured, comment above).
     REQUIRE_TRUE(peakDiff > kMeasurableChangeLinear);
 }
 
 // =========================================================================
-// S1a.2: operator-ordered gate on modulation_.Step() --
-// NOT the F3 fix (see FroggersAppCore.hpp's own comment at the call site for
-// why a static DC seed could never have been removed by freezing
-// modulation; that is S1.3). This proves the actual behaviour change: with
+// This pins the operator-ordered gate on modulation_.Step() --
+// NOT the fix for a static DC seed that could never have been removed by
+// freezing modulation (see FroggersAppCore.hpp's own comment at the call
+// site for why). This proves the actual behaviour change: with
 // the transport stopped, a genuinely free-running modulation source holds
 // its last value instead of continuing to update. Uses kModSlotNoise, one
 // of the 8 slots the gate actually stops (kModSlotRandomSh6, kModSlotVco1/
@@ -2150,7 +2180,7 @@ TEST_CASE(free_running_modulation_source_holds_while_stopped_with_positive_contr
         liveMin = std::min(liveMin, v);
         liveMax = std::max(liveMax, v);
     }
-    std::cout << "S1a.2 positive control -- transport RUNNING, kModSlotNoise, " << kLiveBlocks
+    std::cout << "Modulation gate positive control -- transport RUNNING, kModSlotNoise, " << kLiveBlocks
               << " block-boundary samples: min=" << liveMin << " max=" << liveMax
               << " range=" << (liveMax - liveMin) << "\n";
     // Same void-liveness role as FroggersStopFlushRepro.cpp's own
@@ -2171,14 +2201,16 @@ TEST_CASE(free_running_modulation_source_holds_while_stopped_with_positive_contr
         rig.RunBlocks(1);
         REQUIRE_TRUE(noiseValue() == heldValue);
     }
-    std::cout << "S1a.2 held value -- transport STOPPED, kModSlotNoise, constant at " << heldValue
+    std::cout << "Modulation gate held value -- transport STOPPED, kModSlotNoise, constant at " << heldValue
               << " across " << kHeldBlocks << " further block-boundary samples\n";
 }
 
-// S1a.2 regression check: `parameters_.ProcessSample()` stays UNGATED by
+// Regression check for the modulation gate above: `parameters_.ProcessSample()`
+// stays UNGATED by
 // design (FroggersAppCore.hpp's own comment on the Step() call site) --
 // gating it would freeze knob edits and Randomize All until Play, a worse
-// bug than the one S1a.2 fixes. This proves that stays true: a raw
+// bug than the one the modulation gate fixes. This proves that stays true:
+// a raw
 // SceneCenter write (the "commanded value" convention FroggersModulation
 // Tests.cpp/FroggersParameterModelTests.cpp also use) still reaches
 // CachedKnobValue() -- the value RouteAudioSample's knob()/vcoDrive actually
@@ -2194,7 +2226,7 @@ TEST_CASE(patch_change_still_reaches_dsp_while_transport_stopped) {
     constexpr float kTarget = 0.8f;
     driveGain.SceneCenter(0) = kTarget;
 
-    // B7.5.0's periodic smoothed Compute (Parameter::ProcessSamplePhase1,
+    // The periodic smoothed Compute (Parameter::ProcessSamplePhase1,
     // alpha 0.0994 every 16 samples -- this file's own ApplyPatchNow comment
     // above) converges geometrically: residual after k updates is
     // (1-0.0994)^k. 50 blocks x 256 samples / 16 samples-per-update = 800
@@ -2207,7 +2239,7 @@ TEST_CASE(patch_change_still_reaches_dsp_while_transport_stopped) {
     rig.RunBlocks(kBlocks);
 
     const float after = driveGain.CachedKnobValue(0);
-    std::cout << "S1a.2 patch-while-stopped -- Drive gain CachedKnobValue(0): before=" << before
+    std::cout << "Patch-while-stopped regression check -- Drive gain CachedKnobValue(0): before=" << before
               << " target=" << kTarget << " after=" << after << " (transport never started)\n";
     REQUIRE_TRUE(!rig.SawNaN());
     // The write started meaningfully far from target (catches a vacuous

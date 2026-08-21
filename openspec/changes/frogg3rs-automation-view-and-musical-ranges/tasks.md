@@ -264,15 +264,15 @@ excusing it.
 
 ## 6. Comment sweep, remaining scope (design E)
 
-- [ ] 6.1 `app/vst/` under the same method: pre-computed hit list, classify
+- [x] 6.1 DONE — plugin sources and the three plugin test files swept; behavior-neutrality PROVEN, not asserted: comment-stripped before/after is byte-identical in every file. `app/vst/` under the same method: pre-computed hit list, classify
       before changing, found-versus-changed per file, behavior-neutrality
       proven by comment-stripped diff. Known targets: a `(group 5 brief,
       binding)` reference, a stale comment describing Reset's old
       hardcoded-zero mechanism, four omni-rule citations, and general
       "Group 5"/"Group 8" saturation.
-- [ ] 6.2 Any `External/Sheaf` file this change touches, to Sheaf's own
+- [x] 6.2 DONE — the Sheaf side carried one leak, a task number from THIS repo's plan sitting in the upstream design notes where it means nothing. Removed and pushed to the pull request. Any `External/Sheaf` file this change touches, to Sheaf's own
       standards.
-- [ ] 6.3 Strip `FroggersAudioRoutingTests.cpp`'s bare letter-number labels
+- [x] 6.3 DONE — 70 shorthand labels cleared from the routing tests, including 5 that were being PRINTED at runtime. My own earlier count of 59 was low; the sweep's pattern was better. T6.1/T6.2 were replaced by inference from the tests below them and are flagged as moderate confidence. Strip `FroggersAudioRoutingTests.cpp`'s bare letter-number labels
       (`D16`, `B7.5.0`, `M1` and the rest — 81 occurrences), in comments and
       in runtime diagnostic strings alike. These are planning-doc labels, and
       the standing rule is that comments explain behavior rather than the
