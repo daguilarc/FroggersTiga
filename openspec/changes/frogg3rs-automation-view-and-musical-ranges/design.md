@@ -124,10 +124,43 @@ affirmative act. The standalone's selector happens to offer many devices; the
 plugin's offers two states, none and the input bus, because the DAW owns the
 devices. Same rule, different arity.
 
-So: connected = the operator opted in AND the bus is actually enabled with at
-least one channel. Consent and capability, both required — opting in cannot
-invent a signal, and an enabled bus cannot imply consent. Both hosts feed the
-one existing `InputRouted` seam; nothing new is introduced for the plugin.
+**The bus constrains what the control may offer.** It is one input selector,
+not a toggle plus a selector, and its option set is DERIVED from the bus
+rather than declared by us:
+
+- bus disabled, or zero channels — the only option is None, and the control
+  reads as unavailable rather than pretending to offer something
+- one channel — None, or that channel
+- two or more — None, each channel, and their sum
+
+The operator can never select a channel the host is not providing, because the
+option does not exist to select. That is the whole point: the bus is the
+configuration truth, and the control is a view onto it.
+
+Consent falls out of the same control instead of needing its own: the default
+is None, and anything other than None is the operator's affirmative act.
+Device selection and a toggle are the same contract when the default is no
+device — this is that rule at channel level, because channels are what a
+plugin can see. A host-enabled bus nobody selected from stays inert.
+
+**The plugin never disables the bus — the host owns its own topology.** The
+opt-in governs CONSUMPTION, not enablement: if the DAW enables the input bus,
+that is its business, and we simply do not read it until a channel is
+selected. The one lever on our side is declaring the bus with JUCE's
+`withInput(name, layout, isActivatedByDefault)` third argument set false, so a
+host has to go out of its way to turn it on. That lowers the odds of an
+unasked enablement; it is a default the host may override, so it is a hint and
+never consent.
+
+**A selection can be invalidated by the host at any time**, and this is where
+the constraint has to be enforced rather than assumed. The host may change the
+layout mid-session — stereo to mono, or the bus disabled outright — leaving a
+selection pointing at a channel that no longer exists. Re-validate against the
+current bus on every layout change and fall back to None; never read a channel
+because a stored value names it. The same applies to a selection restored from
+a project file, for the same reason the restored bank index is bounds-checked:
+it arrives from a document, not from the running host. A project saved with
+the second channel selected, reopened on a mono bus, lands on None.
 
 The opt-in is operator-set state that a reopened project should remember, so
 it persists in `sessionExtras` beside the Freeze latch and the visible bank,

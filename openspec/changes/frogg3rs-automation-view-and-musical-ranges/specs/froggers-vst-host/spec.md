@@ -70,6 +70,19 @@ instrument exclusively through host-parameter mappings.
 - **THEN** External Audio and External EF remain disconnected and take
   no part in randomization
 
+#### Scenario: The host constrains what can be selected
+- **WHEN** the host provides the input bus with a given channel layout
+- **THEN** the input selection offers only None and the channels that
+  layout actually provides
+- **WHEN** the bus is disabled or provides no channels
+- **THEN** the only available selection is None
+
+#### Scenario: A selection the host takes away
+- **WHEN** a channel is selected and the host then changes the bus
+  layout so that channel no longer exists
+- **THEN** the selection falls back to None and both sources go inert,
+  rather than reading a channel that is gone
+
 #### Scenario: The opt-in survives the project
 - **WHEN** a project saved with the input opted in is reopened
 - **THEN** the opt-in is restored
