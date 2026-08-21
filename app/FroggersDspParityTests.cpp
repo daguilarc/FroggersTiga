@@ -245,23 +245,24 @@ TEST_CASE(vco_adsr_state_attacks_holds_and_releases) {
 // -----------------------------------------------------------------------
 // kMaxAttackSeconds was lowered from 2.5s to 1.0s (VoiceEnvelope.hpp --
 // private, so this drives the same observable surface the test above
-// does), then lowered again to 0.5f: even a 1.0s max attack was judged too
-// long musically -- half a second at most. The assertion itself is already
-// keyed to the constant via `dsp::VcoAdsrState::MapSustain`, so only this
-// prose needed updating, not the code. mapAttack is now dsp::ExpMapCompute
-// (`min * (max/min)^knob`), and at knob==1.0 that is `min * (max/min)` --
-// mathematically max, and close enough to it in floating point that the
-// ramp still finishes with room to spare inside this test's 2.0s budget;
-// this test does not depend on that endpoint being bit-exact -- the floor/
-// midpoint/ceiling pinning tests further below are where an endpoint-
-// exactness claim belongs, not this one. At 2.0s
-// of held-gate samples: under the ORIGINAL 2.5s ceiling the level would
-// still be mid-ramp (2.0/2.5 == 80% of the way there, NOT at sustain -- a
-// 2.5s ceiling would fail this assertion); under the CURRENT 0.5f ceiling
-// the ramp finishes at ~0.5s and Hold has been clamping the level at
-// sustain for a further ~1.5s since.
+// does), then to 0.5f, then to 0.25f: attack is a modulation target, so a
+// randomized depth revisits the ceiling regularly, and even the 0.5f
+// ceiling's top-decile draw still exceeded 269 ms. The assertion itself is
+// already keyed to the constant via `dsp::VcoAdsrState::MapSustain`, so only
+// this prose needed updating, not the code. mapAttack is now
+// dsp::ExpMapCompute (`min * (max/min)^knob`), and at knob==1.0 that is
+// `min * (max/min)` -- mathematically max, and close enough to it in
+// floating point that the ramp still finishes with room to spare inside
+// this test's 2.0s budget; this test does not depend on that endpoint being
+// bit-exact -- the floor/midpoint/ceiling pinning tests further below are
+// where an endpoint-exactness claim belongs, not this one. At 2.0s of
+// held-gate samples: under the ORIGINAL 2.5s ceiling the level would still
+// be mid-ramp (2.0/2.5 == 80% of the way there, NOT at sustain -- a 2.5s
+// ceiling would fail this assertion); under the CURRENT 0.25f ceiling the
+// ramp finishes at ~0.25s and Hold has been clamping the level at sustain
+// for a further ~1.75s since.
 // -----------------------------------------------------------------------
-TEST_CASE(max_attack_knob_reaches_sustain_within_the_current_half_second_ceiling) {
+TEST_CASE(max_attack_knob_reaches_sustain_within_the_current_quarter_second_ceiling) {
     constexpr float kSampleRate = 48000.0f;
     constexpr float kSustain = 0.8f;
     dsp::VcoAdsrState adsr;
@@ -558,10 +559,10 @@ void RequireNearRelative(float measured, double expected, double relTol) {
 }
 
 TEST_CASE(attack_decay_release_time_maps_pin_literal_floor_midpoint_and_ceiling_seconds) {
-    // Attack: floor 1ms, geometric midpoint sqrt(0.001*0.5), ceiling 0.5s.
+    // Attack: floor 1ms, geometric midpoint sqrt(0.001*0.25), ceiling 0.25s.
     RequireNearRelative(MeasureMappedAttackSeconds(0.0f), 0.001, kMapMeasureRelTol);
-    RequireNearRelative(MeasureMappedAttackSeconds(0.5f), 0.0223606798, kMapMeasureRelTol);
-    RequireNearRelative(MeasureMappedAttackSeconds(1.0f), 0.5, kMapMeasureRelTol);
+    RequireNearRelative(MeasureMappedAttackSeconds(0.5f), 0.0158113883, kMapMeasureRelTol);
+    RequireNearRelative(MeasureMappedAttackSeconds(1.0f), 0.25, kMapMeasureRelTol);
 
     // Decay: floor 5ms, geometric midpoint sqrt(0.005*1.0), ceiling 1.0s.
     RequireNearRelative(MeasureMappedDecaySeconds(0.0f), 0.005, kMapMeasureRelTol);
@@ -977,12 +978,12 @@ TEST_CASE(grace_countdown_with_float_inexact_values_expires_within_grace_plus_a_
 // active grace still completes Attack and Decay before Release begins --
 // the approved main-spec Grace behaviour ("a short gate cannot clip a note
 // before its envelope completes Attack and Decay"), unaffected by T1.1's
-// floor. Attack knob at max (kMaxAttackSeconds, 0.5f ceiling) so a naive
+// floor. Attack knob at max (kMaxAttackSeconds, 0.25f ceiling) so a naive
 // "gate released mid-attack forces Release" bug would be obvious: the gate
 // here closes after 1ms, far short of any mapped attack time.
 TEST_CASE(short_gate_with_long_attack_and_active_grace_completes_attack_and_decay_before_release) {
     constexpr float kSampleRate = 48000.0f;
-    constexpr float attackKnob = 1.0f;   // mapped to (very close to) kMaxAttackSeconds == 0.5f.
+    constexpr float attackKnob = 1.0f;   // mapped to (very close to) kMaxAttackSeconds == 0.25f.
     constexpr float decayKnob = 0.5f;
     constexpr float sustainKnob = 0.6f;
     constexpr float releaseKnob = 0.3f;
@@ -1376,6 +1377,37 @@ TEST_CASE(resonant_bump_max_knob_settles_at_the_apps_configured_ceiling) {
     REQUIRE_TRUE(measuredPeak < 5.0f);
 }
 
+// -----------------------------------------------------------------------
+// Peak gain's floor is NOT a "reaches zero" no-effect knob -- it is a gain,
+// so no-effect is unity (1.0x, no boost), reached at knob==0.0f. Asserted
+// directly against the app's own ExpMapCompute(1.0f, kMaxResonantBumpHeight,
+// ·) call (FroggersAppCore.hpp) and, past the map, against ResonantBump's
+// actual measured steady-state gain -- the same measurement idiom the
+// ceiling test above uses, at the opposite knob extreme.
+// -----------------------------------------------------------------------
+TEST_CASE(resonant_bump_min_knob_settles_at_unity_no_boost) {
+    const float minHeight = dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, 0.0f);
+    REQUIRE_NEAR(minHeight, 1.0f, 1e-6);
+
+    dsp::ResonantBump bump;
+    const float freqNormalized = 0.05f;
+    bump.SetFreq(freqNormalized);
+    bump.SetHeight(minHeight);
+    bump.SetWidth(1.0f);
+
+    constexpr int kWarmupSamples = 4000;
+    constexpr int kMeasureSamples = 200;
+    float measuredPeak = 0.0f;
+    for (int i = 0; i < kWarmupSamples + kMeasureSamples; ++i) {
+        const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(i);
+        const float output = bump.Process(std::sin(phase));  // full-scale (unit-amplitude) input.
+        if (i >= kWarmupSamples) {
+            measuredPeak = std::max(measuredPeak, std::fabs(output));
+        }
+    }
+    REQUIRE_NEAR(measuredPeak, 1.0f, 0.05);
+}
+
 // DELIBERATE PARITY DIVERGENCE: the frozen firmware's Comb::GetFeedback
 // (src/core/Comb.hpp:66-76) returns an asymmetric +-1.1 ceiling. |fb| > 1
 // does NOT diverge -- PadeSaturator sits INSIDE the feedback path
@@ -1598,6 +1630,50 @@ TEST_CASE(filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend) {
         const float expected = mixed * (1.0f - scoopMix) + scooped * scoopMix;
 
         REQUIRE_NEAR(actual, expected, 1e-5);
+    }
+}
+
+// -----------------------------------------------------------------------
+// Scoop depth (Filter slot 13, scoopMix) is a true-zero no-effect knob --
+// unlike peak gain/fold above, 0.0f here really does mean "no scoop at
+// all", per FilterFxChain::Process's own `mixed * (1 - scoopMix) + scooped
+// * scoopMix` blend. Proven by varying the scoop notch's own freq/width/
+// height drastically while scoopMix stays 0.0f: if scoopMix genuinely has
+// no effect, the drastically different scoop notch settings must not
+// change the output at all.
+// -----------------------------------------------------------------------
+TEST_CASE(filter_fx_chain_zero_scoop_mix_is_unaffected_by_scoop_notch_settings) {
+    dsp::FilterFxChain chainA;
+    chainA.comb.delaySamples = 1;
+    chainA.comb.SetFeedback(0.3f);
+    chainA.comb.SetCutoffAlpha(0.5f);
+    chainA.pureDelay.delaySamples = 0.0f;
+    chainA.peak.SetFreq(0.02f);
+    chainA.peak.SetHeight(1.5f);
+    chainA.peak.SetWidth(1.0f);
+    chainA.scoopNotch.SetFreq(0.02f);
+    chainA.scoopNotch.SetHeight(0.5f);
+    chainA.scoopNotch.SetWidth(1.0f);
+
+    dsp::FilterFxChain chainB;
+    chainB.comb.delaySamples = 1;
+    chainB.comb.SetFeedback(0.3f);
+    chainB.comb.SetCutoffAlpha(0.5f);
+    chainB.pureDelay.delaySamples = 0.0f;
+    chainB.peak.SetFreq(0.02f);
+    chainB.peak.SetHeight(1.5f);
+    chainB.peak.SetWidth(1.0f);
+    // Drastically different scoop notch settings from chainA -- must not
+    // matter, since scoopMix (below) stays 0.0f on both.
+    chainB.scoopNotch.SetFreq(0.3f);
+    chainB.scoopNotch.SetHeight(0.05f);
+    chainB.scoopNotch.SetWidth(5.0f);
+
+    for (int i = 0; i < 8; ++i) {
+        const float input = 0.1f * static_cast<float>(i + 1);
+        const float outA = chainA.Process(input, /*topology=*/0.0f, /*combPeakBlend=*/0.4f, /*scoopMix=*/0.0f);
+        const float outB = chainB.Process(input, /*topology=*/0.0f, /*combPeakBlend=*/0.4f, /*scoopMix=*/0.0f);
+        REQUIRE_NEAR(outA, outB, 1e-6);
     }
 }
 
@@ -3725,6 +3801,15 @@ TEST_CASE(frog_block_set_fold_divisor_stays_strictly_positive_across_full_knob_r
     }
     block.SetFold(0.5f);
     REQUIRE_NEAR(block.foldDivisor, 4.0f, 1e-5);  // default knob reproduces today's literal exactly.
+}
+
+// Fold's floor is NOT a "reaches zero" no-effect knob -- out/foldDivisor
+// means no-effect is unity (foldDivisor == 1.0, no folding), reached at
+// knob==0.0f: ExpMapCompute(1.0f, 16.0f, 0.0f) == 1.0f by construction.
+TEST_CASE(frog_block_set_fold_min_knob_reaches_unity_no_folding) {
+    dsp::FrogBlock block;
+    block.SetFold(0.0f);
+    REQUIRE_NEAR(block.foldDivisor, 1.0f, 1e-6);
 }
 
 // D1/D3/D4/D5's combined claim: at the exact default knob values recorded in

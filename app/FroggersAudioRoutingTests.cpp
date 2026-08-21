@@ -1618,8 +1618,8 @@ TEST_CASE(stopped_transport_overrides_drive_and_freeze_to_unity_zero_and_resumes
 // slot 12) stays at its default 0.0f (the untouched linear ComputeRampStep
 // path, no ramp-progress-floor arithmetic even runs), so a pass here can
 // only be T2.1's doing. Attack VCO1 (slot 0) is pinned near its own
-// ceiling (kMaxAttackSeconds, 0.5f post-W5) and the run is stopped well
-// inside that 0.5s window, so the voice is still genuinely mid-Attack (not
+// ceiling (kMaxAttackSeconds, 0.25f) and the run is stopped well
+// inside that 0.25s window, so the voice is still genuinely mid-Attack (not
 // yet Hold) at the moment Stop lands. Grace (slot 13) is pinned to its own
 // ceiling (kMaxGraceSeconds, 1.0f): WITHOUT T2.1, a pending release
 // deliberately defers through Attack/Decay to Hold and only THEN starts
@@ -1637,7 +1637,7 @@ TEST_CASE(stop_forces_release_from_mid_attack_bypassing_grace_and_stage_completi
 
     model.PageParameter(FroggersBankId::Audio, 0).SceneCenter(0) = 0.5f;  // VCO1 pitch.
     model.PageParameter(FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;  // Drive gain.
-    model.PageParameter(FroggersBankId::Envelope, 0).SceneCenter(0) = 1.0f;   // Attack VCO1: ceiling (~0.5s).
+    model.PageParameter(FroggersBankId::Envelope, 0).SceneCenter(0) = 1.0f;   // Attack VCO1: ceiling (~0.25s).
     model.PageParameter(FroggersBankId::Envelope, 13).SceneCenter(0) = 1.0f;  // Grace: ceiling (~1.0s).
     // Curve (slot 12) left at its 0.0f default -- explicit per this test's
     // own "isolated from T1.1" framing, not merely relying on the registered
@@ -1653,7 +1653,7 @@ TEST_CASE(stop_forces_release_from_mid_attack_bypassing_grace_and_stage_completi
         return static_cast<std::size_t>(std::ceil((seconds * kSampleRateHz) / static_cast<double>(blockSize)));
     };
 
-    // 0.1s: well inside VCO1's 0.5s Attack ceiling, and well inside the
+    // 0.1s: well inside VCO1's 0.25s Attack ceiling, and well inside the
     // 120 BPM default tempo's first (open) gate half (0.25s -- MasterClock::
     // kDefaultTempoBpm), so the gate never closes/reopens under this voice
     // before Stop lands.

@@ -1643,8 +1643,15 @@ private:
         // FroggersEngine.hpp:561-562: the scoop notch shares the peak bump's
         // freq and width verbatim -- hoisted into locals because BOTH
         // ResonantBumps consume them.
+        // Floor raised from 20 Hz to 100 Hz: this is a peak, not a cutoff
+        // (traced against ResonantBump above), so a low draw idled below
+        // audibility rather than merely softening it -- inert, not tame. The
+        // knob is a modulation TARGET (see this function's own resonant-peak
+        // ceiling comment below), so a randomized depth visits this floor
+        // regularly, not only when an operator dials there. Moves the
+        // bottom decile from about 40 Hz to about 170 Hz.
         const float bumpFreq =
-            dsp::ExpMapCompute(20.0f / sampleRate_, 20000.0f / sampleRate_, knob(FroggersBankId::Filter, 1));
+            dsp::ExpMapCompute(100.0f / sampleRate_, 20000.0f / sampleRate_, knob(FroggersBankId::Filter, 1));
         const float bumpWidth = dsp::ExpMapCompute(0.1f, 10.0f, knob(FroggersBankId::Filter, 3));
         filterChain_.peak.SetFreq(bumpFreq);
         // Ceiling lowered
@@ -1701,19 +1708,35 @@ private:
         // own independent knobs, mapped with the SAME shape (same
         // ExpMapCompute min/max) so the two controls behave consistently
         // with one another.
+        // Floor raised from 20 Hz to 100 Hz, same reasoning as bumpFreq's own
+        // comment above (an independent knob, same inert-below-audibility
+        // failure). Moves the bottom decile from about 40 Hz to about
+        // 170 Hz.
         const float scoopFreq =
-            dsp::ExpMapCompute(20.0f / sampleRate_, 20000.0f / sampleRate_, knob(FroggersBankId::Filter, 10));
+            dsp::ExpMapCompute(100.0f / sampleRate_, 20000.0f / sampleRate_, knob(FroggersBankId::Filter, 10));
         const float scoopWidth = dsp::ExpMapCompute(0.1f, 10.0f, knob(FroggersBankId::Filter, 11));
         filterChain_.scoopNotch.SetFreq(scoopFreq);
         filterChain_.scoopNotch.SetWidth(scoopWidth);
         filterChain_.scoopNotch.SetHeight(
             std::max(0.05f, 1.0f - 0.95f * knob(FroggersBankId::Filter, 8)));
+        // Floor raised from 20 Hz to 100 Hz, same inert-below-audibility
+        // reasoning as bumpFreq/scoopFreq above. Ceiling here is 10 kHz, not
+        // 20 kHz, so this moves the bottom decile from about 37 Hz to about
+        // 159 Hz. NOTE this floor also raises the comb low-pass knob's own
+        // floor below (cmlp derives its floor as 4x this frequency) from
+        // 80 Hz to 400 Hz at minimum comb frequency -- a range change to a
+        // control nobody asked to change, accepted on the same reasoning (an
+        // 80 Hz low-pass on a comb is inaudible) but stated here so the
+        // coupling is not a surprise later.
         const float combFreq =
-            dsp::ExpMapCompute(20.0f / sampleRate_, 10000.0f / sampleRate_, knob(FroggersBankId::Filter, 4));
+            dsp::ExpMapCompute(100.0f / sampleRate_, 10000.0f / sampleRate_, knob(FroggersBankId::Filter, 4));
         filterChain_.comb.delaySamples = std::min<std::size_t>(
             dsp::Comb::kSize - 1,
             std::max<std::size_t>(1, static_cast<std::size_t>(dsp::Comb::GetDelaySamples(combFreq))));
         filterChain_.comb.SetFeedback(dsp::Comb::GetFeedback(knob(FroggersBankId::Filter, 5)));
+        // Comb low-pass floor derives from combFreq above (4x it), so it
+        // moved too when combFreq's own floor was raised -- see combFreq's
+        // comment just above.
         const float cmlp =
             dsp::ExpMapCompute(4.0f * combFreq, 20000.0f / sampleRate_, knob(FroggersBankId::Filter, 6));
         // FroggersEngine.hpp:430-432 (Alpha): 1 - exp(-2*pi*natFreq).

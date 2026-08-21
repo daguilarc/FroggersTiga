@@ -240,19 +240,19 @@ excusing it.
 
 ## 5. Control bounds (design D)
 
-- [ ] 5.1 Attack ceiling to 250 ms. Report the resulting top-decile draw.
-- [ ] 5.2 Raise the 20 Hz floors on Peak freq, Scoop freq and Comb delay to
+- [x] 5.1 DONE — ceiling 0.25s; top decile 269ms -> 144ms. The literals group 4 pinned were updated deliberately (midpoint 0.0224 -> 0.0158), which is why they were literals. Attack ceiling to 250 ms. Report the resulting top-decile draw.
+- [x] 5.2 DONE — all three confirmed from source before changing; peak and scoop bottom decile 40 -> 170 Hz, comb 37 -> 159 Hz against its 10 kHz ceiling. The derived comb low-pass floor moving 80 -> 400 Hz is noted in the code beside both mappings. Raise the 20 Hz floors on Peak freq, Scoop freq and Comb delay to
       about 100 Hz. Confirm from source which parameter each drives before
       changing it. Report the comb low-pass knob's resulting floor too: its
       range starts at `4 * combFreq`, so this change moves it from 80 Hz to
       400 Hz at minimum comb frequency (design D).
-- [ ] 5.3 Enumerate EVERY bounded control mapping in the live `app/` tree —
+- [x] 5.3 DONE — found 31, changed 3, kept 28, verdict and reason on every one. Ring-mod carrier shares the 20 Hz floor and was KEPT on its own traced reasoning rather than matched to the others: a low carrier is audible tremolo, a low resonant peak is nothing. VCO pitch kept as planned. Five shadow copies in the blow-out repro binary are flagged, not touched: updating them would invalidate the repro. Enumerate EVERY bounded control mapping in the live `app/` tree —
       by operand (`ExpMapCompute` and the envelope maps), not by the shape of
       the three already found — and classify each bound as changed or
       deliberately kept. Report found versus changed. VCO pitch shares the
       20 Hz floor and is a known KEEP (design D); the point is to prove the
       list is complete, not to widen it.
-- [ ] 5.4 Leave the meaningful no-effect positions alone: Peak gain, Fold,
+- [x] 5.4 DONE — peak gain and fold assert unity, the depths and Grace assert zero. Leave the meaningful no-effect positions alone: Peak gain, Fold,
       Scoop depth, phase-modulation depth, ring-mod depth, Grace. Assert in
       tests that each still reaches a true no-effect setting at its minimum —
       note that is 0.0 for the depths and Grace, but 1.0 (unity, no boost, no

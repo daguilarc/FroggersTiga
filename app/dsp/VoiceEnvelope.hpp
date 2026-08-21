@@ -74,7 +74,13 @@ struct VcoAdsrState
     // ONLY -- see kMaxDecaySeconds's own
     // comment below for why its former "mirrors kMaxAttackSeconds" rationale
     // no longer holds and has been rewritten as decay's own judgment.
-    static constexpr float kMaxAttackSeconds = 0.5f;
+    // Halved again, 0.5f -> 0.25f: Attack is a modulation TARGET (see the
+    // resonant peak's own ceiling comment, FroggersAppCore.hpp, for why that
+    // matters), so a randomized depth visits this ceiling regularly, not
+    // only when an operator dials there. Even after the exponential remap
+    // above, the top tenth of randomized draws still exceeded 269 ms; this
+    // halving moves that to about 144 ms.
+    static constexpr float kMaxAttackSeconds = 0.25f;
     // Deliberate parity divergence from the frozen `src/core` reference,
     // which maps Attack/Decay/Release LINEARLY: mapAttack/mapDecay/mapRelease
     // below moved to dsp::ExpMapCompute (every other time/frequency control in
