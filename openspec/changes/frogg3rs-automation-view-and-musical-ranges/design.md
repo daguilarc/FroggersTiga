@@ -134,6 +134,15 @@ it persists in `sessionExtras` beside the Freeze latch and the visible bank,
 using that same mechanism rather than a new one. Its default is off, which is
 what makes a legacy blob with no such key restore correctly.
 
+**Where it lives is the only real difference from the standalone.** Sheaf's
+audio page, the one carrying "Input device", is part of the runtime shell
+(`projects/synth/juce/RuntimePages.hpp`) and only the standalone runs it; the
+plugin editor renders the portable surface and nothing else. So the control
+goes on the portable surface, and it reads as the input selection it is —
+off by default, the DAW's input bus the only other choice — rather than as a
+new bespoke interaction. Same concept the operator already knows, in the one
+surface the plugin has.
+
 Trace before building: the JUCE layout API for an optional instrument input
 bus, what `processBlock` does with input buffers today, which JUCE callback
 fires on layout change, and how to reach the existing
