@@ -187,6 +187,29 @@ off by default, the DAW's input bus the only other choice — rather than as a
 new bespoke interaction. Same concept the operator already knows, in the one
 surface the plugin has.
 
+**Decided (operator): external audio actually carries signal — the inertness
+is superseded.** Tracing the bus work turned up that nothing writes
+`externalAudioSource_` in ANY host, standalone included: it holds its
+initialiser, `0.5f`, forever, and `FroggersModulation.hpp:411` says so on
+purpose — external audio is "deliberately NOT stepped here", left "present but
+inert" so the value is always defined and finite for `UpdateModValues()` to
+read.
+
+That guarantee was worth having while no signal existed. It is not worth
+keeping now, because it makes the whole feature a lie: the sources would
+report connected, the operator would see them light up, and they would still
+modulate from a constant. Connected-but-silent is worse than absent. So the
+inertness decision is superseded, and the defined-and-finite property it
+protected is preserved a different way — by writing a real, finite sample
+every block when connected, and restoring exactly those inert defaults
+(`0.5f`, and a follower holding `0.0f`) the moment it is not.
+
+The core takes ONE input channel (`numAudioInputs = 1`), so channel choice
+stays a host concern: the plugin resolves its operator's selection — a
+channel, or the sum — and presents the result as that single channel. The core
+reads channel zero when connected and never asks which one it was. The
+standalone feeds the same channel from its selected device, unchanged.
+
 Trace before building: the JUCE layout API for an optional instrument input
 bus, what `processBlock` does with input buffers today, which JUCE callback
 fires on layout change, and how to reach the existing

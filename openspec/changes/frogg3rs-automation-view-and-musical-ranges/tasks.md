@@ -205,6 +205,19 @@ excusing it.
 - [ ] 3.2 Declare the bus; derive connected from bus-enabled-with-nonzero-
       channels through the existing `SetExternalAudioConnected` writer, once
       per layout change, never per block.
+- [ ] 3.4 SUPERSEDES a recorded decision, on operator instruction: feed real
+      samples to the external-audio sources. Nothing writes
+      `externalAudioSource_` in any host today — it holds `0.5f` forever, and
+      `FroggersModulation.hpp:411` documents that as deliberate. Write it, and
+      drive `externalAudioEf_`, from the block's input each block while
+      connected; restore the inert defaults (`0.5f`, follower at `0.0f`) the
+      moment connectedness drops, so the defined-and-finite guarantee that
+      comment protects still holds. The plugin resolves the operator's channel
+      or sum into the core's single input channel; the core reads channel zero
+      and never asks which. Rewrite that comment to describe the new behavior.
+      Test that a connected source MOVES with its input and returns to inert
+      on disconnect — a positive control proving the value actually changed,
+      not merely that it equals something.
 - [ ] 3.3 Tests: instantiates with the bus absent and with it present;
       routing into it connects the sources; disconnecting returns them to
       inert. Positive control both directions.
