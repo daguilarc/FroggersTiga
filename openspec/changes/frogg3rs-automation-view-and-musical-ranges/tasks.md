@@ -76,12 +76,26 @@ excusing it.
 
 ## 1. Bank-addressed parameter write (design A) — the framework half
 
-- [ ] 1.1 Trace and confirm design A's claims against current source: that
+- [x] 1.1 DONE during the change audit, all against `External/Sheaf/projects/
+      synth`. Confirmed: `MessageInBus::Apply` passes `ParamSetAbsolute` as
+      (slotIx, position, value, epoch) with no bank, and `bankIx` reaches
+      only `SelectParamBank`; `Bank::HandleSetAbsolute` and
+      `ParameterManager::BankAt` are both public; `BankSlot::SelectBank`
+      calls `Deselect()` on the outgoing bank, which resets `visible_` to
+      `topLevel_` and clears `selected_`; `FroggersModulationDrillIn::Level()`
+      returns a counter mutated only by `PressEncoder`/`Back`, never
+      re-derived, so it goes stale exactly as design A says.
+      MOVED, and design A was corrected for it: `Bank::HandleSetAbsolute`
+      resolves through `FindVisibleCell`, i.e. the bank's CURRENT PAGE, and
+      `Bank::OpenModulationView` replaces `visible_` with the drill-down
+      page. So the primitive is visible-addressed, not top-level-addressed,
+      and 1.2 adds the top-level primitive rather than reusing it.
+      Original text: Trace and confirm design A's claims against current source: that
       `ParamSetAbsolute` is slot-addressed, that `bankIx` is consumed only
       by `SelectParamBank`, that `Bank::HandleSetAbsolute` and
       `ParameterManager::BankAt` are public, and that `Deselect()` closes an
       open drill-down. Report anything that has moved.
-- [ ] 1.2 Add the additive framework API in `External/Sheaf`: a new
+- [x] 1.2 DONE (Sheaf 4bd711ad). Add the additive framework API in `External/Sheaf`: a new
       `MessageIn` type carrying `bankIx`, its `MessageInBus::Apply` case, and
       a `ParameterManager` method that resolves `position` to a
       `PhysicalEncoderId` through the addressed slot's encoder list and then
@@ -100,7 +114,20 @@ excusing it.
       Sheaf's `AGENTS.md` also keeps `main` clean and expects feature work on
       a branch — the submodule is already on `fix-out-of-tree-app-gaps`, at
       `80c4eab8`, matching the PR head exactly, so commits append there.
-- [ ] 1.3 Decide, and record, what the new path does about the two behaviors
+- [x] 1.3 DONE. No modifier gate: a modifier reinterprets an operator's own
+      encoder gesture, and a write addressed to a bank and position did not
+      come from the encoders, so a held modifier must not silently swallow
+      it. Epoch IS recorded on the addressed slot, exactly as the slot path
+      does — it early-returns on epoch 0, so it costs nothing for callers
+      that do not use epochs and keeps the two paths consistent for those
+      that do. Both reasons are in the code.
+      §8 on the new diff, found versus changed: `FindTopLevelCell` is
+      near-identical to the two `FindVisibleCell` overloads — found 3,
+      changed 0. Collapsing them would rewrite pre-existing upstream code
+      this contribution does not otherwise touch, and the additive-only
+      constraint governs an upstream pull request. Recorded, not silently
+      left.
+      Original text: Decide, and record, what the new path does about the two behaviors
       the slot path performs and this one does not inherit: the
       `GetCurrentModifier() == Modifier::None` gate, and
       `RecordProcessedAbsoluteEpoch`. Neither is optional-by-default; both are
@@ -110,10 +137,10 @@ excusing it.
       enum and the arg1/arg2 system-message encoding are the two known ones.
       Classify each as needing the new type or deliberately not carrying it,
       and report found versus changed.
-- [ ] 1.5 Record Sheaf's test baseline BEFORE the first Sheaf edit (design's
+- [x] 1.5 DONE — baseline 917 tests, 915 passed, 2 failed, and the two are exactly the known braid-4 96 kHz deadline tests, nothing else. Record Sheaf's test baseline BEFORE the first Sheaf edit (design's
       Gates: two braid-4 96 kHz deadline tests fail deterministically on this
       machine and are not this change's). Counts, not adjectives.
-- [ ] 1.6 Tests in Sheaf's own suite, in Sheaf's own style: a bank-addressed
+- [x] 1.6 DONE — 5 cases, suite 922/920/2 with the same two known failures. The drilled-in case was observed RED by pointing the new primitive at the visible lookup, then restored (blob hash verified). Tests in Sheaf's own suite, in Sheaf's own style: a bank-addressed
       write lands on the target bank and leaves the shared slot's selection
       and the visible bank's drill-down untouched; and a bank-addressed write
       to a bank that is ITSELF drilled into modulation still lands on the
