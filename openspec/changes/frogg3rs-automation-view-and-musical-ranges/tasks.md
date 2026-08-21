@@ -199,13 +199,13 @@ excusing it.
 
 ## 3. Plugin audio input bus (design B)
 
-- [ ] 3.1 Trace: JUCE's optional-input-bus layout for an instrument, what
+- [x] 3.1 DONE — traced; the finding was that nothing feeds the sources at all, which became 3.4. Trace: JUCE's optional-input-bus layout for an instrument, what
       `processBlock` does with input buffers today, and where `connected`
       should be derived.
-- [ ] 3.2 Declare the bus; derive connected from bus-enabled-with-nonzero-
+- [x] 3.2 DONE — bus declared, selection derived from it and re-validated on layout change, connected published through the existing routed-input signal. Declare the bus; derive connected from bus-enabled-with-nonzero-
       channels through the existing `SetExternalAudioConnected` writer, once
       per layout change, never per block.
-- [ ] 3.4 SUPERSEDES a recorded decision, on operator instruction: feed real
+- [x] 3.4 DONE — app 294/294. External audio carries real signal; both sources snap back to exactly 0.5/0.0 on disconnect, observed RED by deleting the restore branch. SUPERSEDES a recorded decision, on operator instruction: feed real
       samples to the external-audio sources. Nothing writes
       `externalAudioSource_` in any host today — it holds `0.5f` forever, and
       `FroggersModulation.hpp:411` documents that as deliberate. Write it, and
@@ -218,7 +218,7 @@ excusing it.
       Test that a connected source MOVES with its input and returns to inert
       on disconnect — a positive control proving the value actually changed,
       not merely that it equals something.
-- [ ] 3.3 Tests: instantiates with the bus absent and with it present;
+- [x] 3.3 DONE — VST 41/41; the host-enabled-no-selection case observed RED by deriving connected from bus enablement. Tests: instantiates with the bus absent and with it present;
       routing into it connects the sources; disconnecting returns them to
       inert. Positive control both directions.
 

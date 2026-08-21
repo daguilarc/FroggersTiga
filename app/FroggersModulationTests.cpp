@@ -93,17 +93,17 @@ struct Fixture {
         slate.Prepare(48000.0);
     }
 
-    // Step() itself does not take an external-audio-sample/-connected pair
-    // (production's only caller always fed a compile-time `0.0f`/`false`,
-    // so that per-sample plumbing was dead weight -- see Step()'s own
-    // comment). This fixture still wants per-call control over
-    // connectedness for the tests below that toggle it (e.g. the "flip
-    // connected back to true" scenario), so it calls the standalone
-    // SetExternalAudioConnected(bool) setter directly instead of routing
-    // the value through Step()'s argument list -- same observable effect
-    // on Metadata(...).connected, same call-site shape for every one of
-    // this file's ~24 StepOnce(...) callers (none of them change).
-    void StepOnce(bool externalConnected = false) {
+    // Connectedness is set directly via the standalone
+    // SetExternalAudioConnected(bool) setter rather than derived from
+    // `externalAudioSample` -- Step() itself keeps the two independent
+    // (see Step()'s own comment: the sample is ignored entirely while
+    // disconnected), so this fixture mirrors that split rather than
+    // collapsing it. `externalAudioSample` defaults to 0.0f: every one of
+    // this file's ~24 StepOnce(...) callers that does not pass one is
+    // unaffected (0.0f normalizes to exactly the same 0.5f/0.0f pair those
+    // callers already asserted before external audio was ever driven from
+    // real input).
+    void StepOnce(bool externalConnected = false, float externalAudioSample = 0.0f) {
         FroggersModulationSlate::VcoDrive drive{0.5f, 0.5f, 0.0f};
         slate.SetExternalAudioConnected(externalConnected);
         // Step() takes a trailing transportQuarterNotes parameter;
@@ -112,7 +112,7 @@ struct Fixture {
         // see StepClockDrivenLanes's own has_value() guard), since this file
         // is not about clock-driven advance at all (that is
         // FroggersMarblesClockTests.cpp).
-        slate.Step(drive, drive, drive, std::nullopt);
+        slate.Step(drive, drive, drive, std::nullopt, externalAudioSample);
     }
 };
 
@@ -418,9 +418,11 @@ TEST_CASE(external_audio_cells_present_and_inert_with_no_input) {
 // quantity and toward the source's own -- a swing that cannot happen unless
 // the source's value actually reached the destination. The destination is
 // pinned explicitly (`HandleSetAbsolute`) rather than read as whatever its
-// unexamined default happens to be: the external-audio source's own value is
-// permanently 0.5 (externalAudioSource_'s NSDMI -- Step()'s own comment), and
-// 0.5 is `NormalizeBipolarToUnit`'s "no signal" convention, so a destination
+// unexamined default happens to be: this fixture's StepOnce() defaults
+// `externalAudioSample` to 0.0f, so the external-audio source's own value
+// here is exactly 0.5 (externalAudioSource_'s NSDMI, and what a 0.0f sample
+// normalizes to -- Step()'s own comment), and 0.5 is
+// `NormalizeBipolarToUnit`'s "no signal" convention, so a destination
 // that ALSO happened to default to 0.5 would make full-positive and
 // full-negative depth resolve identically (verified empirically: they do,
 // at exactly 0.5, for this bank's own default) -- a coincidence of the
@@ -470,6 +472,82 @@ TEST_CASE(disconnected_external_audio_never_receives_randomized_depth) {
         REQUIRE_TRUE(parameter.ModulationDepthParameter(kModSlotExternalAudio) == nullptr);
         REQUIRE_TRUE(parameter.ModulationDepthParameter(kModSlotExternalAudioEf) == nullptr);
     });
+}
+
+// ============================================================================
+// external audio: driven from real input while connected
+// ============================================================================
+
+// Positive control: a known, nonzero, connected sample must move the
+// published source value off 0.5 to an exactly stateable quantity --
+// NormalizeBipolarToUnit(0.4f) == 0.5 + 0.5*0.4 == 0.7 exactly (0.4f and 0.7f
+// are both exactly representable in float, so this is a bit-exact check, not
+// a tolerance one).
+TEST_CASE(connected_external_audio_source_moves_off_0_5_for_a_known_input) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/true, /*externalAudioSample=*/0.4f);
+    fx.model.Group().UpdateModValues();
+    const float value = fx.slate.SourceValue(kModSlotExternalAudio);
+    REQUIRE_TRUE(value != 0.5f);
+    REQUIRE_TRUE(value == 0.7f);
+}
+
+// The follower must actually follow (rise off its 0.0f floor for a sustained
+// input) and must be genuinely smoothed, not a second, aliased read of the
+// same raw sample the un-followed source above reads -- 200 samples at this
+// fixture's 48kHz (SingleEnvelopeFollower::SetSampleRate's own ~10ms attack
+// time constant) is under one full time constant, so the follower is still
+// visibly mid-rise, nowhere near its 0.8f target -- a strong, non-tolerance-
+// sensitive way to tell "smoothed" from "passthrough."
+TEST_CASE(connected_external_audio_ef_source_rises_for_sustained_input_and_is_not_the_raw_sample) {
+    Fixture fx;
+    constexpr float kSustainedSample = 0.8f;
+    float previousEf = 0.0f;
+    float ef = 0.0f;
+    bool everRose = false;
+    for (int i = 0; i < 200; ++i) {
+        fx.StepOnce(/*externalConnected=*/true, kSustainedSample);
+        fx.model.Group().UpdateModValues();
+        ef = fx.slate.SourceValue(kModSlotExternalAudioEf);
+        if (ef > previousEf) {
+            everRose = true;
+        }
+        previousEf = ef;
+    }
+    REQUIRE_TRUE(everRose);
+    REQUIRE_TRUE(ef > 0.0f);
+    REQUIRE_TRUE(std::fabs(ef - kSustainedSample) > 0.1f);  // smoothed, not the raw sample.
+}
+
+// Disconnected must read EXACTLY the inert pair regardless of what the input
+// signal is doing -- a nonzero sample here proves the gate, not merely the
+// absence of a signal. Reads the members directly (ExternalAudio*ForTest()):
+// SourceValue()'s cache is not refreshed while disconnected (that accessor's
+// own comment), so it cannot observe this restore.
+TEST_CASE(disconnected_external_audio_sources_stay_exactly_inert_regardless_of_input) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/false, /*externalAudioSample=*/0.9f);
+    REQUIRE_TRUE(fx.slate.ExternalAudioSourceForTest() == 0.5f);
+    REQUIRE_TRUE(fx.slate.ExternalAudioEfSourceForTest() == 0.0f);
+}
+
+// Disconnecting after a live, clearly-nonneutral signal must snap the
+// published pair back to inert on the very next Step() -- not merely leave
+// them holding whatever the last connected sample produced.
+TEST_CASE(external_audio_sources_snap_back_to_inert_on_disconnect_not_the_last_live_sample) {
+    Fixture fx;
+    for (int i = 0; i < 50; ++i) {
+        fx.StepOnce(/*externalConnected=*/true, /*externalAudioSample=*/0.9f);
+    }
+    REQUIRE_TRUE(fx.slate.ExternalAudioSourceForTest() != 0.5f);
+    REQUIRE_TRUE(fx.slate.ExternalAudioEfSourceForTest() > 0.0f);
+
+    // Same nonzero sample, but now disconnected -- if the sample still
+    // influenced the published pair, or the pair simply held its last live
+    // value, this would fail.
+    fx.StepOnce(/*externalConnected=*/false, /*externalAudioSample=*/0.9f);
+    REQUIRE_TRUE(fx.slate.ExternalAudioSourceForTest() == 0.5f);
+    REQUIRE_TRUE(fx.slate.ExternalAudioEfSourceForTest() == 0.0f);
 }
 
 // ============================================================================

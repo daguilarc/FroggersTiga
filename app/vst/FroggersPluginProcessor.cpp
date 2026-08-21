@@ -18,6 +18,7 @@
 // persistence reuses this format rather than inventing one.
 #include "synth/PatchPersistence.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdlib>
@@ -100,7 +101,7 @@ constexpr const char* kFreezeLatchedKey = "freezeLatched";
 // write sites (PumpStatePersistence()) for the accessor/authority each
 // direction uses.
 constexpr const char* kVisibleBankIndexKey = "visibleBankIndex";
-// Third sessionExtras sibling key (task 3.4): the operator's input-channel
+// Third sessionExtras sibling key: the operator's input-channel
 // selection -- an index into FroggersPluginProcessor::
 // ComputeInputOptionLabels()'s own return value (0 == "None"). Same object,
 // same round trip, no new mechanism -- see this key's own read/write sites
@@ -130,8 +131,8 @@ FroggersPluginProcessor::FroggersPluginProcessor()
     : FroggersPluginProcessor(ProductionDataPaths()) {}
 
 FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPathsForTest)
-    // One OPTIONAL mono input bus alongside the existing stereo output
-    // (task 3.2): the third `withInput` argument (`isActivatedByDefault =
+    // One OPTIONAL mono input bus alongside the existing stereo output.
+    // The third `withInput` argument (`isActivatedByDefault =
     // false`) declares the bus present but disabled until a host
     // explicitly enables it -- JUCE's own mechanism for a bus an
     // instrument still instantiates and still makes sound with left
@@ -376,6 +377,12 @@ void FroggersPluginProcessor::prepareToPlay(double sampleRate, int samplesPerBlo
     // mid-session is a real, expected event (and why it re-asserts a
     // previously-started transport via desiredTransportRunning_).
     engine_.Prepare(sampleRate, samplesPerBlock);
+
+    // resolvedInputScratch_'s own comment (header): sized to the host's
+    // negotiated block size here; processBlock() still re-checks its own
+    // size defensively, since JUCE does not guarantee processBlock() never
+    // exceeds it.
+    resolvedInputScratch_.assign(static_cast<std::size_t>(std::max(0, samplesPerBlock)), 0.0f);
 }
 
 void FroggersPluginProcessor::releaseResources() {
@@ -406,7 +413,7 @@ void FroggersPluginProcessor::releaseResources() {
 }
 
 bool FroggersPluginProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
-    // Bus posture (task 3.2): stereo output, plus ONE OPTIONAL mono input
+    // Bus posture: stereo output, plus ONE OPTIONAL mono input
     // bus (the constructor's BusesProperties above declares it, disabled
     // by default -- see that comment). A host may leave the input bus at
     // disabled() (the plugin still instantiates and makes sound) or enable
@@ -485,6 +492,45 @@ void FroggersPluginProcessor::ApplyInputSelection(int selectionIndex) {
     // comment on why the apply is deferred off this, message-thread,
     // call).
     inputRoutingSignal_.Publish(inputSelection_ != 0);
+}
+
+bool FroggersPluginProcessor::ResolveSelectedInputChannel(const float* const* channels, int numChannels,
+                                                            int selection, int numSamples, float* out) {
+    if (selection <= 0 || numChannels <= 0 || numSamples <= 0) {
+        return false;  // "None," or nothing to read from.
+    }
+    if (selection <= numChannels) {
+        const float* source = channels[selection - 1];
+        if (source == nullptr) {
+            return false;
+        }
+        std::copy(source, source + numSamples, out);
+        return true;
+    }
+    if (selection != numChannels + 1) {
+        // Out of range for both "one specific channel" and "Sum" -- cannot
+        // happen in production (ApplyInputSelection() re-validates
+        // `inputSelection_` against a freshly-computed option list every
+        // time either could have changed), but a test driving this
+        // function directly with an inconsistent selection gets "nothing
+        // resolved" rather than a read past `channels`.
+        return false;
+    }
+    // Sum: ComputeInputOptionLabels() only ever appends this option once
+    // numChannels > 1, so this branch is unreached with today's mono-only
+    // input bus (the constructor's own BusesProperties comment) -- kept
+    // general rather than special-cased to N==1, matching that method's own
+    // generality.
+    for (int s = 0; s < numSamples; ++s) {
+        float sum = 0.0f;
+        for (int ch = 0; ch < numChannels; ++ch) {
+            if (channels[ch] != nullptr) {
+                sum += channels[ch][s];
+            }
+        }
+        out[s] = sum;
+    }
+    return true;
 }
 
 void FroggersPluginProcessor::processorLayoutsChanged() {
@@ -608,32 +654,48 @@ void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
     const float* const* inputPointers =
         numInputChannelsThisBlock > 0 ? inputBusBuffer.getArrayOfReadPointers() : nullptr;
 
+    // Resolves the operator's own channel/Sum selection (inputSelection_,
+    // ApplyInputSelection()'s own comment) down to exactly ONE logical
+    // channel BEFORE `block` is built -- FroggersAppCore's own
+    // numAudioInputs==1 config, so the core reads only channel 0 and must
+    // never see, let alone choose among, the raw bus's own channels itself
+    // (ResolveSelectedInputChannel()'s own header comment has the full
+    // index-scheme trace). resolvedInputScratch_ is re-sized here rather
+    // than trusted at its prepareToPlay()-time size, in case this callback
+    // ever delivers more samples than that (that member's own comment).
+    if (static_cast<std::size_t>(numSamples) > resolvedInputScratch_.size()) {
+        resolvedInputScratch_.assign(static_cast<std::size_t>(numSamples), 0.0f);
+    }
+    const bool haveResolvedInput = ResolveSelectedInputChannel(
+        inputPointers, numInputChannelsThisBlock, inputSelection_, numSamples, resolvedInputScratch_.data());
+    const std::array<const float*, 1> resolvedInputChannelPointers{
+        haveResolvedInput ? resolvedInputScratch_.data() : nullptr};
+
     std::array<float*, 2> outputPointers{buffer.getWritePointer(0), buffer.getWritePointer(1)};
 
     // Same AudioBlock shape the standalone host's real audio-device
     // callback builds (Runtime.hpp's audioDeviceIOCallbackWithContext):
     // `inputs` null-gated on an all-or-nothing zero-channel check rather
-    // than an array of per-channel nulls, `numInputChannels` the bus's
-    // actual channel count this block. numRequestedInputChannels is a
-    // different field: AppContext.hpp documents it as "hosts set this
-    // explicitly from immutable RuntimeConfig" -- the requested CEILING,
-    // independent of how many channels this callback actually delivers --
-    // and Engine::ProcessBlock asserts it equals config_.numAudioInputs
-    // exactly (Engine.hpp:410), so it is read from the engine's own
-    // already-negotiated config rather than a second, independent literal
-    // that could drift out of sync with it. FroggersAppCore::ProcessBlock()
-    // does not read block.inputs/numInputChannels itself today (see that
-    // method's own comment on why "connected" is driven entirely through
-    // InputRouted()/SetExternalAudioConnected() instead) -- populating
-    // them here anyway keeps this plugin's AudioBlock construction
-    // structurally identical to the standalone's, not a second, narrower
-    // shape. startSample/clockPlan are OUT params the engine sets itself
+    // than an array of per-channel nulls. Unlike the raw bus above,
+    // `inputs`/`numInputChannels` here describe the ALREADY-RESOLVED single
+    // logical channel, not the bus's own channel count -- FroggersAppCore::
+    // ProcessBlock() (see that method's own comment) reads this block's
+    // input purely as the external-audio modulation sources' signal, at
+    // channel 0, never to re-derive which host channel it came from.
+    // numRequestedInputChannels is a different field: AppContext.hpp
+    // documents it as "hosts set this explicitly from immutable
+    // RuntimeConfig" -- the requested CEILING, independent of how many
+    // channels this callback actually delivers -- and Engine::ProcessBlock
+    // asserts it equals config_.numAudioInputs exactly (Engine.hpp:410), so
+    // it is read from the engine's own already-negotiated config rather
+    // than a second, independent literal that could drift out of sync with
+    // it. startSample/clockPlan are OUT params the engine sets itself
     // during ProcessBlock (Engine.hpp:402-405) -- left default-constructed
     // here, exactly as SynthRig does.
     synth::AudioBlock block;
-    block.inputs = inputPointers;
+    block.inputs = haveResolvedInput ? resolvedInputChannelPointers.data() : nullptr;
     block.outputs = outputPointers.data();
-    block.numInputChannels = numInputChannelsThisBlock;
+    block.numInputChannels = haveResolvedInput ? 1 : 0;
     block.numOutputChannels = static_cast<int>(outputPointers.size());
     block.numFrames = static_cast<std::size_t>(numSamples);
     block.numRequestedInputChannels = engine_.Config().numAudioInputs;

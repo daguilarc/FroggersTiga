@@ -84,6 +84,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -2428,6 +2429,104 @@ TEST_CASE(state_information_legacy_blob_without_input_selection_key_restores_to_
 
     std::cout << "  [state] sessionExtras present, inputSelection key absent: restored to None on a bus that DID "
                  "have a channel available.\n";
+}
+
+// A signal on the bus's own one channel, with that channel selected, must
+// actually reach the external-audio source -- not just flip `connected`
+// (already covered above). Constant across the whole block so the block's
+// LAST sample (what Step() leaves the source holding once the block ends)
+// is a known, stateable quantity: NormalizeBipolarToUnit(0.6f) == 0.8f
+// exactly (both 0.6f and 0.8f are exactly representable in float).
+TEST_CASE(input_bus_selected_channel_signal_reaches_the_external_audio_source) {
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("input_bus_selected_channel_signal"));
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+
+    juce::AudioProcessor::Bus* inputBus = processor.getBus(true, 0);
+    REQUIRE_TRUE(inputBus != nullptr);
+    REQUIRE_TRUE(inputBus->enable(true));
+    DispatchInputSelect(processor);  // None -> the bus's one channel.
+    REQUIRE_TRUE(processor.InputSelectionForTest() == 1);
+
+    // Step() only runs while the transport is running (FroggersAppCore::
+    // ProcessBlock()'s own transportRunningNow gate) -- without this, the
+    // source would never move off its inert default and this test would
+    // prove nothing.
+    processor.TestStartTransport();
+
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+    buffer.clear();
+    juce::AudioBuffer<float> hostInputView = processor.getBusBuffer(buffer, true, 0);
+    REQUIRE_TRUE(hostInputView.getNumChannels() == 1);
+    constexpr float kDrivenSample = 0.6f;
+    for (int s = 0; s < hostInputView.getNumSamples(); ++s) {
+        hostInputView.setSample(0, s, kDrivenSample);
+    }
+    processor.processBlock(buffer, midi);
+
+    REQUIRE_TRUE(processor.ApplicationForTest().Modulation().ExternalAudioConnected());  // positive control.
+    const float sourceValue = processor.ApplicationForTest().Modulation().ExternalAudioSourceForTest();
+    REQUIRE_TRUE(std::fabs(sourceValue - 0.8f) < 1.0e-4f);
+
+    processor.releaseResources();
+    std::cout << "  [input bus] selected channel: driven sample=" << kDrivenSample
+              << " -> external-audio source=" << sourceValue << " (expected 0.8).\n";
+}
+
+// ResolveSelectedInputChannel()'s own generality -- Sum and "one specific
+// channel of several" -- exercised directly against synthetic 2-channel
+// arrays: this plugin's real input bus is declared mono() (the constructor's
+// own BusesProperties comment) and isBusesLayoutSupported() rejects any
+// wider negotiation, so a REAL two-channel bus is not constructible through
+// the plugin today. The resolution algorithm itself is written generally
+// (matching ComputeInputOptionLabels()'s own N-channel/Sum scheme) rather
+// than assuming the one-channel case the real bus happens to run under right
+// now, and this test is how that generality is verified in the absence of a
+// real multi-channel bus to drive it through.
+TEST_CASE(resolve_selected_input_channel_sums_two_channels_when_sum_is_selected) {
+    constexpr int kNumSamples = 8;
+    std::array<float, kNumSamples> channel0{};
+    std::array<float, kNumSamples> channel1{};
+    for (int s = 0; s < kNumSamples; ++s) {
+        channel0[static_cast<std::size_t>(s)] = 0.1f;
+        channel1[static_cast<std::size_t>(s)] = 0.2f;
+    }
+    const std::array<const float*, 2> channels{channel0.data(), channel1.data()};
+    std::array<float, kNumSamples> out{};
+
+    // Sum is index numChannels+1 == 3 (ComputeInputOptionLabels()'s own
+    // scheme: 0 None, 1..2 one per channel, 3 Sum).
+    const bool resolved = frogg3rs_vst::FroggersPluginProcessor::ResolveSelectedInputChannel(
+        channels.data(), 2, /*selection=*/3, kNumSamples, out.data());
+    REQUIRE_TRUE(resolved);
+    for (int s = 0; s < kNumSamples; ++s) {
+        REQUIRE_TRUE(std::fabs(out[static_cast<std::size_t>(s)] - 0.3f) < 1.0e-6f);  // 0.1 + 0.2.
+    }
+    std::cout << "  [resolve] Sum over a synthetic 2-channel array: 0.1 + 0.2 = " << out[0] << ".\n";
+}
+
+TEST_CASE(resolve_selected_input_channel_selecting_the_other_channel_reads_the_other_one) {
+    constexpr int kNumSamples = 4;
+    std::array<float, kNumSamples> channel0{0.11f, 0.12f, 0.13f, 0.14f};
+    std::array<float, kNumSamples> channel1{0.21f, 0.22f, 0.23f, 0.24f};
+    const std::array<const float*, 2> channels{channel0.data(), channel1.data()};
+    std::array<float, kNumSamples> out{};
+
+    // Selection 1 -> channel0, selection 2 -> channel1 (ComputeInputOptionLabels()'s
+    // own 1-based scheme).
+    REQUIRE_TRUE(frogg3rs_vst::FroggersPluginProcessor::ResolveSelectedInputChannel(
+        channels.data(), 2, /*selection=*/1, kNumSamples, out.data()));
+    for (int s = 0; s < kNumSamples; ++s) {
+        REQUIRE_TRUE(out[static_cast<std::size_t>(s)] == channel0[static_cast<std::size_t>(s)]);
+    }
+
+    REQUIRE_TRUE(frogg3rs_vst::FroggersPluginProcessor::ResolveSelectedInputChannel(
+        channels.data(), 2, /*selection=*/2, kNumSamples, out.data()));
+    for (int s = 0; s < kNumSamples; ++s) {
+        REQUIRE_TRUE(out[static_cast<std::size_t>(s)] == channel1[static_cast<std::size_t>(s)]);
+    }
+    std::cout << "  [resolve] selection 1 read channel0 verbatim, selection 2 read channel1 verbatim.\n";
 }
 
 }  // namespace

@@ -322,6 +322,28 @@ public:
     // rest of the index space means.
     int InputSelectionForTest() const { return inputSelection_; }
 
+    // Resolves one block's operator-selected input into exactly ONE logical
+    // channel -- FroggersAppCore::Config()'s own numAudioInputs==1, so the
+    // core must never see, let alone choose among, the raw bus's own
+    // channels. Mirrors ComputeInputOptionLabels()'s own index scheme:
+    // `selection` <= 0 or `numChannels` <= 0 is None (nothing resolved,
+    // returns false, `out` untouched); 1..numChannels picks that one
+    // channel verbatim (a straight copy, no mixing); numChannels+1 is Sum,
+    // the per-sample total across every channel -- present in the option
+    // list (and therefore reachable here) only when numChannels > 1. `out`
+    // must hold at least `numSamples` floats. processBlock() (below) is the
+    // one production caller, feeding it the real bus's channel pointers and
+    // `inputSelection_`; public and static (stateless, no `this`) so
+    // FroggersVstHostTests.cpp can also drive it directly with synthetic
+    // multi-channel arrays -- this plugin's own input bus is declared
+    // mono() (the constructor's own comment), so numChannels is never
+    // actually >1 through the real bus in production today, but the
+    // resolution logic itself stays general, matching
+    // ComputeInputOptionLabels()'s own generality, rather than assuming the
+    // one-channel case it happens to run under right now.
+    static bool ResolveSelectedInputChannel(const float* const* channels, int numChannels, int selection,
+                                             int numSamples, float* out);
+
     // Task 7.2 tests need no new test-only accessors beyond what's already
     // public: every exposed host parameter is a plain
     // juce::AudioProcessorParameter reachable via the standard
@@ -657,6 +679,16 @@ private:
     // written ONLY by ApplyInputSelection() above, so no path can set it to
     // an unvalidated value.
     int inputSelection_ = 0;
+
+    // Scratch storage for ResolveSelectedInputChannel()'s output -- this
+    // block's single resolved input channel, built fresh every processBlock()
+    // call before `block` is constructed. Sized in prepareToPlay() (to the
+    // host's negotiated block size) and defensively re-sized in
+    // processBlock() itself if a host ever delivers more samples than that
+    // (JUCE's own contract does not guarantee processBlock() never exceeds
+    // the size prepareToPlay() announced, only that it usually does not).
+    std::vector<float> resolvedInputScratch_;
+
     std::chrono::steady_clock::time_point startTime_;
     synth::Engine<synth_froggers::FroggersApp> engine_;
 };

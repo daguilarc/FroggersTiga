@@ -775,14 +775,21 @@ public:
     // now-resolved (post-fuego, post-modulation) parameter values into the
     // real DSP chain and sums it to the stereo output bus.
     void ProcessBlock(synth::AudioBlock& block) {
-        // External audio (slots 13/14) is disconnected by construction, not
-        // by a flag layered on top of a channel-exists check: whether a
-        // channel is present in `block.inputs` is a different question from
-        // whether the operator actually routed something in, and this
-        // method never conflates the two. The sources' `connected` state is
-        // driven entirely from the host's routed-input signal (see Init()'s
-        // and ProcessFrame()'s own comments, above) -- this method does not
-        // read `block.inputs`/`block.numInputChannels` for that purpose.
+        // External audio (slots 13/14) connectedness is never derived from
+        // `block.inputs` itself: whether a channel is present in the block
+        // is a different question from whether the operator actually routed
+        // something in, and this method never conflates the two. The
+        // sources' `connected` state is driven entirely from the host's
+        // routed-input signal (see Init()'s and ProcessFrame()'s own
+        // comments, above). `block.inputs` IS read below, once per sample,
+        // purely as the SIGNAL those sources step from while connected --
+        // reached only through `AudioInputView` (channel 0, this app's own
+        // `numAudioInputs == 1`), never as a second connectedness check.
+        // `InputView()` is cheap (a plain struct built from already-clamped
+        // fields, no per-call work) but still hoisted out of the per-sample
+        // loop below, same as `hasOutputs` just under it, since both are
+        // loop-invariant for the whole block.
+        const synth::AudioInputView externalAudioInputView = block.InputView();
 
         // Source #6's tempo-following recompute
         // happens ONCE PER BLOCK, not per sample, from the block's clock-plan rate (independent of transport
@@ -1080,7 +1087,18 @@ public:
             // for StepClockDrivenLanes's own tick-phase arithmetic -- see
             // Step()'s own comment.
             if (transportRunningNow) {
-                modulation_.Step(vcoDrive(0), vcoDrive(1), vcoDrive(2), transportQuarterNotes);
+                // `SampleOrSilence(0, frame)` reads this frame's logical
+                // channel zero -- the plugin has already resolved the
+                // operator's channel/Sum selection down to that one channel
+                // before this call ever sees the block (FroggersPluginProcessor::
+                // processBlock()'s own comment); the standalone host's
+                // device callback delivers its one requested channel there
+                // directly. Silence (0.0f) whenever no channel is active,
+                // matching this call's disconnected-source behavior anyway
+                // (Step() ignores the sample entirely while
+                // !ExternalAudioConnected()).
+                const float externalAudioSample = externalAudioInputView.SampleOrSilence(0, frame);
+                modulation_.Step(vcoDrive(0), vcoDrive(1), vcoDrive(2), transportQuarterNotes, externalAudioSample);
             }
 
             parameters_.ProcessSample(absoluteOutputSample);

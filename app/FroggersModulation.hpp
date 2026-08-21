@@ -358,8 +358,16 @@ public:
     // bank's cross-VCO pitch detents, kAudioPitchDetents further down this
     // file). Zero cross-VCO terms: each
     // Vco::Process call only ever reads its OWN three knobs.
+    // `externalAudioSample` is this same sample's already-resolved, single-
+    // channel input signal (bipolar, un-normalized) -- FroggersAppCore::
+    // ProcessBlock reads it from the audio block's own input view and passes
+    // it straight through with no cross-sample buffering here. Defaulted to
+    // 0.0f so every caller that has no external-audio path to wire up (this
+    // file's own tests, mostly) does not need to pass one -- the default
+    // reproduces the exact silence this pair always saw before either was
+    // ever driven.
     void Step(const VcoDrive& vco1, const VcoDrive& vco2, const VcoDrive& vco3,
-              std::optional<double> transportQuarterNotes) {
+              std::optional<double> transportQuarterNotes, float externalAudioSample = 0.0f) {
         // Tick each of the five X-style lanes at
         // its own rate against the SAME already-computed transport
         // quarter-note position FroggersApp::ProcessBlock's own
@@ -408,19 +416,31 @@ public:
         // Noise (slot 12); already [0,1] (DspNoise.hpp).
         noiseProcessor_.Process();
 
-        // External audio (slots 13-14) -- deliberately NOT stepped here.
-        // externalAudioSource_/externalAudioEfSource_ (below) stay at their
-        // NSDMI defaults: 0.5f == NormalizeBipolarToUnit(0.0f) exactly, and
-        // 0.0f == what a zero-initialized SingleEnvelopeFollower fed a
-        // constant 0.0f holds forever (target <= level from sample one, so
-        // `level` never moves off its own 0.0f default --
-        // dsp/EnvelopeFollowers.hpp's Process()) -- still a defined, finite
-        // value for Modulators::UpdateModValues() to dereference regardless
-        // of connectedness ("present but inert"). `.connected` is likewise
-        // never written here: SetExternalAudioConnected() (below) is the
-        // only writer, called once at startup and once per routing
-        // transition by FroggersAppCore -- never per sample, and never from
-        // this method.
+        // External audio (slots 13-14). `.connected` is never written here:
+        // SetExternalAudioConnected() (below) is the only writer, called
+        // once at startup and once per routing transition by
+        // FroggersAppCore -- never per sample, and never from this method.
+        // While connected, `externalAudioSample` (this sample's already-
+        // resolved, single-channel, bipolar input) drives both cells for
+        // real: renormalized through the same NormalizeBipolarToUnit used
+        // for VCO audio, and fed into externalAudioEf_ the same way
+        // vcoEnvelopeFollowers_ is fed raw VCO output above. While
+        // disconnected, both cells are pinned to the exact pair every
+        // caller of this class already treats as their fixed inert value --
+        // 0.5f == NormalizeBipolarToUnit(0.0f), 0.0f == a resting envelope
+        // follower's own floor -- restored on every disconnected sample
+        // rather than left holding whatever the last connected sample
+        // produced, so a route that just went inert reads inert immediately,
+        // not on some future edge. Either way the pair stays defined and
+        // finite for Modulators::UpdateModValues() to dereference regardless
+        // of connectedness.
+        if (ExternalAudioConnected()) {
+            externalAudioSource_ = NormalizeBipolarToUnit(externalAudioSample);
+            externalAudioEfSource_ = externalAudioEf_.Process(externalAudioSample);
+        } else {
+            externalAudioSource_ = 0.5f;
+            externalAudioEfSource_ = 0.0f;
+        }
     }
 
     // The cell stays pushed with a null parameter whenever this is false
@@ -460,6 +480,18 @@ public:
     const synth::ModulatorMetadata& Metadata(std::size_t modIx) const {
         return group_->GetModulators().Metadata(modIx);
     }
+    // Reads externalAudioSource_/externalAudioEfSource_ directly, bypassing
+    // Modulators::Value()'s own cache (SourceValue(), above) -- that cache
+    // is only refreshed for CONNECTED sources (Modulators::UpdateModValues(),
+    // ParameterModulation.cpp: `if (!metadata_[modIx].connected) continue;`),
+    // so it is not a reliable way to observe these two members' own
+    // disconnected-state restore in Step(): nothing downstream ever reads
+    // the stale cache either, since a disconnected source's
+    // ModulationDepthParameter() is always nullptr (RegisterSources()'s own
+    // comment) -- but a test asserting the restore itself needs the members'
+    // real current value, not last connected snapshot.
+    float ExternalAudioSourceForTest() const { return externalAudioSource_; }
+    float ExternalAudioEfSourceForTest() const { return externalAudioEfSource_; }
     // Reflects randomShLanes_[laneIx]'s current index/bag as of the
     // last PublishUiState() call -- lets a test observe lane advance without
     // reaching into this class's private DSP state.
@@ -624,15 +656,11 @@ private:
     dsp::Vco vco2_;
     dsp::Vco vco3_;
     dsp::VcoEnvelopeFollowers vcoEnvelopeFollowers_;
-    // .Process() is no longer called (Step() no longer steps external
-    // audio -- see that method's own comment); KEPT, along with its
-    // SetSampleRate() call in Prepare() below, as re-enable infrastructure
-    // rather than removed -- neither does per-sample work on its own, and
-    // deleting them would leave a future
-    // re-enable to rediscover the correct attack/release coefficients
-    // (SetSampleRate's coefficients are sample-rate-dependent; the struct's
-    // own raw defaults are only valid near ~2kHz, not 48kHz) instead of
-    // finding them already wired.
+    // Follows the external-audio input while connected (Step(), above);
+    // SetSampleRate() in Prepare() below gives it the same sample-rate-
+    // correct attack/release coefficients vcoEnvelopeFollowers_ gets (the
+    // struct's own raw defaults are only valid near ~2kHz, not this app's
+    // 48kHz).
     dsp::SingleEnvelopeFollower externalAudioEf_;
 
     std::array<dsp::RandomShLane, kFroggersNumRandomShLanes> randomShLanes_;
@@ -684,11 +712,9 @@ private:
     float vco1EfSource_ = 0.0f;
     float vco2EfSource_ = 0.0f;
     float vco3EfSource_ = 0.0f;
-    // These two NSDMI values are permanent, not merely initial --
-    // Step() does not write either (see its own comment). Both values are
-    // exactly what the removed per-sample computation always produced from
-    // its permanently-0.0f input, so this is not an observable behavior
-    // change.
+    // NSDMI defaults double as the disconnected-state values Step() (above)
+    // restores every sample while ExternalAudioConnected() is false, and as
+    // the starting values before Prepare()/the first Step() call ever runs.
     float externalAudioSource_ = 0.5f;
     float externalAudioEfSource_ = 0.0f;
 };
