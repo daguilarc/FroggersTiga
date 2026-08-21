@@ -363,10 +363,10 @@ excusing it.
       automates, a DAW-side MIDI mapping moves a parameter, session state
       round-trips, automation does NOT move the visible page, and routing
       into the input bus connects the external sources.
-- [ ] 9.4 Push Sheaf BEFORE the superproject — the superproject records only
+- [x] 9.4 DONE — Sheaf pushed to the fork branch heading the upstream pull request before every pin bump; both trees clean, nothing unpushed, pin c63783df matches the pushed head. Push Sheaf BEFORE the superproject — the superproject records only
       the pin, and CI builds from it. Sheaf commits append to the existing
       open pull request.
-- [ ] 9.5 Hand off for operator testing. Groups 1–9 are testable here; the
+- [x] 9.5 DONE — handed off. Hand off for operator testing. Groups 1–9 are testable here; the
       change is NOT archived at this point, because group 10 has not run.
 
 ## 10. Cutover (design G) — GATED on operator testing
