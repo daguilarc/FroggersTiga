@@ -347,7 +347,7 @@ excusing it.
 
 ## 9. Verify and hand off for testing
 
-- [x] 9.1 DONE except browser e2e. App 300/300; plugin host 46/46, smoke 1/1, editor 3/3; VST3 and AU both build; Sheaf 922 total / 920 passed / 2 failed, exactly the known braid-4 pair; browser build ok. Browser e2e is BLOCKED wanting `npx playwright install`, which needs operator approval. Full suite green; browser build and e2e green; plugin builds VST3
+- [x] 9.1 DONE, all of it. Browser e2e 32/32 after installing the playwright browser with operator approval; three of its cases independently confirm this change's own work — no link targets the old repository name, the manual link resolves, and encoder canvases paint before Play is clicked. App 300/300; plugin host 46/46, smoke 1/1, editor 3/3; VST3 and AU both build; Sheaf 922 total / 920 passed / 2 failed, exactly the known braid-4 pair; browser build ok. Full suite green; browser build and e2e green; plugin builds VST3
       and AU **and its own test targets RUN, not merely built** —
       `FroggersVstHostTests`, `FroggersVstSmokeTest`, `FroggersVstEditorTest`
       from `app/vst/build`, because `cd app && make test` builds none of them
