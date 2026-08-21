@@ -324,7 +324,7 @@ excusing it.
 
 ## 8. Carried from the predecessor
 
-- [ ] 8.1 Assert the plugin editor renders parameters before the host ever
+- [x] 8.1 DONE — asserts the rendered ring geometry decodes to a value set to 0.8 against a 0.0 default, so it cannot pass on defaults or on mere node presence. Observed RED by cutting the plugin's own call into the pre-audio publish seam: the encoder rendered blank, with no collateral failures. Assert the plugin editor renders parameters before the host ever
       calls `processBlock` — the site half is covered, this half was never
       asserted.
 - [x] 8.2 DONE — `UPSTREAM-SHEAF-ASK.md` retired rather than corrected. It
@@ -333,7 +333,7 @@ excusing it.
       branch `fix-out-of-tree-app-gaps`, the branch the submodule is pinned
       to). Correcting rows in a document the PR supersedes is maintaining a
       second source of truth.
-- [ ] 8.3 OPERATOR-COORDINATED, machine-local: rename the working folder
+- [x] 8.3 DONE — the working folder is `~/Desktop/frogg3rs`; ledger and memory entries citing the old path were updated at the same time. OPERATOR-COORDINATED, machine-local: rename the working folder
       `~/Desktop/FroggersTiga` to `~/Desktop/frogg3rs` at a session
       boundary; it invalidates a running session's absolute paths.
       Afterwards update ledger and memory entries citing the old path.

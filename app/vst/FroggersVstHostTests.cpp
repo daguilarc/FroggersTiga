@@ -1304,6 +1304,117 @@ TEST_CASE(production_processor_surface_is_plugin_mode_with_bpm_display_only_whil
               << bpm->text << "\" while host-tempo-slaved.\n";
 }
 
+// -- Pre-audio editor rendering ----------------------------------------------
+// A DAW may open a plugin's editor before ever calling processBlock() -- the
+// operator drops the plugin on a track and looks at it before pressing
+// play. Parameter controls must already show their real values at that
+// moment, not blank/default-looking ones. The seam that makes this possible
+// is engine_.MessageThreadTick()'s own claim-and-publish of
+// ParameterManager::UIState (the pinned External/Sheaf Engine.hpp), which
+// runs from this plugin's timerCallback() -- the SAME function
+// PumpMessageThreadForTest() drives -- independently of
+// processBlock()'s own (audio-thread-only) publish. This test never calls
+// processBlock() at all.
+TEST_CASE(editor_surface_renders_real_parameter_values_before_any_process_block_call) {
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("pre_audio_render"));
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+
+    // Positive control: push a page parameter to a value distinctly away
+    // from both its own registered default AND the grid's background-arc
+    // midpoint (0.5, drawn for every cell regardless of state) -- directly
+    // on the core Parameter object, via Parameter::HandleSetAbsolute (the
+    // SAME call a host-automation write or an operator's encoder turn
+    // ultimately makes, ParameterModulation.cpp) followed by directly
+    // driving Parameter::ProcessSample() itself, NOT
+    // processor.processBlock(): this settles UIDisplayCenter()'s own
+    // one-pole slew toward the new target entirely off the audio pump, the
+    // exact technique the pinned External/Sheaf commit's own pre-audio-
+    // population test uses (engine_tests.cpp,
+    // engine_message_thread_populates_ui_state_before_audio_ever_runs:
+    // "with NO engine.ProcessBlock(...) call anywhere in this test").
+    // Bank 0 is already the visible/active bank by default (no bank-select
+    // pump needed). Slot 6 ("Ph.mod 1"), not slots 0-2/3-5: those carry the
+    // Audio bank's own default-patch modulation overlay
+    // (ApplyAudioBankOverlay, FroggersModulation.hpp -- see this file's own
+    // host_automation_in_a_non_visible_bank_lands_there_and_leaves_the_
+    // operators_page_untouched comment on why that makes their
+    // UIDisplayCenter not a single stable constant to target).
+    constexpr std::size_t kBank = 0;
+    constexpr std::size_t kSlot = 6;
+    constexpr float kNonDefaultTarget = 0.8f;
+    synth::Parameter& probe = processor.ApplicationForTest().Parameters().PageParameter(kBank, kSlot);
+    const float defaultValue = synth_froggers::FroggersBankLayouts()[kBank].params[kSlot].defaultValue;
+    REQUIRE_TRUE(std::fabs(kNonDefaultTarget - defaultValue) > 0.2f);   // distinctly non-default.
+    REQUIRE_TRUE(std::fabs(kNonDefaultTarget - 0.5f) > 0.2f);           // distinctly off the background arc too.
+    probe.HandleSetAbsolute(probe.Group().Manager().Scene(), kNonDefaultTarget);
+    constexpr std::uint64_t kSettleSamples = 20000;
+    for (std::uint64_t sample = 0; sample < kSettleSamples; ++sample) {
+        probe.ProcessSample(sample);
+    }
+    constexpr float kTolerance = 0.01f;
+    REQUIRE_TRUE(std::fabs(probe.UIDisplayCenter(0) - kNonDefaultTarget) < kTolerance);  // settled pre-audio; sanity only.
+
+    // The only pump this test ever runs -- no processBlock() call anywhere
+    // in this test. PumpMessageThreadForTest() is timerCallback() itself
+    // (this file's own header comment, item 1), which fires
+    // engine_.MessageThreadTick() first, the claim-and-publish seam under
+    // test here.
+    processor.PumpMessageThreadForTest();
+
+    // The rendered tree: the SAME BuildTree() call the editor's
+    // PortableComponent makes every refresh (see
+    // host_automation_in_a_non_visible_bank_lands_there_and_leaves_the_
+    // operators_page_untouched's own comment on this).
+    const synth::ui::NodeTree tree = processor.EditorSurface().BuildTree();
+    const synth::ui::Node* encoder = FindNodeById(tree, synth_froggers::FroggersNodeIds::Encoder(kSlot));
+    REQUIRE_TRUE(encoder != nullptr);
+    // AppendEncoderCell()'s Draw lambda returns an EMPTY command list for a
+    // disconnected cell (BuildEncoderDrawCommands' own early return,
+    // EncoderDraw.hpp) -- i.e. exactly the blank surface a never-populated
+    // UIState renders. Real content here is already evidence the cell
+    // published as connected, not merely that a node with this id exists.
+    REQUIRE_TRUE(!encoder->drawCommands.empty());
+
+    // Real VALUE, not just presence: the ring's motion-indicator layers
+    // (AppendMotionIndicator, EncoderDraw.hpp) each draw a thin Arc
+    // SYMMETRIC around the current value via
+    // EncoderGeometry::ValueToArcAngle(), a pure linear map -- so the
+    // midpoint of any one layer's start/end angle is exactly
+    // ValueToArcAngle(value), independent of cell size or display spread
+    // (the settle loop above already drove that residual toward 0 too, the
+    // same one-pole tracking UIDisplayCenter() itself converges through).
+    // Counting these proves the rendered ring reflects kNonDefaultTarget
+    // specifically, not a stale or blank state that happened to still
+    // produce SOME arcs.
+    const float expectedAngle = synth::ui::EncoderGeometry::ValueToArcAngle(kNonDefaultTarget);
+    int matchingArcs = 0;
+    for (const synth::ui::DrawCommand& command : encoder->drawCommands) {
+        if (command.kind != synth::ui::DrawCommand::Kind::Arc) {
+            continue;
+        }
+        const float midAngle = (command.startRadians + command.endRadians) * 0.5f;
+        if (std::fabs(midAngle - expectedAngle) < 1e-3f) {
+            ++matchingArcs;
+        }
+    }
+    // Five arcs land on the value's own angle with no active modulation
+    // depths (this cell's own state): the min/max range arc collapses to a
+    // single point AT the value (currentMinValues_==currentMaxValues_==
+    // value, EncoderDraw.hpp's own AppendArcWithSwitchGaps call for it),
+    // plus AppendMotionIndicator's four layers (outline/outer/mid/core),
+    // all drawn at the identical start/end angle pair. The grid's own
+    // full-circle background track (0..1) never matches (its own midpoint
+    // is angle(0.5), asserted distinctly off above).
+    REQUIRE_TRUE(matchingArcs == 5);
+
+    std::cout << "  [pre-audio render] bank0.slot6 set to " << kNonDefaultTarget << " (default " << defaultValue
+              << ") pre-audio; one message-thread pump alone rendered " << matchingArcs
+              << " ring arcs at the matching angle, with no processBlock() call.\n";
+
+    processor.releaseResources();
+}
+
 // -- DAW session-state persistence -------------------------------------------
 // Three properties, each its own TEST_CASE below:
 //   1. Round trip: host-automated values survive getStateInformation() ->
