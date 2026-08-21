@@ -125,6 +125,16 @@ inline constexpr const char* kRecord = "froggers.transport.record";
 // (froggers.transport.freeze -> froggers.transport.freeze.label), mirroring
 // kBpmLabel's own "<control>.label" suffix off kBpm above.
 inline constexpr const char* kFreezeLabel = "froggers.transport.freeze.label";
+// The plugin's own input-channel selection control (task 3.4, design.md
+// section B) -- a single Button, its own label TEXT the currently selected
+// option (e.g. "IN: NONE"), that cycles to the next option on tap. Emitted
+// ONLY in plugin-host mode (same gate as kFreezeLabel above), in the row
+// space Play/Stop/Record no longer occupy there -- there is no standalone
+// equivalent: the standalone's own input-device selector lives on Sheaf's
+// audio runtime page, which this file does not render (see this file's
+// header comment / design.md section B, "Where it lives is the only real
+// difference from the standalone").
+inline constexpr const char* kInputSelect = "froggers.transport.input";
 // Row 3 of the left block (FroggersCellMap): Play | Stop | Freeze | Record.
 inline constexpr const char* kTransportRow = "froggers.layout.left.transport";
 // Row 4 of the left block: Scene 1 | Scene 2.
@@ -230,6 +240,11 @@ inline constexpr const char* kSceneBlend = "froggers.scene.blend";
 inline constexpr const char* kBpm = "froggers.bpm";
 inline constexpr const char* kEncoderPress = "froggers.encoder.press";
 inline constexpr const char* kEncoderDrag = "froggers.encoder.drag";
+// Task 3.4: cycles the plugin's input-channel selection to the next option
+// in the surface's own currently-rendered list (None -> channel 1 -> ... ->
+// Sum -> None). See FroggersNodeIds::kInputSelect above and HandleAction's
+// own branch for the exact cycle/callback mechanics.
+inline constexpr const char* kInputSelect = "froggers.transport.input";
 
 }  // namespace FroggersActions
 
@@ -836,6 +851,38 @@ public:
     void SetPluginHostMode(bool pluginHostMode) { pluginHostMode_ = pluginHostMode; }
     bool PluginHostMode() const { return pluginHostMode_; }
 
+    // Task 3.4 (design.md section B): the plugin's own input-channel
+    // selection control -- another host-only fact owned directly by the
+    // surface instance, same reasoning as pluginHostMode_ above (a host
+    // fact, this file has no concept of a JUCE audio bus to derive it from
+    // itself). `labels[0]` is always "None"; the plugin
+    // (FroggersPluginProcessor::ComputeInputOptionLabels(), ONLY writer of
+    // this list) derives the rest from its own live bus and calls this
+    // whenever that bus's shape might have changed -- construction, a host
+    // layout change, or a restored session. `selection` is an index into
+    // `labels`, clamped into range here (never trusted from the caller):
+    // this is the ONLY entry point that can move inputSelection_ WITHOUT
+    // going through the operator's own tap (HandleAction's kInputSelect
+    // branch below, the ONLY other writer), so a plugin-side re-validation
+    // (a layout change that removed the selected channel) always lands here
+    // too, not a second path.
+    void SetInputOptions(std::vector<std::string> labels, int selection) {
+        inputOptionLabels_ = std::move(labels);
+        const int count = static_cast<int>(inputOptionLabels_.size());
+        inputSelection_ = (count > 0 && selection >= 0 && selection < count) ? selection : 0;
+    }
+
+    // Message-thread only (same contract as every other write path in this
+    // class): registers the callback HandleAction's kInputSelect branch
+    // invokes with the NEXT index it just cycled to, whenever the operator
+    // taps the control. The plugin is the one that decides whether that
+    // index is actually valid and what it means for consent -- see this
+    // callback's registration site (FroggersPluginProcessor's constructor)
+    // for why re-validation belongs there, not here.
+    void SetInputSelectionChangedCallback(std::function<void(int)> callback) {
+        inputSelectionChangedCallback_ = std::move(callback);
+    }
+
     synth::ui::NodeTree BuildTree() override {
         const synth::ui::Bounds root = FroggersPageLayout::RootBounds(context_);
 
@@ -1009,6 +1056,23 @@ private:
     // fixed `Extent::Px` size on both axes (survives task F.3's deletion
     // table verbatim), so the plates stay their original 28x28 square
     // regardless of the row's resolved width.
+    // Task 3.4: "IN: <current option, upper-cased>" -- same all-caps
+    // convention kFreezeLabel's "FREEZE" already uses beside it. Falls back
+    // to inputOptionLabels_[0] ("None") if inputSelection_ is somehow out
+    // of range (it never should be -- SetInputOptions()/HandleAction's own
+    // kInputSelect branch both clamp it -- this is a display-only guard
+    // against reading past the vector, not a second validation path).
+    std::string InputSelectButtonLabel() const {
+        const std::size_t index = (inputSelection_ >= 0 && static_cast<std::size_t>(inputSelection_) < inputOptionLabels_.size())
+                                       ? static_cast<std::size_t>(inputSelection_)
+                                       : std::size_t{0};
+        std::string label = "IN: ";
+        for (char c : inputOptionLabels_[index]) {
+            label.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
+        }
+        return label;
+    }
+
     void AppendTransportRow(synth::ui::Builder& builder, float rowWeight) const {
         synth::ui::LayoutOptions rowLayout;
         rowLayout.main = synth::ui::Extent::Weight(rowWeight);
@@ -1027,7 +1091,16 @@ private:
         // attaching), so it is really just "the value this render pass
         // uses," not a live cross-thread read like app_->FreezeLatched().
         const bool pluginHostMode = pluginHostMode_;
-        builder.Row(FroggersNodeIds::kTransportRow, rowLayout, [app, pluginHostMode](synth::ui::Builder& b) {
+        // Task 3.4: the input-select Button's own rendered text -- computed
+        // fresh every rebuild (this file's header comment: the tree
+        // rebuilds every frame) from inputOptionLabels_/inputSelection_,
+        // the same "read live state fresh, capture the read INTO the
+        // lambda by value" idiom `app`/`pluginHostMode` just above already
+        // use, since the row-builder lambda below is not a member function
+        // and cannot read `this` implicitly.
+        const std::string inputSelectLabel = InputSelectButtonLabel();
+        builder.Row(FroggersNodeIds::kTransportRow, rowLayout,
+                    [app, pluginHostMode, inputSelectLabel](synth::ui::Builder& b) {
             // In plugin mode, Play, Stop, and Record are not rendered; the
             // Freeze button stays and gains a "FREEZE" text label beside it
             // in the freed row space. pluginHostMode_ defaults false, so
@@ -1079,6 +1152,20 @@ private:
                 // beside its control (a Row's in-flow next child) instead
                 // of below it (those two sit in a Column).
                 b.Label(FroggersNodeIds::kFreezeLabel, "FREEZE", synth::ui::ControlStyle{});
+
+                // The input-channel selection control (design.md section
+                // B): a plain Button (not a Draw plate, unlike Freeze/
+                // Record -- it needs no latched/armed colour inversion,
+                // just its own current-selection TEXT, which a Button's
+                // `label` already carries) whose tap cycles to the surface's
+                // next option (HandleAction's kInputSelect branch, below).
+                // Intrinsic width -- unlike the fixed 28px transport plates,
+                // its label's length varies with the option text ("IN:
+                // NONE" vs "IN: SUM").
+                synth::ui::ControlStyle inputSelectStyle{};
+                inputSelectStyle.layout.cross = synth::ui::Extent::Intrinsic();
+                b.Button(FroggersNodeIds::kInputSelect, inputSelectLabel,
+                         synth::ui::Action::Named(FroggersActions::kInputSelect), inputSelectStyle);
             } else {
                 // Record, fourth child, same 28px plate idiom and same
                 // "read live state fresh every rebuild" lambda shape as
@@ -1983,6 +2070,25 @@ private:
             PushMessage(synth::MessageIn::SetSceneBlend(NowMicros(), blend));
             return;
         }
+        if (action.name == FroggersActions::kInputSelect) {
+            // Cycles to the next option in the list this surface was last
+            // handed (SetInputOptions(), above) -- None -> channel 1 -> ...
+            // -> Sum -> None. Applied to inputSelection_ directly (a live
+            // render-state write, the same "surface owns this fact, the
+            // plugin listens for changes" split pluginHostMode_ established
+            // above) and handed to the plugin's callback so IT can
+            // re-validate against the actual bus and decide consent --
+            // this method never decides connectedness itself.
+            const int count = static_cast<int>(inputOptionLabels_.size());
+            if (count > 0) {
+                const int next = (inputSelection_ + 1) % count;
+                inputSelection_ = next;
+                if (inputSelectionChangedCallback_) {
+                    inputSelectionChangedCallback_(next);
+                }
+            }
+            return;
+        }
         if (action.name == FroggersActions::kEncoderDrag) {
             std::size_t position = 0;
             float delta = 0.0f;
@@ -2085,6 +2191,17 @@ private:
     // existing construction of this class -- default constructed, this flag
     // never touched -- renders exactly as before.
     bool pluginHostMode_ = false;
+    // See SetInputOptions()'s own comment. Defaults to just "None" (index
+    // 0), the same "unavailable" reading a disabled/zero-channel bus
+    // produces -- so a plugin-host construction that has not yet called
+    // SetInputOptions() (there is no such window in production; only a
+    // bare-context surface, e.g. FroggersSurfaceTests.cpp's layout-only
+    // tests, would ever observe this default) renders the control exactly
+    // as if the bus were disabled, never as if something were already
+    // selected.
+    std::vector<std::string> inputOptionLabels_{"None"};
+    int inputSelection_ = 0;
+    std::function<void(int)> inputSelectionChangedCallback_;
     mutable std::uint64_t fallbackTimestamp_ = 1;
 };
 

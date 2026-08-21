@@ -100,6 +100,17 @@ constexpr const char* kFreezeLatchedKey = "freezeLatched";
 // write sites (PumpStatePersistence()) for the accessor/authority each
 // direction uses.
 constexpr const char* kVisibleBankIndexKey = "visibleBankIndex";
+// Third sessionExtras sibling key (task 3.4): the operator's input-channel
+// selection -- an index into FroggersPluginProcessor::
+// ComputeInputOptionLabels()'s own return value (0 == "None"). Same object,
+// same round trip, no new mechanism -- see this key's own read/write sites
+// (PumpStatePersistence()) for the accessor/authority each direction uses,
+// and ApplyInputSelection()'s own comment for why the restore side
+// bounds-checks against the CURRENT bus rather than trusting the stored
+// index. Missing key (a blob saved before this change existed) restores to
+// 0 ("None"), the same default a fresh session already starts at -- opt-in
+// audio is off until the operator affirmatively selects a channel again.
+constexpr const char* kInputSelectionKey = "inputSelection";
 
 // A present-but-wrong-typed value is treated the same as an absent one
 // (left alone) rather than silently coerced to false -- IsNull() alone
@@ -119,13 +130,21 @@ FroggersPluginProcessor::FroggersPluginProcessor()
     : FroggersPluginProcessor(ProductionDataPaths()) {}
 
 FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPathsForTest)
-    // No .withInput(...) call: bus posture is stereo OUTPUT ONLY, no audio
-    // input bus (group 5 brief, binding) -- a plugin-format bus layout
-    // decision, independent of FroggersAppCore::Config()'s numAudioInputs
-    // (that field governs the standalone app's own audio-device channel
-    // request, a different JUCE subsystem this plugin does not use; see
-    // processBlock()'s own comment on how the two are reconciled).
-    : juce::AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true))
+    // One OPTIONAL mono input bus alongside the existing stereo output
+    // (task 3.2): the third `withInput` argument (`isActivatedByDefault =
+    // false`) declares the bus present but disabled until a host
+    // explicitly enables it -- JUCE's own mechanism for a bus an
+    // instrument still instantiates and still makes sound with left
+    // disconnected. Mono, not stereo: FroggersAppCore::Config()'s own
+    // numAudioInputs == 1 (that field governs the standalone app's own
+    // audio-device channel request, a different JUCE subsystem this
+    // plugin does not use directly -- see processBlock()'s own comment on
+    // how the two are reconciled), so the bus can never negotiate more
+    // channels than the core actually requests. isBusesLayoutSupported()
+    // (below) accepts both the disabled() and mono() layouts for this bus.
+    : juce::AudioProcessor(BusesProperties()
+                               .withInput("Input", juce::AudioChannelSet::mono(), false)
+                               .withOutput("Output", juce::AudioChannelSet::stereo(), true))
     , startTime_(std::chrono::steady_clock::now())
     , engine_([this] { return NowMicros(); }) {
     // Runtime.hpp Start() order (:223,230, this file's header comment):
@@ -133,6 +152,20 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
     // discovery reads dataPaths_ during Initialize() (Engine.hpp:213-222's
     // own doc comment on step 8).
     engine_.SetRuntimeDataPaths(std::move(dataPathsForTest));
+    // Wires this plugin's own InputRoutingSignal into the AppContext
+    // BEFORE engine_.Initialize() below ever runs App::Init() -- mirrors
+    // Runtime.hpp's constructor (`engine_.Context().inputRoutingSignal =
+    // &inputRoutingSignal_;`, set before Start()/Initialize() can run
+    // App::Init()), so FroggersAppCore::Init()'s context_->InputRouted()
+    // read and context_->SetInputRoutedChangedCallback() registration see
+    // this same live signal -- the one processorLayoutsChanged() (below)
+    // publishes into -- rather than a null pointer (AppContext::
+    // InputRouted() reads false when unset). inputRoutingSignal_ is
+    // declared before engine_ in this class's header (see that member's
+    // own comment) so it is already constructed here and outlives engine_
+    // through teardown, including FroggersAppCore::~FroggersAppCore()'s
+    // own unregistration through this same pointer.
+    engine_.Context().inputRoutingSignal = &inputRoutingSignal_;
     // Called ONCE, in the constructor -- not in prepareToPlay(), which JUCE
     // may call repeatedly (sample-rate/block-size renegotiation). Mirrors
     // Runtime::Start() calling engine_.Initialize() once, before any audio
@@ -172,6 +205,31 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
     // "T5.3c" comment on activeSession_'s concrete type).
     static_cast<synth_froggers::FroggersUiSurface&>(engine_.Application().PortableSurface())
         .SetPluginHostMode(true);
+
+    // Task 3.4: the operator's input-channel selector, same downcast
+    // reasoning and same instance as SetPluginHostMode() immediately above.
+    // The callback is the surface's only write path back to this class
+    // (the operator's tap, HandleAction's kInputSelect branch,
+    // FroggersUiSurface.hpp): it hands back the NEXT option index the
+    // surface just cycled to, and ApplyInputSelection() below is what
+    // re-validates it, applies it, and publishes the resulting connected
+    // state -- the surface itself never decides connectedness, only which
+    // index the operator asked for next. Registered before the seed call
+    // below so that call's own SetInputOptions() push has somewhere to land
+    // (SetInputSelectionChangedCallback() itself never fires from a plain
+    // registration).
+    static_cast<synth_froggers::FroggersUiSurface&>(engine_.Application().PortableSurface())
+        .SetInputSelectionChangedCallback([this](int selectionIndex) { ApplyInputSelection(selectionIndex); });
+    // Seeds the surface with the bus's initial (disabled, per the
+    // constructor's own BusesProperties comment above) option list -- just
+    // "None" -- and publishes the matching connected=false into
+    // inputRoutingSignal_, so the very first BuildTree() the editor ever
+    // renders already shows the real bus shape rather than an empty
+    // default. inputSelection_ is already 0 (its NSDMI) at this point, so
+    // this call changes nothing about consent -- it only makes the already-
+    // true "not connected" state visible to the surface and explicit in
+    // inputRoutingSignal_ rather than assumed.
+    ApplyInputSelection(inputSelection_);
 
     // Group 7 (task 7.1): FroggersParameterModel's Parameters (and
     // FroggersApp's production DispatchAction seam, for Freeze) only exist
@@ -218,6 +276,11 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
             // mirrors.
             sessionExtras.SetNew(kVisibleBankIndexKey,
                                   arena.Integer(static_cast<std::int64_t>(synth_froggers::FroggersVisibleBankIndex(engine_.Context()))));
+            // Same sibling-key treatment, seeded with inputSelection_'s own
+            // actual current value (0, "None" -- ApplyInputSelection() has
+            // already run once by this point in the constructor, above)
+            // rather than an assumed constant.
+            sessionExtras.SetNew(kInputSelectionKey, arena.Integer(static_cast<std::int64_t>(inputSelection_)));
             root.SetNew(kSessionExtrasKey, sessionExtras);
             if (char* dumped = root.Dumps(JSON_ENCODE_ANY)) {
                 cachedStateJsonText_ = dumped;
@@ -343,16 +406,105 @@ void FroggersPluginProcessor::releaseResources() {
 }
 
 bool FroggersPluginProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
-    // Binding bus posture (group 5 brief): stereo output only, no input bus.
-    // The constructor's BusesProperties never declares an input bus, so
-    // getMainInputChannelSet() is already always disabled(); checked
-    // explicitly here anyway so a future edit that adds an input bus to the
-    // constructor without updating this method fails loudly instead of
-    // silently accepting a mono/multichannel input layout.
-    if (layouts.getMainInputChannelSet() != juce::AudioChannelSet::disabled()) {
+    // Bus posture (task 3.2): stereo output, plus ONE OPTIONAL mono input
+    // bus (the constructor's BusesProperties above declares it, disabled
+    // by default -- see that comment). A host may leave the input bus at
+    // disabled() (the plugin still instantiates and makes sound) or enable
+    // it at mono() (the only channel set the bus was declared with);
+    // anything else -- stereo/multichannel input, or a non-stereo output --
+    // is rejected.
+    const juce::AudioChannelSet mainInput = layouts.getMainInputChannelSet();
+    if (mainInput != juce::AudioChannelSet::disabled() && mainInput != juce::AudioChannelSet::mono()) {
         return false;
     }
     return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();
+}
+
+std::vector<std::string> FroggersPluginProcessor::ComputeInputOptionLabels() const {
+    // Index 0 is always "None" -- the only option when the bus is disabled
+    // or (defensively) reports zero channels, and design.md section B's own
+    // required first entry regardless of bus shape ("the only option is
+    // None, and the control reads as unavailable rather than pretending to
+    // offer something").
+    std::vector<std::string> labels{"None"};
+    const juce::AudioProcessor::Bus* inputBus = getBus(true, 0);
+    if (inputBus == nullptr || !inputBus->isEnabled()) {
+        return labels;
+    }
+    const int numChannels = inputBus->getNumberOfChannels();
+    if (numChannels <= 0) {
+        return labels;
+    }
+    // One entry per channel the bus CURRENTLY provides -- read from the
+    // live layout (getCurrentLayout()), never assumed from the bus's
+    // declared mono() type, so this stays correct even if a future edit
+    // widens the declared bus. Named via juce::AudioChannelSet's own
+    // channel-type vocabulary (task 3.4's own instruction), not an
+    // invented "Ch<N>" scheme.
+    const juce::AudioChannelSet layout = inputBus->getCurrentLayout();
+    for (int channel = 0; channel < numChannels; ++channel) {
+        labels.push_back(
+            juce::AudioChannelSet::getAbbreviatedChannelTypeName(layout.getTypeOfChannel(channel)).toStdString());
+    }
+    // Sum, only when the bus provides more than one channel -- design.md
+    // section B: "two or more -- None, each channel, and their sum."
+    if (numChannels > 1) {
+        labels.push_back("Sum");
+    }
+    return labels;
+}
+
+void FroggersPluginProcessor::ApplyInputSelection(int selectionIndex) {
+    const std::vector<std::string> labels = ComputeInputOptionLabels();
+    const int optionCount = static_cast<int>(labels.size());
+    // Re-validated against the CURRENT bus every time this runs -- a
+    // selection the host has invalidated (a layout change removed the
+    // channel it named, or a restored session named one this bus never
+    // had) falls back to index 0 ("None") rather than reading a channel
+    // that is gone. Never trusts `selectionIndex` merely because a caller
+    // (the surface's tap handler, or a restored session blob) named it.
+    inputSelection_ = (selectionIndex >= 0 && selectionIndex < optionCount) ? selectionIndex : 0;
+    // Pushes the freshly-derived option list and the (possibly just
+    // fallen-back) selection into the portable surface -- the ONLY writer
+    // of the surface's rendered copy, so what the operator sees can never
+    // lag what this method just validated.
+    static_cast<synth_froggers::FroggersUiSurface&>(engine_.Application().PortableSurface())
+        .SetInputOptions(labels, inputSelection_);
+    // "Connected is consent, never channel presence" (design.md section
+    // B): true only when the OPERATOR has selected something other than
+    // "None" -- never merely because the host left the bus enabled with
+    // channels. The SAME seam the standalone host uses to report its own
+    // routed-input state (Runtime.hpp's RefreshInputRoutedState()/
+    // inputRoutingSignal_.Publish(bool)), not a second, plugin-private
+    // mechanism. Publish() itself only invokes the registered changed-
+    // callback when the value actually differs from its last-published one
+    // (InputRoutingSignal::Publish(), AppContext.hpp) -- FroggersAppCore::
+    // Init()'s context_->SetInputRoutedChangedCallback() registration
+    // (app/FroggersAppCore.hpp) is what actually applies a real change,
+    // once, on the next audio block (ProcessFrame(), that file's own
+    // comment on why the apply is deferred off this, message-thread,
+    // call).
+    inputRoutingSignal_.Publish(inputSelection_ != 0);
+}
+
+void FroggersPluginProcessor::processorLayoutsChanged() {
+    // Fires once per ACTUAL bus-layout change (JUCE's own AudioProcessor::
+    // applyBusLayouts()/audioIOChanged() path calls this unconditionally
+    // whenever the committed layout differs from the previous one -- a
+    // no-op request, e.g. re-requesting the layout already in effect,
+    // short-circuits before reaching here) -- never once per processBlock()
+    // call, unlike isBusesLayoutSupported() (queried during negotiation,
+    // before any layout is committed) or processBlock() itself (audio
+    // thread, called every callback regardless of whether the layout
+    // changed since the previous one). This is therefore the right, and
+    // only, place to re-derive the option set and re-validate the current
+    // selection against it (design.md section B: "Re-validate against the
+    // current bus on every layout change and fall back to None").
+    // Re-applying the SAME index the operator (or a restore) last chose is
+    // deliberate: ApplyInputSelection() re-derives the option list fresh
+    // from the bus every call, so a channel that no longer exists falls
+    // back to None here even though the index itself did not change.
+    ApplyInputSelection(inputSelection_);
 }
 
 void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) {
@@ -438,26 +590,50 @@ void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
     }
 
     const int numSamples = buffer.getNumSamples();
+
+    // The optional input bus (see isBusesLayoutSupported()'s own comment,
+    // above): getBusBuffer() reads the bus's ACTUAL negotiated channel
+    // count directly from JUCE -- a zero-channel view when the host has
+    // left the bus disabled, a one-channel view when the host has enabled
+    // it -- rather than re-deriving it from BusesProperties, since a host
+    // is free to (dis)connect the bus at any point between construction
+    // and this call. Obtained BEFORE the output write pointers below: this
+    // bus and the output bus may share the same underlying buffer channels
+    // (JUCE's standard in-place convention for buses of equal-or-narrower
+    // input width), so the read pointers captured here must be taken while
+    // they still point at genuine input samples, not samples this same
+    // call has already overwritten with synth output.
+    juce::AudioBuffer<float> inputBusBuffer = getBusBuffer(buffer, true, 0);
+    const int numInputChannelsThisBlock = inputBusBuffer.getNumChannels();
+    const float* const* inputPointers =
+        numInputChannelsThisBlock > 0 ? inputBusBuffer.getArrayOfReadPointers() : nullptr;
+
     std::array<float*, 2> outputPointers{buffer.getWritePointer(0), buffer.getWritePointer(1)};
 
-    // This plugin's BusesProperties declares no input bus (see
-    // isBusesLayoutSupported's own comment, above), so `buffer` never
-    // carries real input samples -- inputs stays null and numInputChannels
-    // stays 0, regardless of FroggersAppCore::Config()'s numAudioInputs.
-    // numRequestedInputChannels is a different field: AppContext.hpp
-    // documents it as "hosts set this explicitly from immutable
-    // RuntimeConfig" -- the requested CEILING, independent of how many
-    // channels this callback actually delivers -- and Engine::ProcessBlock
-    // asserts it equals config_.numAudioInputs exactly (Engine.hpp:410), so
-    // it is read from the engine's own already-negotiated config rather
-    // than a second, independent literal that could drift out of sync with
-    // it. startSample/clockPlan are OUT params the engine sets itself
+    // Same AudioBlock shape the standalone host's real audio-device
+    // callback builds (Runtime.hpp's audioDeviceIOCallbackWithContext):
+    // `inputs` null-gated on an all-or-nothing zero-channel check rather
+    // than an array of per-channel nulls, `numInputChannels` the bus's
+    // actual channel count this block. numRequestedInputChannels is a
+    // different field: AppContext.hpp documents it as "hosts set this
+    // explicitly from immutable RuntimeConfig" -- the requested CEILING,
+    // independent of how many channels this callback actually delivers --
+    // and Engine::ProcessBlock asserts it equals config_.numAudioInputs
+    // exactly (Engine.hpp:410), so it is read from the engine's own
+    // already-negotiated config rather than a second, independent literal
+    // that could drift out of sync with it. FroggersAppCore::ProcessBlock()
+    // does not read block.inputs/numInputChannels itself today (see that
+    // method's own comment on why "connected" is driven entirely through
+    // InputRouted()/SetExternalAudioConnected() instead) -- populating
+    // them here anyway keeps this plugin's AudioBlock construction
+    // structurally identical to the standalone's, not a second, narrower
+    // shape. startSample/clockPlan are OUT params the engine sets itself
     // during ProcessBlock (Engine.hpp:402-405) -- left default-constructed
     // here, exactly as SynthRig does.
     synth::AudioBlock block;
-    block.inputs = nullptr;
+    block.inputs = inputPointers;
     block.outputs = outputPointers.data();
-    block.numInputChannels = 0;
+    block.numInputChannels = numInputChannelsThisBlock;
     block.numOutputChannels = static_cast<int>(outputPointers.size());
     block.numFrames = static_cast<std::size_t>(numSamples);
     block.numRequestedInputChannels = engine_.Config().numAudioInputs;
@@ -1175,6 +1351,31 @@ void FroggersPluginProcessor::PumpStatePersistence() {
                         engine_.Application().RequestBankSelect(static_cast<std::size_t>(requestedBankIx));
                     }
                 }
+                // Same missing-or-wrong-typed-is-a-no-op treatment as the two
+                // keys above -- a blob saved before this key existed (or
+                // with sessionExtras but no input-selection key) leaves
+                // inputSelection_ exactly where it already is (0, "None" --
+                // its NSDMI, unchanged by construction unless the operator
+                // or a valid restore sets it), which is exactly the "opt-in
+                // audio defaults off" contract design.md section B
+                // requires. Bounds-checked HERE, against a FRESH
+                // ComputeInputOptionLabels() (the CURRENT bus, which a
+                // project reopened on a different host/layout may not
+                // match), before ever reaching ApplyInputSelection() --
+                // same discipline as the visible-bank-index check just
+                // above, and the same reason: a value this document names
+                // is a claim from a document, never a fact about the
+                // currently running host, and a claim that does not fit is
+                // dropped rather than trusted.
+                const synth::JSON inputSelectionJson = root.Get(kSessionExtrasKey).Get(kInputSelectionKey);
+                if (IsJsonInteger(inputSelectionJson)) {
+                    const std::int64_t requestedInputSelection = inputSelectionJson.IntegerValue();
+                    const std::vector<std::string> labels = ComputeInputOptionLabels();
+                    if (requestedInputSelection >= 0 &&
+                        static_cast<std::uint64_t>(requestedInputSelection) < labels.size()) {
+                        ApplyInputSelection(static_cast<int>(requestedInputSelection));
+                    }
+                }
             } else {
                 const std::lock_guard<std::mutex> lock(stateBlockMutex_);
                 pendingRestoreJsonText_ = std::move(*restoreText);
@@ -1210,6 +1411,11 @@ void FroggersPluginProcessor::PumpStatePersistence() {
         // the message thread every refresh.
         sessionExtras.SetNew(kVisibleBankIndexKey,
                               responseArena.Integer(static_cast<std::int64_t>(synth_froggers::FroggersVisibleBankIndex(engine_.Context()))));
+        // Same sibling-key treatment, read fresh from inputSelection_ --
+        // this class's own single write path is ApplyInputSelection(), so
+        // there is nothing to go stale between transitions the way a
+        // polled value could.
+        sessionExtras.SetNew(kInputSelectionKey, responseArena.Integer(static_cast<std::int64_t>(inputSelection_)));
         response.document.root.SetNew(kSessionExtrasKey, sessionExtras);
 
         if (char* dumped = response.document.root.Dumps(JSON_ENCODE_ANY)) {

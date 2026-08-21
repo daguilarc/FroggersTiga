@@ -113,6 +113,7 @@
 // the same way it would for any other automatable plugin parameter.
 
 #include "Froggers.hpp"
+#include "synth/AppContext.hpp"
 #include "synth/AppRegistry.hpp"
 #include "synth/Engine.hpp"
 #include "synth/MasterClock.hpp"
@@ -164,6 +165,13 @@ public:
     void releaseResources() override;
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
     void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) override;
+
+    // Task 3.2: fires once per actual bus-layout change (never once per
+    // processBlock()) -- see this method's own comment in the .cpp for the
+    // full JUCE-callback trace and why this, not processBlock() or
+    // isBusesLayoutSupported(), is where "is an input actually routed in"
+    // gets recomputed.
+    void processorLayoutsChanged() override;
 
     // Group 8: the real portable-surface editor (FroggersPluginEditor.hpp)
     // -- defined out-of-line in the .cpp so this header does not need to
@@ -305,6 +313,14 @@ public:
     synth_froggers::FroggersApp& ApplicationForTest() { return engine_.Application(); }
     // Not const: engine_.UiBus() itself has no const overload (Engine.hpp).
     std::size_t UiBusPendingCountForTest() { return engine_.UiBus().Size(); }
+
+    // Task 3.4 test-only accessor: the canonical input-selection index a
+    // test asserts against, rather than reaching into the portable
+    // surface's own rendered copy (SetInputOptions()'s own comment,
+    // FroggersUiSurface.hpp, on why that copy exists at all). 0 is always
+    // "None"; see ComputeInputOptionLabels()'s own comment for what the
+    // rest of the index space means.
+    int InputSelectionForTest() const { return inputSelection_; }
 
     // Task 7.2 tests need no new test-only accessors beyond what's already
     // public: every exposed host parameter is a plain
@@ -591,6 +607,56 @@ private:
 
     std::uint64_t NowMicros() const;
 
+    // Task 3.2: this plugin's own storage for the "is an input actually
+    // routed in" signal FroggersAppCore reads via synth::AppContext::
+    // InputRouted()/SetInputRoutedChangedCallback() -- the exact same
+    // synth::InputRoutingSignal type and seam the standalone host's
+    // Runtime.hpp uses (its own `inputRoutingSignal_` member, wired the
+    // same way -- see the constructor's own comment in the .cpp).
+    // Declared BEFORE engine_ (not after): C++ destroys members in reverse
+    // declaration order, and FroggersAppCore::~FroggersAppCore() (run
+    // during engine_'s own destruction) unregisters its callback through
+    // the pointer wired into engine_.Context().inputRoutingSignal --
+    // inputRoutingSignal_ must therefore still be alive when engine_ tears
+    // down, i.e. destroyed AFTER it, i.e. declared BEFORE it here.
+    synth::InputRoutingSignal inputRoutingSignal_;
+
+    // Task 3.4: derives this plugin's input-channel option list from the
+    // LIVE JUCE bus (isEnabled()/getNumberOfChannels()/getCurrentLayout(),
+    // never a cached copy) -- index 0 is always "NONE"; indices 1..N are
+    // one entry per channel the bus currently provides (name via
+    // juce::AudioChannelSet); index N+1 is "SUM", present only when N > 1.
+    // Called fresh every time the option set might have changed -- never
+    // cached across a layout change, the exact discipline design.md section
+    // B requires ("never read a channel because a stored value names it").
+    std::vector<std::string> ComputeInputOptionLabels() const;
+
+    // Task 3.4: the single write path for the operator's input-channel
+    // selection, called from three places that must all funnel through the
+    // SAME re-validation -- the constructor (seeds "None" against the
+    // bus's initial, disabled shape), processorLayoutsChanged() (re-derives
+    // the option list against the bus's NEW shape and re-validates the
+    // CURRENT selection against it), and the portable surface's own
+    // input-select action (the operator's tap, cycling to the next option
+    // it last rendered). `selectionIndex` is bounds-checked against a
+    // FRESH ComputeInputOptionLabels() here, not trusted from the caller --
+    // an index that no longer names a real option (a layout change removed
+    // it, or a restored session named one the current bus does not have)
+    // falls back to index 0 ("None"), never left pointing at nothing.
+    // Publishes the resulting connected state -- selection != None, NEVER
+    // bus-enabled-with-channels -- into inputRoutingSignal_ (the phantom-
+    // input defect design.md section B exists to prevent), and pushes the
+    // freshly-derived labels/selection into the portable surface so the
+    // rendered control never lags what was just computed.
+    void ApplyInputSelection(int selectionIndex);
+
+    // Task 3.4: this plugin's own canonical copy of the operator's
+    // input-channel selection -- an index into ComputeInputOptionLabels()'s
+    // own return value (0 == "None", the default). Read directly by
+    // PumpStatePersistence()'s snapshot side and InputSelectionForTest();
+    // written ONLY by ApplyInputSelection() above, so no path can set it to
+    // an unvalidated value.
+    int inputSelection_ = 0;
     std::chrono::steady_clock::time_point startTime_;
     synth::Engine<synth_froggers::FroggersApp> engine_;
 };

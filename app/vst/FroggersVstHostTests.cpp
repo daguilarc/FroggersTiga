@@ -546,9 +546,13 @@ TEST_CASE(plugin_mode_transport_row_thins_to_freeze_and_label_only) {
     const synth::ui::NodeTree tree = BuildFroggersTree(/*pluginHostMode=*/true);
     const synth::ui::Node* row = FindNodeById(tree, synth_froggers::FroggersNodeIds::kTransportRow);
     REQUIRE_TRUE(row != nullptr);
-    REQUIRE_TRUE(row->children.size() == 2);
+    // Task 3.4 (design.md section B): a third child joined Freeze/its
+    // label in the freed row space -- the plugin's own input-channel
+    // selection control.
+    REQUIRE_TRUE(row->children.size() == 3);
     REQUIRE_TRUE(row->children[0].value == synth_froggers::FroggersNodeIds::kFreeze);
     REQUIRE_TRUE(row->children[1].value == synth_froggers::FroggersNodeIds::kFreezeLabel);
+    REQUIRE_TRUE(row->children[2].value == synth_froggers::FroggersNodeIds::kInputSelect);
 
     REQUIRE_TRUE(FindNodeById(tree, synth_froggers::FroggersNodeIds::kPlay) == nullptr);
     REQUIRE_TRUE(FindNodeById(tree, synth_froggers::FroggersNodeIds::kStop) == nullptr);
@@ -565,6 +569,19 @@ TEST_CASE(plugin_mode_transport_row_thins_to_freeze_and_label_only) {
     // text for controls that render their own (buttons/sliders/etc, see
     // that struct's own comment); a Label node's displayed text is `text`.
     REQUIRE_TRUE(label->text == "FREEZE");
+
+    // Task 3.4: a bare-context surface (app_ == nullptr, this function's
+    // own Attach() call) never had SetInputOptions() called on it, so it
+    // renders its own default -- just "None" -- the same "unavailable"
+    // reading a disabled bus produces (inputOptionLabels_'s own NSDMI
+    // comment, FroggersUiSurface.hpp). Builder::Button() stores its display
+    // text in Node::label (not Node::text, unlike a Label node -- see the
+    // comment on the Freeze label just above for the reverse case).
+    const synth::ui::Node* inputSelect = FindNodeById(tree, synth_froggers::FroggersNodeIds::kInputSelect);
+    REQUIRE_TRUE(inputSelect != nullptr);
+    REQUIRE_TRUE(inputSelect->action.has_value() &&
+                 inputSelect->action->name == synth_froggers::FroggersActions::kInputSelect);
+    REQUIRE_TRUE(inputSelect->label == "IN: NONE");
 }
 
 // -- 5. Stable-ID host parameter surface (task 7.2) --------------------------
@@ -1258,9 +1275,13 @@ TEST_CASE(production_processor_surface_is_plugin_mode_with_bpm_display_only_whil
     // branching-logic proof, now through the REAL production object graph.
     const synth::ui::Node* row = FindNodeById(tree, synth_froggers::FroggersNodeIds::kTransportRow);
     REQUIRE_TRUE(row != nullptr);
-    REQUIRE_TRUE(row->children.size() == 2);
+    // Task 3.4: a third child joined Freeze/its label -- see
+    // plugin_mode_transport_row_thins_to_freeze_and_label_only's own
+    // updated comment for why.
+    REQUIRE_TRUE(row->children.size() == 3);
     REQUIRE_TRUE(row->children[0].value == synth_froggers::FroggersNodeIds::kFreeze);
     REQUIRE_TRUE(row->children[1].value == synth_froggers::FroggersNodeIds::kFreezeLabel);
+    REQUIRE_TRUE(row->children[2].value == synth_froggers::FroggersNodeIds::kInputSelect);
     REQUIRE_TRUE(FindNodeById(tree, synth_froggers::FroggersNodeIds::kPlay) == nullptr);
     REQUIRE_TRUE(FindNodeById(tree, synth_froggers::FroggersNodeIds::kStop) == nullptr);
     REQUIRE_TRUE(FindNodeById(tree, synth_froggers::FroggersNodeIds::kRecord) == nullptr);
@@ -2057,6 +2078,356 @@ TEST_CASE(state_information_session_extras_without_bank_key_restores_freeze_latc
 
     std::cout << "  [state] sessionExtras present, bank key absent: freeze latch restored to engaged, page left at "
                  "its default (ActiveBankIndex()=0).\n";
+}
+
+// -- 7. Optional audio input bus and its input-channel selection (task 3.4,
+// design.md section B) --------------------------------------------------
+// Same -60dBFS silence floor and ~1s settle budget every other audio-
+// producing test in this file uses (see the Freeze section's own citation
+// of FroggersVstSmokeTest.cpp's kSilenceFloorLinear). Each TEST_CASE below
+// gets its own fresh processor/scratch root (ScratchDataPaths(), this
+// file's own convention) rather than sharing one across cases.
+TEST_CASE(input_bus_absent_by_default_and_the_plugin_still_produces_audio) {
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("input_bus_absent"));
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+
+    // Bus posture straight out of construction (isBusesLayoutSupported()'s
+    // own comment, FroggersPluginProcessor.cpp): the optional input bus is
+    // declared but disabled until a host opts in.
+    const juce::AudioProcessor::Bus* inputBus = processor.getBus(true, 0);
+    REQUIRE_TRUE(inputBus != nullptr);
+    REQUIRE_TRUE(!inputBus->isEnabled());
+
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+    auto runBlocksMeasuringPeak = [&](int blocks) {
+        float peak = 0.0f;
+        for (int i = 0; i < blocks; ++i) {
+            buffer.clear();
+            processor.processBlock(buffer, midi);
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch) {
+                const float* samples = buffer.getReadPointer(ch);
+                for (int s = 0; s < buffer.getNumSamples(); ++s) {
+                    peak = std::max(peak, std::fabs(samples[s]));
+                }
+            }
+        }
+        return peak;
+    };
+
+    processor.TestStartTransport();
+    const float settledPeak = runBlocksMeasuringPeak(188);
+    constexpr float kSilenceFloorLinear = 1.0e-3f;
+    REQUIRE_TRUE(settledPeak >= kSilenceFloorLinear);  // "optional" -- disabled input never silences the instrument.
+
+    // Left exactly as it started: producing audio never implicitly enables
+    // the bus.
+    REQUIRE_TRUE(!inputBus->isEnabled());
+
+    processor.releaseResources();
+    std::cout << "  [input bus] absent by default, settledPeak=" << settledPeak << " (>= silence floor "
+              << kSilenceFloorLinear << ").\n";
+}
+
+TEST_CASE(input_bus_present_when_a_host_enables_it_and_the_plugin_still_produces_audio) {
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("input_bus_present"));
+    juce::AudioProcessor::Bus* inputBus = processor.getBus(true, 0);
+    REQUIRE_TRUE(inputBus != nullptr);
+    REQUIRE_TRUE(inputBus->enable(true));  // host connects the optional bus before negotiating the session.
+    REQUIRE_TRUE(inputBus->isEnabled());
+    REQUIRE_TRUE(inputBus->getNumberOfChannels() == 1);  // mono -- see the constructor's own comment on why.
+
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+    auto runBlocksMeasuringPeak = [&](int blocks) {
+        float peak = 0.0f;
+        for (int i = 0; i < blocks; ++i) {
+            buffer.clear();
+            processor.processBlock(buffer, midi);
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch) {
+                const float* samples = buffer.getReadPointer(ch);
+                for (int s = 0; s < buffer.getNumSamples(); ++s) {
+                    peak = std::max(peak, std::fabs(samples[s]));
+                }
+            }
+        }
+        return peak;
+    };
+
+    processor.TestStartTransport();
+    const float settledPeak = runBlocksMeasuringPeak(188);
+    constexpr float kSilenceFloorLinear = 1.0e-3f;
+    REQUIRE_TRUE(settledPeak >= kSilenceFloorLinear);  // the instrument still makes sound with the bus connected.
+
+    processor.releaseResources();
+    std::cout << "  [input bus] present (host-enabled), settledPeak=" << settledPeak << " (>= silence floor "
+              << kSilenceFloorLinear << ").\n";
+}
+
+// Dispatches the exact same kInputSelect action the rendered control
+// dispatches on a tap (FroggersUiSurface.hpp's own HandleAction branch),
+// through the SAME production seam TestStartTransport()/TestStopTransport()
+// use (EditorSurface().DispatchAction()) -- never a hand-mirrored write to
+// inputSelection_, which this file has no access to anyway (private).
+void DispatchInputSelect(frogg3rs_vst::FroggersPluginProcessor& processor) {
+    processor.EditorSurface().DispatchAction(
+        synth::ui::Action::Named(synth_froggers::FroggersActions::kInputSelect));
+}
+
+TEST_CASE(input_bus_selecting_a_channel_connects_the_external_sources) {
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("input_bus_select_channel"));
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+
+    // Positive control: the sources must NOT already read connected before
+    // this test does anything -- otherwise the assertion below would pass
+    // even if the whole derivation were dead code.
+    REQUIRE_TRUE(!processor.ApplicationForTest().Modulation().ExternalAudioConnected());
+    REQUIRE_TRUE(processor.InputSelectionForTest() == 0);  // "None" -- the default.
+
+    // The host connects the bus (processorLayoutsChanged() fires
+    // synchronously off enable(), re-deriving the option list to
+    // ["None", <channel>] -- see that method's own comment) -- bus
+    // enablement ALONE is not consent, so connected must still read false
+    // here.
+    juce::AudioProcessor::Bus* inputBus = processor.getBus(true, 0);
+    REQUIRE_TRUE(inputBus != nullptr);
+    REQUIRE_TRUE(inputBus->enable(true));
+    REQUIRE_TRUE(!processor.ApplicationForTest().Modulation().ExternalAudioConnected());
+
+    // The OPERATOR's own affirmative act: a tap on the rendered
+    // input-select control, cycling None -> the bus's one channel.
+    DispatchInputSelect(processor);
+    REQUIRE_TRUE(processor.InputSelectionForTest() == 1);
+
+    // One block: ApplyInputSelection() already published the change
+    // (invoked synchronously by the dispatched action's callback, above);
+    // this block is what FroggersAppCore::ProcessFrame() (audio thread,
+    // once per block) uses to apply the queued transition -- see that
+    // method's own comment.
+    buffer.clear();
+    processor.processBlock(buffer, midi);
+
+    REQUIRE_TRUE(processor.ApplicationForTest().Modulation().ExternalAudioConnected());
+
+    processor.releaseResources();
+    std::cout << "  [input bus] selecting the bus's one channel: external sources report connected (was NOT "
+                 "connected beforehand).\n";
+}
+
+TEST_CASE(input_bus_returning_to_none_makes_the_external_sources_inert_again) {
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("input_bus_return_to_none"));
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+
+    juce::AudioProcessor::Bus* inputBus = processor.getBus(true, 0);
+    REQUIRE_TRUE(inputBus != nullptr);
+    REQUIRE_TRUE(inputBus->enable(true));
+    DispatchInputSelect(processor);  // None -> the bus's one channel.
+    REQUIRE_TRUE(processor.InputSelectionForTest() == 1);
+    buffer.clear();
+    processor.processBlock(buffer, midi);
+
+    // Positive control: must actually BE connected before returning to
+    // None means anything -- otherwise the final assertion below would
+    // pass even if the None branch were never wired at all.
+    REQUIRE_TRUE(processor.ApplicationForTest().Modulation().ExternalAudioConnected());
+
+    // A second tap: the only other option (with one channel on the bus) is
+    // "None", so this cycles straight back to it.
+    DispatchInputSelect(processor);
+    REQUIRE_TRUE(processor.InputSelectionForTest() == 0);
+    buffer.clear();
+    processor.processBlock(buffer, midi);
+
+    REQUIRE_TRUE(!processor.ApplicationForTest().Modulation().ExternalAudioConnected());
+
+    processor.releaseResources();
+    std::cout << "  [input bus] returning to None: external sources are inert again (WERE connected "
+                 "beforehand).\n";
+}
+
+// The defect this whole design exists to prevent (design.md section B,
+// "Connected is consent, never channel presence"): a host may enable the
+// optional input bus on its own, with nothing routed in and no operator
+// selection -- e.g. a DAW that activates every optional bus on
+// instantiation. Deriving "connected" from bus-enabled-with-channels
+// (rather than from the selection) would report connected here anyway and
+// let the external-audio sources start taking randomization from silence.
+TEST_CASE(input_bus_host_enabled_with_no_selection_leaves_external_sources_inert) {
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("input_bus_enabled_no_selection"));
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+
+    // The host enables the bus -- and delivers real, nonzero samples into
+    // it, so a passing assertion below cannot be credited to "there was
+    // never anything to read" instead of to the connected gate actually
+    // holding.
+    juce::AudioProcessor::Bus* inputBus = processor.getBus(true, 0);
+    REQUIRE_TRUE(inputBus != nullptr);
+    REQUIRE_TRUE(inputBus->enable(true));
+    REQUIRE_TRUE(processor.InputSelectionForTest() == 0);  // the operator selected nothing.
+
+    buffer.clear();
+    juce::AudioBuffer<float> hostInputView = processor.getBusBuffer(buffer, true, 0);
+    REQUIRE_TRUE(hostInputView.getNumChannels() == 1);
+    hostInputView.setSample(0, 0, 0.25f);
+    processor.processBlock(buffer, midi);
+
+    REQUIRE_TRUE(!processor.ApplicationForTest().Modulation().ExternalAudioConnected());
+    REQUIRE_TRUE(processor.InputSelectionForTest() == 0);  // still None -- enablement alone never moves it.
+
+    processor.releaseResources();
+    std::cout << "  [input bus] host-enabled bus, no operator selection: external sources stayed inert.\n";
+}
+
+TEST_CASE(input_bus_layout_change_removing_the_selected_channel_falls_back_to_none) {
+    frogg3rs_vst::FroggersPluginProcessor processor(ScratchDataPaths("input_bus_layout_change_removes_channel"));
+    processor.setRateAndBufferSizeDetails(48000.0, 256);
+    processor.prepareToPlay(48000.0, 256);
+
+    juce::AudioBuffer<float> buffer(2, 256);
+    juce::MidiBuffer midi;
+
+    juce::AudioProcessor::Bus* inputBus = processor.getBus(true, 0);
+    REQUIRE_TRUE(inputBus != nullptr);
+    REQUIRE_TRUE(inputBus->enable(true));
+    DispatchInputSelect(processor);  // None -> the bus's one channel.
+    REQUIRE_TRUE(processor.InputSelectionForTest() == 1);
+    buffer.clear();
+    processor.processBlock(buffer, midi);
+    REQUIRE_TRUE(processor.ApplicationForTest().Modulation().ExternalAudioConnected());  // positive control.
+
+    // The host changes the layout mid-session, disabling the bus outright
+    // -- the channel index 1 named is now gone. processorLayoutsChanged()
+    // (fired synchronously by enable(), design.md section B: "Re-validate
+    // against the current bus on every layout change") re-derives the
+    // option list (now just "None") and re-validates the selection against
+    // it.
+    REQUIRE_TRUE(inputBus->enable(false));
+    REQUIRE_TRUE(processor.InputSelectionForTest() == 0);  // fell back, never left pointing at a gone channel.
+
+    buffer.clear();
+    processor.processBlock(buffer, midi);
+    REQUIRE_TRUE(!processor.ApplicationForTest().Modulation().ExternalAudioConnected());
+
+    processor.releaseResources();
+    std::cout << "  [input bus] layout change removed the selected channel: selection fell back to None.\n";
+}
+
+TEST_CASE(state_information_round_trips_the_input_selection_when_a_channel_is_chosen) {
+    frogg3rs_vst::FroggersPluginProcessor source(ScratchDataPaths("state_input_selection_source"));
+    source.setRateAndBufferSizeDetails(48000.0, 256);
+    source.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> sourceBuffer(2, 256);
+    juce::MidiBuffer midi;
+
+    juce::AudioProcessor::Bus* sourceInputBus = source.getBus(true, 0);
+    REQUIRE_TRUE(sourceInputBus != nullptr);
+    REQUIRE_TRUE(sourceInputBus->enable(true));
+    DispatchInputSelect(source);  // None -> the bus's one channel.
+    REQUIRE_TRUE(source.InputSelectionForTest() == 1);
+    PumpAndSettle(source, sourceBuffer, midi);
+    REQUIRE_TRUE(source.ApplicationForTest().Modulation().ExternalAudioConnected());
+
+    juce::MemoryBlock state;
+    source.getStateInformation(state);
+    REQUIRE_TRUE(state.getSize() > 0);
+    source.releaseResources();
+
+    // A FRESH processor, its own scratch root -- same discipline as the
+    // parameter/freeze-latch/bank-index round-trip tests above. Its bus is
+    // enabled to the SAME shape the source's was: a restore only ever
+    // re-validates against the CURRENT bus (ApplyInputSelection()'s own
+    // comment), so a target whose bus does not yet match cannot exercise a
+    // successful restore -- that is state_information_restore_clamps_an_
+    // out_of_range_saved_bank_to_the_default_page's own shape of case
+    // (a mismatched target), covered for the analogous bank key already.
+    frogg3rs_vst::FroggersPluginProcessor fresh(ScratchDataPaths("state_input_selection_restore"));
+    juce::AudioProcessor::Bus* freshInputBus = fresh.getBus(true, 0);
+    REQUIRE_TRUE(freshInputBus != nullptr);
+    REQUIRE_TRUE(freshInputBus->enable(true));
+    fresh.setRateAndBufferSizeDetails(48000.0, 256);
+    fresh.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> freshBuffer(2, 256);
+
+    // Confirmed at "None" FIRST -- a fresh processor's own real default --
+    // so the restore assertion below cannot pass merely because the
+    // selected channel happens to already be where it started.
+    REQUIRE_TRUE(fresh.InputSelectionForTest() == 0);
+    REQUIRE_TRUE(!fresh.ApplicationForTest().Modulation().ExternalAudioConnected());
+
+    fresh.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
+    PumpAndSettle(fresh, freshBuffer, midi);
+
+    REQUIRE_TRUE(fresh.InputSelectionForTest() == 1);
+    REQUIRE_TRUE(fresh.ApplicationForTest().Modulation().ExternalAudioConnected());
+
+    fresh.releaseResources();
+
+    std::cout << "  [state] input selection round trip: operator selected the bus's one channel -> survived "
+                 "getStateInformation() -> setStateInformation() on a fresh processor, InputSelectionForTest()="
+              << fresh.InputSelectionForTest() << ".\n";
+}
+
+TEST_CASE(state_information_legacy_blob_without_input_selection_key_restores_to_none) {
+    frogg3rs_vst::FroggersPluginProcessor source(ScratchDataPaths("state_input_selection_missing_key_source"));
+    source.setRateAndBufferSizeDetails(48000.0, 256);
+    source.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> sourceBuffer(2, 256);
+    juce::MidiBuffer midi;
+    PumpAndSettle(source, sourceBuffer, midi);  // settle before saving, same discipline as the freeze/bank tests.
+
+    juce::MemoryBlock fullState;
+    source.getStateInformation(fullState);
+    REQUIRE_TRUE(fullState.getSize() > 0);
+    source.releaseResources();
+    const std::string fullText(static_cast<const char*>(fullState.getData()), fullState.getSize());
+    // Reuses the SAME trimming helper the bank-index "missing key" test
+    // above uses: it keeps only "freezeLatched" in sessionExtras, so the
+    // trimmed blob has no "inputSelection" key either -- exactly "a blob
+    // saved before this change existed."
+    const std::string trimmedText = BuildPatchTextWithSessionExtrasKeepingOnlyFreezeLatched(fullText);
+    REQUIRE_TRUE(trimmedText.find("sessionExtras") != std::string::npos);
+    REQUIRE_TRUE(trimmedText.find("inputSelection") == std::string::npos);
+
+    // The target's bus is enabled (unlike a fresh processor's own default)
+    // so a MISTAKEN read of some other key as a selection, or a bug that
+    // defaulted to "select whatever exists," would have a real channel to
+    // land on and be caught here -- the missing key must produce "None" on
+    // its own, not merely because there was nothing else it could have
+    // been.
+    frogg3rs_vst::FroggersPluginProcessor target(ScratchDataPaths("state_input_selection_missing_key_restore"));
+    juce::AudioProcessor::Bus* targetInputBus = target.getBus(true, 0);
+    REQUIRE_TRUE(targetInputBus != nullptr);
+    REQUIRE_TRUE(targetInputBus->enable(true));
+    target.setRateAndBufferSizeDetails(48000.0, 256);
+    target.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> targetBuffer(2, 256);
+
+    target.setStateInformation(trimmedText.data(), static_cast<int>(trimmedText.size()));
+    PumpAndSettle(target, targetBuffer, midi);
+
+    REQUIRE_TRUE(target.InputSelectionForTest() == 0);
+    REQUIRE_TRUE(!target.ApplicationForTest().Modulation().ExternalAudioConnected());
+
+    target.releaseResources();
+
+    std::cout << "  [state] sessionExtras present, inputSelection key absent: restored to None on a bus that DID "
+                 "have a channel available.\n";
 }
 
 }  // namespace
