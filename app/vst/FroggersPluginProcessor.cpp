@@ -131,20 +131,17 @@ FroggersPluginProcessor::FroggersPluginProcessor()
     : FroggersPluginProcessor(ProductionDataPaths()) {}
 
 FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPathsForTest)
-    // One OPTIONAL mono input bus alongside the existing stereo output.
+    // One OPTIONAL stereo input bus alongside the existing stereo output.
     // The third `withInput` argument (`isActivatedByDefault =
     // false`) declares the bus present but disabled until a host
     // explicitly enables it -- JUCE's own mechanism for a bus an
     // instrument still instantiates and still makes sound with left
-    // disconnected. Mono, not stereo: FroggersAppCore::Config()'s own
-    // numAudioInputs == 1 (that field governs the standalone app's own
-    // audio-device channel request, a different JUCE subsystem this
-    // plugin does not use directly -- see processBlock()'s own comment on
-    // how the two are reconciled), so the bus can never negotiate more
-    // channels than the core actually requests. isBusesLayoutSupported()
-    // (below) accepts both the disabled() and mono() layouts for this bus.
+    // disconnected. isBusesLayoutSupported() (below) accepts disabled(),
+    // mono(), or stereo() for this bus, so a host may enable it at either
+    // width; ComputeInputOptionLabels()/ResolveSelectedInputChannel() read
+    // whatever the negotiated layout actually provides.
     : juce::AudioProcessor(BusesProperties()
-                               .withInput("Input", juce::AudioChannelSet::mono(), false)
+                               .withInput("Input", juce::AudioChannelSet::stereo(), false)
                                .withOutput("Output", juce::AudioChannelSet::stereo(), true))
     , startTime_(std::chrono::steady_clock::now())
     , engine_([this] { return NowMicros(); }) {
@@ -413,15 +410,15 @@ void FroggersPluginProcessor::releaseResources() {
 }
 
 bool FroggersPluginProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
-    // Bus posture: stereo output, plus ONE OPTIONAL mono input
-    // bus (the constructor's BusesProperties above declares it, disabled
-    // by default -- see that comment). A host may leave the input bus at
-    // disabled() (the plugin still instantiates and makes sound) or enable
-    // it at mono() (the only channel set the bus was declared with);
-    // anything else -- stereo/multichannel input, or a non-stereo output --
-    // is rejected.
+    // Bus posture: stereo output, plus ONE OPTIONAL input bus (the
+    // constructor's BusesProperties above declares it, disabled by
+    // default -- see that comment). A host may leave the input bus at
+    // disabled() (the plugin still instantiates and makes sound), or
+    // enable it at mono() or stereo(); anything wider, or a non-stereo
+    // output, is rejected.
     const juce::AudioChannelSet mainInput = layouts.getMainInputChannelSet();
-    if (mainInput != juce::AudioChannelSet::disabled() && mainInput != juce::AudioChannelSet::mono()) {
+    if (mainInput != juce::AudioChannelSet::disabled() && mainInput != juce::AudioChannelSet::mono()
+        && mainInput != juce::AudioChannelSet::stereo()) {
         return false;
     }
     return layouts.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();
@@ -444,8 +441,8 @@ std::vector<std::string> FroggersPluginProcessor::ComputeInputOptionLabels() con
     }
     // One entry per channel the bus CURRENTLY provides -- read from the
     // live layout (getCurrentLayout()), never assumed from the bus's
-    // declared mono() type, so this stays correct even if a future edit
-    // widens the declared bus. Named via juce::AudioChannelSet's own
+    // declared type, so this stays correct whichever layout the host
+    // negotiates. Named via juce::AudioChannelSet's own
     // channel-type vocabulary (task 3.4's own instruction), not an
     // invented "Ch<N>" scheme.
     const juce::AudioChannelSet layout = inputBus->getCurrentLayout();
@@ -517,10 +514,9 @@ bool FroggersPluginProcessor::ResolveSelectedInputChannel(const float* const* ch
         return false;
     }
     // Sum: ComputeInputOptionLabels() only ever appends this option once
-    // numChannels > 1, so this branch is unreached with today's mono-only
-    // input bus (the constructor's own BusesProperties comment) -- kept
-    // general rather than special-cased to N==1, matching that method's own
-    // generality.
+    // numChannels > 1 -- reachable once a host enables the input bus at
+    // stereo() -- kept general rather than special-cased to N==1, matching
+    // that method's own generality.
     for (int s = 0; s < numSamples; ++s) {
         float sum = 0.0f;
         for (int ch = 0; ch < numChannels; ++ch) {
@@ -640,10 +636,11 @@ void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
     // The optional input bus (see isBusesLayoutSupported()'s own comment,
     // above): getBusBuffer() reads the bus's ACTUAL negotiated channel
     // count directly from JUCE -- a zero-channel view when the host has
-    // left the bus disabled, a one-channel view when the host has enabled
-    // it -- rather than re-deriving it from BusesProperties, since a host
-    // is free to (dis)connect the bus at any point between construction
-    // and this call. Obtained BEFORE the output write pointers below: this
+    // left the bus disabled, a one- or two-channel view when the host has
+    // enabled it at mono() or stereo() -- rather than re-deriving it from
+    // BusesProperties, since a host is free to (dis)connect the bus at any
+    // point between construction and this call. Obtained BEFORE the
+    // output write pointers below: this
     // bus and the output bus may share the same underlying buffer channels
     // (JUCE's standard in-place convention for buses of equal-or-narrower
     // input width), so the read pointers captured here must be taken while

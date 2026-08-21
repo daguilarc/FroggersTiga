@@ -322,6 +322,15 @@ public:
     // rest of the index space means.
     int InputSelectionForTest() const { return inputSelection_; }
 
+    // Test-only accessor: the SAME option list ApplyInputSelection() just
+    // pushed to the portable surface (ComputeInputOptionLabels() is
+    // private, and reaching into the surface's own rendered copy would be
+    // the weaker, indirect check InputSelectionForTest()'s own comment
+    // above already rejects for the selection index). Lets a test assert
+    // the option list's actual contents -- not just its length -- for a
+    // given live bus shape.
+    std::vector<std::string> InputOptionLabelsForTest() const { return ComputeInputOptionLabels(); }
+
     // Resolves one block's operator-selected input into exactly ONE logical
     // channel -- FroggersAppCore::Config()'s own numAudioInputs==1, so the
     // core must never see, let alone choose among, the raw bus's own
@@ -335,12 +344,9 @@ public:
     // one production caller, feeding it the real bus's channel pointers and
     // `inputSelection_`; public and static (stateless, no `this`) so
     // FroggersVstHostTests.cpp can also drive it directly with synthetic
-    // multi-channel arrays -- this plugin's own input bus is declared
-    // mono() (the constructor's own comment), so numChannels is never
-    // actually >1 through the real bus in production today, but the
-    // resolution logic itself stays general, matching
-    // ComputeInputOptionLabels()'s own generality, rather than assuming the
-    // one-channel case it happens to run under right now.
+    // multi-channel arrays. Stays general (never special-cased to a fixed
+    // channel count) so it keeps matching ComputeInputOptionLabels()'s own
+    // generality across whatever width the bus negotiates.
     static bool ResolveSelectedInputChannel(const float* const* channels, int numChannels, int selection,
                                              int numSamples, float* out);
 
