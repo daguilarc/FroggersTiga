@@ -2,6 +2,17 @@
 
 Operator manual for **Frogg3rs — the Sheaf app** under [`app/`](app/), the current line of development.
 
+The same instrument core runs in four hosts, built from the same `app/` sources:
+
+- **Standalone** — a self-contained desktop app (`app/FroggersMain.cpp`), with its own audio-device and
+  MIDI-controller configuration (see Audio and MIDI configuration, below).
+- **Browser build** — the same core compiled to WebAssembly and run in a page (`app/browser/`).
+- **VST3** and **AU plugin** — the same core loaded inside a DAW (`app/vst/`), where the host owns audio
+  devices, transport and tempo.
+
+Every parameter and every bank below is identical across all four; what differs between them is covered
+in Audio and MIDI configuration.
+
 Two other instruments share this repository and are documented separately, because their parameter
 models do not map onto this one:
 
@@ -69,9 +80,53 @@ leave the modulation view.
 
 The 15 sources are: six Random S&H/LFO-style random lanes, each VCO's own raw audio-rate signal (VCO1–3
 Audio), each VCO's own slow envelope follower (VCO1–3 EF), one broadband Noise source, and External Audio
-plus its envelope follower. External Audio and External Audio EF are always listed but currently always
-**unavailable** — this app has no external audio input wired up (unlike the older Daisy/desktop/web
-hosts, documented in [`DAISY_MANUAL.md`](DAISY_MANUAL.md) and [`SIM_MANUAL.md`](SIM_MANUAL.md)).
+plus its envelope follower. External Audio and External Audio EF carry real signal only once an external
+input is connected — see Audio and MIDI configuration, below, for how each host connects one. Until
+connected, both sources hold silent, defined values (External Audio at 0.5, its envelope follower at 0.0)
+rather than modulating from anything live.
+
+---
+
+## Audio and MIDI configuration
+
+### Standalone
+
+An **Audio** page (reached from the app's sidebar) offers **Output device** and **Input device**
+selectors listing the machine's own audio devices, plus a **Retry Input** button if capture fails. A
+**Controllers** page maps an external MIDI controller's messages to this app's own controls: each mapping
+row targets a MIDI channel (0–15) and CC number (0–127), and can target an encoder, an analog/gesture
+input, or a system action. A **Sync** page lets the transport slave to incoming MIDI clock (**Receive
+clock**, **Receive transport** toggles, a **PPQN** field 1–960); while slaved, the BPM control (Global
+controls, above) becomes a read-only status display instead of an editable slider.
+
+### Plugin (VST3 / AU)
+
+The DAW owns audio devices, transport and tempo.
+
+**Transport and tempo** follow the host. The plugin's own surface shows only Freeze (labeled "FREEZE")
+where the standalone shows Play, Stop, Freeze, and Record. Whenever the host reports a tempo, the BPM
+control becomes a read-only display, "BPM `<value>` (external clock)", the same display the standalone
+shows while slaved to incoming MIDI clock.
+
+**MIDI** reaches this instrument entirely through host-parameter automation. Every parameter — each
+bank's 14 page parameters, its own Crispy, the one shared Crunchy, and Freeze — is exposed to the host as
+a standard automatable plugin parameter, so a DAW's own MIDI-learn/CC-mapping targets one of these the
+same way it would target any other plugin parameter. The plugin accepts the host's MIDI buffer but does
+not read it itself.
+
+**Input audio** is opt-in. The plugin has one optional stereo input bus, disabled until the host routes
+into it. On the plugin's own surface, an **IN:** button beside Freeze cycles through **None** (the
+default), each channel the host's bus currently provides, and, once the bus carries two or more channels,
+their **Sum**. Selecting anything other than None is what connects External Audio and External Audio EF
+(Global controls, above) — routing the DAW's bus into the plugin is not itself enough; the operator must
+select an input here.
+
+### Browser build
+
+The transport runs on its own internal clock, the same as the standalone (Play, Stop, Record, and an
+editable BPM slider). Audio input requires the browser's own microphone permission, granted through a
+**Retry Input** action; nothing is captured, and External Audio stays silent, until that permission is
+granted.
 
 ---
 
@@ -118,18 +173,19 @@ Per-voice Attack/Decay/Sustain/Release for each of the three VCOs, interleaved: 
 two knobs shared across all three voices.
 
 **Attack VCO1/2/3** (`A1`/`A2`/`A3`, slots 0/4/8) — time for that VCO's level to rise to full once the
-transport's envelope gate opens (0.5 ms–1 s). Defaults to the floor (fastest, essentially instant-on).
+transport's envelope gate opens, mapped exponentially from 1 ms to 250 ms. Defaults to the floor
+(fastest, essentially instant-on).
 
 **Decay VCO1/2/3** (`D1`/`D2`/`D3`, slots 1/5/9) — new. Time for that VCO's level to fall from the
-Attack peak down to its Sustain level (0.5 ms–1 s).
+Attack peak down to its Sustain level, mapped exponentially from 5 ms to 1 s.
 
 **Sustain VCO1/2/3** (`S1`/`S2`/`S3`, slots 2/6/10) — the level held while the gate stays open. Floored
-at 10% — it can never be modulated down to a true, silencing zero — and defaults to full level (100%) so
+at 25% — it can never be modulated down to a true, silencing zero — and defaults to full level (100%) so
 a freshly launched app makes sound without touching any knob.
 
 **Release VCO1/2/3** (`R1`/`R2`/`R3`, slots 3/7/11) — time for that VCO's level to fall to silence once
-the gate closes (0.5 ms–2.5 s). Defaults to the floor (fastest). Stop always overrides this with a fast
-~50 ms fade regardless of this knob's position.
+the gate closes, mapped exponentially from 5 ms to 2.5 s. Defaults to the floor (fastest). Stop always
+overrides this with a fast ~50 ms fade regardless of this knob's position.
 
 **Curve** (`Curv`, slot 12) — new, shared across all three voices. Reshapes every Attack/Decay/Release
 ramp from a straight linear ramp (bottom of travel, the default — bit-identical to the ramp shape before
@@ -155,7 +211,7 @@ actual per-sample processing order, which differs from this bank's own visual le
 **Comb offset** (`CmbOff`, slot 0) — a short pure delay ahead of the comb (1 ms–100 ms). Smears the
 comb's attack transient without changing the comb's own pitch.
 
-**Peak freq** (`PkFreq`, slot 1) — center frequency of the resonant peaking EQ, 20 Hz–20 kHz.
+**Peak freq** (`PkFreq`, slot 1) — center frequency of the resonant peaking EQ, 100 Hz–20 kHz.
 
 **Peak gain** (`PkGain`, slot 2) — height of that peak's boost. Flat (no boost) at the bottom of travel;
 up to +6 dB (2×) at the top.
@@ -163,7 +219,7 @@ up to +6 dB (2×) at the top.
 **Peak Q** (`PkQ`, slot 3) — width/resonance of the peak: a wide, gentle bump at the bottom, a narrow,
 ringing resonance at the top.
 
-**Comb delay** (`CmbDly`, slot 4) — the comb filter's own delay time, expressed as a pitch (20 Hz–10 kHz)
+**Comb delay** (`CmbDly`, slot 4) — the comb filter's own delay time, expressed as a pitch (100 Hz–10 kHz)
 — this sets the comb's characteristic pitched ringing.
 
 **Comb feedback** (`CmbFb`, slot 5) — comb resonance. Neutral (no resonance) at the exact center of
@@ -187,7 +243,7 @@ peak, bit-identical to how this bank always behaved before Topology existed) and
 series** (top of travel — the comb's output becomes the peak's own input, so the peak now further shapes
 an already comb-colored signal). Every value in between blends smoothly.
 
-**Scoop freq** (`ScFq`, slot 10) — new. The notch's own center frequency (20 Hz–20 kHz), now independent
+**Scoop freq** (`ScFq`, slot 10) — new. The notch's own center frequency (100 Hz–20 kHz), now independent
 of Peak freq — it used to just copy Peak freq's value.
 
 **Scoop width** (`ScWd`, slot 11) — new. The notch's own Q/width, now independent of Peak Q.

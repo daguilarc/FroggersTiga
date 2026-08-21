@@ -12,7 +12,7 @@ Crispy (slot 14, per bank) — Fuego (bit-scramble) applied to that bank's own 1
 Crunchy (slot 15, shared across all six banks) — Same fuego scramble applied to every parameter in every bank, and to every bank's own Crispy; no-op at 0.
 Bank select — Six buttons (Audio/Envelope/Filter/Drive/Delay/Reverb) choose which bank's slots are on screen; all six keep processing regardless.
 Play / Stop — Transport. No manual note-on: while running, the shared envelope gate auto-pulses open for the first half of every quarter note (at the BPM control's tempo) and closed for the second half. Stop forces a fast ~50 ms fade on all three voices and clears Delay/Reverb tails.
-Modulation assign — Click a parameter's encoder (or a bank's own Crispy) to open its 15-source depth view; each source has an independent signed depth (0 = off) and multiple non-zero sources sum. Sources: Random S&H 1–6, VCO1–3 Audio, VCO1–3 EF, Noise, External Audio, External Audio EF (the last two always unavailable — no external input in this app).
+Modulation assign — Click a parameter's encoder (or a bank's own Crispy) to open its 15-source depth view; each source has an independent signed depth (0 = off) and multiple non-zero sources sum. Sources: Random S&H 1–6, VCO1–3 Audio, VCO1–3 EF, Noise, External Audio, External Audio EF (the last two carry real signal only once an external input is connected — see MANUAL.md's Audio and MIDI configuration section; until then they hold silent defaults, 0.5 and 0.0).
 
 ## Audio
 
@@ -25,26 +25,26 @@ VCO balance (slot 13) — Tilts mix emphasis VCO1 → VCO2 → VCO3; every VCO a
 
 ## Envelope
 
-Attack VCO1/2/3 (slots 0/4/8) — Time to rise to full level on gate-open, 0.5 ms–1 s.
-Decay VCO1/2/3 (slots 1/5/9) — Time to fall from Attack peak to Sustain level, 0.5 ms–1 s.
-Sustain VCO1/2/3 (slots 2/6/10) — Held level while gate is open; floored at 10%, default full.
-Release VCO1/2/3 (slots 3/7/11) — Time to fall to silence on gate-close, 0.5 ms–2.5 s.
+Attack VCO1/2/3 (slots 0/4/8) — Time to rise to full level on gate-open, exponential, 1 ms–250 ms.
+Decay VCO1/2/3 (slots 1/5/9) — Time to fall from Attack peak to Sustain level, exponential, 5 ms–1 s.
+Sustain VCO1/2/3 (slots 2/6/10) — Held level while gate is open; floored at 25%, default full.
+Release VCO1/2/3 (slots 3/7/11) — Time to fall to silence on gate-close, exponential, 5 ms–2.5 s.
 Curve (slot 12) — Reshapes all three voices' Attack/Decay/Release ramps from linear (default) to ease-in.
 Grace (slot 13) — Minimum-hold before a gate-close is honored (0–1 s); no-op at default 0.
 
 ## Filter
 
 Comb offset (slot 0) — Short pure delay ahead of the comb, 1–100 ms.
-Peak freq (slot 1) — Resonant peaking-EQ center frequency, 20 Hz–20 kHz.
+Peak freq (slot 1) — Resonant peaking-EQ center frequency, 100 Hz–20 kHz.
 Peak gain (slot 2) — Peak boost height, up to +6 dB.
 Peak Q (slot 3) — Peak width/resonance.
-Comb delay (slot 4) — Comb filter pitch, 20 Hz–10 kHz.
+Comb delay (slot 4) — Comb filter pitch, 100 Hz–10 kHz.
 Comb feedback (slot 5) — Comb resonance, neutral at center, up to ±0.95 (always decays).
 Comb LP (slot 6) — Low-pass inside the comb feedback loop; darker when lower.
 Comb/Peak (slot 7) — Blend between peak and comb paths.
 Scoop (slot 8) — Depth of the resonant notch dip (0 = none, ~95% at max).
 Topology (slot 9) — Continuous morph, parallel (default) to series routing of comb into peak.
-Scoop freq (slot 10) — Notch's own center frequency, independent of Peak freq.
+Scoop freq (slot 10) — Notch's own center frequency, independent of Peak freq, 100 Hz–20 kHz.
 Scoop width (slot 11) — Notch's own Q, independent of Peak Q.
 Comb drive (slot 12) — Pre-gain into the comb's saturator, 0.25×–4×, unity at default.
 Scoop depth (slot 13) — How much of the notch is blended into the output; independent of Scoop's own height.

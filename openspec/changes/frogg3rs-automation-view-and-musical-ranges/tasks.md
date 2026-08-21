@@ -297,16 +297,16 @@ excusing it.
       `MANUAL.md`. That work is sequenced to group 10, where the release
       tooling and the frozen trees are open anyway. This group delivers the
       `MANUAL.md` content it does not depend on: 7.2 through 7.5 proceed now.
-- [ ] 7.2 `MANUAL.md`: confirm it covers what frogg3rs is and what it runs
+- [x] 7.2 DONE — bank and global coverage was already complete and correct and was left alone; what was missing was the opening statement of what frogg3rs is and what it runs in. `MANUAL.md`: confirm it covers what frogg3rs is and what it runs
       in; every global control; every bank parameter by parameter.
-- [ ] 7.3 Add the audio and MIDI configuration section — absent today.
+- [x] 7.3 DONE — traced per host and cited, not described from assumption. Standalone: Audio, Controllers and Sync pages with their real ranges. Plugin: the input opt-in, hidden transport, read-only BPM under host tempo, and MIDI reaching parameters only through the automation surface. Browser: internal clock and gesture-gated input consent. NOT established and deliberately omitted rather than guessed: whether the browser build exposes a Controllers-equivalent CC mapping. Add the audio and MIDI configuration section — absent today.
       TRACE what each host actually exposes: device selection, MIDI CC
       mapping, and what differs in the plugin where the DAW owns transport
       and tempo. Do not describe it from assumption.
-- [ ] 7.4 `QUICK_DICT.md`: correct the claim that the external-audio sources
+- [x] 7.4 DONE — 7 lines corrected against the new constants, plus the false claim that the external sources are permanently unavailable. Scoop freq gained the range it was missing. `QUICK_DICT.md`: correct the claim that the external-audio sources
       are permanently unavailable. Re-check every other parameter line
       against current behavior while there.
-- [ ] 7.5 Apply design F's voice rule to whatever you rewrite: say what the
+- [x] 7.5 DONE — 2 voice violations fixed in passages already being edited, both defining the feature by what it lacked. Apply design F's voice rule to whatever you rewrite: say what the
       control does, give range, units and default, stop.
 
 - [ ] 7.6 Ship the docs WITH the app: embed `MANUAL.md` and `QUICK_DICT.md`
