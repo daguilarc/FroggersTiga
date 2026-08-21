@@ -132,7 +132,22 @@ excusing it.
       `GetCurrentModifier() == Modifier::None` gate, and
       `RecordProcessedAbsoluteEpoch`. Neither is optional-by-default; both are
       a choice.
-- [ ] 1.4 Audit every surface in BOTH repositories that enumerates message
+- [x] 1.4 DONE (Sheaf 61b41b1d). Found by forcing a real recompile — 34
+      files — so `-Wswitch` had a live instrument; a cached no-op build
+      reports zero warnings and proves nothing. Five surfaces, classified:
+      `ToJSON`, `FromJSON` and the round-trip equivalence helper serialise
+      ANY `MessageIn`, so absence meant the type could not round-trip —
+      NEEDED, and added to each fall-through group (every field, `bankIx`
+      included, is already written after the switch). `MessageTypeName` and
+      its parser are a total name mapping — NEEDED, both directions added.
+      `SystemMessageOutputInfo::Evaluate` computes feedback for a mapped
+      controller and a programmatic write is not mappable — CORRECTLY
+      EXCLUDES, joined to the no-feedback group so the exclusion is explicit
+      rather than an omission. The parallel `UISystemMessage` enum needs
+      nothing: it enumerates operator-configurable controller actions.
+      Two stale range comments naming `PrevParamBank` as last were fixed;
+      `TypeOrder` static_casts the enum and already ordered it correctly.
+      Original text: Audit every surface in BOTH repositories that enumerates message
       types, not only exhaustive `switch`es: the parallel `UISystemMessage`
       enum and the arg1/arg2 system-message encoding are the two known ones.
       Classify each as needing the new type or deliberately not carrying it,
