@@ -98,7 +98,7 @@ endif()
 
 juce_add_plugin(FroggersVst
     PRODUCT_NAME "Frogg3rs"
-    COMPANY_NAME "FroggersTiga"
+    COMPANY_NAME "frogg3rs"
     BUNDLE_ID "dev.sheaf.Frogg3rs.vst"
     PLUGIN_MANUFACTURER_CODE Shef
     PLUGIN_CODE Fr3g
