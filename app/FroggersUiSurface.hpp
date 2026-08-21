@@ -1824,15 +1824,7 @@ private:
     // default (0) BankSelected() above already uses when uiState isn't
     // ready yet.
     std::size_t CurrentBankIndex() const {
-        if (context_ == nullptr || context_->uiState == nullptr) {
-            return 0;
-        }
-        for (std::size_t bankIx = 0; bankIx < context_->uiState->bankCapacity; ++bankIx) {
-            if (context_->uiState->banks[bankIx].selected.load(std::memory_order_relaxed)) {
-                return bankIx;
-            }
-        }
-        return 0;
+        return context_ == nullptr ? 0 : FroggersVisibleBankIndex(*context_);
     }
 
     void HandleAction(const synth::ui::Action& action) {

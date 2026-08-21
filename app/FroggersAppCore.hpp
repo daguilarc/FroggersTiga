@@ -111,6 +111,23 @@
 
 namespace synth_froggers {
 
+// The bank the editor is showing: whichever one the published UI-state
+// snapshot marks selected (`AppContext::uiState->banks[].selected`, written
+// by ParameterManager::PopulateUIState). Read from that snapshot and never
+// from BankSlot::SelectedBank(), a plain non-atomic pointer the audio thread
+// writes with no synchronization, unsafe for message-thread callers.
+inline std::size_t FroggersVisibleBankIndex(const synth::AppContext& context) {
+    if (context.uiState == nullptr) {
+        return 0;
+    }
+    for (std::size_t bankIx = 0; bankIx < context.uiState->bankCapacity; ++bankIx) {
+        if (context.uiState->banks[bankIx].selected.load(std::memory_order_relaxed)) {
+            return bankIx;
+        }
+    }
+    return 0;
+}
+
 class FroggersAppCore {
 public:
     // The ONLY hand-written constructor work this class needs -- everything

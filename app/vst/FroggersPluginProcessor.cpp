@@ -93,6 +93,13 @@ constexpr const char* kSessionStatePatchName = "daw-session";
 // at every read/write site so the two never drift apart.
 constexpr const char* kSessionExtrasKey = "sessionExtras";
 constexpr const char* kFreezeLatchedKey = "freezeLatched";
+// Second sessionExtras sibling key: the operator's visible bank (the page
+// FroggersUiSurface::CurrentBankIndex() reports as selected), so reopening
+// a saved DAW project restores the page the operator was last on. Same
+// object, same round trip, no new mechanism -- see this key's own read/
+// write sites (PumpStatePersistence()) for the accessor/authority each
+// direction uses.
+constexpr const char* kVisibleBankIndexKey = "visibleBankIndex";
 
 // A present-but-wrong-typed value is treated the same as an absent one
 // (left alone) rather than silently coerced to false -- IsNull() alone
@@ -101,6 +108,10 @@ constexpr const char* kFreezeLatchedKey = "freezeLatched";
 // checking synth::PatchPersistence.cpp's own IsBoolean() does for the rest
 // of a patch document.
 bool IsJsonBoolean(synth::JSON json) { return json.m_node != nullptr && json.m_node->m_type == synth::JsonType::Boolean; }
+// Same strict, type-first treatment as IsJsonBoolean() above, for the
+// bank-index sibling key: a missing or wrong-typed value is left alone
+// rather than coerced to 0 via JSON::IntegerValue()'s own fallback.
+bool IsJsonInteger(synth::JSON json) { return json.m_node != nullptr && json.m_node->m_type == synth::JsonType::Integer; }
 
 }  // namespace
 
@@ -199,6 +210,14 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
             // to handle.
             synth::JSON sessionExtras = arena.Object();
             sessionExtras.SetNew(kFreezeLatchedKey, arena.Boolean(engine_.Application().FreezeLatched()));
+            // Same sibling-key treatment as kFreezeLatchedKey above, seeded
+            // with the visible bank's own actual current value (0, the
+            // default FroggersParameterModel::Init() selects, this early)
+            // rather than an assumed constant -- see PumpStatePersistence()'s
+            // steady-state write of this same key for the accessor this
+            // mirrors.
+            sessionExtras.SetNew(kVisibleBankIndexKey,
+                                  arena.Integer(static_cast<std::int64_t>(synth_froggers::FroggersVisibleBankIndex(engine_.Context()))));
             root.SetNew(kSessionExtrasKey, sessionExtras);
             if (char* dumped = root.Dumps(JSON_ENCODE_ANY)) {
                 cachedStateJsonText_ = dumped;
@@ -1126,6 +1145,36 @@ void FroggersPluginProcessor::PumpStatePersistence() {
                         }
                     }
                 }
+                // Same missing-or-wrong-typed-is-a-no-op treatment as the
+                // Freeze latch above -- a blob saved before this key existed
+                // (or with sessionExtras but no bank key) leaves the visible
+                // bank exactly where FroggersParameterModel::Init() already
+                // put it (bank 0). Unlike the Freeze latch, this does NOT
+                // write a host parameter's JUCE value directly: the visible
+                // page is not a host-automatable parameter, and
+                // FroggersAppCore::RequestBankSelect() (the same public seam
+                // FroggersUiSurface.hpp's own bank buttons call) is the only
+                // authority that also reconstructs drillIn_ for the restored
+                // bank -- pushing MessageIn::SelectParamBank or writing
+                // activeBankIx_/drillIn_ directly would bypass that
+                // reconstruction. A saved index a host project can name that
+                // this build no longer has (kFroggersBankCount shrank, or
+                // the blob is corrupt/hostile) is bounds-checked HERE,
+                // before ever reaching RequestBankSelect(), rather than
+                // trusted blind: ProcessFrame()'s own internal bankRequest
+                // check (FroggersAppCore.hpp) only guards against a
+                // negative/too-large `int` after a std::size_t round trip,
+                // which a negative int64_t here could already have
+                // aliased into a large positive std::size_t before ever
+                // reaching that check.
+                const synth::JSON visibleBankIndexJson = root.Get(kSessionExtrasKey).Get(kVisibleBankIndexKey);
+                if (IsJsonInteger(visibleBankIndexJson)) {
+                    const std::int64_t requestedBankIx = visibleBankIndexJson.IntegerValue();
+                    if (requestedBankIx >= 0 &&
+                        static_cast<std::uint64_t>(requestedBankIx) < synth_froggers::kFroggersBankCount) {
+                        engine_.Application().RequestBankSelect(static_cast<std::size_t>(requestedBankIx));
+                    }
+                }
             } else {
                 const std::lock_guard<std::mutex> lock(stateBlockMutex_);
                 pendingRestoreJsonText_ = std::move(*restoreText);
@@ -1150,6 +1199,17 @@ void FroggersPluginProcessor::PumpStatePersistence() {
         synth::JsonArena& responseArena = *response.document.arena;
         synth::JSON sessionExtras = responseArena.Object();
         sessionExtras.SetNew(kFreezeLatchedKey, responseArena.Boolean(engine_.Application().FreezeLatched()));
+        // Same sibling-key treatment, read fresh at attach time from the
+        // SAME live selection state the editor itself renders from --
+        // FroggersVisibleBankIndex(), which the editor's own
+        // CurrentBankIndex() also delegates to -- never FroggersAppCore::
+        // ActiveBankIndex(), which can differ from the visible page while a
+        // host automation write is in flight (see that accessor's own
+        // comment). Safe to read here, off the audio thread, for the same
+        // reason the editor's own BuildTree() reads the same uiState from
+        // the message thread every refresh.
+        sessionExtras.SetNew(kVisibleBankIndexKey,
+                              responseArena.Integer(static_cast<std::int64_t>(synth_froggers::FroggersVisibleBankIndex(engine_.Context()))));
         response.document.root.SetNew(kSessionExtrasKey, sessionExtras);
 
         if (char* dumped = response.document.root.Dumps(JSON_ENCODE_ANY)) {

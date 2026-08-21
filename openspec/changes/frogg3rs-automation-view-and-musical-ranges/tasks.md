@@ -187,7 +187,7 @@ excusing it.
       top-level parameter, not on a modulation depth — that is the case the
       old `SelectParamBank` push was incidentally covering, and removing it
       is what puts the case at risk.
-- [ ] 2.5 DECIDED — yes, the visible bank persists in plugin session state.
+- [x] 2.5 DONE — 30/30, round trip observed RED by disabling the restore. DECIDED — yes, the visible bank persists in plugin session state.
       Add it as a second key alongside the Freeze latch in the existing
       `sessionExtras` object; the mechanism is already there and this is one
       key plus one restore call. Restore it through the operator-selection

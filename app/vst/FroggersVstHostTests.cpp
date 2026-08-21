@@ -1845,6 +1845,220 @@ TEST_CASE(state_information_legacy_blob_without_session_extras_leaves_an_engaged
               << ", latch left engaged (not forced off).\n";
 }
 
+// Parses `patchJsonText` and returns an equivalent document whose
+// sessionExtras object has its "visibleBankIndex" member replaced with
+// `bankIndexValue`, keeping "freezeLatched" untouched -- standing in for a
+// host project file naming a bank this build's restore path must
+// bounds-check rather than trust. Same "fresh top-level object, each field
+// set exactly once" construction as the other Build...() helpers above, for
+// the same SetNew-always-appends reason.
+std::string BuildPatchTextWithVisibleBankIndexOverridden(const std::string& patchJsonText,
+                                                          std::int64_t bankIndexValue) {
+    synth::JsonArena arena(256 * 1024);
+    synth::JSON original = arena.Loads(patchJsonText.c_str());
+    REQUIRE_TRUE(!original.IsNull());
+    synth::JSON originalExtras = original.Get("sessionExtras");
+    REQUIRE_TRUE(!originalExtras.IsNull());
+    synth::JSON freezeLatched = originalExtras.Get("freezeLatched");
+    REQUIRE_TRUE(!freezeLatched.IsNull());
+
+    synth::JSON newExtras = arena.Object();
+    newExtras.SetNew("freezeLatched", freezeLatched);
+    newExtras.SetNew("visibleBankIndex", arena.Integer(bankIndexValue));
+
+    synth::JSON result = arena.Object();
+    result.SetNew("schema", original.Get("schema"));
+    result.SetNew("schemaVersion", original.Get("schemaVersion"));
+    result.SetNew("patchName", original.Get("patchName"));
+    result.SetNew("parameterValues", original.Get("parameterValues"));
+    result.SetNew("sessionExtras", newExtras);
+
+    char* dumped = result.Dumps(JSON_ENCODE_ANY);
+    REQUIRE_TRUE(dumped != nullptr);
+    std::string text(dumped);
+    std::free(dumped);
+    return text;
+}
+
+// Parses `patchJsonText` and returns an equivalent document whose
+// sessionExtras object keeps ONLY "freezeLatched", dropping
+// "visibleBankIndex" entirely -- standing in for a session saved by a build
+// that has the Freeze-latch sibling key but predates the bank-index one
+// (sessionExtras exists, but this specific key does not), as opposed to
+// BuildPatchTextWithoutSessionExtras above, which drops the whole object.
+std::string BuildPatchTextWithSessionExtrasKeepingOnlyFreezeLatched(const std::string& patchJsonText) {
+    synth::JsonArena arena(256 * 1024);
+    synth::JSON original = arena.Loads(patchJsonText.c_str());
+    REQUIRE_TRUE(!original.IsNull());
+    synth::JSON originalExtras = original.Get("sessionExtras");
+    REQUIRE_TRUE(!originalExtras.IsNull());
+    synth::JSON freezeLatched = originalExtras.Get("freezeLatched");
+    REQUIRE_TRUE(!freezeLatched.IsNull());
+
+    synth::JSON trimmedExtras = arena.Object();
+    trimmedExtras.SetNew("freezeLatched", freezeLatched);
+
+    synth::JSON result = arena.Object();
+    result.SetNew("schema", original.Get("schema"));
+    result.SetNew("schemaVersion", original.Get("schemaVersion"));
+    result.SetNew("patchName", original.Get("patchName"));
+    result.SetNew("parameterValues", original.Get("parameterValues"));
+    result.SetNew("sessionExtras", trimmedExtras);
+
+    char* dumped = result.Dumps(JSON_ENCODE_ANY);
+    REQUIRE_TRUE(dumped != nullptr);
+    std::string text(dumped);
+    std::free(dumped);
+    return text;
+}
+
+// -- Visible bank persistence --------------------------------------------
+// Same sessionExtras sibling-key round trip as the Freeze latch tests
+// above, for the "visibleBankIndex" key (FroggersPluginProcessor.cpp's own
+// PumpStatePersistence() comment).
+
+// POSITIVE CONTROL folded into this test itself (not a separate case, same
+// as the Freeze latch round trip above already assumes its OWN positive
+// control from operator_selecting_a_bank_does_move_the_visible_page):
+// the restored bank is asserted to DIFFER from the default (0) before it is
+// asserted to equal the operator's actual target, so a restore that quietly
+// no-ops (leaving the fresh processor at its own default) cannot pass this
+// test by coincidence.
+TEST_CASE(state_information_round_trips_the_visible_bank_when_non_default) {
+    frogg3rs_vst::FroggersPluginProcessor source(ScratchDataPaths("state_bank_source"));
+    source.setRateAndBufferSizeDetails(48000.0, 256);
+    source.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> sourceBuffer(2, 256);
+    juce::MidiBuffer midi;
+
+    constexpr std::size_t kOperatorBank = 4;
+    REQUIRE_TRUE(source.ApplicationForTest().ActiveBankIndex() == 0);
+    // The exact same public seam FroggersUiSurface.hpp's own bank buttons
+    // call (app/FroggersUiSurface.hpp:2012/2030/2041) -- the OPERATOR
+    // selecting a page, not a direct MessageIn::SelectParamBank push.
+    source.ApplicationForTest().RequestBankSelect(kOperatorBank);
+    PumpAndSettle(source, sourceBuffer, midi);
+    REQUIRE_TRUE(source.ApplicationForTest().ActiveBankIndex() == kOperatorBank);
+
+    juce::MemoryBlock state;
+    source.getStateInformation(state);
+    REQUIRE_TRUE(state.getSize() > 0);
+    source.releaseResources();
+
+    // A FRESH processor, its own scratch root -- same discipline as the
+    // parameter/freeze-latch round-trip tests above.
+    frogg3rs_vst::FroggersPluginProcessor fresh(ScratchDataPaths("state_bank_restore"));
+    fresh.setRateAndBufferSizeDetails(48000.0, 256);
+    fresh.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> freshBuffer(2, 256);
+
+    // Confirmed at the default FIRST -- a fresh processor's own real
+    // default -- so the restore assertion below cannot pass merely because
+    // the target bank happens to already be where it started.
+    REQUIRE_TRUE(fresh.ApplicationForTest().ActiveBankIndex() == 0);
+
+    fresh.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
+    PumpAndSettle(fresh, freshBuffer, midi);
+
+    const std::size_t restoredBankIx = fresh.ApplicationForTest().ActiveBankIndex();
+    REQUIRE_TRUE(restoredBankIx != 0);  // positive control -- see this test's own header comment.
+    REQUIRE_TRUE(restoredBankIx == kOperatorBank);
+
+    fresh.releaseResources();
+
+    std::cout << "  [state] visible bank round trip: operator selected bank " << kOperatorBank
+              << " -> survived getStateInformation() -> setStateInformation() on a fresh processor, "
+                 "ActiveBankIndex()="
+              << restoredBankIx << ".\n";
+}
+
+TEST_CASE(state_information_restore_clamps_an_out_of_range_saved_bank_to_the_default_page) {
+    frogg3rs_vst::FroggersPluginProcessor source(ScratchDataPaths("state_bank_oob_source"));
+    source.setRateAndBufferSizeDetails(48000.0, 256);
+    source.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> sourceBuffer(2, 256);
+    juce::MidiBuffer midi;
+    PumpAndSettle(source, sourceBuffer, midi);  // settle before saving, same discipline as the smaller-model test.
+
+    juce::MemoryBlock fullState;
+    source.getStateInformation(fullState);
+    REQUIRE_TRUE(fullState.getSize() > 0);
+    source.releaseResources();
+    const std::string fullText(static_cast<const char*>(fullState.getData()), fullState.getSize());
+
+    // Far past kFroggersBankCount (6) -- a host project file naming a bank
+    // this build (or any plausible future one) does not have.
+    constexpr std::int64_t kOutOfRangeBank = 999;
+    const std::string tamperedText = BuildPatchTextWithVisibleBankIndexOverridden(fullText, kOutOfRangeBank);
+
+    frogg3rs_vst::FroggersPluginProcessor target(ScratchDataPaths("state_bank_oob_restore"));
+    target.setRateAndBufferSizeDetails(48000.0, 256);
+    target.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> targetBuffer(2, 256);
+
+    target.setStateInformation(tamperedText.data(), static_cast<int>(tamperedText.size()));
+    PumpAndSettle(target, targetBuffer, midi);  // must not crash.
+
+    REQUIRE_TRUE(target.ApplicationForTest().ActiveBankIndex() == 0);  // falls back to the default page.
+
+    target.releaseResources();
+
+    std::cout << "  [state] out-of-range saved bank index " << kOutOfRangeBank
+              << " did not crash and landed on the default page (ActiveBankIndex()=0).\n";
+}
+
+TEST_CASE(state_information_session_extras_without_bank_key_restores_freeze_latch_and_leaves_the_page_at_default) {
+    frogg3rs_vst::FroggersPluginProcessor source(ScratchDataPaths("state_bank_missing_key_source"));
+    source.setRateAndBufferSizeDetails(48000.0, 256);
+    source.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> sourceBuffer(2, 256);
+    juce::MidiBuffer midi;
+
+    // Engage the freeze latch AND move to a non-default bank on the
+    // SOURCE, so the trimmed blob below carries a real engaged-freeze value
+    // while still lacking a bank key entirely -- proving the missing key,
+    // not merely an absent/false freeze value, is what this test exercises.
+    juce::AudioProcessorParameter* sourceFreeze = FindHostParamById(source, "freeze");
+    REQUIRE_TRUE(sourceFreeze != nullptr);
+    sourceFreeze->setValue(1.0f);
+    constexpr std::size_t kSourceBank = 3;
+    source.ApplicationForTest().RequestBankSelect(kSourceBank);
+    PumpAndSettle(source, sourceBuffer, midi);
+    REQUIRE_TRUE(source.ApplicationForTest().FreezeLatched());
+    REQUIRE_TRUE(source.ApplicationForTest().ActiveBankIndex() == kSourceBank);
+
+    juce::MemoryBlock fullState;
+    source.getStateInformation(fullState);
+    REQUIRE_TRUE(fullState.getSize() > 0);
+    source.releaseResources();
+    const std::string fullText(static_cast<const char*>(fullState.getData()), fullState.getSize());
+    const std::string trimmedText = BuildPatchTextWithSessionExtrasKeepingOnlyFreezeLatched(fullText);
+    REQUIRE_TRUE(trimmedText.find("sessionExtras") != std::string::npos);
+    REQUIRE_TRUE(trimmedText.find("visibleBankIndex") == std::string::npos);
+
+    frogg3rs_vst::FroggersPluginProcessor target(ScratchDataPaths("state_bank_missing_key_restore"));
+    target.setRateAndBufferSizeDetails(48000.0, 256);
+    target.prepareToPlay(48000.0, 256);
+    juce::AudioBuffer<float> targetBuffer(2, 256);
+
+    REQUIRE_TRUE(!target.ApplicationForTest().FreezeLatched());
+    REQUIRE_TRUE(target.ApplicationForTest().ActiveBankIndex() == 0);
+
+    target.setStateInformation(trimmedText.data(), static_cast<int>(trimmedText.size()));
+    PumpAndSettle(target, targetBuffer, midi);
+
+    // The Freeze latch restores exactly as it did before this key existed.
+    REQUIRE_TRUE(target.ApplicationForTest().FreezeLatched());
+    // A blob with sessionExtras but no bank key is a no-op for the page --
+    // left at its default, never forced there by some OTHER path either.
+    REQUIRE_TRUE(target.ApplicationForTest().ActiveBankIndex() == 0);
+
+    target.releaseResources();
+
+    std::cout << "  [state] sessionExtras present, bank key absent: freeze latch restored to engaged, page left at "
+                 "its default (ActiveBankIndex()=0).\n";
+}
+
 }  // namespace
 
 int main() {
