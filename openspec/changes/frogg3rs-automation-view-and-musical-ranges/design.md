@@ -134,6 +134,16 @@ it persists in `sessionExtras` beside the Freeze latch and the visible bank,
 using that same mechanism rather than a new one. Its default is off, which is
 what makes a legacy blob with no such key restore correctly.
 
+**The DAW's bus is the configuration source of truth.** The plugin builds no
+device enumeration, no channel picker, no sample-rate choice: the host owns
+all of that and the bus layout reports it. Whatever the bus says exists, is
+what exists. That is the whole of the plugin's I/O configuration, and it is
+read, never chosen.
+
+Consent is a separate axis and stays with the operator. The bus answers what
+is AVAILABLE; the opt-in answers whether to USE it. Collapsing the two is the
+phantom-input defect: a host-enabled bus would become permission nobody gave.
+
 **Where it lives is the only real difference from the standalone.** Sheaf's
 audio page, the one carrying "Input device", is part of the runtime shell
 (`projects/synth/juce/RuntimePages.hpp`) and only the standalone runs it; the
