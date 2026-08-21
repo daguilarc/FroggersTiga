@@ -17,6 +17,7 @@
 // saved patches under ~/Library/Sheaf/synth/sheaf-patch/patches/frogg3rs/
 // are not orphaned.
 
+#include "FroggersBundledDocs.hpp"
 #include "FroggersRegistration.hpp"
 #include "HostDataPaths.hpp"
 #include "Shell.hpp"
@@ -47,6 +48,14 @@ public:
 
             window_ = std::make_unique<MainWindow>("Frogg3rs");
 
+            // Operator documentation ships with the app (froggers-sheaf-
+            // runtime-app spec, "Operator documentation ships with the
+            // app"): a native macOS main-menu "Help" menu, entirely
+            // separate from the app's own rendered surface (MainWindow's
+            // content, set below) -- opening the manual/quick dictionary
+            // needs no new UI inside FroggersUiSurface's node tree.
+            juce::MenuBarModel::setMacMainMenu(&helpMenu_);
+
             LaunchRegisteredApp<synth_froggers::FroggersApp>(
                 synth::SheafPatchDataPathsForApp(dataRoot_, "frogg3rs"));
         } catch (const std::exception& e) {
@@ -57,6 +66,7 @@ public:
     }
 
     void shutdown() override {
+        juce::MenuBarModel::setMacMainMenu(nullptr);
         window_.reset();
         activeSession_.reset();
     }
@@ -65,6 +75,30 @@ public:
     void anotherInstanceStarted(const juce::String&) override {}
 
 private:
+    // Native macOS "Help" main-menu entries for the two documents this app
+    // bundles at build time (see this file's own comment at the
+    // setMacMainMenu call site, and FroggersBundledDocs.hpp's header
+    // comment for how the bundled file is located and opened).
+    class HelpMenuModel final : public juce::MenuBarModel {
+    public:
+        juce::StringArray getMenuBarNames() override { return {"Help"}; }
+
+        juce::PopupMenu getMenuForIndex(int /*topLevelMenuIndex*/, const juce::String& /*menuName*/) override {
+            juce::PopupMenu menu;
+            menu.addItem(1, "Manual");
+            menu.addItem(2, "Quick Dictionary");
+            return menu;
+        }
+
+        void menuItemSelected(int menuItemId, int /*topLevelMenuIndex*/) override {
+            if (menuItemId == 1) {
+                frogg3rs_docs::OpenBundledDoc("MANUAL.md");
+            } else if (menuItemId == 2) {
+                frogg3rs_docs::OpenBundledDoc("QUICK_DICT.md");
+            }
+        }
+    };
+
     class MainWindow final : public juce::DocumentWindow {
     public:
         explicit MainWindow(juce::String name)
@@ -209,6 +243,12 @@ private:
     }
 
     std::filesystem::path dataRoot_;
+    // Declared BEFORE window_ so it is destroyed AFTER it (member
+    // destruction is declaration-reverse): setMacMainMenu(&helpMenu_) is
+    // cleared in shutdown() before window_.reset() runs, but this ordering
+    // is a second belt-and-suspenders guard against the main menu ever
+    // outliving the model object it points to.
+    HelpMenuModel helpMenu_;
     std::unique_ptr<MainWindow> window_;
     std::unique_ptr<synth_runtime::RuntimeShellSession<synth_froggers::FroggersApp>> activeSession_;
 };

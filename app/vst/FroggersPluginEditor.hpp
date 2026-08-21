@@ -218,6 +218,15 @@ private:
     // single-slot coalescing role as MainPane's own
     // deferredRendererRefreshPending_.
     bool deferredRefreshPending_ = false;
+
+    // Operator documentation ships with the plugin (froggers-sheaf-
+    // runtime-app spec, "Operator documentation ships with the app"): a
+    // small corner button, entirely outside FroggersUiSurface's own node
+    // tree, that opens the manual/quick dictionary this plugin bundles at
+    // build time (see FroggersBundledDocs.hpp). Added and made visible
+    // AFTER portableSurface_ in the .cpp so it sits on top of it in
+    // z-order and reliably receives its own clicks.
+    juce::TextButton helpButton_{"?"};
 };
 
 }  // namespace frogg3rs_vst

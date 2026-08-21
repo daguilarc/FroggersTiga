@@ -309,7 +309,7 @@ excusing it.
 - [x] 7.5 DONE — 2 voice violations fixed in passages already being edited, both defining the feature by what it lacked. Apply design F's voice rule to whatever you rewrite: say what the
       control does, give range, units and default, stop.
 
-- [ ] 7.6 Ship the docs WITH the app: embed `MANUAL.md` and `QUICK_DICT.md`
+- [x] 7.6 DONE — both documents land in the standalone .app, the .vst3 and the .component, copied from the repository root at build time and verified present in the real artifacts. Standalone opens them from a Help menu; the plugin from a small button laid over the surface, so the shared surface needed no restructuring. Ship the docs WITH the app: embed `MANUAL.md` and `QUICK_DICT.md`
       as build resources in the standalone and in the VST3/AU plugin, and add
       the surface that opens them. A plugin in a DAW with no internet cannot
       follow a web link, which is what the current app's site does today
@@ -318,7 +318,7 @@ excusing it.
       the copy exists only in the built bundle and there is no second
       checked-in file to keep in sync. `app/Resources/` currently holds only
       icons.
-- [ ] 7.7 The browser build keeps linking to the published documents — it is
+- [x] 7.7 DONE — verified the link resolves after the rename: MANUAL.md and QUICK_DICT.md are on main and the URL returns 200. The browser build keeps linking to the published documents — it is
       already on the network. Confirm that link resolves after the repository
       rename before relying on it.
 

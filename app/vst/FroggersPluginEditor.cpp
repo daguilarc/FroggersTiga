@@ -1,5 +1,6 @@
 #include "FroggersPluginEditor.hpp"
 
+#include "FroggersBundledDocs.hpp"
 #include "FroggersPluginProcessor.hpp"
 #include "FroggersUiSurface.hpp"
 
@@ -71,6 +72,26 @@ FroggersPluginEditor::FroggersPluginEditor(FroggersPluginProcessor& processor)
     // early can never target a not-yet-built tree.
     processor_.EditorSurface().SetActionHandler(
         [this](const synth::ui::Action&) { ScheduleDeferredRefresh(); });
+
+    // Operator documentation ships with the plugin (froggers-sheaf-
+    // runtime-app spec): a bundled-file corner button, independent of
+    // FroggersUiSurface's own node tree -- see this member's declaration
+    // in the header for why. Added LAST so it paints and hit-tests on top
+    // of portableSurface_.
+    helpButton_.onClick = [this] {
+        juce::PopupMenu menu;
+        menu.addItem(1, "Manual");
+        menu.addItem(2, "Quick Dictionary");
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(helpButton_),
+                            [](int result) {
+                                if (result == 1) {
+                                    frogg3rs_docs::OpenBundledDoc("MANUAL.md");
+                                } else if (result == 2) {
+                                    frogg3rs_docs::OpenBundledDoc("QUICK_DICT.md");
+                                }
+                            });
+    };
+    addAndMakeVisible(helpButton_);
 }
 
 FroggersPluginEditor::~FroggersPluginEditor() {
@@ -149,6 +170,14 @@ void FroggersPluginEditor::resized() {
     const float offsetX = (static_cast<float>(getWidth()) - kDesignWidth * scale) * 0.5f;
     const float offsetY = (static_cast<float>(getHeight()) - kDesignHeight * scale) * 0.5f;
     portableSurface_.setTransform(juce::AffineTransform::scale(scale).translated(offsetX, offsetY));
+
+    // Fixed corner overlay, in real (untransformed) editor pixels -- unlike
+    // portableSurface_, this button is not part of the design-space surface
+    // and does not scale with it.
+    constexpr int kHelpButtonSize = 20;
+    constexpr int kHelpButtonMargin = 4;
+    helpButton_.setBounds(getWidth() - kHelpButtonSize - kHelpButtonMargin, kHelpButtonMargin, kHelpButtonSize,
+                           kHelpButtonSize);
 }
 
 }  // namespace frogg3rs_vst

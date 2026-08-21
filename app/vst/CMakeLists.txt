@@ -118,6 +118,35 @@ juce_add_plugin(FroggersVst
 # concurrent build parallelism at the -j2 cap.
 add_dependencies(FroggersVst FroggersSheafLibsynth)
 
+# Operator documentation ships with the plugin (froggers-sheaf-runtime-app
+# spec, "Operator documentation ships with the app"): the manual and quick
+# dictionary are embedded from the repository's single copy at build time,
+# so no second checked-in copy exists to drift. Same source-of-truth
+# approach desktop/CMakeLists.txt uses for SIM_MANUAL.md/QUICK_DICT.md/
+# LICENSE via FROGGERS_ASSET_SOURCES (that tree is frozen -- read for the
+# pattern, not touched) -- here the two docs are copied straight into each
+# built plugin bundle's Contents/Resources after the format target links,
+# since juce_add_plugin has no built-in "bundle this file" option the way
+# juce_add_gui_app's ICON_BIG has for the standalone app.
+get_filename_component(FROGGERS_REPO_ROOT "${APP_DIR}/.." ABSOLUTE)
+set(FROGGERS_DOC_SOURCES
+    "${FROGGERS_REPO_ROOT}/MANUAL.md"
+    "${FROGGERS_REPO_ROOT}/QUICK_DICT.md"
+)
+foreach(FROGGERS_VST_FORMAT VST3 AU)
+    if(TARGET FroggersVst_${FROGGERS_VST_FORMAT})
+        add_custom_command(TARGET FroggersVst_${FROGGERS_VST_FORMAT} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_BUNDLE_CONTENT_DIR:FroggersVst_${FROGGERS_VST_FORMAT}>/Resources"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${FROGGERS_DOC_SOURCES}
+                "$<TARGET_BUNDLE_CONTENT_DIR:FroggersVst_${FROGGERS_VST_FORMAT}>/Resources"
+            COMMENT "app/vst: bundling MANUAL.md/QUICK_DICT.md into ${FROGGERS_VST_FORMAT} Resources"
+            VERBATIM
+        )
+    endif()
+endforeach()
+
 target_sources(FroggersVst PRIVATE
     FroggersPluginProcessor.cpp
     # Group 8 (task 8.1): the real portable-surface editor. Needs

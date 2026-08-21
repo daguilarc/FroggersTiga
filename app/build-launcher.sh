@@ -61,3 +61,11 @@ nice make -j2 -C External/Sheaf/projects/synth/apps/sheaf-patch \
 APP_BUNDLE_DIR="$REPO_ROOT/app/build-launcher/Frogg3rs.app"
 mkdir -p "$APP_BUNDLE_DIR/Contents/Resources"
 cp "$REPO_ROOT/app/Resources/Icon.icns" "$APP_BUNDLE_DIR/Contents/Resources/Icon.icns"
+
+# Operator documentation ships with the app (froggers-sheaf-runtime-app
+# spec, "Operator documentation ships with the app"): copied from the
+# repository's single copy at build time, same as the icon above -- no
+# second checked-in copy anywhere, so an edit to either doc is picked up by
+# the next build with nothing to re-sync.
+cp "$REPO_ROOT/MANUAL.md" "$APP_BUNDLE_DIR/Contents/Resources/MANUAL.md"
+cp "$REPO_ROOT/QUICK_DICT.md" "$APP_BUNDLE_DIR/Contents/Resources/QUICK_DICT.md"
