@@ -37,11 +37,14 @@ lanes, and SHALL NOT close a modulation view the operator has open.
 ### Requirement: Bus and MIDI posture match the core's real I/O
 THE plugin SHALL present a stereo output bus and one optional audio
 input bus that feeds the external-audio modulation sources: the bus
-SHALL NOT be required for the plugin to instantiate or make sound, and
-the external-audio sources SHALL connect when, and only when, the DAW
-user has actually routed audio into it — an explicit act in the host,
-which is the plugin's form of the affirmative routing the standalone
-derives from device selection. The plugin SHALL NOT consume MIDI note
+SHALL NOT be required for the plugin to instantiate or make sound. The
+external-audio sources SHALL start disconnected and SHALL connect when,
+and only when, the operator has explicitly opted the input in AND that
+bus carries at least one channel. An enabled bus alone SHALL NOT count
+as consent: a host may enable an optional input bus with nothing routed
+into it, and a channel existing has never meant the operator asked for
+it. This is the same contract the standalone applies through device
+selection, whose default is likewise no device. The plugin SHALL NOT consume MIDI note
 input (the core exposes no note-input seam): DAW MIDI reaches the
 instrument exclusively through host-parameter mappings.
 
@@ -53,9 +56,22 @@ instrument exclusively through host-parameter mappings.
 - **THEN** incoming MIDI notes are not required and produce no core-side
   effect
 
-#### Scenario: Routing into the input bus connects the sources
-- **WHEN** the DAW user routes a signal into the plugin's input bus
+#### Scenario: Opting the input in connects the sources
+- **WHEN** the DAW user routes a signal into the plugin's input bus and
+  the operator opts that input in
 - **THEN** External Audio and External EF present as connected and
   modulate from that signal
-- **WHEN** the bus is disconnected again
+- **WHEN** either the opt-in is withdrawn or the bus is disconnected
 - **THEN** both sources return to their inert, disconnected state
+
+#### Scenario: A host-enabled bus nobody asked for stays inert
+- **WHEN** the host instantiates the plugin with the input bus enabled
+  but the operator has not opted the input in
+- **THEN** External Audio and External EF remain disconnected and take
+  no part in randomization
+
+#### Scenario: The opt-in survives the project
+- **WHEN** a project saved with the input opted in is reopened
+- **THEN** the opt-in is restored
+- **WHEN** a project predating the setting is reopened
+- **THEN** the input is off

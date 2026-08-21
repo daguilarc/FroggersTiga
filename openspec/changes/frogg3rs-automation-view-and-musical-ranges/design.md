@@ -99,10 +99,48 @@ The core now requests one input channel and derives the external sources'
 connected state from the host's routed signal. In a DAW the routing question
 answers itself: a bus the user connected is explicit routing.
 
+**Connected is consent, never channel presence.** This is already settled
+doctrine in the core and the plugin does not get to re-litigate it.
+`config.numAudioInputs = 1` carries a warning in its own comment: requesting
+any nonzero count opens a platform-default input device at launch, before any
+device selection is made — the built-in microphone, unasked. So the
+external-audio sources never read channel presence as permission. They
+subscribe to `AppContext::InputRouted()`, which is true only while an
+OPERATOR-SELECTED input device is open, and false for a default device nobody
+chose.
+
+Deriving the plugin's connected state from "the bus is enabled with nonzero
+channels" would throw that away. Bus enablement is the HOST's choice, not the
+operator's: a DAW may enable an optional input bus on instantiation with
+nothing routed into it, and the sources would report connected and start
+taking randomization from silence. That is the phantom-input defect this
+project has already paid to fix once, re-introduced in a new host.
+
+**Decided (operator): an explicit toggle in the plugin editor — which is the
+same mechanism the standalone already has, not a second one.** Device
+selection and a toggle are the same contract when the default is NO DEVICE:
+the input starts off, and any move off that default is the operator's
+affirmative act. The standalone's selector happens to offer many devices; the
+plugin's offers two states, none and the input bus, because the DAW owns the
+devices. Same rule, different arity.
+
+So: connected = the operator opted in AND the bus is actually enabled with at
+least one channel. Consent and capability, both required — opting in cannot
+invent a signal, and an enabled bus cannot imply consent. Both hosts feed the
+one existing `InputRouted` seam; nothing new is introduced for the plugin.
+
+The opt-in is operator-set state that a reopened project should remember, so
+it persists in `sessionExtras` beside the Freeze latch and the visible bank,
+using that same mechanism rather than a new one. Its default is off, which is
+what makes a legacy blob with no such key restore correctly.
+
 Trace before building: the JUCE layout API for an optional instrument input
-bus, what `processBlock` does with input buffers today, and how to derive
-connected from bus-enabled-with-nonzero-channels through the existing
-`SetExternalAudioConnected` writer — once per layout change, never per block.
+bus, what `processBlock` does with input buffers today, which JUCE callback
+fires on layout change, and how to reach the existing
+`SetExternalAudioConnected`/`InputRouted` writer — once per change of either
+input, never per block. There is no external-audio toggle anywhere in the
+current app surface to copy; the frozen web sim's External button is the
+nearest precedent for what it does.
 
 ## C — Envelope times map exponentially
 
