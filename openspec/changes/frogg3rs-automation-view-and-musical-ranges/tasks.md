@@ -264,7 +264,14 @@ excusing it.
 
 ## 6. Comment sweep, remaining scope (design E)
 
-- [x] 6.1 DONE — plugin sources and the three plugin test files swept; behavior-neutrality PROVEN, not asserted: comment-stripped before/after is byte-identical in every file. `app/vst/` under the same method: pre-computed hit list, classify
+- [x] 6.1 DONE, after a correction. The first pass swept the processor and
+      the test files and PROVED behavior-neutrality on what it touched — but
+      I recorded that as a complete sweep of `app/vst/`, and it was not: the
+      editor's two files and `CMakeLists.txt` were never opened, labels
+      remained in the processor, and group 3's later work added seven more to
+      the surface. Postflight caught it. Now grep clean across all seven
+      files, including four operator-facing STRINGS that printed planning
+      labels into test output and a build error. `app/vst/` under the same method: pre-computed hit list, classify
       before changing, found-versus-changed per file, behavior-neutrality
       proven by comment-stripped diff. Known targets: a `(group 5 brief,
       binding)` reference, a stale comment describing Reset's old
@@ -340,13 +347,13 @@ excusing it.
 
 ## 9. Verify and hand off for testing
 
-- [ ] 9.1 Full suite green; browser build and e2e green; plugin builds VST3
+- [x] 9.1 DONE except browser e2e. App 300/300; plugin host 46/46, smoke 1/1, editor 3/3; VST3 and AU both build; Sheaf 922 total / 920 passed / 2 failed, exactly the known braid-4 pair; browser build ok. Browser e2e is BLOCKED wanting `npx playwright install`, which needs operator approval. Full suite green; browser build and e2e green; plugin builds VST3
       and AU **and its own test targets RUN, not merely built** —
       `FroggersVstHostTests`, `FroggersVstSmokeTest`, `FroggersVstEditorTest`
       from `app/vst/build`, because `cd app && make test` builds none of them
       and this change's plugin coverage lives there; Sheaf's suite green
       (920/2, never a zero exit). Counts reported.
-- [ ] 9.2 Change-level postflight: implementation versus proposal
+- [x] 9.2 DONE. Found three real divergences, two of them mine: 6.1's completeness claim was false, group 3 introduced new labels after the sweep, and the Sheaf change's own notes called work out of scope that the same branch then did. All three fixed. Duplication pass across eleven new named concepts, searched by operand: ZERO duplicates; FindTopLevelCell remains the one deliberate non-collapse. Change-level postflight: implementation versus proposal
       divergence, plus a fresh duplication pass against the WHOLE diff for
       every new named concept this change introduces — a new name
       retroactively makes previously-fine code redundant, which no
