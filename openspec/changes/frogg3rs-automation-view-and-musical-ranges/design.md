@@ -148,23 +148,10 @@ opt-in governs CONSUMPTION, not enablement: if the DAW enables the input bus,
 that is its business, and we simply do not read it until a channel is
 selected.
 
-**JUCE's `withInput(name, layout, isActivatedByDefault)` third argument is NOT
-a safety mechanism, and should not be chosen as though it were.** It sets the
-bus's initial state only; the host may enable the bus whenever it likes. Since
-the selector's None default already decides consumption, the flag protects
-nothing the selector does not already cover.
-
-Its one observable effect is DISCOVERABILITY, and the defensive-looking value
-is probably the worse one: declared false, a fresh instance likely reports no
-channels, so the selector offers only None and an operator wanting external
-audio sees no options and no hint that the bus must be enabled in the DAW
-first. Declared true, the channels are visible and selectable while None still
-keeps them unused.
-
-How hosts actually present an instrument's optional input differs between
-Logic, Live and Reaper, and no header answers it. Pick the value that makes
-the input discoverable, and settle it in the DAW smoke (9.3) rather than by
-argument here.
+JUCE's `withInput` third argument, `isActivatedByDefault`, is not part of
+this: it sets the bus's initial state, the host may override it, and consumption
+is decided by the selection regardless. Pick whichever value makes the input
+easy to find and move on — it is not load-bearing.
 
 **A selection can be invalidated by the host at any time**, and this is where
 the constraint has to be enforced rather than assumed. The host may change the
