@@ -407,7 +407,7 @@ private:
     // this file's header comment on why processBlock() itself must not.
     void timerCallback() override;
 
-    // -- 6.1: host transport edge-trigger -----------------------------------
+    // -- host transport edge-trigger -----------------------------------
     // processBlock() (audio thread) is the only place allowed to call
     // getPlayHead()->getPosition() (juce_AudioPlayHead.h's own doc comment:
     // "You can ONLY call this from your processBlock() method!"), so it is
@@ -432,7 +432,7 @@ private:
     bool haveHostPlayingBaseline_ = false;
     bool lastHostIsPlaying_ = false;
 
-    // -- 6.3: host tempo via external-clock slaving -------------------------
+    // -- host tempo via external-clock slaving -------------------------
     // Same audio-thread/message-thread split as 6.1 above: processBlock()
     // republishes what it read from the playhead into these atomics;
     // timerCallback() is the only reader, and the only thing that acts on
@@ -444,7 +444,7 @@ private:
     std::atomic<bool> hostTempoValid_{false};
     std::atomic<double> hostTempoBpm_{synth::MasterClock::kDefaultTempoBpm};
     // Message-thread-owned -- timerCallback() is the SOLE writer of
-    // hostClockEngaged_/nextHostClockTickMicros_ (review fix, Important 1):
+    // hostClockEngaged_/nextHostClockTickMicros_:
     // releaseResources() used to write hostClockEngaged_ directly, but JUCE
     // gives releaseResources() no thread guarantee at all
     // (juce_AudioProcessor.h's own declaration carries no thread
@@ -505,7 +505,7 @@ private:
     std::uint64_t lastObservedProcessBlockCounter_ = 0;
     std::uint64_t lastActivityMicros_ = 0;
 
-    // -- 7.1: stable-ID host parameter surface -------------------------------
+    // -- stable-ID host parameter surface -------------------------------
     // One entry per exposed juce::AudioProcessorParameter: the 6*14 page
     // parameters + 6 per-bank Crispy + 1 shared Crunchy the model's own
     // enumeration produces (FroggersParameterModel -- see

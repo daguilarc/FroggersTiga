@@ -1,5 +1,5 @@
-# app/vst/CMakeLists.txt -- Group 5 (VST/AU plugin skeleton) of the
-# frogg3rs-browser-and-vst-hosts change. ALL JUCE code lives under app/vst/;
+# app/vst/CMakeLists.txt -- the VST/AU plugin skeleton. ALL JUCE code lives
+# under app/vst/;
 # app/'s JUCE-free core (Froggers.hpp et al.) and its own build
 # (app/Makefile, check_no_juce.cpp) are untouched by this file and never
 # depend on it.
@@ -9,7 +9,7 @@
 # resurrected): that block used juce_add_plugin(... FORMATS VST3 AU IS_SYNTH
 # TRUE ...) via FetchContent'd JUCE. This file keeps the same juce_add_plugin
 # shape (formats, IS_SYNTH, COPY_PLUGIN_AFTER_BUILD FALSE) but:
-#   - adds JUCE via add_subdirectory($ENV{HOME}/JUCE ...), the group 5 brief's
+#   - adds JUCE via add_subdirectory($ENV{HOME}/JUCE ...), per the
 #     explicit instruction (JUCE is already checked out locally), not
 #     FetchContent;
 #   - targets the CURRENT app core (app/Froggers.hpp,
@@ -20,7 +20,7 @@
 #     needed, since desktop/'s core lived in src/core, not behind Sheaf's own
 #     Makefile-built static lib.
 #
-# Build (group 5 brief, binding): -j2 max, always, nice'd -- this machine
+# Build (binding): -j2 max, always, nice'd -- this machine
 # locks up above -j2.
 #   cmake -S app/vst -B app/vst/build
 #   cmake --build app/vst/build --config Release -- -j2
@@ -36,7 +36,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "macOS deployment target")
 
 set(FROGGERS_JUCE_DIR "$ENV{HOME}/JUCE" CACHE PATH
-    "Local JUCE checkout (group 5 brief: add_subdirectory, not FetchContent)")
+    "Path to a local JUCE checkout, added via add_subdirectory (not FetchContent)")
 if(NOT EXISTS "${FROGGERS_JUCE_DIR}/CMakeLists.txt")
     message(FATAL_ERROR "JUCE not found at ${FROGGERS_JUCE_DIR} (set -DFROGGERS_JUCE_DIR=... "
                          "or check out JUCE there) -- see app/vst/CMakeLists.txt's own header comment")
@@ -52,7 +52,7 @@ set(SHEAF_LIB "${SHEAF_SYNTH_DIR}/build/libsynth.a")
 # way (`$(MAKE) -C $(SHEAF_SYNTH_DIR) build`), every time, and lets Sheaf's
 # own build decide whether anything actually needs recompiling.
 #
-# Group 6 carry-forward 1 (group 5 review): this USED to be an
+# This USED to be an
 # execute_process() at CONFIGURE time, specifically to avoid ever running
 # concurrently with the `cmake --build ... -- -j2` step below and multiplying
 # this machine's effective parallelism past the hard -j2 cap. The problem
@@ -84,7 +84,7 @@ add_custom_target(FroggersSheafLibsynth ALL
     VERBATIM
 )
 
-# Task 5.9-equivalent stop-and-ask gate (deleted idiom's own convention,
+# Stop-and-ask gate (deleted idiom's own convention,
 # desktop/CMakeLists.txt:143-146): instrument/generator identity must stay
 # IS_SYNTH TRUE. Named FROGGERS_VST_PLUGIN_IS_SYNTH (not
 # FROGGERS_VST_IS_SYNTH) so this CMake-script-only variable can't be
@@ -93,7 +93,7 @@ add_custom_target(FroggersSheafLibsynth ALL
 # namespace, no actual collision -- this is a readability-only rename).
 set(FROGGERS_VST_PLUGIN_IS_SYNTH TRUE)
 if(NOT FROGGERS_VST_PLUGIN_IS_SYNTH)
-    message(FATAL_ERROR "FroggersVst requires IS_SYNTH TRUE (group 5 brief)")
+    message(FATAL_ERROR "FroggersVst must build with IS_SYNTH TRUE -- it is an instrument/generator plugin, not an effect")
 endif()
 
 juce_add_plugin(FroggersVst
@@ -104,14 +104,14 @@ juce_add_plugin(FroggersVst
     PLUGIN_CODE Fr3g
     FORMATS VST3 AU
     IS_SYNTH TRUE
-    # Group 5 brief: "a synth that declares MIDI input accepted is fine; no
+    # "a synth that declares MIDI input accepted is fine; no
     # note wiring" -- FroggersPluginProcessor::acceptsMidi() agrees (TRUE),
     # and processBlock() ignores the MIDI buffer entirely.
     NEEDS_MIDI_INPUT TRUE
     COPY_PLUGIN_AFTER_BUILD FALSE
 )
 
-# Group 6 carry-forward 1: FroggersVst (the shared-code target every format
+# FroggersVst (the shared-code target every format
 # wrapper links, and what FroggersVstSmokeTest itself links) cannot start
 # compiling until libsynth.a has been (re)built -- see
 # FroggersSheafLibsynth's own comment above for why this also keeps total
@@ -149,9 +149,9 @@ endforeach()
 
 target_sources(FroggersVst PRIVATE
     FroggersPluginProcessor.cpp
-    # Group 8 (task 8.1): the real portable-surface editor. Needs
+    # The real portable-surface editor. Needs
     # SHEAF_SYNTH_DIR/juce on the include path (below) for
-    # PortableJuceBackend.hpp -- runtime/ and include/ alone (group 5's
+    # PortableJuceBackend.hpp -- runtime/ and include/ alone (the
     # original set) never pulled that directory in.
     FroggersPluginEditor.cpp
     # Only the tiny data-root helper (juce_core dependency, no
@@ -165,7 +165,7 @@ target_include_directories(FroggersVst PRIVATE
     "${APP_DIR}"
     "${SHEAF_SYNTH_DIR}/include"
     "${SHEAF_SYNTH_DIR}/runtime"
-    # Group 8: synth_juce::PortableComponent (PortableJuceBackend.hpp), the
+    # synth_juce::PortableComponent (PortableJuceBackend.hpp), the
     # render-host seam FroggersPluginEditor.cpp builds on -- see that file's
     # own header comment for the full trace.
     "${SHEAF_SYNTH_DIR}/juce"
@@ -196,7 +196,7 @@ target_compile_definitions(FroggersVst PUBLIC
     JUCE_VST3_CAN_REPLACE_VST2=0
 )
 
-# --- 5.2: processBlock smoke test (CTest) -----------------------------------
+# --- processBlock smoke test (CTest) -----------------------------------
 enable_testing()
 
 add_executable(FroggersVstSmokeTest FroggersVstSmokeTest.cpp)
@@ -214,11 +214,11 @@ target_link_libraries(FroggersVstSmokeTest PRIVATE FroggersVst)
 
 add_test(NAME FroggersVstSmokeTest COMMAND FroggersVstSmokeTest)
 
-# --- 6.4: DAW-external transport/tempo/surface-row tests (CTest) -----------
+# --- DAW-external transport/tempo/surface-row tests (CTest) -----------
 # Same "drive the real compiled processor" shape as FroggersVstSmokeTest
 # above (links FroggersVst, the shared-code target every format wrapper
 # links), plus app/FroggersUiSurface.hpp directly for the plugin-mode
-# surface-row assertions (task 6.2) -- that header is JUCE-free itself, but
+# surface-row assertions -- that header is JUCE-free itself, but
 # this test binary already links JUCE transitively via FroggersVst, so no
 # separate target is needed for it.
 add_executable(FroggersVstHostTests FroggersVstHostTests.cpp)
@@ -233,7 +233,7 @@ target_link_libraries(FroggersVstHostTests PRIVATE FroggersVst)
 
 add_test(NAME FroggersVstHostTests COMMAND FroggersVstHostTests)
 
-# --- 8.2: editor construction/destruction (CTest, own binary) ---------------
+# --- Editor construction/destruction (CTest, own binary) ---------------
 # Deliberately ISOLATED from FroggersVstHostTests above: this is the one
 # place in the app/vst/ suite that constructs a real juce::Component
 # (FroggersPluginEditor), and a headless CTest process has no guarantee a

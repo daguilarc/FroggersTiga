@@ -239,7 +239,7 @@ TEST_CASE(editor_constructs_and_destructs_cleanly_twice_headless) {
     }
 
     processor.releaseResources();
-    std::cout << "  [8.1] editor constructs/destructs cleanly, twice, on one processor.\n";
+    std::cout << "  editor constructs/destructs cleanly, twice, on one processor.\n";
 }
 
 // -- 2. Action-handler wiring ---------------------------------------------------
@@ -349,7 +349,7 @@ TEST_CASE(dispatching_an_action_refreshes_the_renderer_through_the_action_handle
     REQUIRE_TRUE(std::abs(rendererSliderValue() - target) < 0.01);
 
     processor.releaseResources();
-    std::cout << "  [review fix] dispatched action refreshed the renderer via the action-handler/callAsync "
+    std::cout << "  dispatched action refreshed the renderer via the action-handler/callAsync "
                  "seam alone, with processor.PumpMessageThreadForTest() never called.\n";
 }
 

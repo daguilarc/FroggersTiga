@@ -44,7 +44,7 @@ synth::RuntimeDataPaths ProductionDataPaths() {
     return synth::SheafPatchDataPathsForApp(dataRoot, synth_froggers::FroggersManifest().appId);
 }
 
-// -- 7.1: stable host-parameter IDs --------------------------------------
+// -- stable host-parameter IDs --------------------------------------
 // Derived ONLY from structural facts of FroggersParameterModel that are
 // fixed by design and documented as such in app/FroggersParameters.hpp,
 // never from iteration order, display strings, or anything that shifts
@@ -173,7 +173,7 @@ FroggersPluginProcessor::FroggersPluginProcessor(synth::RuntimeDataPaths dataPat
 
     // This is SetPluginHostMode()'s first PRODUCTION
     // call site (app/FroggersUiSurface.hpp's own comment on that method
-    // names this exact call: "The plugin host (group 8's editor) calls
+    // names this exact call: "The plugin host (the VST editor) calls
     // SetPluginHostMode(true) before/at attach time" -- previously
     // test-only, FroggersVstHostTests.cpp's BuildFroggersTree()). Called
     // here, right after engine_.Initialize() (i.e. as early as the surface
@@ -581,7 +581,7 @@ void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
     // here.
     if (juce::AudioPlayHead* playHead = getPlayHead()) {
         if (const auto position = playHead->getPosition()) {
-            // -- 6.1: transport edge-trigger ---------------------------------
+            // -- transport edge-trigger ---------------------------------
             const bool isPlayingNow = position->getIsPlaying();
             if (!haveHostPlayingBaseline_) {
                 // The FIRST observation establishes the baseline rather than
@@ -605,7 +605,7 @@ void FroggersPluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juc
                 lastHostIsPlaying_ = isPlayingNow;
             }
 
-            // -- 6.3: republish the host's reported tempo, if any -----------
+            // -- republish the host's reported tempo, if any -----------
             if (const auto bpm = position->getBpm()) {
                 hostTempoBpm_.store(*bpm, std::memory_order_relaxed);
                 hostTempoValid_.store(true, std::memory_order_release);
@@ -747,7 +747,7 @@ void FroggersPluginProcessor::timerCallback() {
     // (Runtime.hpp:974-984): the engine's message-thread tick runs first.
     engine_.MessageThreadTick();
 
-    // -- 6.1: drain the pending host transport edge, if any -----------------
+    // -- drain the pending host transport edge, if any -----------------
     // Routed through the SAME production seam the Play/Stop buttons use --
     // FroggersApp::PortableSurface() (Froggers.hpp:52) returns the exact
     // FroggersUiSurface instance already Attach()-ed to this engine
@@ -769,7 +769,7 @@ void FroggersPluginProcessor::timerCallback() {
             synth::ui::Action::Named(synth_froggers::FroggersActions::kStop));
     }
 
-    // -- 6.3: host tempo via the existing external-clock slave path ---------
+    // -- host tempo via the existing external-clock slave path ---------
     // Trace: MasterClock::SetTempoBpm no-ops unconditionally
     // while `syncConfig_.receiveClock` is true (src/MasterClock.cpp:
     // 963-965) -- that suppression is a property of the flag, not of HOW
@@ -969,7 +969,7 @@ void FroggersPluginProcessor::TestStopTransport() {
         synth::ui::Action::Named(synth_froggers::FroggersActions::kStop));
 }
 
-// -- 7.1: stable-ID host parameter surface -----------------------------------
+// -- stable-ID host parameter surface -----------------------------------
 void FroggersPluginProcessor::BuildHostParameterInventory() {
     synth_froggers::FroggersParameterModel& model = engine_.Application().Parameters();
     const auto& layouts = synth_froggers::FroggersBankLayouts();

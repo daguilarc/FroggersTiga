@@ -1,14 +1,14 @@
 #pragma once
 
-// frogg3rs_vst::FroggersPluginEditor -- Group 8 (plugin editor hosting the
-// portable surface) of the frogg3rs-browser-and-vst-hosts change (spec
-// froggers-vst-host, "Editor hosts the portable surface": the plugin editor
+// frogg3rs_vst::FroggersPluginEditor -- the plugin editor hosting the
+// portable surface (spec froggers-vst-host, "Editor hosts the portable
+// surface": the plugin editor
 // SHALL render the SAME portable app surface the standalone launcher
 // renders -- minus DAW-owned chrome -- through the SAME portable renderer,
 // so surface improvements reach the plugin without a parallel UI).
 //
 // ============================================================================
-// Render-host seam trace (task 8.1, read start-to-finish before writing this
+// Render-host seam trace (read start-to-finish before writing this
 // file) -- cites the ACTUAL files, not a summary of them:
 // ============================================================================
 //   - app/FroggersMain.cpp's launcher session builds a
@@ -53,7 +53,7 @@
 //     RuntimeMainComponent wrapper, NO sidebar, NO Runtime<App>, NO
 //     JuceRuntimeMainServices, NO device/MIDI-connection machinery. The
 //     renderer IS separable from the full runtime session: this class is
-//     the proof. Task 8.1's binding BLOCKED-escalation condition ("the
+//     the proof. The binding BLOCKED-escalation condition ("the
 //     renderer is NOT separable from the runtime session") did not trigger.
 //   - What this editor deliberately does NOT construct, and why each is
 //     correctly excluded rather than merely omitted: Runtime<App> (owns the
@@ -66,18 +66,18 @@
 //     wrap once MainPane itself is excluded).
 //   - Plugin-mode chrome exclusion (Play/Stop/Record suppressed, Freeze
 //     "FREEZE"-labelled) is NOT implemented in this file at all --
-//     FroggersUiSurface::SetPluginHostMode(true) (g6,
-//     app/FroggersUiSurface.hpp) is called ONCE, in
-//     FroggersPluginProcessor's OWN constructor (task 8.1's carry-forward-
-//     adjacent wiring -- see that file's own comment for the exact call
-//     site and the static_cast justification), on the SAME surface
+//     FroggersUiSurface::SetPluginHostMode(true)
+//     (app/FroggersUiSurface.hpp) is called ONCE, in
+//     FroggersPluginProcessor's OWN constructor (see that file's own
+//     comment for the exact call site and the static_cast justification),
+//     on the SAME surface
 //     instance this editor renders. This editor just renders whatever tree
 //     BuildTree() hands back, unconditionally -- exactly what "so surface
 //     improvements reach the plugin without a parallel UI" requires: zero
 //     plugin-specific UI branching lives in this class.
 //
 // ============================================================================
-// Refresh cadence: the action-handler seam (review fix, post-8.1)
+// Refresh cadence: the action-handler seam
 // ============================================================================
 // A REAL bug in the first cut of this file: it registered ONLY the 30Hz
 // repaint hook (FroggersPluginProcessor::SetEditorRepaintHook) and never
@@ -121,7 +121,7 @@
 // slot, still far faster than the 30Hz ceiling this fix replaces.
 //
 // ============================================================================
-// Sizing (task 8.1: "resizable per the surface's own sizing conventions")
+// Sizing ("resizable per the surface's own sizing conventions")
 // ============================================================================
 // FroggersUiSurface resolves its OWN internal layout against a fixed,
 // compiled-in 900x712 (synth_froggers::FroggersPageLayout::kDefaultWidth/

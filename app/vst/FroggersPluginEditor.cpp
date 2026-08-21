@@ -10,7 +10,7 @@ namespace frogg3rs_vst {
 
 namespace {
 
-// Task 8.1: reuses FroggersPageLayout's own named constants
+// Reuses FroggersPageLayout's own named constants
 // (app/FroggersUiSurface.hpp) -- that struct's own comment names itself the
 // single definition site for "the operator's approved design box" -- rather
 // than a second 900.0f/712.0f literal pair here (the exact defect that
@@ -18,7 +18,7 @@ namespace {
 constexpr float kDesignWidth = synth_froggers::FroggersPageLayout::kDefaultWidth;
 constexpr float kDesignHeight = synth_froggers::FroggersPageLayout::kDefaultHeight;
 
-// Resize bounds (task 8.1, "resizable per the surface's own sizing
+// Resize bounds ("resizable per the surface's own sizing
 // conventions"): neither the governing spec nor the design doc names a
 // specific limit, only that the editor must be resizable and follow the
 // browser's uniform-scale precedent (this file's own header comment) --
@@ -57,7 +57,7 @@ FroggersPluginEditor::FroggersPluginEditor(FroggersPluginProcessor& processor)
     portableSurface_.RefreshFromSurface();
     setSize(static_cast<int>(kDesignWidth), static_cast<int>(kDesignHeight));
 
-    // Task 8.1: mirrors synth_runtime::RuntimeShellSession's constructor
+    // Mirrors synth_runtime::RuntimeShellSession's constructor
     // wiring a repaint hook into the SAME message-thread timer that already
     // drives Runtime<App>'s own per-tick work (Sheaf runtime/Shell.hpp:88,
     // runtime/Runtime.hpp:974-981) -- see
@@ -65,7 +65,7 @@ FroggersPluginEditor::FroggersPluginEditor(FroggersPluginProcessor& processor)
     // full precedent trace and the single-editor-at-a-time reasoning.
     processor_.SetEditorRepaintHook([this] { portableSurface_.RefreshFromSurface(); });
 
-    // Review fix (post-8.1): the action-handler seam -- see this file's
+    // The action-handler seam -- see this file's
     // header comment, "Refresh cadence" section, for why this was missing
     // and what it fixes. Registered LAST in the constructor (after the
     // control tree already exists) so an action dispatched vanishingly
