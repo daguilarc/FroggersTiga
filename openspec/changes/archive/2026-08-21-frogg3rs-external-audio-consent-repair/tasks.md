@@ -195,5 +195,23 @@ four-or-more 8% of the time, about one in twelve.
 - [x] 5.2 Postflight: implementation versus proposal, plus a duplication pass
       over the whole diff for every new named concept.
 - [x] 5.3 Push Sheaf before the superproject pin.
-- [ ] 5.4 OPERATOR: re-test. This change exists because a requirement was
+- [x] 5.4 OPERATOR: re-test. This change exists because a requirement was
       satisfied on paper and not in the running app.
+
+## 6. Not covered here — merge to main and release
+
+Archived with this gap stated rather than hidden. This change ends at the
+branch: it commits and pushes the work, and says nothing concrete about how it
+reaches anyone.
+
+What is missing is not a line item, it is a plan. `main` has no `app/`
+directory at all and its Pages workflow still deploys `web/dist`, so the
+published site is the retired v1 build; `desktop-release.yml` fires only on
+`froggerstiga-v*` tags, is pinned to `froggerstiga-v1`, and builds `desktop/`
+rather than `app/`; and `vst-plugin.yml` runs as build-and-test with
+`contents: read`, so it cannot publish anything. None of that is a detail to
+append to section 5 — the site, the desktop release and the plugin release each
+need their own trace and their own gate.
+
+That work is being written up as its own change, with the detail this one
+lacks. Nothing here is blocked by it.
