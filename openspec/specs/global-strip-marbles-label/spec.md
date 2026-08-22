@@ -29,12 +29,9 @@ Global strip button labels SHALL come from `ParamDisplayNames::forGlobalStrip` �
 
 ### Requirement: Manual and quick-dict use Rand Resample
 
-Operator docs SHALL use the button label **Rand Resample** and explain that it resamples both random S&H channels by **drawing new values from each bag** (marbles step — no internal clock).
-
-#### Scenario: Manual global strip table
-
-- **WHEN** the user reads the global controls table in `SIM_MANUAL.md`
-- **THEN** the marbles row is labeled **Rand Resample** with description “Resample both random S&H channels (draws from bags)”
+Operator docs SHALL use the button label **Rand Resample** and explain that
+it resamples both random S&H channels by **drawing new values from each
+bag** (marbles step — no internal clock).
 
 #### Scenario: Quick Dict entry
 

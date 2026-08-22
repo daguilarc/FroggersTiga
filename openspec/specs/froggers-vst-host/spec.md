@@ -189,4 +189,3 @@ lanes, and SHALL NOT close a modulation view the operator has open.
 - **WHEN** the operator selects a different bank
 - **THEN** the editor's visible page follows that selection
 
-## MODIFIED Requirements

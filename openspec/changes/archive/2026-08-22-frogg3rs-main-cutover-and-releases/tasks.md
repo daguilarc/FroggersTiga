@@ -13,12 +13,12 @@ target that builds the JUCE runtime shell. Never above `-j2`, always `nice`.
 
 ## 0. Hygiene
 
-- [ ] 0.1 Delete `docs/`. Nothing in `.github/workflows/` or any Makefile
+- [x] 0.1 Delete `docs/`. Nothing in `.github/workflows/` or any Makefile
       references it, and `main`'s Pages workflow uploads `web/dist`
       (`pages.yml:65-67`), not `docs/`. Confirm both again at execution time
       by searching for the INVOCATION, by bare name as well as by path, before
       deleting anything.
-- [ ] 0.3 Delete the one-off measurement harnesses in `app/`:
+- [x] 0.3 Delete the one-off measurement harnesses in `app/`:
       `FroggersBadgeCriterionRepro.cpp`, `FroggersCrunchyBlowupRepro.cpp`,
       `FroggersLimiterPumpingRepro.cpp`, `FroggersRandomizeAllRepro.cpp`,
       `FroggersReverbTankMechanismRepro.cpp`, `FroggersStopFlushRepro.cpp`,
@@ -30,7 +30,7 @@ target that builds the JUCE runtime shell. Never above `-j2`, always `nice`.
       Check each header before deleting: if one documents a measurement whose
       result is not recorded anywhere else, move that result into the test or
       comment that now covers it rather than losing it with the file.
-- [ ] 0.4 Untrack the compiled firmware output committed under `src/`:
+- [x] 0.4 Untrack the compiled firmware output committed under `src/`:
       `src/Blink/build/`, `src/FroggersTiga/build/`, `src/TestControl/build/`
       — 13 files of `.bin`, `.elf`, `.map`, `.o`, `.d`. Build output does not
       belong in version control. If `src/` is retired by 10.6 these go with the
@@ -39,7 +39,7 @@ target that builds the JUCE runtime shell. Never above `-j2`, always `nice`.
       per-tree decision so the same files are not deleted twice.
       The two build files under `External/libDaisy` are vendored and stay.
 
-- [ ] 0.2 Report what else the sweep of the release surface turns up —
+- [x] 0.2 Report what else the sweep of the release surface turns up —
       `desktop/scripts/verify-release-metadata.sh` and
       `verify-tag-version.sh` are invoked only by the v1-gated job and may be
       dead once that job stops building `desktop/`. Trace their consumers
@@ -49,12 +49,12 @@ target that builds the JUCE runtime shell. Never above `-j2`, always `nice`.
 
 This gates the desktop release. Nothing in group 2 can ship without it.
 
-- [ ] 1.1 Trace and report, before changing anything:
+- [x] 1.1 Trace and report, before changing anything:
       `External/Sheaf/projects/synth/runtime/juce_build.mk:76-85` lists eight
       Objective-C++ unity sources. State for each whether JUCE ships a
       platform-neutral `.cpp` counterpart, and what else in that makefile
       (frameworks, link flags, tool selection) is macOS-specific.
-- [ ] 1.2 Select JUCE's unity sources per platform rather than hardcoding the
+- [x] 1.2 Select JUCE's unity sources per platform rather than hardcoding the
       Objective-C++ set, keeping macOS byte-identical in what it compiles.
       Do NOT add a `Standalone` format to `app/vst/CMakeLists.txt` as a
       shortcut — `juce_StandaloneFilterWindow.h:855,284,546` shows it hosts
@@ -64,15 +64,15 @@ This gates the desktop release. Nothing in group 2 can ship without it.
 - [ ] 1.3 The gate must actually run on Windows. Report what it takes to build
       the miniapp runtime shell tests on `windows-latest`, and wire it, or
       state plainly that Windows ships unverified and why that is acceptable.
-- [ ] 1.4 macOS is unchanged: same gates, same counts, reported.
+- [x] 1.4 macOS is unchanged: same gates, same counts, reported.
 
 ## 2. The desktop release builds the app that exists
 
-- [ ] 2.1 `desktop-release.yml` triggers on `froggerstiga-v*` and its macOS job
+- [x] 2.1 `desktop-release.yml` triggers on `froggerstiga-v*` and its macOS job
       is gated `if: github.ref_name == 'froggerstiga-v1'`. Retarget the trigger
       to `frogg3rs_v2` and remove the v1 ref gate. Verify the tag glob matches
       the tag exactly — a mismatched glob is a tag that silently does nothing.
-- [ ] 2.2 Build `app/`, not `desktop/`. The macOS artifact is a `.dmg`; the
+- [x] 2.2 Build `app/`, not `desktop/`. The macOS artifact is a `.dmg`; the
       Windows artifact matches whatever 1.2 produces. Both carry the current
       product name, not the retired one.
 - [ ] 2.3 Retire the v1 release once v2 is downloadable, not before. The
@@ -108,18 +108,18 @@ This gates the desktop release. Nothing in group 2 can ship without it.
 - [x] 4.2 Update `app/browser/e2e/link-roles.spec.mjs` to assert both links,
       and report whether any other e2e or catalog check pins the old single
       link.
-- [ ] 4.3 Confirm the built site still uses relative asset paths
+- [x] 4.3 Confirm the built site still uses relative asset paths
       (`dist/site/index.html:59-60` for stylesheets and `:152-153` for scripts
       today) so the page survives its base path.
       This is what the live site gets wrong.
 
 ## 5. Verify against the published result, not the workflow file
 
-- [ ] 5.1 A workflow that parses is not a workflow that ships. Before the
+- [x] 5.1 A workflow that parses is not a workflow that ships. Before the
       operator merges, dry-run what can be dry-run (`workflow_dispatch` on the
       branch runs `pages.yml`'s build-and-test job without deploying, per its
       own main-gated deploy job) and report what could not be exercised.
-- [ ] 5.2 State explicitly which steps remain unverifiable until `main` has the
+- [x] 5.2 State explicitly which steps remain unverifiable until `main` has the
       change, and therefore what the operator is being asked to trust.
 
 ## 5b. Carried from `frogg3rs-automation-view-and-musical-ranges`
@@ -160,8 +160,8 @@ consumer added since would make it wrong, and 10.5 says so itself.
       three remaining consumers — the v1 site's help modal, the built v1
       Pages site, and the frozen desktop app's embedded Help — all go with
       this group. One document with no copies has no parity to keep.
-- [ ] 10.1 Merge v2 into main.
-- [ ] 10.2 DECIDED — the new desktop app is `frogg3rs_v2`, and the old
+- [x] 10.1 Merge v2 into main.
+- [x] 10.2 DECIDED — the new desktop app is `frogg3rs_v2`, and the old
       naming convention is dropped rather than carried forward. Assets become
       `frogg3rs.dmg` / `frogg3rs-Setup.exe` (confirm the exact Windows form
       when building). The filenames come from the build, not from GitHub, so
@@ -170,17 +170,17 @@ consumer added since would make it wrong, and 10.5 says so itself.
       `web/index.html`'s two download links must change in the SAME commit or
       both downloads 404 the moment the release is replaced. Trace all four
       before touching any.
-- [ ] 10.3 DECIDED — the release tag is `frogg3rs_v2`, replacing
+- [x] 10.3 DECIDED — the release tag is `frogg3rs_v2`, replacing
       `froggerstiga-v1`. Everything carries the one spelling: app
       `frogg3rs_v2`, tag `frogg3rs_v2`, assets `frogg3rs.*`. Amend
       `AGENTS.md` in the same commit — it names `froggerstiga-v1` as the one
       permitted desktop channel and forbids creating other tags, so the rule
       moves with the tag or the next release violates it.
-- [ ] 10.4 Move the release-notes source and the release-metadata version
+- [x] 10.4 Move the release-notes source and the release-metadata version
       heading off `SIM_MANUAL.md` and onto `MANUAL.md`
       (`desktop/scripts/render-release-notes.sh`,
       `desktop/scripts/verify-release-metadata.sh`).
-- [ ] 10.5 Tear down the mirror apparatus wholesale rather than re-pointing
+- [x] 10.5 Tear down the mirror apparatus wholesale rather than re-pointing
       it, since it has no consumer left: `scripts/sync-help-docs.sh`,
       `sim/check_operator_docs_sync.sh`, the re-sync step in
       `scripts/hooks/pre-commit`, its invocation in `.github/workflows/
@@ -190,7 +190,7 @@ consumer added since would make it wrong, and 10.5 says so itself.
       copies go. Then delete `SIM_MANUAL.md`, against the deltas from 10.0.
       Verify no remaining reader before deleting each: this list was traced
       2026-08-20 and a consumer added since would make it wrong.
-- [ ] 10.6 Retire the frozen trees the merge makes redundant — `desktop-v2/`
+- [x] 10.6 Retire the frozen trees the merge makes redundant — `desktop-v2/`
       is 165 tracked files (confirmed) with no BUILD consumer. Trace each
       tree's consumers first and report found versus changed; "frozen" is not
       "removable" until nothing builds from it.
@@ -213,16 +213,41 @@ consumer added since would make it wrong, and 10.5 says so itself.
       move the cast off the divisor so it matches the firmware's form, and
       add a test that drives fuego to maximum. Nothing exercises that path
       today, so it needs its own coverage.
-- [ ] 10.8 Update the desktop and wasm trees as part of the merge, per
+- [x] 10.8 Update the desktop and wasm trees as part of the merge, per
       design G. Re-run group 0's sweep afterward: a merge that opens frozen
       trees is exactly when new orphans appear.
 
 ## 6. Close
 
-- [ ] 6.1 All gates green, counts reported, including the miniapp target.
-- [ ] 6.2 Postflight: implementation versus proposal, plus a duplication pass
+- [x] 6.1 All gates green, counts reported, including the miniapp target.
+- [x] 6.2 Postflight: implementation versus proposal, plus a duplication pass
       over the whole diff for every new named concept.
-- [ ] 6.3 Push Sheaf before the superproject pin.
-- [ ] 6.4 OPERATOR: merge to `main`, then push `frogg3rs_v2` and
+- [x] 6.3 Push Sheaf before the superproject pin.
+- [x] 6.4 OPERATOR: merge to `main`, then push `frogg3rs_v2` and
       `frogg3rs_vst`. Confirm the site renders styled and named correctly, and
       that both downloads resolve.
+
+## 7. Not covered here — the desktop application does not reach a downloader
+
+Archived with this stated rather than hidden, the same way the change before
+this one stated its own gap.
+
+The site is live and the plugin release installs. The desktop release publishes
+a `.dmg` that macOS refuses to open: the bundle carries an ad-hoc signature
+applied by the linker before `build-launcher.sh` assembles the bundle, so the
+signature does not cover its contents and a quarantined download reads as
+damaged. The v1 release has the identical defect; it only ever worked for
+someone whose copy was built locally and so never carried the quarantine
+attribute. Nobody had downloaded a build of this project through a browser
+until today.
+
+The Windows standalone still does not build. Three attempts each reached one
+step further -- submodule checkout, the build invocation, path spelling -- and
+none reached the compiler. It is a port of a macOS-only Makefile toolchain, not
+a configuration, and both working Windows precedents in this repository used
+CMake instead.
+
+Retiring the v1 release waits on both: it is still the only desktop download
+that opens for anyone.
+
+That work is its own change.
