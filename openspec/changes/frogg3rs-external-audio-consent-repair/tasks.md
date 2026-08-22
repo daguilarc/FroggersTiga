@@ -152,6 +152,32 @@ demonstrably not a reliable record of consent whatever wrote it.
       That second one is the positive control — without it the first proves
       only that the loader can produce an empty string.
 
+## 3c. Randomize leaves some parameters alone
+
+Found by pressing Randomize All: every parameter carried a modulation badge.
+The count ladder in `app/FroggersModulation.hpp`'s
+`RandomizeParameterModulationDepths` has no zero bucket, so every parameter with
+a connected source gets at least one non-neutral depth. That contradicts the
+existing requirement, which already called for zero sources on a share of calls
+and for four-or-more on about one call in sixteen — the implementation draws
+four-or-more 8% of the time, about one in twelve.
+
+- [x] 3c.1 Add a zero bucket at 20% and renormalize the remaining weights by
+      0.8, leaving the geometric tail's ratio alone. This also brings
+      four-or-more to 6.4%, which is the one-in-sixteen the requirement always
+      asked for.
+- [x] 3c.2 A zero draw must leave the parameter with no non-neutral depth, so
+      no badge is painted for it.
+- [x] 3c.4 Correct the spec's Randomize All description. It claimed Randomize
+      All randomizes "each bank's local Crispy control"; it does not, and never
+      did — `FroggersModulationTests.cpp:726-732` presses it eight times against
+      a neutral Crispy and asserts it stays neutral. Randomize Page is what
+      moves Crispy. The code is right and the requirement was stale; the delta
+      restates it to match, and the manual documents the real behavior.
+- [x] 3c.3 Statistical tests for both fractions, with a positive control that a
+      substantial share of draws are non-zero — otherwise a randomizer stuck at
+      zero would pass.
+
 ## 4. Verify against the running app
 
 - [x] 4.1 Launch the standalone and confirm what the operator sees on the

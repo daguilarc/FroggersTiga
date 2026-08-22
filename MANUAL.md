@@ -85,6 +85,44 @@ input is connected — see Audio and MIDI configuration, below, for how each hos
 connected, both sources hold silent, defined values (External Audio at 0.5, its envelope follower at 0.0)
 rather than modulating from anything live.
 
+### Randomize
+
+Two randomize controls, both scoped to what is on screen.
+
+**Randomize All** randomizes every page parameter in every bank, plus their first-level modulation
+depths. It leaves each bank's Crispy and the global Crunchy alone, and does not descend into a depth's
+own sub-depths. Pressed while a modulation view is open, it randomizes that parameter's depths and also
+materializes and randomizes their second level.
+
+**Randomize Page** randomizes exactly what is on screen: on a parameter page, that bank's values
+including its Crispy and no depths; in a modulation view, that view's depths only.
+
+Each press replaces the previous draw rather than adding to it — existing depths are cleared first, so
+pressing twice does not accumulate more modulation than pressing once.
+
+#### How many sources a randomize attaches
+
+A randomized parameter does not get a depth on all 15 sources. Every parameter draws its own source
+count, and the draw is weighted:
+
+| sources attached | 0 | 1 | 2 | 3 | 4 | 5 or more |
+|---|---|---|---|---|---|---|
+| chance | 20% | 16% | 36.8% | 20.8% | 4.8% | 1.6% |
+
+Two sources is the most common result. About one parameter in five comes out carrying no modulation at
+all, and four or more sources lands on roughly one draw in sixteen. Whatever the count, the sources
+chosen are always distinct, and only sources that are currently connected are eligible — an
+unconnected External Audio source is never drawn.
+
+**These weights are deliberate, and they are there to make the results musical.** A parameter pushed by
+many sources at once tends to sit near its center, because independent movements cancel each other out;
+a patch where every parameter is modulated by everything sounds uniformly busy and none of the movement
+is audible as movement. Keeping most parameters on one or two sources makes each source's contribution
+legible, and leaving a share of parameters completely still gives a randomized patch contrast — some
+elements holding steady while others move. Wide draws stay in the table rather than being excluded, so
+an occasional densely modulated parameter is still possible; it is just rare enough to be a feature of a
+patch rather than the texture of every patch.
+
 ---
 
 ## Audio and MIDI configuration

@@ -91,3 +91,33 @@ accept and nothing that reads as adjustable.
 - **WHEN** the operator affirmatively routes an input and the host's routed signal reports routed
 - **THEN** both sources are marked connected
 - **THEN** their depth parameters materialize on next use, in the same cell positions
+
+### Requirement: Randomized source count is biased toward few, and depth storage is allocated once
+The randomizer SHALL affect zero modulation sources on about one call in five,
+and four or more sources only on about one call in sixteen. Depth storage for a
+given source SHALL be allocated once, on first use, rather than accumulating
+additional storage across repeated randomization presses.
+
+A parameter the draw leaves at zero sources SHALL carry no modulation depth and
+SHALL therefore show no modulation badge, so that a randomized bank reads as a
+set of deliberate choices rather than as everything touched at once.
+
+#### Scenario: Some parameters come out of a randomize untouched
+- **WHEN** Randomize All is pressed on a parameter page
+- **THEN** about one parameter in five carries no modulation depth
+- **AND** those parameters show no modulation badge
+- **AND** the remaining parameters carry at least one non-neutral depth
+
+#### Scenario: Wide draws stay rare
+- **WHEN** modulation depths are randomized repeatedly
+- **THEN** four or more sources are affected on about one call in sixteen
+
+### Requirement: Two randomize affordances
+The app SHALL provide exactly two randomize affordances: **Randomize All** (global) and **Randomize Page** (per-page). Randomize All, pressed while a parameter page is active, SHALL randomize every page parameter value in every bank plus all first-level modulation depths, SHALL leave every bank's local Crispy control and the global Crunchy control untouched, and SHALL NOT descend to the second level. Randomize All, pressed while a first-level modulation detail grid is active, SHALL randomize that parameter's depths and SHALL also materialize and randomize their second-level depths. Randomize All pressed at the second level SHALL behave identically to Randomize Page. Randomize Page SHALL always randomize exactly what is displayed: on a parameter page, that bank's values including that bank's own Crispy, with no depths; on a modulation detail grid, that grid's depths only.
+
+#### Scenario: The global press leaves Crispy to the page press
+- **WHEN** Randomize All is pressed while a parameter page is active
+- **THEN** every bank's local Crispy control is unchanged
+- **AND** the global Crunchy control is unchanged
+- **WHEN** Randomize Page is pressed on that parameter page
+- **THEN** that bank's own Crispy control is randomized

@@ -798,17 +798,18 @@ TEST_CASE(randomize_page_on_mod_detail_grid_changes_only_that_parameters_own_dep
 // -- so a check that pins only the raw commanded value (`SceneCenter(0)`,
 // which RandomizeVisibleValue writes directly and immediately) can stay
 // green while the displayed knob is visually stuck at center. This test
-// pins `UIDisplayCenter` to catch that, while also keeping the original
-// "never a no-op" property alive: `count` is never 0 in
-// RandomizeParameterModulationDepths's weighted table, so at least one
-// source is always drawn.
+// pins `UIDisplayCenter` to catch that. `count` is 0 on 20% of draws in
+// RandomizeParameterModulationDepths's weighted table, so no single trial
+// can be required to move the display -- the assertion is over the 500-trial
+// aggregate instead, matching the ~80% of draws expected to produce at least
+// one source.
 //
 // `fx.manager.ComputeAllParameters()` is called per trial to stand in for
 // the real app's fix, which lives in `FroggersAppCore::ProcessFrame()` (the
 // audio-thread drain) and is therefore NOT exercised by this file's
 // bare-ParameterManager fixture at all -- without this call,
 // `UIDisplayCenter` would stay stale by construction.
-TEST_CASE(randomize_page_mod_detail_is_never_a_no_op_and_updates_the_display_across_500_trials) {
+TEST_CASE(randomize_page_mod_detail_moves_the_display_on_the_expected_fraction_of_500_trials) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);  // 15 connected sources
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
@@ -818,6 +819,7 @@ TEST_CASE(randomize_page_mod_detail_is_never_a_no_op_and_updates_the_display_acr
     constexpr float kTolerance = 1e-4f;
 
     constexpr int kTrials = 500;
+    int trialsWithDisplayMoved = 0;
     for (int trial = 0; trial < kTrials; ++trial) {
         RandomizePage(fx.manager, drillIn);
         fx.manager.ComputeAllParameters();  // reseed -- see this test's header comment.
@@ -829,10 +831,17 @@ TEST_CASE(randomize_page_mod_detail_is_never_a_no_op_and_updates_the_display_acr
                 anyDisplayMoved = true;
             }
         }
-        // ZERO no-ops across all 500 trials, and the DISPLAY (not just the
-        // commanded value) reflects it.
-        REQUIRE_TRUE(anyDisplayMoved);
+        if (anyDisplayMoved) {
+            ++trialsWithDisplayMoved;
+        }
     }
+    // P(count>=1) is 80% under the mode-2 table. At 500 trials the binomial
+    // standard error at p=0.8 is ~1.8 points, so a [65%, 95%] band (roughly
+    // 8 standard errors wide) leaves a wide, sample-size-appropriate margin
+    // while still catching the DISPLAY (not just the commanded value)
+    // failing to track a real draw.
+    REQUIRE_TRUE(trialsWithDisplayMoved > kTrials * 0.65);
+    REQUIRE_TRUE(trialsWithDisplayMoved < kTrials * 0.95);
 }
 
 TEST_CASE(randomize_depth_helper_draws_distinct_sources_even_from_an_adversarial_index_feed) {
@@ -847,7 +856,7 @@ TEST_CASE(randomize_depth_helper_draws_distinct_sources_even_from_an_adversarial
     synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
 
     // Force count = 4 (a single NextRandomCoin() landing in the mode-2
-    // table's [0.92,0.98) bucket -- see FroggersModulation.hpp's own table
+    // table's [0.936,0.984) bucket -- see FroggersModulation.hpp's own table
     // comment) and feed an ADVERSARIAL NextRandomIndex that always returns
     // the LAST valid index of whatever range it's asked -- a "draw with
     // replacement, no exclusion" loop (Sheaf's own private
@@ -884,7 +893,7 @@ TEST_CASE(randomize_depth_helper_draws_distinct_sources_even_from_an_adversarial
 //
 // Shared assertions for a count histogram against the mode-2 table -- reused
 // by the level-0 test and the level-1/level-2 regression pin below, so the
-// three properties (mode, rare 4+, never zero) are pinned exactly once
+// three properties (mode, rare 4+, zero rate) are pinned exactly once
 // rather than duplicated per level. Asserts on the resulting COUNT
 // DISTRIBUTION, not on call counts -- the predecessor's version of this test
 // (median-based, one vector of samples) is the sixth green-while-wrong guard
@@ -892,15 +901,20 @@ TEST_CASE(randomize_depth_helper_draws_distinct_sources_even_from_an_adversarial
 // shape.
 void RequireModeTwoCountDistribution(const std::array<int, FroggersParameterModel::kNumModulators + 1>& histogram,
                                       int trials, const char* label) {
-    REQUIRE_TRUE(histogram[0] == 0);  // count is never 0.
+    // P(0) is 20% under the mode-2 table. A [10%, 30%] band is roughly 3.5
+    // standard errors wide even at `trials` as low as 200, where the
+    // binomial standard error at p=0.20 is ~2.8 points -- a wide,
+    // sample-size-appropriate margin.
+    REQUIRE_TRUE(histogram[0] > trials * 0.10);
+    REQUIRE_TRUE(histogram[0] < trials * 0.30);
 
-    std::size_t mode = 1;
-    for (std::size_t count = 2; count < histogram.size(); ++count) {
+    std::size_t mode = 0;
+    for (std::size_t count = 1; count < histogram.size(); ++count) {
         if (histogram[count] > histogram[mode]) {
             mode = count;
         }
     }
-    REQUIRE_TRUE(mode == 2);  // 46% > 26% > 20% > 6% > 2%, strictly.
+    REQUIRE_TRUE(mode == 2);  // 36.8% > 20.8% > 20% > 16% > 4.8% > 1.6%, strictly.
 
     int atLeastFour = 0;
     int atLeastSeven = 0;
@@ -914,12 +928,12 @@ void RequireModeTwoCountDistribution(const std::array<int, FroggersParameterMode
         }
         sum += static_cast<double>(count) * static_cast<double>(histogram[count]);
     }
-    // P(>=4) is 8% under the mode-2 table. "Materially below 15%" leaves a
+    // P(>=4) is 6.4% under the mode-2 table. "Materially below 13%" leaves a
     // wide, sample-size-appropriate margin rather than one tightened until
     // it happens to pass: even at `trials` as low as 200 the binomial
-    // standard error at p=0.08 is ~1.9 points, so 15% sits roughly 3.7
+    // standard error at p=0.064 is ~1.7 points, so 13% sits roughly 3.8
     // standard errors above the true rate.
-    REQUIRE_TRUE(atLeastFour < trials * 0.15);
+    REQUIRE_TRUE(atLeastFour < trials * 0.13);
 
     // [OBSERVED] -- not a pass condition (matches this file's own convention
     // for recording a measurement alongside its pass condition, e.g. the
@@ -927,7 +941,7 @@ void RequireModeTwoCountDistribution(const std::array<int, FroggersParameterMode
     // shape, for a human to compare against the mode-2 table in
     // FroggersModulation.hpp.
     std::cout << "[OBSERVED] " << label << " count histogram over " << trials << " trials:";
-    for (std::size_t count = 1; count <= 4 && count < histogram.size(); ++count) {
+    for (std::size_t count = 0; count <= 4 && count < histogram.size(); ++count) {
         std::cout << " P(" << count << ")=" << (100.0 * histogram[count] / trials) << "%";
     }
     std::cout << " P(>=4)=" << (100.0 * atLeastFour / trials) << "%"
@@ -1028,6 +1042,69 @@ TEST_CASE(randomize_all_level_one_press_gives_its_own_depths_and_each_depths_sub
 
     RequireModeTwoCountDistribution(level1Histogram, kTrials, "level-1");
     RequireModeTwoCountDistribution(level2Histogram, level2Samples, "level-2");
+}
+
+// Dedicated coverage for the zero bucket the mode-2 table now carries: a
+// fraction of RandomizeAll draws must leave a parameter with NO modulation
+// sources at all (count=0), not merely "rarely one source." This is
+// distinct from RequireModeTwoCountDistribution's zero-rate band above --
+// that helper's job is the whole-shape regression pin; this test's job is
+// to state the zero and four-or-more rates as their own named properties,
+// plus a positive control that a broken always-zero randomizer could not
+// pass.
+TEST_CASE(randomize_depth_helper_zero_and_four_plus_rates_match_the_tuned_table_across_2000_trials) {
+    Fixture fx;
+    fx.StepOnce(/*externalConnected=*/true);  // 15 connected sources -- N for the tail
+    FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));  // default: Level()==0
+    synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
+
+    constexpr int kTrials = 2000;
+    int zeroCount = 0;
+    int fourPlusCount = 0;
+    int nonZeroCount = 0;
+    for (int trial = 0; trial < kTrials; ++trial) {
+        RandomizeAll(fx.manager, drillIn, fx.model);  // Level()==0: the level-0 draw, uses the fixture's own seeded RNG.
+        int nonNeutral = 0;
+        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+            synth::Parameter* depth = focused.ModulationDepthParameter(modIx);
+            if (depth != nullptr && detail::DepthIsModulating(*depth)) {
+                ++nonNeutral;
+            }
+        }
+        if (nonNeutral == 0) {
+            ++zeroCount;
+        } else {
+            ++nonZeroCount;
+        }
+        if (nonNeutral >= 4) {
+            ++fourPlusCount;
+        }
+    }
+
+    // P(0) is 20% under the tuned table. At 2000 trials the binomial
+    // standard error at p=0.20 is ~0.9 points, so a [15%, 25%] band (roughly
+    // 5.5 standard errors wide) is a wide, sample-size-appropriate margin.
+    REQUIRE_TRUE(zeroCount > kTrials * 0.15);
+    REQUIRE_TRUE(zeroCount < kTrials * 0.25);
+
+    // P(>=4) is 1-in-16 (6.25%) under the tuned table (4.8% + 1.6%). At 2000
+    // trials the binomial standard error at p=0.0625 is ~0.54 points, so a
+    // [3.5%, 9.5%] band (roughly 5.5 standard errors wide either side) is a
+    // wide, sample-size-appropriate margin.
+    REQUIRE_TRUE(fourPlusCount > kTrials * 0.035);
+    REQUIRE_TRUE(fourPlusCount < kTrials * 0.095);
+
+    // POSITIVE CONTROL: a substantial fraction of draws must be non-zero --
+    // a randomizer that regressed to always-zero would otherwise satisfy
+    // "some fraction is zero" trivially. P(count>=1) is 80% under the tuned
+    // table; requiring more than half rules out an always-zero (or
+    // mostly-zero) regression without pinning the exact rate twice.
+    REQUIRE_TRUE(nonZeroCount > kTrials * 0.5);
+
+    std::cout << "[OBSERVED] zero-and-four-plus-rates count histogram over " << kTrials
+              << " trials: P(0)=" << (100.0 * zeroCount / kTrials) << "%"
+              << " P(>=4)=" << (100.0 * fourPlusCount / kTrials) << "%"
+              << " P(>=1)=" << (100.0 * nonZeroCount / kTrials) << "%\n";
 }
 
 // ============================================================================
@@ -1557,18 +1634,31 @@ TEST_CASE(reset_all_matches_a_freshly_constructed_default_patch_instance_field_f
     // Positive control: confirm the setup above genuinely moved every
     // bank's own page, every bank's Crispy, and Crunchy away from the
     // default patch -- a reset that "matches" a patch that never moved
-    // would be void, not passing.
+    // would be void, not passing. A random draw can coincidentally land a
+    // bank's own Crispy within tolerance of its default value, so retry that
+    // bank's own RandomizePage a bounded number of times (P(20 straight
+    // coincidences) is astronomically small) rather than accepting an
+    // occasional spurious failure here.
     for (std::size_t bankIx = 0; bankIx < kFroggersBankCount; ++bankIx) {
         const auto bankId = static_cast<FroggersBankId>(bankIx);
+        FroggersModulationDrillIn pageDrill(fx.model.BankAt(bankId));
         bool bankMoved = false;
-        for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
-            if (ParameterDiffersFromDefaultPatch(fx.model.PageParameter(bankId, paramIx),
-                                                  reference.model.PageParameter(bankId, paramIx), 0.05f)) {
-                bankMoved = true;
+        bool crispyMoved = false;
+        for (int attempt = 0; attempt < 20 && !(bankMoved && crispyMoved); ++attempt) {
+            for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
+                if (ParameterDiffersFromDefaultPatch(fx.model.PageParameter(bankId, paramIx),
+                                                      reference.model.PageParameter(bankId, paramIx), 0.05f)) {
+                    bankMoved = true;
+                }
+            }
+            crispyMoved =
+                ParameterDiffersFromDefaultPatch(fx.model.Crispy(bankId), reference.model.Crispy(bankId), 0.05f);
+            if (!(bankMoved && crispyMoved)) {
+                RandomizePage(fx.manager, pageDrill);  // Crispy on this bank -- Randomize All itself excludes it
             }
         }
         REQUIRE_TRUE(bankMoved);
-        REQUIRE_TRUE(ParameterDiffersFromDefaultPatch(fx.model.Crispy(bankId), reference.model.Crispy(bankId), 0.05f));
+        REQUIRE_TRUE(crispyMoved);
     }
     REQUIRE_TRUE(ParameterDiffersFromDefaultPatch(fx.model.Crunchy(), reference.model.Crunchy(), 0.05f));
 
@@ -1639,17 +1729,23 @@ TEST_CASE(reset_depths_read_neutral_not_zero_the_trap_is_not_reintroduced) {
     REQUIRE_TRUE(drillIn.Level() == 1);
     synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
 
-    RandomizePage(fx.manager, drillIn);  // give the depths real, non-neutral values first
-
-    // Positive control: confirm at least one depth is genuinely non-neutral
-    // before reset.
+    // RandomizePage draws 0 sources on 20% of calls (see
+    // FroggersModulation.hpp's count table), so a single draw is not
+    // guaranteed to leave a non-neutral depth to reset -- retry a bounded
+    // number of times (P(20 straight no-ops) is astronomically small) until
+    // one lands, rather than accepting an occasional spurious failure here.
     bool anyNonNeutralBefore = false;
-    for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
-        synth::Parameter* depth = focused.ModulationDepthParameter(modIx);
-        if (depth != nullptr && detail::DepthIsModulating(*depth)) {
-            anyNonNeutralBefore = true;
+    for (int attempt = 0; attempt < 20 && !anyNonNeutralBefore; ++attempt) {
+        RandomizePage(fx.manager, drillIn);  // give the depths real, non-neutral values first
+        for (std::size_t modIx = 0; modIx < FroggersParameterModel::kNumModulators; ++modIx) {
+            synth::Parameter* depth = focused.ModulationDepthParameter(modIx);
+            if (depth != nullptr && detail::DepthIsModulating(*depth)) {
+                anyNonNeutralBefore = true;
+            }
         }
     }
+    // Positive control: confirm at least one depth is genuinely non-neutral
+    // before reset.
     REQUIRE_TRUE(anyNonNeutralBefore);
 
     ResetPage(fx.manager, drillIn, fx.model);  // Level()==1: resets focused's own depths

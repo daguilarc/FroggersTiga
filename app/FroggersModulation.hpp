@@ -904,7 +904,7 @@ namespace detail {
 // count instead would be wrong -- Sheaf's own geometric bias
 // (P(k)=0.5^(k+1), mean 1.0) is REPLACED on the app
 // side. The distribution actually in force is this file's own
-// RandomizeParameterModulationDepths draw below (mean 2.25 -- see that
+// RandomizeParameterModulationDepths draw below (mean 1.80 -- see that
 // draw's own comment for the exact
 // numbers) -- and that still means a HEALTHY randomize typically leaves
 // most of a parameter's 15 possible depths untouched; that is normal, not a
@@ -1101,33 +1101,36 @@ inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager,
 
     // Mode-2
     // table, tuned so the mode (2) clears the next count (3) by a wide
-    // margin rather than sitting on an even tie. Never-zero and
-    // distinct-source draws -- see this function's own
-    // header comment for why distinctness matters.
+    // margin rather than sitting on an even tie. Distinct-source draws --
+    // see this function's own header comment for why distinctness matters.
     //
-    // count=1: 20% (u<0.20f)     count=2: 46% (u<0.66f) <- the mode
-    // count=3: 26% (u<0.92f)     count=4:  6% (u<0.98f)
-    // count=5+: 2%, geometric r=0.30 (else branch below)
+    // count=0: 20% (u<0.20f)     count=1: 16% (u<0.36f)
+    // count=2: 36.8% (u<0.728f) <- the mode    count=3: 20.8% (u<0.936f)
+    // count=4: 4.8% (u<0.984f)
+    // count=5+: 1.6%, geometric r=0.30 (else branch below)
     //
     // Derivation (recorded so a future retune
     // starts from this arithmetic instead of re-deriving it):
-    //   P(>=4)                   = 6% + 2%               = 8%
-    //   P(count=7)               = 0.02 * 0.30^2 * 0.70   = 0.126%
-    //   P(>=7)                   = 0.02 * 0.30^2          = 0.18%
-    //   E[params at 7+ / press]  = 16 * 0.0018           = 0.029  (across 16
-    //                               visible params -- roughly one press in 35, i.e.
+    //   P(>=4)                   = 4.8% + 1.6%             = 6.4%
+    //   P(count=7)               = 0.016 * 0.30^2 * 0.70    = 0.1008%
+    //   P(>=7)                   = 0.016 * 0.30^2           = 0.144%
+    //   E[params at 7+ / press]  = 16 * 0.00144            = 0.023  (across 16
+    //                               visible params -- roughly one press in 43, i.e.
     //                               "essentially never")
-    //   mean = 0.20(1)+0.46(2)+0.26(3)+0.06(4)+0.02(5+0.3/0.7) = 2.25
-    //   mode = 2, strictly (46% > 26% > 20% > 6% > 2%); minimum is still 1, never 0
+    //   mean = 0.20(0)+0.16(1)+0.368(2)+0.208(3)+0.048(4)+0.016(5+0.3/0.7) = 1.80
+    //   mode = 2, strictly (36.8% > 20.8% > 20% > 16% > 4.8% > 1.6%);
+    //   minimum is 0, drawn on 20% of calls
     const float u = manager.NextRandomCoin();
     std::size_t count;
     if (u < 0.20f) {
+        count = 0;
+    } else if (u < 0.36f) {
         count = 1;
-    } else if (u < 0.66f) {
+    } else if (u < 0.728f) {
         count = 2;
-    } else if (u < 0.92f) {
+    } else if (u < 0.936f) {
         count = 3;
-    } else if (u < 0.98f) {
+    } else if (u < 0.984f) {
         count = 4;
     } else {
         count = 5;
