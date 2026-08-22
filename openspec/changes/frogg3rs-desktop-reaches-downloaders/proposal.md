@@ -55,8 +55,14 @@ job that produced the `.exe` still attached to the v1 release, and
   not notarized.
 - **Windows**: the standalone gets a CMake build, mirroring the two precedents
   that work, rather than further porting of the Makefile.
-- Carried from the archived automation change: `sim/Fuegoize.hpp`'s
-  divide-by-zero at full fuego, still unfixed and still uncovered.
+
+**Not carried:** `sim/Fuegoize.hpp`'s divide-by-zero at full fuego is real —
+the cast truncates a 256 divisor to zero — but it reaches nobody. The app ports
+the firmware's own formula instead (`src/core/Parameter.hpp:143`, where the cast
+sits on the modulo's result rather than its divisor), and
+`app/dsp/Fuegoize.hpp` already documents the discrepancy. The standalone, the
+plugin, the browser build and the hardware all use the correct form; only the
+unshipped simulator does not.
 
 ## Impact
 

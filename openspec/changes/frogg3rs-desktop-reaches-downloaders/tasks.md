@@ -64,22 +64,15 @@ target that builds the JUCE runtime shell; and the browser e2e suite, whose
 - [ ] 3.5 Only once Windows genuinely builds: the desktop release ships both
       platforms again, and `MANUAL.md` stops saying Windows is in progress.
 
-## 4. Carried from the archived automation change
+## 4. Close
 
-- [ ] 4.1 Fix `sim/Fuegoize.hpp`'s divide-by-zero at full fuego: move the cast
-      off the divisor so it matches the firmware's form, and add a test that
-      drives fuego to maximum. Nothing exercises that path today, so it needs
-      its own coverage — and the test must fail before the fix.
-
-## 5. Close
-
-- [ ] 5.1 All gates green, counts reported, including the miniapp target and
+- [ ] 4.1 All gates green, counts reported, including the miniapp target and
       the browser e2e `pages` project.
-- [ ] 5.2 Postflight: implementation versus proposal, plus a duplication pass
+- [ ] 4.2 Postflight: implementation versus proposal, plus a duplication pass
       over the whole diff for every new named concept, and a check that no
       surviving script, workflow or manifest names a path that no longer
       exists.
-- [ ] 5.3 OPERATOR: download the published `.dmg` through a browser — not a
+- [ ] 4.3 OPERATOR: download the published `.dmg` through a browser — not a
       local build — and confirm it opens.
-- [ ] 5.4 OPERATOR: retire the v1 release once that download opens, and not
+- [ ] 4.4 OPERATOR: retire the v1 release once that download opens, and not
       before. It is still the only desktop download anyone can open.
