@@ -90,8 +90,9 @@ job that produced the `.exe` still attached to the v1 release used
   a CMake build; either way the synth core is reused, not re-listed.
 - **Hygiene**: the packaging surface, the leftovers of the retired `desktop/`
   tree inside `sim/`, the tree names in `README.md` that no longer resolve, the
-  uninvoked `scripts/`, and `sim/Fuegoize.hpp`'s divide-by-zero — the one code
-  task the predecessor change archived undone.
+  uninvoked `scripts/`, and VCV — a working directory with no tracked files, a
+  vendored SDK that exists only to build it, ten `sim/` files that serve
+  nothing else, and three capability specs for a host that ships to no one.
 
 **The site header shows the title without the logo.** The application has one —
 `app/Resources/Icon.png`, sibling to the `Icon.icns` the bundle carries — and

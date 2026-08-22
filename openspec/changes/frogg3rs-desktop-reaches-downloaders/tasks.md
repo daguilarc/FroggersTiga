@@ -83,21 +83,32 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       Establish the invocation for each by bare name as well as by path, then
       delete what has none, and edit the prose that named it in the same
       commit.
-- [ ] 0.6 Fix `sim/Fuegoize.hpp:22-23`'s divide-by-zero at full fuego. The
-      cast is applied to the ternary's already-selected result, so at knob
-      >= 0.9375 the divisor is 256 truncated to `uint8_t` — zero — and the next
-      expression is `row % 0`. The firmware's own form has the cast on the
-      modulo's result instead (`src/core/Parameter.hpp:143`), and
-      `app/dsp/Fuegoize.hpp` ports that one and documents the discrepancy;
-      move the cast to match. Nothing drives that path today, so it needs a
-      test at maximum fuego. POSITIVE CONTROL required: build that test against
-      the current form under `-fsanitize=undefined` and show the
-      division-by-zero diagnostic, or the test is one that has never been
-      observed to catch anything.
-      This is the one code task
-      `openspec/changes/archive/2026-08-22-frogg3rs-main-cutover-and-releases`
-      archived undone. It reaches no shipping surface, and it is one line in a
-      tree this change is already editing.
+- [ ] 0.6 Retire VCV. `vcv/` has zero tracked files, so it reaches nobody who
+      clones the repository, and `Rack-SDK/` exists only to build it. Delete
+      both working directories, and with them everything that exists only to
+      serve them: the ten `sim/Vcv*` files, which the include graph shows are
+      referenced by each other and by nothing else, and their four targets and
+      four `add_test` lines in `sim/CMakeLists.txt`.
+      The inbound half, enumerated by bare name across all tracked text: the
+      capability specs `vcv-cc-mod-gating`, `vcv-panel-silkscreen` and
+      `vcv-section-expander-architecture` go with it. `pair-ar-vcv-time-range`
+      and the specs that merely carry a VCV row or a VCV aside —
+      `external-ring-mod-mix`, `froggers-host-master`,
+      `froggers-sheaf-runtime-app`, `froggers-v2-app-manifest`,
+      `midi-cc-mod-gating`, `mod-blend-semantics`, `mod-led-level-meter`,
+      `pair-ar-randomize`, `sim-pm3-knob-parity` — stay, minus the VCV rows and
+      asides. Same for the comments in `sim/`, `src/core/`, `src/common/` and
+      `app/FroggersDspParityTests.cpp` that name it. Read each before editing:
+      some describe a parity the firmware still holds and only the attribution
+      to VCV goes.
+      `sim/Fuegoize.hpp`'s divide-by-zero at full fuego is NOT fixed here. The
+      Daisy firmware never reaches it — `src/FroggersTiga/FroggersTiga.cpp`
+      resolves to 32 files, 24 of them in `src/core`, and `Fuegoize.hpp`,
+      `DelayState.hpp` and `V2FuegoStack.hpp` are not among them; nor are
+      `src/core/DesktopHostIO.hpp` and `src/core/PagedHostIO.hpp`, which
+      include the sim copies and are themselves compiled only by the sim test
+      harness. With VCV gone the only thing left standing on that code is
+      `sim/`'s own frozen suite. Do not repair it and do not add a test for it.
 
 ## 1. Every shipped bundle carries a signature that matches itself
 
