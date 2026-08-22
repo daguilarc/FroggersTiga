@@ -24,3 +24,7 @@ app/browser/e2e/playwright-report/
 .sdd/
 # Playwright scratch when a suite is run from the repo root rather than its own dir.
 /test-results/
+
+# Agent tooling: local to whoever is working, not part of the product
+.claude/
+.cursor/
