@@ -716,7 +716,7 @@ inline void ComputeVcoBalanceWeights(float knob01, float& w1, float& w2, float& 
 // `adsr.apply` a second time at a new call site, which would duplicate a
 // ported formula and create two sites that could drift). Defaults to
 // `nullptr` so the two existing test call sites
-// (FroggersCrunchyBlowupRepro.cpp, FroggersDspParityTests.cpp) that
+// (FroggersDspParityTests.cpp) that
 // only need the mixed average keep compiling unchanged. `outGated` still
 // carries the raw per-voice GATED values (unweighted) -- balanceKnob01
 // only changes how the three are combined into the single mixed return.

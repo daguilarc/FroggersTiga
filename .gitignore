@@ -28,3 +28,6 @@ app/browser/e2e/playwright-report/
 # Agent tooling: local to whoever is working, not part of the product
 .claude/
 .cursor/
+
+# Daisy firmware build output: the field firmware source is kept, its builds are not
+src/*/build/

@@ -6,8 +6,7 @@
 // (TestStartTransport()/TestStopTransport(), see FroggersPluginProcessor.hpp's
 // header comment) -- the same synth::MessageIn::Start/Stop +
 // SetDesiredTransportRunning pair SynthRig::StartAt/StopAt push for the app
-// core's own test suite (app/FroggersRandomizeAllRepro.cpp's header comment
-// cites the same pattern).
+// core's own test suite.
 //
 // A positive control: asserts output is (near-)silent BEFORE the
 // transport is ever started, THEN asserts it is clearly non-silent after --

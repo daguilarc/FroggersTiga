@@ -1285,9 +1285,8 @@ public:
         }
     }
     dsp::DriveBlendPhase& TestDriveBlendPhase() { return driveBlendPhase_; }
-    // T4.2 continuation (FroggersStopSustainRepro.cpp): read-only voice-state
-    // probe, same convention as TestDelay()/TestReverb() (added by F3.1's
-    // repro for the same reason -- measurement, not control).
+    // Read-only voice-state
+    // probe, same convention as TestDelay()/TestReverb() -- measurement, not control.
     const dsp::VcoAdsrState& TestAudioAdsr() const { return audioAdsr_; }
     dsp::Oversampler2x& TestDriveOversampler() { return drive_.oversampler; }
     // Same convention as the accessors above -- added because a
@@ -2004,7 +2003,7 @@ private:
     // as a genuine divergence rather than a transient. Tracked in seconds
     // (not a block count) so the definition does not silently change shape
     // with block size -- app/Makefile's own tests span both blockSize==1
-    // (FroggersCrunchyBlowupRepro.cpp) and blockSize==256/512
+    // and blockSize==256/512
     // (everything else). 10ms is deliberately short: the ceiling's own
     // derivation above establishes that a real fault's exponential
     // divergence crosses from normal into "past 100" in milliseconds, so it

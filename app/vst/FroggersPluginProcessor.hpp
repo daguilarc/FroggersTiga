@@ -18,8 +18,8 @@
 //     negotiation (not just once); audioDeviceIOCallbackWithContext (:591)
 //     calls engine_.ProcessBlock(block, NowMicros()) every callback.
 //   - External/Sheaf/projects/synth/tests/support/SynthRig.hpp, the
-//     headless JUCE-free harness FroggersHeadlessTests.cpp/
-//     FroggersRandomizeAllRepro.cpp already drive FroggersApp through
+//     headless JUCE-free harness FroggersHeadlessTests.cpp already
+//     drives FroggersApp through
 //     (SynthRig.hpp:60,93-94 constructor: Initialize() then Prepare() in
 //     that order; RunOneBlockAt :513-539 builds a synth::AudioBlock sized
 //     from FroggersAppCore::Config()'s numAudioInputs and calls

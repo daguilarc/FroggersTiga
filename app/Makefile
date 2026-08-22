@@ -125,15 +125,6 @@ DSP_HEADERS := $(wildcard $(APP_DIR)/dsp/*.hpp)
 DSP_TEST_SOURCES := $(APP_DIR)/FroggersDspParityTests.cpp
 DSP_TEST_BIN := $(BUILD_DIR)/froggers_dsp_parity_tests
 
-# --- Stop-flush parametric-oscillation measurement harness --------
-# A
-# one-off *Repro.cpp measurement binary -- deliberately
-# NOT added to the `test` target below; see FroggersStopFlushRepro.cpp's
-# own header comment. Needs the same Sheaf tests/ include (SynthRig.hpp)
-# as the TEST_BIN family above, so it uses TEST_CPPFLAGS, not CPPFLAGS.
-STOP_FLUSH_REPRO_SOURCES := $(APP_DIR)/FroggersStopFlushRepro.cpp
-STOP_FLUSH_REPRO_BIN := $(BUILD_DIR)/froggers_stop_flush_repro
-
 .PHONY: all clean check-include-guard check-no-juce check-no-frozen-deps test force
 
 all: check-include-guard check-no-frozen-deps $(APP)
@@ -229,8 +220,6 @@ $(DSP_TEST_BIN): $(DSP_TEST_SOURCES) $(DSP_HEADERS) | $(BUILD_DIR)
 	$(CXX) -I$(APP_DIR) $(CPPFLAGS) $(CXXFLAGS) $(DSP_TEST_SOURCES) -o $@
 
 # --- stop-flush-repro target -----------------------------------------------------------
-$(STOP_FLUSH_REPRO_BIN): $(STOP_FLUSH_REPRO_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(APP_DIR)/FroggersModulation.hpp $(APP_DIR)/FroggersParameters.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)
-	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(STOP_FLUSH_REPRO_SOURCES) $(SHEAF_LIB) -o $@
 
 # --- surface target -----------------------------------------------------------
 $(SURFACE_BIN): $(SURFACE_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(APP_DIR)/FroggersParameters.hpp $(APP_DIR)/FroggersModulation.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)

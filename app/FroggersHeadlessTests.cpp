@@ -336,9 +336,7 @@ TEST_CASE(randomize_all_with_ample_capacity_reports_not_partial) {
     REQUIRE_TRUE(!rig.Application().LastRandomizePartial());
 }
 
-// A minimal repro of the loud-stuck regime (mirroring
-// FroggersStopSustainRepro.cpp's RunCurveArm, NOT part of the regular
-// suite per the *Repro.cpp convention), promoted into a REAL suite test so
+// A minimal repro of the loud-stuck regime, kept as a suite test so
 // the regression it guards against cannot silently come back. Curve
 // (Envelope slot 12) at exactly 1.0, Grace (slot 13) active, VCO1's own
 // Decay/Sustain set so the ease-in Decay's slow start lingers near peak
@@ -359,7 +357,7 @@ TEST_CASE(stop_silences_curve_one_grace_active_voice_within_bound) {
 
     model.PageParameter(FroggersBankId::Audio, 0).SceneCenter(0) = 0.5f;   // VCO1 pitch.
     model.PageParameter(FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;   // Drive gain.
-    // Same recipe as RunCurveArm (FroggersStopSustainRepro.cpp):
+    // Same recipe as the loud-stuck regime above:
     // mid Decay + audible Sustain on VCO1 (ease-in Decay's slow start keeps
     // level lingering near peak -- default fast Decay or silent Sustain
     // would fail to reproduce the bug for the WRONG reason), Curve at

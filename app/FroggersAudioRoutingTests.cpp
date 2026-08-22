@@ -823,9 +823,8 @@ TEST_CASE(master_limiter_stays_at_unity_under_live_modulation) {
 // `rig.Application().RequestRandomizeAll()` is the exact method
 // `FroggersUiSurface::HandleAction` calls for the Randomize All button
 // (FroggersUiSurface.hpp), consumed on the very next audio-thread
-// ProcessFrame() (FroggersAppCore.hpp's `pendingRandomizeAll_`) -- same
-// call FroggersRandomizeAllRepro.cpp's proven repro uses, not a
-// shadow/copy of the DSP chain.
+// ProcessFrame() (FroggersAppCore.hpp's `pendingRandomizeAll_`) -- the
+// real call, not a shadow/copy of the DSP chain.
 //
 // Per draw: render a full second of audio (one full quarter-note gate
 // cycle or more at any ordinary tempo, since the attack/release
@@ -2162,8 +2161,8 @@ TEST_CASE(free_running_modulation_source_holds_while_stopped_with_positive_contr
 
     // --- Positive control: transport RUNNING, sampled at every block
     // boundary (RunBlocks(1) chunking is bit-exact with an un-chunked call --
-    // the same fact FroggersStopFlushRepro.cpp's runBlocksTrackingLiveness
-    // and this file's own master_limiter_stays_at_unity_under_live_modulation
+    // the same fact this file's own
+    //  master_limiter_stays_at_unity_under_live_modulation
     // test above both already rely on). kModSlotNoise is a fresh open-(0,1)
     // draw every Step() call, so any nonzero spread over 40 independent
     // draws (short of an astronomically unlikely all-equal run) proves
@@ -2183,8 +2182,8 @@ TEST_CASE(free_running_modulation_source_holds_while_stopped_with_positive_contr
     std::cout << "Modulation gate positive control -- transport RUNNING, kModSlotNoise, " << kLiveBlocks
               << " block-boundary samples: min=" << liveMin << " max=" << liveMax
               << " range=" << (liveMax - liveMin) << "\n";
-    // Same void-liveness role as FroggersStopFlushRepro.cpp's own
-    // kVoidLivenessThreshold (1e-3f): comfortably above float noise, and a
+    // A void-liveness threshold of 1e-3f:
+    // It is comfortably above float noise, and a
     // uniform-(0,1) draw over 40 samples spans on the order of the full
     // [0,1) range in practice, so this margin is not close.
     constexpr float kLivenessThreshold = 1.0e-3f;
