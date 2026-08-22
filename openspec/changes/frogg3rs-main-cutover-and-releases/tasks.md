@@ -122,6 +122,14 @@ consumer added since would make it wrong, and 10.5 says so itself.
       `global-strip-marbles-label` — and this change declares deltas for
       neither of them today. Deltas are what preflight validates, so they are
       written before the group runs, not during it.
+      CORRECTED at execution: only TWO of the three take a delta.
+      `froggers-host-master` names `SIM_MANUAL.md` at :314, :345 and :354, but
+      all three sit in `##` reference sections after the requirements
+      (`Shared across all sim hosts`, `Baseline spec index`, `Operator
+      documentation`), not inside any `### Requirement:`. The delta mechanism
+      does not reach them and `openspec validate --strict` passes without one.
+      They still name a file this group deletes, so that prose is edited
+      directly when `SIM_MANUAL.md` goes — a documentation fix, not a delta.
       `sim-operator-doc-parity` RETIRES rather than being rewritten — traced,
       not assumed. It exists to hold one manual and four generated mirrors in
       sync, and after the merge nothing reads a mirror: the current app links
@@ -162,9 +170,19 @@ consumer added since would make it wrong, and 10.5 says so itself.
       Verify no remaining reader before deleting each: this list was traced
       2026-08-20 and a consumer added since would make it wrong.
 - [ ] 10.6 Retire the frozen trees the merge makes redundant — `desktop-v2/`
-      alone is 165 tracked files with no consumer. Trace each tree's
-      consumers first and report found versus changed; "frozen" is not
+      is 165 tracked files (confirmed) with no BUILD consumer. Trace each
+      tree's consumers first and report found versus changed; "frozen" is not
       "removable" until nothing builds from it.
+      Live references found that must move in the same commit:
+      `app/Makefile:19` resolves `FROZEN_VENDORED_SHEAF` to
+      `../desktop-v2/External/Sheaf`, and `app/check_include_guard.sh` takes
+      that path as an argument; `app/check_no_frozen_includes.sh:15,27` names
+      `desktop-v2` in its deny pattern. These are guards, not builds — which
+      makes them more dangerous, not less: `$(abspath ...)` on a deleted path
+      still evaluates, so a guard pointed at a tree that no longer exists can
+      pass while checking nothing. Whatever replaces them must fail loudly if
+      its target is missing, and the deny pattern must keep rejecting the
+      paths after the trees are gone.
 - [ ] 10.7 Fix `sim/Fuegoize.hpp`'s divide-by-zero at full fuego (design G):
       move the cast off the divisor so it matches the firmware's form, and
       add a test that drives fuego to maximum. Nothing exercises that path
