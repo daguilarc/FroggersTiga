@@ -58,6 +58,39 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       filename. Those are not invocations and no invocation search finds them,
       and each becomes a reference to a path that no longer resolves.
       Report (a), (b) and (c) before any file is deleted.
+      **0.2a RESULT (recorded 2026-08-22, verified against the tree).**
+      (a) Seven orphans, not two. `src/core/CvPresence.hpp` and
+      `V2EngineSetup.hpp` are reached only by the two shims;
+      `DesktopHostIO.hpp` and `PagedHostIO.hpp` by nothing outside `sim/`;
+      `ExportFormat.hpp` by nothing at all; `EQ.hpp` only by
+      `src/common/EQ.hpp`, which has no includers of its own and dies with it.
+      (b) 25 registered targets. Twenty assert a retired host — VCV, the wasm
+      and desktop sim hosts, or the shims themselves — and cost nothing.
+      FIVE assert code that still ships, and they are the only automated
+      coverage the Daisy firmware has anywhere in this repository:
+      `Fuegoize_test`, `HookIdentity_test`, `ModMgr_test` and
+      `PairArEnvelope_test` (its `ExpParam::Compute` half) compile without the
+      shims; `V2IndependentPm_test`'s flag-off golden-pin check does not.
+      `app/FroggersDspParityTests.cpp` does not cover them: it asserts the
+      app's own DSP copy under `app/dsp/`, not `src/core`.
+      Separately, `sim/PageBootNav_test.cpp` and
+      `sim/SwitchDebounce_replica_test.cpp` are on disk and in no target —
+      27 test files, 25 targets — so they are already dead and leave as such.
+      (c) The mention map is in the preflight report: 249 `vcv` hits across 41
+      files, 96 `sim/` hits across 29. Most of the `sim/` hits are provenance
+      comments in `app/` naming the file a DSP port was copied FROM, which
+      stay accurate as history only if reworded; read each.
+      **0.2a DECISION.** The four shim-free firmware assertions are relocated,
+      not dropped. Their subject outlives the deletion — `FroggersEngine`,
+      `ModMgr`, `Parameter` and `PairArEnvelope` all ship in the firmware — and
+      that is the verified condition under which restoration is correct rather
+      than the reflex §13.0 warns about. They move to a test target that puts
+      only `src/core` on the include path, so nothing carries a dependency on
+      the tree being removed. `V2IndependentPm_test` is not relocated: the half
+      that asserts live behavior needs the shim to compile, and preserving the
+      shim to keep one assertion alive is exactly the import this task exists
+      to undo. Say so where the target is defined rather than leaving it
+      unexplained.
       **0.2b DELETE.** `vcv/` and `Rack-SDK/` are working directories with
       nothing tracked — remove them from disk. `sim/` and the `src/core`
       headers (a) identified go as tracked deletions. Then the inbound half
