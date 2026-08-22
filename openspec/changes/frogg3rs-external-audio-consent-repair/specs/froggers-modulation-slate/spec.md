@@ -1,17 +1,19 @@
 # Delta — `froggers-modulation-slate`
 
-**Added 2026-08-21.** The existing requirement was correct and was violated:
-the standalone reports routed for a platform-default device, and offers no way
-to select no input. This delta restates it with the two things that were left
-implicit — that declining is a real, default choice, and that a disconnected
-source is visibly unusable rather than merely inert underneath.
+**Added 2026-08-21. Rewritten 2026-08-21 after preflight.** The existing
+requirement derives the sources' connected state correctly and the app honors
+it. What it left implicit is the step before: the operator must be able to
+decline input, and must start declined. The standalone opens a capture device
+at launch instead, and offers no way to say no.
+
+This delta states the declining half, and states the disconnected rendering
+the surface already performs so that it is locked rather than assumed.
 
 ## MODIFIED Requirements
 
 ### Requirement: External-audio sources stay present but inert when unavailable
 The two external-audio modulation sources SHALL connect only on the operator's
-affirmative act, SHALL offer declining as a real and default choice, and SHALL
-be visibly unusable while disconnected.
+affirmative act, and declining SHALL be a real and default choice.
 
 When no external audio input is routed, the two external-audio modulation
 sources SHALL be marked **not connected**. They SHALL remain present in the
@@ -29,40 +31,61 @@ derive not-routed and SHALL NOT connect the sources. The connected state SHALL
 be written once per routing transition, from the host's change notification,
 never recomputed per sample from channel presence.
 
+**Requesting an input channel SHALL NOT open an input device.** A host SHALL
+NOT open a capture device on the strength of an application's requested
+channel count. It SHALL open one only when the operator has selected a device,
+and SHALL then open the channels the application requested.
+
 **Declining input SHALL be a real choice, and SHALL be the default.** Every
 host that presents an input selection SHALL offer an explicit no-input option,
 SHALL start on it, and SHALL treat any other selection as the operator's
-affirmative act. A host SHALL NOT present "whatever the system provides" as
-the only starting state, because that is indistinguishable from a choice
-nobody made.
+affirmative act. A host SHALL NOT present "whatever the system provides" as an
+input choice at all: an unnamed device that resolves to a real microphone is
+indistinguishable from a choice nobody made. Output device selection is
+unaffected and keeps its system-default entry.
 
-**A disconnected source SHALL be visibly unusable, not merely inert.** While
-not connected, the two external-audio cells SHALL render in a disabled
-appearance distinguishable from a connected cell at a glance, and SHALL reject
-edits rather than accepting an adjustment that does nothing.
+**A persisted input selection SHALL NOT survive a change in what it means.**
+When a host reads stored state written before declining became expressible, it
+SHALL treat any input device name it finds as unset and start declined, because
+a name recorded when there was no way to say no is not evidence that anyone
+said yes. Stored output device selections are unaffected.
+
+**A disconnected source SHALL present no control.** While not connected, the
+two external-audio cells SHALL hold their grid positions while drawing no
+encoder, and SHALL carry no press or drag action, so that there is no edit to
+accept and nothing that reads as adjustable.
 
 #### Scenario: Disconnection is the inert state, not a removal
 - **WHEN** no input is routed
 - **THEN** both sources are marked not connected
 - **THEN** their grid cells are still present, carrying no depth parameter
-- **THEN** those cells render in the framework's standard disconnected appearance
+- **THEN** those cells draw no encoder and carry no press or drag action
 
 #### Scenario: A host-opened default device does not count as routed
 - **WHEN** the host has opened a platform-default input device without any operator selection
 - **THEN** the routed signal reports not routed
 - **THEN** both external-audio sources stay disconnected and contribute no modulation
 
+#### Scenario: Requesting a channel opens no device
+- **WHEN** an application requesting one input channel starts
+- **THEN** the host has no input device open
+- **THEN** the input diagnostic reports the requested count with zero active
+
+#### Scenario: An upgraded install starts declined
+- **WHEN** a host loads stored state written before no-input was a choice
+- **AND** that state names an input device
+- **THEN** the input selection reads as no input and no device is opened
+- **THEN** the stored output device selection is still honored
+
 #### Scenario: The operator can decline input, and starts declined
 - **WHEN** a host that selects input devices is opened for the first time
 - **THEN** the input selection reads as no input
 - **THEN** both external-audio sources are disconnected
 - **WHEN** the operator selects an actual device
+- **THEN** that device is opened with the requested input channels
 - **THEN** the routed signal reports routed
-
-#### Scenario: A disconnected cell refuses to be edited
-- **WHEN** no input is routed and the operator adjusts an external-audio cell
-- **THEN** the cell renders as disabled
-- **AND** the adjustment is rejected rather than silently having no effect
+- **WHEN** the operator selects no input again
+- **THEN** the input device is closed and the routed signal reports not routed
 
 #### Scenario: Routing connects the sources in place
 - **WHEN** the operator affirmatively routes an input and the host's routed signal reports routed
