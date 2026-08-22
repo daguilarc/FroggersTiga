@@ -26,42 +26,65 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       `$(APP_BUNDLE)` rule further down; `:44-45` cites `:152-154` for that
       same rule. Cite the rule or variable by name instead of by line: these
       point into a submodule, so every line number drifts when the pin moves.
-- [ ] 0.2 Remove the retired host's code from `sim/`. Retiring `desktop/` broke
-      `sim/OwnedAllocation_test.cpp`, and rather than letting the broken case
-      go with the tree it tested, `HostParameterPendingStore.hpp`,
-      `HostParameterInventory.hpp` and `HostParameterRouting.hpp` were copied
-      out of `desktop/Source` into `sim/` to keep it compiling. That import is
-      the thing to undo.
-      Traced: those three headers are referenced only by each other and by
-      `OwnedAllocation_test.cpp`. The firmware does not use them — the two
-      matches in `src/core/PagedHostIO.hpp:68` and
-      `src/core/DesktopHostIO.hpp:317` are comments naming a desktop-v2 class,
-      not includes. `app/vst/`'s `BuildHostParameterInventory()` is a method of
-      its own, not an include of the header. Everything else `sim/` includes
-      resolves to `src/core` or to `sim/` itself.
-      **The file is not the unit to delete.** `OwnedAllocation_test.cpp` holds
-      two cases: `:43-62` `test_apply_pending_steady_state`, whose subject is
-      the imported headers, and `:21-41`
-      `test_wasm_process_block_steady_state`, whose subject is
-      `sim/WasmSimHost.hpp:53` — still present, and outside the tree that was
-      retired. Remove the first case and the three headers; keep the second,
-      its target, and the instrumentation it runs on.
-      **If the whole target goes instead, the orphans go with it.** Deleting
-      `OwnedAllocation_test` alone strands `sim/OwnedAllocationHooks.cpp`
-      (56 lines; its only consumer is `add_sim_instrument_test`,
-      `sim/CMakeLists.txt:15-21`, used once at `:37`), the
-      `add_sim_instrument_test` function itself, and
-      `FROGGERS_OWNED_ALLOCATION_INSTRUMENT`, which nothing else defines. With
-      the hooks unlinked, `sim/WasmSimHost.hpp:53`'s guard still compiles and
-      can no longer count anything — a guard that passes while checking
-      nothing, which is what this sweep exists to remove. Either keep the
-      instrument whole or delete it whole; do not leave the halves.
-      Re-verify the trace before deleting, then report the sim ctest count
-      before and after.
-- [ ] 0.3 The inbound half of 0.2. `openspec/specs/froggers-host-master/spec.md`
-      names `OwnedAllocation_test` in its verification section, so that prose
-      moves in the same commit as whatever 0.2 decides. The two lines around it
-      are already stale independently: the block runs `cd web && npm run ...`
+- [ ] 0.2 Retire the simulator surface: `vcv/`, `Rack-SDK/`, `sim/`, and the
+      `src/core` headers that only the simulator compiles.
+      The narrower version of this task claimed "the rest of `sim/` simulates
+      the Daisy firmware and is not touched". That is false, and the same grep
+      that scoped the task disproved it: `src/FroggersTiga/FroggersTiga.cpp`
+      resolves to 32 files, 24 of them in `src/core`, and none of them in
+      `sim/`. Nothing tracked builds `sim/`, no CI job runs its ctest suite,
+      and `app/check_no_frozen_includes.sh` forbids `app/**` from including it
+      at all. `vcv/` and `Rack-SDK/` have zero tracked files, so the one
+      consumer that did reach into `sim/` reaches nobody who clones this
+      repository.
+      **0.2a PREFLIGHT — state what is dropped before dropping it.** This is a
+      57-file tracked deletion plus two untracked trees, and a deletion whose
+      losses are discovered afterwards is not a sweep.
+      (a) Enumerate the `src/core` headers the firmware does NOT reach. There
+      are 30 headers there and the firmware reaches 24; name all six, not the
+      two this text already knows
+      (`DesktopHostIO.hpp`, `PagedHostIO.hpp`). Each one that no surviving
+      consumer reaches goes with `sim/`; each one that something else reaches
+      stays, and the trace says which.
+      (b) Diff the assertions. `sim/`'s 25 test targets and
+      `app/FroggersDspParityTests.cpp` (5320 lines) both assert DSP parity
+      against the firmware. Report, per sim test target, whether its assertion
+      is already made in the app suite, made differently, or made nowhere else.
+      What survives only in `sim/` is what this deletion costs, and it is
+      stated here rather than found later.
+      (c) Enumerate the inbound half by bare name across all tracked text, not
+      by include: every comment, spec, doc, workflow, makefile variable and
+      task list that mentions `vcv`, `sim/`, `Rack-SDK`, or any deleted
+      filename. Those are not invocations and no invocation search finds them,
+      and each becomes a reference to a path that no longer resolves.
+      Report (a), (b) and (c) before any file is deleted.
+      **0.2b DELETE.** `vcv/` and `Rack-SDK/` are working directories with
+      nothing tracked — remove them from disk. `sim/` and the `src/core`
+      headers (a) identified go as tracked deletions. Then the inbound half
+      from (c): the capability specs whose whole subject was VCV
+      (`vcv-cc-mod-gating`, `vcv-panel-silkscreen`,
+      `vcv-section-expander-architecture`) go with it; specs that merely carry
+      a VCV row or a sim aside keep, minus that row. Read each before editing —
+      some describe a parity the firmware still holds, and only the attribution
+      to a retired host goes.
+      Guards whose sole target is being deleted go with it rather than being
+      repaired: `app/check_no_frozen_includes.sh`'s deny pattern is
+      `src|sim`, and with `sim/` gone half of it guards nothing. Narrow it to
+      what still exists; do not leave it asserting against a missing tree.
+      **0.2c POSTFLIGHT.** Not implementation-versus-plan — run §8 against the
+      diff itself. A deletion this size retroactively changes what other code
+      means: report what the removal made dead that was not dead before
+      (a helper whose last caller went, a CMake function with no remaining
+      call, a define nothing sets), and confirm by search that no surviving
+      script, workflow, spec, manifest or comment names a path that no longer
+      resolves. Report found versus changed for every category.
+      `sim/Fuegoize.hpp`'s divide-by-zero at full fuego is not repaired: it
+      leaves with the tree that carried it.
+
+- [ ] 0.3 `openspec/specs/froggers-host-master/spec.md`'s verification section
+      cannot survive 0.2: it names `OwnedAllocation_test` and
+      `WasmSimHostMalloc_test`, both of which leave with `sim/`. The rest of
+      that block is already stale independently: the block runs `cd web && npm run ...`
       against a `web/` directory that is not in the repository and a root
       `package.json` that declares no scripts, and it names
       `HostParameterProcessor_test`, a ctest target that exists nowhere in the
@@ -83,33 +106,6 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       Establish the invocation for each by bare name as well as by path, then
       delete what has none, and edit the prose that named it in the same
       commit.
-- [ ] 0.6 Retire VCV. `vcv/` has zero tracked files, so it reaches nobody who
-      clones the repository, and `Rack-SDK/` exists only to build it. Delete
-      both working directories, and with them everything that exists only to
-      serve them: the ten `sim/Vcv*` files, which the include graph shows are
-      referenced by each other and by nothing else, and their four targets and
-      four `add_test` lines in `sim/CMakeLists.txt`.
-      The inbound half, enumerated by bare name across all tracked text: the
-      capability specs `vcv-cc-mod-gating`, `vcv-panel-silkscreen` and
-      `vcv-section-expander-architecture` go with it. `pair-ar-vcv-time-range`
-      and the specs that merely carry a VCV row or a VCV aside —
-      `external-ring-mod-mix`, `froggers-host-master`,
-      `froggers-sheaf-runtime-app`, `froggers-v2-app-manifest`,
-      `midi-cc-mod-gating`, `mod-blend-semantics`, `mod-led-level-meter`,
-      `pair-ar-randomize`, `sim-pm3-knob-parity` — stay, minus the VCV rows and
-      asides. Same for the comments in `sim/`, `src/core/`, `src/common/` and
-      `app/FroggersDspParityTests.cpp` that name it. Read each before editing:
-      some describe a parity the firmware still holds and only the attribution
-      to VCV goes.
-      `sim/Fuegoize.hpp`'s divide-by-zero at full fuego is NOT fixed here. The
-      Daisy firmware never reaches it — `src/FroggersTiga/FroggersTiga.cpp`
-      resolves to 32 files, 24 of them in `src/core`, and `Fuegoize.hpp`,
-      `DelayState.hpp` and `V2FuegoStack.hpp` are not among them; nor are
-      `src/core/DesktopHostIO.hpp` and `src/core/PagedHostIO.hpp`, which
-      include the sim copies and are themselves compiled only by the sim test
-      harness. With VCV gone the only thing left standing on that code is
-      `sim/`'s own frozen suite. Do not repair it and do not add a test for it.
-
 ## 1. Every shipped bundle carries a signature that matches itself
 
 - [ ] 1.1 Sign the app bundle as the LAST step of `app/build-launcher.sh` —
