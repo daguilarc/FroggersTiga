@@ -47,9 +47,26 @@ jobs:
       run:
         shell: bash
     steps:
+      # The Sheaf submodule carries research data whose filenames contain a
+      # colon, which Windows cannot represent -- a full submodule checkout
+      # fails there before any build starts. Fetch the superproject alone,
+      # then take only the directory this build needs.
       - uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
+
+      - name: Check out Sheaf without the paths Windows cannot represent
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="$(git config -f .gitmodules submodule.External/Sheaf.url)"
+          sha="$(git rev-parse HEAD:External/Sheaf)"
+          rm -rf External/Sheaf
+          git clone --no-checkout --filter=blob:none "$url" External/Sheaf
+          git -C External/Sheaf sparse-checkout init --cone
+          git -C External/Sheaf sparse-checkout set projects
+          git -C External/Sheaf checkout "$sha"
+          test -d External/Sheaf/projects/synth
 
       - name: Fetch JUCE (pinned, matches app/vst's locally-verified checkout)
         run: git clone --branch 8.0.12 --depth 1 https://github.com/juce-framework/JUCE.git "$HOME/JUCE"

@@ -52,8 +52,14 @@ jobs:
       # -- this machine locks up above -j2") -- written for the operator's
       # local Mac, not this runner, but kept here too for parity with the
       # one documented invocation this project already commits to.
+      # The default target builds the test executables only -- juce_add_plugin's
+      # per-format targets are not part of `all`, so a plain build leaves no
+      # bundles behind and the assertion below is what catches it. Name them.
       - name: Build (VST3 + AU)
-        run: nice -n 10 cmake --build app/vst/build --config Release -- -j2
+        run: |
+          nice -n 10 cmake --build app/vst/build --config Release -- -j2
+          nice -n 10 cmake --build app/vst/build --config Release \
+            --target FroggersVst_VST3 FroggersVst_AU -- -j2
 
       # Confirms both plugin bundle formats actually landed, not just that
       # the overall `cmake --build` exit code was 0 (the vst3/component
