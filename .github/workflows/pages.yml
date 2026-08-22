@@ -79,7 +79,7 @@ jobs:
           ./local-smoke.sh
 
       # Task 4.3: Playwright e2e for the new site, its own harness under
-      # app/browser/e2e/ (own package.json -- the legacy web/e2e suite
+      # app/browser/e2e/ (own package.json
       # stays dormant, untouched, and byte-identical). Serves the
       # already-assembled dist/site (no rebuild) and runs both the
       # mobile-emulated and desktop-emulated projects. The mobile-emulated

@@ -44,6 +44,12 @@ if (typeof window === "undefined") {
         // but a future one should degrade instead of breaking every fetch.
         if (response.status === 0 || response.type === "opaque" || response.type === "opaqueredirect") return response;
         const headers = new Headers(response.headers);
+        // The same three headers serve-site.mjs sends, and for the same
+        // reason: under require-corp a subresource without a resource policy
+        // is blocked, so sending only the opener/embedder pair isolates
+        // nothing and the app fails to boot with its pthread pool unable to
+        // transfer SharedArrayBuffer memory.
+        headers.set("Cross-Origin-Resource-Policy", "cross-origin");
         headers.set("Cross-Origin-Embedder-Policy", "require-corp");
         headers.set("Cross-Origin-Opener-Policy", "same-origin");
         return new Response(response.body, {

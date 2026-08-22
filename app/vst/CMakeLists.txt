@@ -4,21 +4,16 @@
 # (app/Makefile, check_no_juce.cpp) are untouched by this file and never
 # depend on it.
 #
-# CMake shape adapted from the DELETED old wrappers' juce_add_plugin idiom
-# (git show 0be9ab0~1:desktop/CMakeLists.txt lines 136-313 -- read, not
-# resurrected): that block used juce_add_plugin(... FORMATS VST3 AU IS_SYNTH
-# TRUE ...) via FetchContent'd JUCE. This file keeps the same juce_add_plugin
-# shape (formats, IS_SYNTH, COPY_PLUGIN_AFTER_BUILD FALSE) but:
-#   - adds JUCE via add_subdirectory($ENV{HOME}/JUCE ...), per the
-#     explicit instruction (JUCE is already checked out locally), not
-#     FetchContent;
-#   - targets the CURRENT app core (app/Froggers.hpp,
-#     synth_froggers::FroggersApp) through Sheaf's synth::Engine<App>, not
-#     the old desktop/Source/ tree (deleted, unrelated to this app);
-#   - declares NO input bus at all (old idiom didn't need this distinction);
-#   - adds a JUCE-free-Sheaf-core custom step (below) the old idiom never
-#     needed, since desktop/'s core lived in src/core, not behind Sheaf's own
-#     Makefile-built static lib.
+# The plugin is built with juce_add_plugin (FORMATS VST3 AU, IS_SYNTH TRUE,
+# COPY_PLUGIN_AFTER_BUILD FALSE), and:
+#   - adds JUCE via add_subdirectory($ENV{HOME}/JUCE ...) from a local
+#     checkout rather than FetchContent;
+#   - targets the app core (app/Froggers.hpp,
+#     synth_froggers::FroggersApp) through Sheaf's synth::Engine<App>;
+#   - declares no input bus by default -- see BusesProperties below;
+#   - builds Sheaf's JUCE-free static core through a custom step (below),
+#     since that core comes from Sheaf's own Makefile rather than from
+#     sources this file compiles.
 #
 # Build (binding): -j2 max, always, nice'd -- this machine
 # locks up above -j2.
@@ -84,12 +79,10 @@ add_custom_target(FroggersSheafLibsynth ALL
     VERBATIM
 )
 
-# Stop-and-ask gate (deleted idiom's own convention,
-# desktop/CMakeLists.txt:143-146): instrument/generator identity must stay
-# IS_SYNTH TRUE. Named FROGGERS_VST_PLUGIN_IS_SYNTH (not
-# FROGGERS_VST_IS_SYNTH) so this CMake-script-only variable can't be
-# confused with desktop-v2/CMakeLists.txt:300,340's FROGGERS_VST_IS_SYNTH,
-# a real C++ preprocessor macro for unrelated targets there (different
+# Instrument/generator identity must stay IS_SYNTH TRUE. Named
+# FROGGERS_VST_PLUGIN_IS_SYNTH rather than FROGGERS_VST_IS_SYNTH so this
+# CMake-script-only variable is not confused with a C++ preprocessor macro
+# of the near-identical name that once existed for unrelated targets (
 # namespace, no actual collision -- this is a readability-only rename).
 set(FROGGERS_VST_PLUGIN_IS_SYNTH TRUE)
 if(NOT FROGGERS_VST_PLUGIN_IS_SYNTH)
