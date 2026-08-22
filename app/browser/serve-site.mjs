@@ -37,6 +37,7 @@ const SHEAF_BROWSER_DIST_SRC = path.join(
 const { contentTypeForPath } = await import(path.join(SHEAF_BROWSER_DIST_SRC, "static-server.mjs"));
 
 function parseArguments(argv) {
+  let isolationHeaders = true;
   let port = 8787;
   let host = "127.0.0.1";
   const mounts = [];
@@ -53,6 +54,11 @@ function parseArguments(argv) {
       continue;
     }
     if (value === "--host") { host = argv[++index]; continue; }
+    // Serves without the isolation headers, the way GitHub Pages does -- it
+    // cannot set custom headers at all. The site's service-worker shim is the
+    // only thing that isolates the page there, and a suite that always runs
+    // against the headers below can never exercise that path.
+    if (value === "--no-isolation-headers") { isolationHeaders = false; continue; }
     const equals = value.indexOf("=");
     if (equals > 0) {
       mounts.push({ prefix: `/${value.slice(0, equals).replace(/^\/+|\/+$/g, "")}/`, root: path.resolve(value.slice(equals + 1)) });
@@ -64,7 +70,7 @@ function parseArguments(argv) {
   }
   if (defaultDir === undefined) defaultDir = path.join(BROWSER_ROOT, "dist", "site");
   mounts.sort((left, right) => right.prefix.length - left.prefix.length);
-  return { port, host, mounts, defaultDir };
+  return { port, host, mounts, defaultDir, isolationHeaders };
 }
 
 function resolveFile(pathname, root, prefix = "/") {
@@ -127,9 +133,11 @@ export function createSiteServer(config) {
     const headers = {
       "Access-Control-Allow-Origin": "*",
       "Cache-Control": "no-store",
-      "Cross-Origin-Resource-Policy": "cross-origin",
-      "Cross-Origin-Opener-Policy": "same-origin",
-      "Cross-Origin-Embedder-Policy": "require-corp",
+      ...(config.isolationHeaders === false ? {} : {
+        "Cross-Origin-Resource-Policy": "cross-origin",
+        "Cross-Origin-Opener-Policy": "same-origin",
+        "Cross-Origin-Embedder-Policy": "require-corp",
+      }),
       "Permissions-Policy": "midi=(self), microphone=(self)",
     };
     if (request.method === "OPTIONS") { response.writeHead(204, headers).end(); return; }

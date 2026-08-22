@@ -9,6 +9,11 @@ import { defineConfig, devices } from "@playwright/test";
 
 const host = "127.0.0.1";
 const port = 8799;
+// A second origin served the way GitHub Pages serves: no isolation headers at
+// all. The site's service-worker shim is the only thing that isolates the page
+// there, so a suite that only ever runs against the header-setting server
+// cannot see a shim that has stopped working.
+const pagesPort = 8800;
 
 // Reuse an already-downloaded chromium build from the shared Playwright
 // cache instead of triggering a second download (web/ and
@@ -32,6 +37,7 @@ if (!process.env.CI) {
 
 const MOBILE_SPECS = [/link-roles\.spec\.mjs$/, /mobile-stacking\.spec\.mjs$/, /visibility\.spec\.mjs$/];
 const DESKTOP_SPECS = [/link-roles\.spec\.mjs$/, /desktop-layout\.spec\.mjs$/, /visibility\.spec\.mjs$/, /blank-frame\.spec\.mjs$/];
+const PAGES_SPECS = [/blank-frame\.spec\.mjs$/];
 
 export default defineConfig({
   testDir: ".",
@@ -45,14 +51,22 @@ export default defineConfig({
     baseURL: `http://${host}:${port}`,
     trace: "on-first-retry",
   },
-  webServer: {
-    // Serves the ALREADY-assembled dist/site (built + packaged by earlier
-    // CI/local-chain steps) -- this config never rebuilds it.
-    command: `node ../serve-site.mjs --port ${port} --host ${host} ../dist/site`,
-    url: `http://${host}:${port}/index.html`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 60_000,
-  },
+  webServer: [
+    {
+      // Serves the ALREADY-assembled dist/site (built + packaged by earlier
+      // CI/local-chain steps) -- this config never rebuilds it.
+      command: `node ../serve-site.mjs --port ${port} --host ${host} ../dist/site`,
+      url: `http://${host}:${port}/index.html`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
+    },
+    {
+      command: `node ../serve-site.mjs --port ${pagesPort} --host ${host} --no-isolation-headers ../dist/site`,
+      url: `http://${host}:${pagesPort}/index.html`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000,
+    },
+  ],
   projects: [
     {
       name: "mobile",
@@ -74,6 +88,17 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1280, height: 800 },
+      },
+    },
+    {
+      // The deployed configuration: no isolation headers from the server, so
+      // the page renders only if the service-worker shim still supplies them.
+      name: "pages",
+      testMatch: PAGES_SPECS,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1280, height: 800 },
+        baseURL: `http://${host}:${pagesPort}`,
       },
     },
   ],
