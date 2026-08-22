@@ -66,11 +66,21 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       `src/common/EQ.hpp`, which has no includers of its own and dies with it.
       (b) 25 registered targets. Twenty assert a retired host — VCV, the wasm
       and desktop sim hosts, or the shims themselves — and cost nothing.
-      FIVE assert code that still ships, and they are the only automated
+      THREE assert code that still ships, and they are the only automated
       coverage the Daisy firmware has anywhere in this repository:
-      `Fuegoize_test`, `HookIdentity_test`, `ModMgr_test` and
-      `PairArEnvelope_test` (its `ExpParam::Compute` half) compile without the
-      shims; `V2IndependentPm_test`'s flag-off golden-pin check does not.
+      `HookIdentity_test`, `ModMgr_test` and `PairArEnvelope_test` (its
+      `ExpParam::Compute` half), all of which compile without the shims.
+      Two more looked like coverage and are not. `V2IndependentPm_test`'s
+      flag-off golden-pin check needs the shims to compile at all.
+      `Fuegoize_test` compares the simulator's free-function fuegoize against
+      the firmware's inline one and asserts they agree — `src/core` has no
+      fuegoize header of its own, so once the simulator copy goes the
+      comparison has nothing on its other side. It reads as firmware coverage
+      because it includes `Parameter.hpp`; its actual subject is the copy being
+      deleted. Relocating it would mean copying `sim/Fuegoize.hpp` into a
+      surviving tree to keep it compiling, which preserves exactly what this
+      retirement removes — and that header is the one carrying the
+      divide-by-zero, which the test's own tuples reach at full fuego.
       `app/FroggersDspParityTests.cpp` does not cover them: it asserts the
       app's own DSP copy under `app/dsp/`, not `src/core`.
       Separately, `sim/PageBootNav_test.cpp` and
@@ -80,13 +90,15 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       files, 96 `sim/` hits across 29. Most of the `sim/` hits are provenance
       comments in `app/` naming the file a DSP port was copied FROM, which
       stay accurate as history only if reworded; read each.
-      **0.2a DECISION.** The four shim-free firmware assertions are relocated,
+      **0.2a DECISION.** The three shim-free firmware assertions are relocated,
       not dropped. Their subject outlives the deletion — `FroggersEngine`,
       `ModMgr`, `Parameter` and `PairArEnvelope` all ship in the firmware — and
       that is the verified condition under which restoration is correct rather
       than the reflex §13.0 warns about. They move to a test target that puts
       only `src/core` on the include path, so nothing carries a dependency on
-      the tree being removed. `V2IndependentPm_test` is not relocated: the half
+      the tree being removed. A test that needs a file copied out of `sim/` to
+      compile is not relocatable — it is a test of `sim/`, and the copy is the
+      tell. `V2IndependentPm_test` is not relocated: the half
       that asserts live behavior needs the shim to compile, and preserving the
       shim to keep one assertion alive is exactly the import this task exists
       to undo. Say so where the target is defined rather than leaving it

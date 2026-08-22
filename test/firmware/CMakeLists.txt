@@ -15,18 +15,23 @@ endfunction()
 # only src/core on the include path. It stays free of any host shim so it
 # keeps compiling regardless of what happens to the simulator tree.
 #
-# V2IndependentPm_test is not here. Its only assertion of live firmware
-# behavior is a flag-off golden-pin check, and that check only compiles
-# against DesktopHostIO and PagedHostIO. Keeping those host shims around to
-# preserve one assertion is worse than losing the assertion.
+# Two of the simulator's assertions are deliberately absent.
+#
+# V2IndependentPm_test's only assertion of live firmware behavior is a
+# flag-off golden-pin check, and that check only compiles against
+# DesktopHostIO and PagedHostIO. Keeping those host shims around to preserve
+# one assertion is worse than losing the assertion.
+#
+# Fuegoize_test compared the simulator's free-function fuegoize against the
+# firmware's inline one in Parameter::Get and asserted the two agree. The
+# firmware has no fuegoize header of its own, so with the simulator copy gone
+# the comparison has nothing on its other side.
 
-add_firmware_test(Fuegoize_test Fuegoize_test.cpp)
 add_firmware_test(HookIdentity_test HookIdentity_test.cpp)
 add_firmware_test(ModMgr_test ModMgr_test.cpp)
 add_firmware_test(PairArEnvelope_test PairArEnvelope_test.cpp)
 
 enable_testing()
-add_test(NAME Fuegoize_test COMMAND Fuegoize_test)
 add_test(NAME HookIdentity_test COMMAND HookIdentity_test)
 add_test(NAME ModMgr_test COMMAND ModMgr_test)
 add_test(NAME PairArEnvelope_test COMMAND PairArEnvelope_test)
