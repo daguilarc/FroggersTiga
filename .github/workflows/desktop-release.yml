@@ -67,20 +67,25 @@ jobs:
       - name: Build standalone binary (Frogg3rs, unverified on Windows)
         run: |
           # The sheaf-patch Makefile takes these as literal prerequisites and
-          # runs from its own directory, so they must be absolute -- every
-          # other argument here already is.
-          APP_HEADERS="$(ls "$PWD"/app/*.hpp "$PWD"/app/dsp/*.hpp | tr '\n' ' ')"
+          # runs from its own directory, so they must be absolute. They must
+          # also be in ONE spelling: this shell's $PWD is POSIX (/d/a/...)
+          # while MSYS rewrites bare path arguments to Windows form (D:/a/...),
+          # so make would otherwise see two names for the same file and match
+          # neither. cygpath -m puts every path in Windows form with forward
+          # slashes, which both make and the compiler accept.
+          ROOT="$(cygpath -m "$PWD")"
+          APP_HEADERS="$(ls "$PWD"/app/*.hpp "$PWD"/app/dsp/*.hpp | while read -r f; do cygpath -m "$f"; done | tr '\n' ' ')"
           make -j2 -C External/Sheaf/projects/synth/apps/sheaf-patch \
-            EXTRA_APP_DIR="$PWD/app" \
+            EXTRA_APP_DIR="$ROOT/app" \
             EXTRA_APP_HEADER=FroggersRegistration.hpp \
             EXTRA_APP_TYPE=synth_froggers::FroggersApp \
             EXTRA_APP_REGISTRAR=synth_froggers::MakeFroggersRegistration \
             EXTRA_APP_HEADERS="$APP_HEADERS" \
             APP_NAME=Frogg3rs \
-            APP_SOURCES="$PWD/app/FroggersMain.cpp" \
-            APP_BUILD_DIR="$PWD/app/build-launcher-windows" \
-            APP_INFO_PLIST="$PWD/app/Frogg3rs-Info.plist" \
-            "$PWD/app/build-launcher-windows/Frogg3rs"
+            APP_SOURCES="$ROOT/app/FroggersMain.cpp" \
+            APP_BUILD_DIR="$ROOT/app/build-launcher-windows" \
+            APP_INFO_PLIST="$ROOT/app/Frogg3rs-Info.plist" \
+            "$ROOT/app/build-launcher-windows/Frogg3rs"
 
       - name: Assert binary was built
         run: test -f app/build-launcher-windows/Frogg3rs || test -f app/build-launcher-windows/Frogg3rs.exe
@@ -100,7 +105,11 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: [build-macos, build-windows]
+    # The desktop release ships macOS. The Windows job still runs, because its
+    # output is how the port gets driven forward, but it does not gate the
+    # release: holding the dmg back until an unfinished port succeeds means no
+    # desktop download at all.
+    needs: [build-macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -111,11 +120,7 @@ jobs:
           name: macos-dmg
           path: dist
 
-      - name: Download Windows artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-zip
-          path: dist
+
 
       # Release notes come straight from MANUAL.md's own "Release platforms"
       # section, so the statement of platform coverage and the Windows

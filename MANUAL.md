@@ -22,8 +22,9 @@ Terse one-line-per-parameter glossary for this app: [`QUICK_DICT.md`](QUICK_DICT
 
 ## Release platforms
 
-The desktop application releases for macOS and Windows. The Windows build is unverified: it has never
-been built or linked on Windows before, so it may not build, launch, or run correctly there.
+The desktop application releases for macOS. A Windows build is in progress and is not part of the
+release yet; the standalone builds through a toolchain that has only ever run on macOS, and it is
+ported rather than merely configured for Windows.
 
 The VST3 and Audio Unit plugin releases for macOS only.
 
