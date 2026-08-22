@@ -68,23 +68,23 @@ This gates the desktop release. Nothing in group 2 can ship without it.
 
 ## 3. The plugin can be released
 
-- [ ] 3.1 `vst-plugin.yml` declares `permissions: contents: read` (`:11`) and
+- [x] 3.1 `vst-plugin.yml` declares `permissions: contents: read` (`:11`) and
       has no publish step. Add a release job triggered on `frogg3rs_vst` with
       `contents: write`, publishing VST3 and AU from
       `app/vst/build/FroggersVst_artefacts/`.
-- [ ] 3.2 Keep the existing build-and-test job running on push and pull
+- [x] 3.2 Keep the existing build-and-test job running on push and pull
       request unchanged — releasing must not cost the per-commit check.
-- [ ] 3.3 AU is macOS-only. State what the plugin release contains per
+- [x] 3.3 AU is macOS-only. State what the plugin release contains per
       platform rather than letting a missing artifact read as a failure.
 
 ## 4. The site says what it ships
 
-- [ ] 4.1 `app/browser/site/index.html:65-67` carries one link, "Download the
+- [x] 4.1 `app/browser/site/index.html:65-67` carries one link, "Download the
       desktop app", pointing at `releases/latest`. Make it two, side by side:
       desktop app and audio plugin. `releases/latest` resolves to whichever
       release was published most recently, so both links point at their own
       tag rather than at `latest`.
-- [ ] 4.2 Update `app/browser/e2e/link-roles.spec.mjs` to assert both links,
+- [x] 4.2 Update `app/browser/e2e/link-roles.spec.mjs` to assert both links,
       and report whether any other e2e or catalog check pins the old single
       link.
 - [ ] 4.3 Confirm the built site still uses relative asset paths

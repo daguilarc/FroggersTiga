@@ -3,6 +3,7 @@ name: VST Plugin
 on:
   push:
     branches: [main]
+    tags: ['frogg3rs_vst']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -75,3 +76,58 @@ jobs:
       # "8.2" sections) -- previously never run in CI at all.
       - name: ctest
         run: ctest --test-dir app/vst/build --output-on-failure
+
+      # A plugin bundle is a directory and a release asset is a file, so the
+      # bundles are zipped here, on the macOS runner that built them, rather
+      # than in the release job -- ditto preserves the bundle structure and
+      # exists only on macOS.
+      - name: Package plugin bundles
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          cd app/vst/build/FroggersVst_artefacts
+          ditto -c -k --keepParent VST3/Frogg3rs.vst3 Frogg3rs-VST3.zip
+          ditto -c -k --keepParent AU/Frogg3rs.component Frogg3rs-AU.zip
+
+      - name: Upload packaged bundles
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-bundles
+          path: app/vst/build/FroggersVst_artefacts/*.zip
+          if-no-files-found: error
+
+  # Publishes only for the plugin tag, and only after build-and-test passed:
+  # `needs` makes a failing suite block the release rather than shipping past
+  # it. The per-commit check above keeps its read-only permissions; write
+  # access is scoped to this job alone.
+  release:
+    needs: build-and-test
+    if: startsWith(github.ref, 'refs/tags/frogg3rs_vst')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: plugin-bundles
+          path: dist
+
+      # gh is preinstalled on the runner, so the release needs no third-party
+      # action. The body states platform coverage explicitly: both formats are
+      # built on macOS, so a Windows VST3 is absent by construction rather
+      # than by failure, and saying so keeps its absence from reading as one.
+      - name: Publish plugin release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Frogg3rs audio plugin — $GITHUB_REF_NAME" \
+            --notes "Frogg3rs as an audio plugin.
+
+          Contains VST3 and Audio Unit builds for macOS. Both are built on a
+          macOS runner, so this release carries no Windows VST3.
+
+          Install by unzipping into:
+          - VST3: ~/Library/Audio/Plug-Ins/VST3/
+          - AU:   ~/Library/Audio/Plug-Ins/Components/"

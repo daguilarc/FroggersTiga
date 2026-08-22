@@ -6,7 +6,8 @@
 import { expect, test } from "@playwright/test";
 
 const ROLES = [
-  { role: "download", hrefPrefix: "https://github.com/daguilarc/frogg3rs/releases/latest" },
+  { role: "download", hrefPrefix: "https://github.com/daguilarc/frogg3rs/releases/tag/frogg3rs_v2" },
+  { role: "plugin", hrefPrefix: "https://github.com/daguilarc/frogg3rs/releases/tag/frogg3rs_vst" },
   { role: "license", hrefPrefix: "https://github.com/daguilarc/frogg3rs/blob/main/LICENSE" },
   { role: "manual", hrefPrefix: "https://github.com/daguilarc/frogg3rs/blob/main/MANUAL.md" },
 ];
@@ -32,7 +33,7 @@ test.describe("site link roles", () => {
     }
   });
 
-  test("every legacy role (download/license/manual) is present exactly once", async ({ page }) => {
+  test("every link role is present exactly once", async ({ page }) => {
     for (const { role } of ROLES) {
       await expect(page.locator(`[data-site-link="${role}"]`)).toHaveCount(1);
     }
