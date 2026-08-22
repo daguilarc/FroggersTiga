@@ -66,7 +66,10 @@ jobs:
       # real information about the Windows port.
       - name: Build standalone binary (Frogg3rs, unverified on Windows)
         run: |
-          APP_HEADERS="$(ls app/*.hpp app/dsp/*.hpp | tr '\n' ' ')"
+          # The sheaf-patch Makefile takes these as literal prerequisites and
+          # runs from its own directory, so they must be absolute -- every
+          # other argument here already is.
+          APP_HEADERS="$(ls "$PWD"/app/*.hpp "$PWD"/app/dsp/*.hpp | tr '\n' ' ')"
           make -j2 -C External/Sheaf/projects/synth/apps/sheaf-patch \
             EXTRA_APP_DIR="$PWD/app" \
             EXTRA_APP_HEADER=FroggersRegistration.hpp \

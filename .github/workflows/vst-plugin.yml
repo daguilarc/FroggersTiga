@@ -68,8 +68,8 @@ jobs:
       # FALSE, so they stay in-tree here and are never installed anywhere).
       - name: Assert plugin bundles were built
         run: |
-          test -d app/vst/build/FroggersVst_artefacts/VST3/Frogg3rs.vst3
-          test -d app/vst/build/FroggersVst_artefacts/AU/Frogg3rs.component
+          test -d app/vst/build/FroggersVst_artefacts/Release/VST3/Frogg3rs.vst3
+          test -d app/vst/build/FroggersVst_artefacts/Release/AU/Frogg3rs.component
           echo "VST3 and AU bundles present"
 
       # 19 ctest cases across FroggersVstSmokeTest, FroggersVstHostTests,
@@ -85,7 +85,7 @@ jobs:
       - name: Package plugin bundles
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          cd app/vst/build/FroggersVst_artefacts
+          cd app/vst/build/FroggersVst_artefacts/Release
           ditto -c -k --keepParent VST3/Frogg3rs.vst3 Frogg3rs-VST3.zip
           ditto -c -k --keepParent AU/Frogg3rs.component Frogg3rs-AU.zip
 
@@ -94,7 +94,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: plugin-bundles
-          path: app/vst/build/FroggersVst_artefacts/*.zip
+          path: app/vst/build/FroggersVst_artefacts/Release/*.zip
           if-no-files-found: error
 
   # Publishes only for the plugin tag, and only after build-and-test passed:
