@@ -210,11 +210,14 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
 The published site shows the title alone. The application has a logo and the
 header does not use it.
 
-- [ ] 3b.1 Source it from `app/Resources/Icon.png` — the same image
-      `build-launcher.sh:63` bundles as the app icon — rather than adding a
-      second logo file to maintain by hand. It is 800x800 and 313 KB, far
-      heavier than a header needs, so derive a web-sized copy. Say where the
-      derivation happens: a build step keeps one source, a committed
+- [ ] 3b.1 Source it from `app/Resources/Icon.png` (800x800, 313 KB) rather
+      than adding a second logo file to maintain by hand. That is not the file
+      the bundle carries: `build-launcher.sh:63` copies `Icon.icns`, its
+      sibling, and nothing in the tree derives either from the other — no
+      `iconutil` or `sips` step exists. Establish which is the source before
+      calling them one image, or say plainly that they are two files kept in
+      step by hand. Either way the header needs a web-sized copy, so say where
+      the derivation happens: a build step keeps one source, a committed
       derivative is simpler but is a second copy that can drift. Pick one and
       record why.
 - [ ] 3b.2 Placement is constrained, not free. `stageSiteShell`

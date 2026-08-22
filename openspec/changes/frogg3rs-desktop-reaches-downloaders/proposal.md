@@ -94,7 +94,7 @@ job that produced the `.exe` still attached to the v1 release used
   task the predecessor change archived undone.
 
 **The site header shows the title without the logo.** The application has one —
-`app/Resources/Icon.png`, the same image the bundle carries as its icon — and
+`app/Resources/Icon.png`, sibling to the `Icon.icns` the bundle carries — and
 the published header does not use it. Adding it is constrained by the
 blank-frame guard, which measures `.site-header`'s box and samples only the band
 below it: a logo inside the header preserves that exclusion, and one outside it
@@ -102,7 +102,10 @@ would let the guard pass over a blank app surface.
 
 ## Impact
 
-- Affected specs: `frogg3rs-distribution`.
+- Affected specs: `frogg3rs-distribution`, which already owns the published
+  site — "The published site is built from the current app", whose own scenario
+  turns on the site's images resolving. The header logo is a requirement there,
+  not unspecified site work.
 - Notarization is recorded as the thing that makes the manual step unnecessary,
   and is not attempted here: it needs an Apple Developer account and CI secrets
   that do not exist.
