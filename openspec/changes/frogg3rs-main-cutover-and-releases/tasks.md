@@ -173,16 +173,21 @@ consumer added since would make it wrong, and 10.5 says so itself.
       is 165 tracked files (confirmed) with no BUILD consumer. Trace each
       tree's consumers first and report found versus changed; "frozen" is not
       "removable" until nothing builds from it.
-      Live references found that must move in the same commit:
-      `app/Makefile:19` resolves `FROZEN_VENDORED_SHEAF` to
-      `../desktop-v2/External/Sheaf`, and `app/check_include_guard.sh` takes
-      that path as an argument; `app/check_no_frozen_includes.sh:15,27` names
-      `desktop-v2` in its deny pattern. These are guards, not builds — which
-      makes them more dangerous, not less: `$(abspath ...)` on a deleted path
-      still evaluates, so a guard pointed at a tree that no longer exists can
-      pass while checking nothing. Whatever replaces them must fail loudly if
-      its target is missing, and the deny pattern must keep rejecting the
-      paths after the trees are gone.
+      The guards go with the trees rather than being repaired.
+      `app/check_include_guard.sh` exists solely to fail when an `-I` flag
+      resolves into `desktop-v2/External/Sheaf`, the vendored Sheaf copy kept
+      only because that tree is frozen. Delete the tree and the condition it
+      guards is impossible, so the script, `app/Makefile:19`'s
+      `FROZEN_VENDORED_SHEAF`, and the check that consumes it are all deleted.
+      Keeping a guard whose target no longer exists is the dead-gate rot this
+      sweep is for — and it would pass while checking nothing, since
+      `$(abspath ...)` succeeds on a missing path.
+      `app/check_no_frozen_includes.sh:15,27` is different: its deny pattern
+      covers `src|sim|desktop-v2|desktop|wasm|vcv|web`, and it survives as long
+      as any of those remain. Drop only the entries whose trees this change
+      actually deletes.
+      Already rotten, independent of this change: `vcv` has zero tracked files
+      and is still named in that deny pattern. Drop it too.
 - [ ] 10.7 Fix `sim/Fuegoize.hpp`'s divide-by-zero at full fuego (design G):
       move the cast off the divisor so it matches the firmware's form, and
       add a test that drives fuego to maximum. Nothing exercises that path
