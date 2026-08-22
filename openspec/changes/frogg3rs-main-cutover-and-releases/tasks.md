@@ -54,10 +54,17 @@ This gates the desktop release. Nothing in group 2 can ship without it.
 - [ ] 2.2 Build `app/`, not `desktop/`. The macOS artifact is a `.dmg`; the
       Windows artifact matches whatever 1.2 produces. Both carry the current
       product name, not the retired one.
-- [ ] 2.3 Decide and record what happens to the existing `froggerstiga-v1`
-      release and the `desktop-v1.0.4` draft. Leaving a "Latest" release that
-      ships the frozen tree under the retired name is a live download that
-      contradicts the site.
+- [ ] 2.3 Retire the v1 release once v2 is downloadable, not before. The
+      existing `froggerstiga-v1` release is currently marked Latest and ships
+      `FroggersTiga.dmg` and `FroggersTiga-Setup.exe` from the frozen tree
+      under the retired name; the `desktop-v1.0.4` draft goes with it. It is
+      load-bearing until `frogg3rs_v2` publishes — it is the only download
+      that exists — so it is retired at that cutover point and not earlier,
+      or there is a window with nothing to download at all.
+      Sequence: publish `frogg3rs_v2`, confirm both platform artifacts
+      actually download and run, then retire v1. Removing a published release
+      is destructive and outward-facing: the operator does it, this change
+      only states when and why.
 
 ## 3. The plugin can be released
 
