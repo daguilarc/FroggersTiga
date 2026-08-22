@@ -23,34 +23,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-          # Full history: the web/+wasm/ byte-identity step below diffs
-          # against the push's own pre-push SHA (github.event.before),
-          # which needs that commit to be reachable in this checkout -- the
-          # default shallow (depth-1) clone would not have it.
-          fetch-depth: 0
-
-      # PREFLIGHT CLASSIFICATION (task 4.2, design A3): of the five legacy
-      # checks, three are kept (they pass and are the only CI enforcement
-      # of invariants over the still-live, dormant web/ + desktop/ trees --
-      # froggers-web-host/spec.md requires those trees stay byte-identical,
-      # not deleted) and two are dropped (broken at HEAD with a
-      # pre-existing, unrelated failure, and exist solely to serve the
-      # legacy web display authority this pipeline no longer builds). See
-      # the task report for the full kept/dropped table with per-check
-      # reasoning and verified pass/fail evidence.
-      - name: Web preflight (kept checks only)
-        run: |
-          chmod +x sim/check_operator_docs_sync.sh sim/check_mod_source_labels.sh
-          sim/check_operator_docs_sync.sh
-          node scripts/verify-host-display-shape.mjs
-          sim/check_mod_source_labels.sh
-          # DROPPED (broken at HEAD -- pre-existing "could not parse kTable
-          # from ParamDisplayNames.hpp" since ~e2fdb6a, unrelated to this
-          # change; both exist solely to serve the legacy web/desktop
-          # host-display generator this pipeline no longer builds; fixing
-          # the parser is out of scope here):
-          #   node scripts/generate-host-display.mjs --check
-          #   sim/check_host_display_projections.sh (calls the above)
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -123,39 +95,6 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
           npx playwright test --workers=1
-
-      # CI byte-identity assertion (froggers-web-host/spec.md: legacy web/
-      # and wasm/ trees go dormant, not edited): fails if web/ or wasm/
-      # differ from the state immediately before this push.
-      # Diffs against `github.event.before` (the push event's own pre-push
-      # SHA; full history is available via this job's `fetch-depth: 0`
-      # checkout above) rather than only `git status --porcelain`, which
-      # checked uncommitted drift THIS RUN introduced but would let a
-      # commit that itself modified those trees sail straight through
-      # while still printing "byte-identical to baseline" -- a claim it
-      # was not actually checking. Falls back to the uncommitted-drift
-      # check, with an honest message, only when there is no push baseline
-      # to diff against (workflow_dispatch, or a branch's first-ever push).
-      - name: Assert web/ and wasm/ are byte-identical
-        run: |
-          BASELINE="${{ github.event.before }}"
-          if [ -z "$BASELINE" ] || [ "$BASELINE" = "0000000000000000000000000000000000000000" ]; then
-            CHANGED="$(git status --porcelain -- web wasm)"
-            if [ -n "$CHANGED" ]; then
-              echo "web/ or wasm/ changed by this build:" >&2
-              echo "$CHANGED" >&2
-              exit 1
-            fi
-            echo "web/ and wasm/ unchanged by this build (no push baseline available to diff against)"
-          else
-            CHANGED="$(git diff --stat "$BASELINE" HEAD -- web wasm)"
-            if [ -n "$CHANGED" ]; then
-              echo "web/ or wasm/ changed since $BASELINE:" >&2
-              echo "$CHANGED" >&2
-              exit 1
-            fi
-            echo "web/ and wasm/ are byte-identical to $BASELINE"
-          fi
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

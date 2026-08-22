@@ -311,7 +311,6 @@ Read top-to-bottom when implementing or reviewing a change. **Same** = behavior 
 | Modulated knob display (pair-AR) | `pair-ar-modulated-knob-display` |
 | Mod blend semantics | `mod-blend-semantics`, `ModMgr::Modulate` |
 | PM3 knob label parity | `sim-pm3-knob-parity` |
-| Operator doc mirrors | `sim-operator-doc-parity`, `SIM_MANUAL.md` |
 | Global strip labels | `global-strip-marbles-label` |
 | CC→mod CV mapping (where MIDI exists) | `midi-cc-to-mod-cv` |
 
@@ -342,7 +341,6 @@ Read top-to-bottom when implementing or reviewing a change. **Same** = behavior 
 | `web-mobile-external-audio-routing` | Web mobile | audioSession |
 | `web-playwright-e2e` | Web CI | Playwright |
 | `sim-pm3-knob-parity` | All | Label parity |
-| `sim-operator-doc-parity` | Docs | SIM_MANUAL sync |
 | `vcv-panel-silkscreen` | VCV | Panel SVG |
 | `vcv-cc-mod-gating` | — | **Historical only** — pre-omni VCV MIDI |
 | `juce-vst-cc-mod-gating` | — | **Historical only** — pre-omni VST CC pairs |
@@ -351,7 +349,7 @@ Read top-to-bottom when implementing or reviewing a change. **Same** = behavior 
 
 ## Operator documentation
 
-Human-readable mirror of host differences: `SIM_MANUAL.md` § **Host input boundaries** and § **Host guide**. Release packaging: `desktop/PACKAGING.md`, `README.md`.
+Human-readable reference for host differences: `MANUAL.md`.
 
 ---
 

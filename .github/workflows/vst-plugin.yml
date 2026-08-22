@@ -35,17 +35,12 @@ jobs:
       # one at the exact default path the CMakeLists.txt already looks up,
       # needing no -D override.
       #
-      # Network-fetching JUCE from its public GitHub repo in CI is already
-      # this repo's own established pattern: desktop/CMakeLists.txt:13-18
-      # does the same thing via FetchContent (GIT_TAG 8.0.4) for the desktop
-      # target's own JUCE dependency. app/vst's JUCE consumption has no such
-      # pin of its own, so this pins to 8.0.12 -- traced 2026-08-19 as the
-      # exact tag the local `~/JUCE` checkout this app/vst suite is
-      # developed and passing against is at (`git describe --tags
-      # --exact-match` on that checkout reports `8.0.12`), i.e. the only
-      # JUCE version actually verified to build this plugin and pass its
-      # own ctest suite, rather than assuming desktop's unrelated 8.0.4 pin
-      # would also work here.
+      # app/vst's JUCE consumption has no pin of its own, so this pins to
+      # 8.0.12 -- traced as the exact tag the local `~/JUCE` checkout this
+      # app/vst suite is developed and passing against is at (`git describe
+      # --tags --exact-match` on that checkout reports `8.0.12`), i.e. the
+      # only JUCE version actually verified to build this plugin and pass
+      # its own ctest suite.
       - name: Fetch JUCE (pinned, matches the locally-verified checkout)
         run: git clone --branch 8.0.12 --depth 1 https://github.com/juce-framework/JUCE.git "$HOME/JUCE"
 

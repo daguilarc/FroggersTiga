@@ -10,7 +10,6 @@ model entirely: seven knobs per page plus a page-local `FUEG` fuegoizer, `M1..M7
 a cross-coupler, and a Marbles-style random page. None of that maps onto the app's banks.
 
 - Current app (`app/`) → [`MANUAL.md`](MANUAL.md), with the terse glossary at [`QUICK_DICT.md`](QUICK_DICT.md)
-- Frozen web/desktop-v1 simulator surface → [`SIM_MANUAL.md`](SIM_MANUAL.md)
 
 ---
 

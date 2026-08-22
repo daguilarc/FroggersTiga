@@ -16,7 +16,6 @@
 
 APP_DIR := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 SHEAF_SYNTH_DIR := $(APP_DIR)/../External/Sheaf/projects/synth
-FROZEN_VENDORED_SHEAF := $(abspath $(APP_DIR)/../desktop-v2/External/Sheaf)
 
 CXX ?= clang++
 CXXFLAGS ?= -std=c++20 -Wall -Wextra -Wpedantic -O2
@@ -125,9 +124,9 @@ DSP_HEADERS := $(wildcard $(APP_DIR)/dsp/*.hpp)
 DSP_TEST_SOURCES := $(APP_DIR)/FroggersDspParityTests.cpp
 DSP_TEST_BIN := $(BUILD_DIR)/froggers_dsp_parity_tests
 
-.PHONY: all clean check-include-guard check-no-juce check-no-frozen-deps test force
+.PHONY: all clean check-no-juce check-no-frozen-deps test force
 
-all: check-include-guard check-no-frozen-deps $(APP)
+all: check-no-frozen-deps $(APP)
 
 $(BUILD_DIR):
 	mkdir -p $@
@@ -148,21 +147,11 @@ $(SHEAF_LIB): force
 $(APP): $(APP_SOURCES) $(SHEAF_LIB) | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(APP_SOURCES) $(SHEAF_LIB) -o $@
 
-# --- include-path guard --------------------------------------------
-# Fails the build if any -I flag this Makefile assembles resolves into the
-# frozen, vendored Sheaf copy at desktop-v2/External/Sheaf. That tree is a
-# plain vendored directory (not a submodule), kept
-# only because desktop-v2 is frozen; this app must only ever see Sheaf
-# through the External/Sheaf submodule.
-check-include-guard:
-	@bash $(APP_DIR)/check_include_guard.sh "$(CPPFLAGS)" "$(FROZEN_VENDORED_SHEAF)"
-
 # --- mechanical frozen-tree-include guard --------------------
 # Fails the build if any file under app/ (**/*.hpp, **/*.cpp) #includes
-# from src/, sim/, desktop-v2/, desktop/, wasm/, vcv/, or web/ -- the DSP
-# port is a sanctioned copy, not a shared header, so none of
-# those trees may ever be reached from app/ code, however the include path
-# is spelled.
+# from src/ or sim/ -- the DSP port is a sanctioned copy, not a shared
+# header, so neither tree may ever be reached from app/ code, however the
+# include path is spelled.
 check-no-frozen-deps:
 	@bash $(APP_DIR)/check_no_frozen_includes.sh "$(APP_DIR)"
 

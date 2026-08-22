@@ -17,9 +17,15 @@ Two other instruments share this repository and are documented separately, becau
 models do not map onto this one:
 
 - **Daisy Field hardware firmware** (`src/FroggersTiga/`, frozen) → [`DAISY_MANUAL.md`](DAISY_MANUAL.md)
-- **Frozen web / desktop-v1 simulator surface** → [`SIM_MANUAL.md`](SIM_MANUAL.md)
 
 Terse one-line-per-parameter glossary for this app: [`QUICK_DICT.md`](QUICK_DICT.md).
+
+## Release platforms
+
+The desktop application releases for macOS and Windows. The Windows build is unverified: it has never
+been built or linked on Windows before, so it may not build, launch, or run correctly there.
+
+The VST3 and Audio Unit plugin releases for macOS only.
 
 ---
 

@@ -16,8 +16,7 @@ function(add_sim_instrument_test name source)
     add_executable(${name} ${source} OwnedAllocationHooks.cpp)
     target_include_directories(${name} PRIVATE
         "${CORE_DIR}"
-        "${SIM_DIR}"
-        "${CMAKE_CURRENT_SOURCE_DIR}/../desktop/Source")
+        "${SIM_DIR}")
     target_compile_definitions(${name} PRIVATE FROGGERS_OWNED_ALLOCATION_INSTRUMENT=1)
 endfunction()
 

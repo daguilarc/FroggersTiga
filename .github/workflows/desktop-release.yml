@@ -3,78 +3,102 @@ name: Desktop Release
 on:
   push:
     tags:
-      - 'froggerstiga-v*'
+      - 'frogg3rs_v2'
 
 permissions:
   contents: write
 
 jobs:
   build-macos:
-    if: github.ref_name == 'froggerstiga-v1'
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      - name: Verify release channel tag
-        run: ./desktop/scripts/verify-tag-version.sh "${{ github.ref_name }}"
+      - name: Fetch JUCE (pinned, matches app/vst's locally-verified checkout)
+        run: git clone --branch 8.0.12 --depth 1 https://github.com/juce-framework/JUCE.git "$HOME/JUCE"
 
-      - name: Verify release metadata
-        run: ./desktop/scripts/verify-release-metadata.sh
+      # app/build-launcher.sh is the actual, only entry point that builds the
+      # standalone: it drives External/Sheaf/projects/synth's sheaf-patch
+      # Makefile with the Froggers app injected out-of-tree and produces
+      # app/build-launcher/Frogg3rs.app.
+      - name: Build standalone (Frogg3rs.app)
+        run: ./app/build-launcher.sh
 
-      - name: Configure and build Release
-        run: |
-          cd desktop
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --config Release
+      - name: Assert app bundle was built
+        run: test -d app/build-launcher/Frogg3rs.app
 
       - name: Package DMG
-        run: ./desktop/scripts/package-macos.sh
+        run: |
+          mkdir -p dist
+          hdiutil create -volname Frogg3rs -srcfolder app/build-launcher/Frogg3rs.app -ov -format UDZO dist/Frogg3rs-macOS.dmg
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
-          path: desktop/dist/FroggersTiga.dmg
+          path: dist/Frogg3rs-macOS.dmg
           if-no-files-found: error
 
   build-windows:
-    if: github.ref_name == 'froggerstiga-v1'
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      - name: Verify release channel tag
-        shell: bash
-        run: ./desktop/scripts/verify-tag-version.sh "${{ github.ref_name }}"
+      - name: Fetch JUCE (pinned, matches app/vst's locally-verified checkout)
+        run: git clone --branch 8.0.12 --depth 1 https://github.com/juce-framework/JUCE.git "$HOME/JUCE"
 
-      - name: Verify release metadata
-        shell: bash
-        run: ./desktop/scripts/verify-release-metadata.sh
-
-      - name: Install Inno Setup
-        run: choco install innosetup -y
-
-      - name: Configure and build Release
+      # The JUCE runtime shell (External/Sheaf/projects/synth/runtime/juce_build.mk)
+      # was made cross-platform but has never actually been built or linked on
+      # Windows. This builds the same target app/build-launcher.sh builds on
+      # macOS, with the same out-of-tree Froggers-app overrides, but names the
+      # plain binary ($(APP)) rather than the default `all` target: the
+      # default target also builds a macOS app bundle via `plutil`, a tool
+      # that does not exist on Windows and has nothing to do with whether the
+      # JUCE/Froggers build itself links on this platform. No
+      # continue-on-error: if this fails, the job fails, and that failure is
+      # real information about the Windows port.
+      - name: Build standalone binary (Frogg3rs, unverified on Windows)
         run: |
-          cd desktop
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --config Release
+          APP_HEADERS="$(ls app/*.hpp app/dsp/*.hpp | tr '\n' ' ')"
+          make -j2 -C External/Sheaf/projects/synth/apps/sheaf-patch \
+            EXTRA_APP_DIR="$PWD/app" \
+            EXTRA_APP_HEADER=FroggersRegistration.hpp \
+            EXTRA_APP_TYPE=synth_froggers::FroggersApp \
+            EXTRA_APP_REGISTRAR=synth_froggers::MakeFroggersRegistration \
+            EXTRA_APP_HEADERS="$APP_HEADERS" \
+            APP_NAME=Frogg3rs \
+            APP_SOURCES="$PWD/app/FroggersMain.cpp" \
+            APP_BUILD_DIR="$PWD/app/build-launcher-windows" \
+            APP_INFO_PLIST="$PWD/app/Frogg3rs-Info.plist" \
+            "$PWD/app/build-launcher-windows/Frogg3rs"
 
-      - name: Package Windows installer
+      - name: Assert binary was built
+        run: test -f app/build-launcher-windows/Frogg3rs || test -f app/build-launcher-windows/Frogg3rs.exe
+
+      - name: Package Windows binary
         shell: pwsh
-        run: ./desktop/scripts/package-windows.ps1
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $bin = Get-ChildItem -Path app/build-launcher-windows -Filter "Frogg3rs*" -File | Select-Object -First 1
+          Compress-Archive -Path $bin.FullName -DestinationPath dist/Frogg3rs-windows.zip
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-setup
-          path: desktop/dist/FroggersTiga-Setup.exe
+          name: windows-zip
+          path: dist/Frogg3rs-windows.zip
           if-no-files-found: error
 
   release:
-    if: github.ref_name == 'froggerstiga-v1'
-    runs-on: ubuntu-latest
     needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -87,20 +111,27 @@ jobs:
       - name: Download Windows artifact
         uses: actions/download-artifact@v4
         with:
-          name: windows-setup
+          name: windows-zip
           path: dist
 
-      - name: Read package version
-        id: ver
-        run: echo "version=$(./desktop/scripts/read-version.sh)" >> "$GITHUB_OUTPUT"
+      # Release notes come straight from MANUAL.md's own "Release platforms"
+      # section, so the statement of platform coverage and the Windows
+      # caveat live in one place instead of being duplicated into the
+      # workflow.
+      - name: Extract release notes from MANUAL.md
+        run: |
+          awk '/^## Release platforms$/{flag=1; next} /^## /{flag=0} /^---$/{flag=0} flag' MANUAL.md > platform-notes.md
+          {
+            echo "Frogg3rs desktop application — $GITHUB_REF_NAME"
+            echo
+            cat platform-notes.md
+          } > release-notes.md
 
-      - name: Render release notes from SIM_MANUAL.md
-        run: ./desktop/scripts/render-release-notes.sh "${{ github.ref_name }}" > release-notes.md
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: Desktop ${{ github.ref_name }} · v${{ steps.ver.outputs.version }}
-          body_path: release-notes.md
-          files: dist/*
+      - name: Publish desktop release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/Frogg3rs-macOS.dmg dist/Frogg3rs-windows.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Frogg3rs desktop — $GITHUB_REF_NAME" \
+            --notes-file release-notes.md

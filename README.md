@@ -309,7 +309,6 @@ cd web && npm run build:wasm    # verifies exports after copy
 - Default **44.1 kHz** (`audioContext.sampleRate`)
 - **Mic** toggle default **off** (VCO-only until enabled)
 
-**Help docs:** `SIM_MANUAL.md` (sim operators for this frozen web/desktop-v1 surface — embedded in
 desktop/web Help → Manual). `MANUAL.md` and `QUICK_DICT.md` now document the current Sheaf app under
 `app/` (Daisy Field firmware is documented separately in `DAISY_MANUAL.md`, repository only, not shipped to sim hosts) —
 they no longer describe this frozen web sim's own parameter layout.
@@ -351,7 +350,6 @@ Links `src/core/` + `DesktopHostIO` only (no libDaisy). Transport bar: **Play/St
 
 **Release packages:** See [`desktop/PACKAGING.md`](desktop/PACKAGING.md) for DMG / Windows installer commands. Move tag `froggerstiga-v1` on `main` (force-push) to trigger `.github/workflows/desktop-release.yml` and publish assets on [GitHub Releases](https://github.com/daguilarc/frogg3rs/releases).
 
-Parameter and host UX reference for this frozen desktop-v1 surface: [`SIM_MANUAL.md`](SIM_MANUAL.md).
 `QUICK_DICT.md` now documents the current Sheaf app under `app/` rather than this surface's own
 parameter layout — see the note on `QUICK_DICT.md` in the browser-simulator section above; the desktop-v1
 app's own embedded **FroggersTiga → Quick Dict** menu entry (line above) still bundles whatever copy was

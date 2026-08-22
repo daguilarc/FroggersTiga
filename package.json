@@ -1,15 +1,5 @@
 {
   "name": "froggers-tiga",
   "private": true,
-  "version": "1.0.4",
-  "description": "Froggers Tiga — open repo root; npm scripts delegate to web/",
-  "scripts": {
-    "dev": "npm --prefix web run dev",
-    "build": "npm --prefix web run build",
-    "build:all": "npm --prefix web run build:all",
-    "build:wasm": "npm --prefix web run build:wasm",
-    "preview": "npm --prefix web run preview",
-    "test:e2e": "npm --prefix web run test:e2e",
-    "verify:host-display": "npm --prefix web run verify:host-display"
-  }
+  "version": "1.0.4"
 }
