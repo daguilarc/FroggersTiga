@@ -18,6 +18,27 @@ target that builds the JUCE runtime shell. Never above `-j2`, always `nice`.
       (`pages.yml:65-67`), not `docs/`. Confirm both again at execution time
       by searching for the INVOCATION, by bare name as well as by path, before
       deleting anything.
+- [ ] 0.3 Delete the one-off measurement harnesses in `app/`:
+      `FroggersBadgeCriterionRepro.cpp`, `FroggersCrunchyBlowupRepro.cpp`,
+      `FroggersLimiterPumpingRepro.cpp`, `FroggersRandomizeAllRepro.cpp`,
+      `FroggersReverbTankMechanismRepro.cpp`, `FroggersStopFlushRepro.cpp`,
+      `FroggersStopSustainRepro.cpp`. These are not tests. Each was built once
+      to measure one question that is now answered, and each says so in its own
+      header. Six have no build rule; `FroggersStopFlushRepro` has one at
+      `app/Makefile:131-134` whose comment states it is deliberately not in the
+      `test` target. Remove that rule with the file.
+      Check each header before deleting: if one documents a measurement whose
+      result is not recorded anywhere else, move that result into the test or
+      comment that now covers it rather than losing it with the file.
+- [ ] 0.4 Untrack the compiled firmware output committed under `src/`:
+      `src/Blink/build/`, `src/FroggersTiga/build/`, `src/TestControl/build/`
+      — 13 files of `.bin`, `.elf`, `.map`, `.o`, `.d`. Build output does not
+      belong in version control. If `src/` is retired by 10.6 these go with the
+      tree and this item is already satisfied; if it stays, untrack them and
+      add the build directories to `.gitignore`. Sequence this after 10.6's
+      per-tree decision so the same files are not deleted twice.
+      The two build files under `External/libDaisy` are vendored and stay.
+
 - [ ] 0.2 Report what else the sweep of the release surface turns up —
       `desktop/scripts/verify-release-metadata.sh` and
       `verify-tag-version.sh` are invoked only by the v1-gated job and may be
@@ -116,7 +137,7 @@ change meet:
 Every "traced 2026-08-20" list is re-verified before anything is deleted — a
 consumer added since would make it wrong, and 10.5 says so itself.
 
-- [ ] 10.0 BEFORE ANY OTHER ITEM IN THIS GROUP: declare the spec deltas this
+- [x] 10.0 BEFORE ANY OTHER ITEM IN THIS GROUP: declare the spec deltas this
       group needs. Retiring `SIM_MANUAL.md` touches three capabilities that
       name it — `sim-operator-doc-parity`, `froggers-host-master`,
       `global-strip-marbles-label` — and this change declares deltas for
