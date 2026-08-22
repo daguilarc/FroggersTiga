@@ -14,6 +14,23 @@ target that builds the JUCE runtime shell; and the browser e2e suite, whose
 - [ ] 0.1 Sweep the packaging surface. `app/build-launcher.sh` and the release
       workflows are the tree this change touches; report dead steps, stale
       paths, and anything naming a tree the last change retired.
+- [ ] 0.2 Remove the retired host's code from `sim/`. Retiring `desktop/` broke
+      `sim/OwnedAllocation_test.cpp`, and rather than letting the test go with
+      the tree it tested, `HostParameterPendingStore.hpp`,
+      `HostParameterInventory.hpp` and `HostParameterRouting.hpp` were copied
+      out of `desktop/Source` into `sim/` to keep it compiling. That import is
+      the thing to undo: a test whose subject no longer ships is not a test to
+      preserve.
+      Traced: those three headers are referenced only by each other and by
+      `OwnedAllocation_test.cpp`. The firmware does not use them — the two
+      matches in `src/core/PagedHostIO.hpp:68` and
+      `src/core/DesktopHostIO.hpp:317` are comments naming a desktop-v2 class,
+      not includes. Everything else `sim/` includes resolves to `src/core` or
+      to `sim/` itself.
+      Re-verify that trace before deleting, then remove the test, the three
+      headers, and the target in `sim/CMakeLists.txt` that builds it. The rest
+      of `sim/` simulates the Daisy firmware and is not touched; confirm its
+      remaining targets still build afterwards and report the count.
 
 ## 1. The macOS bundle carries a signature that matches itself
 
