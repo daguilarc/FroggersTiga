@@ -26,7 +26,7 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       `$(APP_BUNDLE)` rule further down; `:44-45` cites `:152-154` for that
       same rule. Cite the rule or variable by name instead of by line: these
       point into a submodule, so every line number drifts when the pin moves.
-- [ ] 0.2 Retire the simulator surface: `vcv/`, `Rack-SDK/`, `sim/`, and the
+- [x] 0.2 Retire the simulator surface: `vcv/`, `Rack-SDK/`, `sim/`, and the
       `src/core` headers that only the simulator compiles.
       The narrower version of this task claimed "the rest of `sim/` simulates
       the Daisy firmware and is not touched". That is false, and the same grep
@@ -219,7 +219,7 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       Establish the invocation for each by bare name as well as by path, then
       delete what has none, and edit the prose that named it in the same
       commit.
-- [ ] 0.6 The spec set stops describing software that is not here. Of 61 live
+- [x] 0.6 The spec set stops describing software that is not here. Of 61 live
       capability specs, 36 name a product deleted in `b9a8199` — "desktop v2",
       "web sim", "WASM sim", "desktop standalone". `openspec/specs/` is the
       current-truth set, so today it states requirements for trees the
