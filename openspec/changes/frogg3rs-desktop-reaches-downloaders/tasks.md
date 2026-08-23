@@ -159,6 +159,33 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       Establish the invocation for each by bare name as well as by path, then
       delete what has none, and edit the prose that named it in the same
       commit.
+- [ ] 0.6 The spec set stops describing software that is not here. Of 61 live
+      capability specs, 36 name a product deleted in `b9a8199` — "desktop v2",
+      "web sim", "WASM sim", "desktop standalone". `openspec/specs/` is the
+      current-truth set, so today it states requirements for trees the
+      repository does not contain. This is the inbound half of the previous
+      change's own retirement, and it lands here because this change is already
+      editing that directory.
+      One rule decides each spec, applied by reading it: strike every subject
+      that no longer exists, then ask whether a requirement survives.
+      - Nothing survives -> delete the spec directory. Roughly 26 are in this
+        state, among them `desktop-v2-grid-layout`, `desktop-v2-global-controls`,
+        `web-v2-parameter-subset` and `web-mobile-external-audio-routing`.
+      - A requirement survives because it also binds something that ships ->
+        keep the spec, strike the dead subject, leave the surviving requirement
+        otherwise untouched. `desktop-v2-audio-io` reads "Desktop v2 and VST v2
+        SHALL initialize audio output as stereo by default"; the VST ships, so
+        the requirement stays and only its dead half goes. Do NOT rewrite what
+        the surviving half requires — that is a claim about today's behavior and
+        it is not this task's to make.
+      - The behavior survives under a retired tree's NAME -> the spec is renamed
+        to what delivers it now, its text retargeted no further than the rename
+        demands.
+      Where a spec's own directory name carries the dead product, the rename is
+      part of the fix, not a cosmetic afterthought.
+      Report found versus changed, and list every spec by the branch it took.
+      Anything that does not fit the three branches is reported, not guessed.
+
 ## 1. Every shipped bundle carries a signature that matches itself
 
 - [ ] 1.1 Sign the app bundle as the LAST step of `app/build-launcher.sh` —
