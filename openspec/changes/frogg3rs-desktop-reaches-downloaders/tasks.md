@@ -106,10 +106,18 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       **0.2b DELETE.** `vcv/` and `Rack-SDK/` are working directories with
       nothing tracked — remove them from disk. `sim/` and the `src/core`
       headers (a) identified go as tracked deletions. Then the inbound half
-      from (c): the capability specs whose whole subject was VCV
-      (`vcv-cc-mod-gating`, `vcv-panel-silkscreen`,
-      `vcv-section-expander-architecture`) go with it; specs that merely carry
-      a VCV row or a sim aside keep, minus that row. Read each before editing —
+      from (c): four capability specs die with the tree, verified by reading
+      each. `vcv-cc-mod-gating`, `vcv-panel-silkscreen` and
+      `vcv-section-expander-architecture` are wholly about VCV.
+      `sim-pm3-knob-parity` names desktop standalone, web WASM and VCV
+      `PagedHostIO` as its hosts — all retired — and binds
+      `ParamDisplayNames::forHostPageRow` and `SetSimDedicatedPm3Knob`, both
+      in the tree being deleted.
+      `pair-ar-vcv-time-range` STAYS despite its name: VCV is the reference for
+      its endpoints, not its subject, and its requirement binds
+      `PairArEnvelope::kMinTimeSec` and `PhaseUtils::ExpParam::Compute` — src/core
+      code the relocated test now covers. Specs that merely carry a VCV row or
+      a sim aside keep, minus that row. Read each before editing —
       some describe a parity the firmware still holds, and only the attribution
       to a retired host goes.
       Guards whose sole target is being deleted go with it rather than being
