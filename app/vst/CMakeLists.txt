@@ -138,6 +138,28 @@ foreach(FROGGERS_VST_FORMAT VST3 AU)
     endif()
 endforeach()
 
+# Signing must be the LAST step for both formats, after the doc-copy loop
+# above -- not merely present. JUCE's own _juce_adhoc_sign (JUCEUtils.cmake)
+# is attached to the VST3 target as part of juce_add_plugin() above, which
+# runs BEFORE this file's own doc-copy POST_BUILD commands were registered,
+# so JUCE's signature seals the VST3 bundle before MANUAL.md/QUICK_DICT.md
+# land in it -- the same "signed before assembly finished" defect the app
+# bundle had. AU gets no JUCE signature at all: _juce_adhoc_sign is wired to
+# VST3 and LV2 targets only (JUCEUtils.cmake:1001,1237), never to AU, so
+# Frogg3rs.component ships ad-hoc-linker-signed with no sealed resources.
+# Both are fixed the same way: sign again, last, after everything is in the
+# bundle, and verify before the build is allowed to succeed.
+foreach(FROGGERS_VST_FORMAT VST3 AU)
+    if(TARGET FroggersVst_${FROGGERS_VST_FORMAT})
+        add_custom_command(TARGET FroggersVst_${FROGGERS_VST_FORMAT} POST_BUILD
+            COMMAND codesign --force --deep --sign - "$<TARGET_BUNDLE_DIR:FroggersVst_${FROGGERS_VST_FORMAT}>"
+            COMMAND codesign --verify --deep --strict "$<TARGET_BUNDLE_DIR:FroggersVst_${FROGGERS_VST_FORMAT}>"
+            COMMENT "app/vst: signing and verifying ${FROGGERS_VST_FORMAT} bundle after assembly"
+            VERBATIM
+        )
+    endif()
+endforeach()
+
 target_sources(FroggersVst PRIVATE
     FroggersPluginProcessor.cpp
     # The real portable-surface editor. Needs

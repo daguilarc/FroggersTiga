@@ -71,3 +71,15 @@ cp "$REPO_ROOT/app/Resources/Icon.icns" "$APP_BUNDLE_DIR/Contents/Resources/Icon
 # the next build with nothing to re-sync.
 cp "$REPO_ROOT/MANUAL.md" "$APP_BUNDLE_DIR/Contents/Resources/MANUAL.md"
 cp "$REPO_ROOT/QUICK_DICT.md" "$APP_BUNDLE_DIR/Contents/Resources/QUICK_DICT.md"
+
+# Signing must be the LAST step, after every file above has landed in the
+# bundle: the linker already ad-hoc-signed the raw binary, but that signature
+# covers only the binary, not the assembled bundle -- juce_build.mk's
+# $(APP_BUNDLE) rule copies the binary and Info.plist in afterward with no
+# re-sign, and this script then adds the icon and docs on top of that. A
+# bundle whose signature does not cover its own contents is what macOS calls
+# damaged, not unsigned, once a download carries com.apple.quarantine.
+# Re-signing here replaces the linker's partial signature with one that seals
+# everything actually in Contents/, verified below rather than assumed.
+codesign --force --deep --sign - "$APP_BUNDLE_DIR"
+codesign --verify --deep --strict "$APP_BUNDLE_DIR"

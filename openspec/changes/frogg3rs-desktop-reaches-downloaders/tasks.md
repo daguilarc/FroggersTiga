@@ -246,7 +246,7 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
 
 ## 1. Every shipped bundle carries a signature that matches itself
 
-- [ ] 1.1 Sign the app bundle as the LAST step of `app/build-launcher.sh` —
+- [x] 1.1 Sign the app bundle as the LAST step of `app/build-launcher.sh` —
       after `juce_build.mk`'s `$(APP_BUNDLE)` rule has copied in the binary and
       `Info.plist`, AND after `:62-71` copies `Icon.icns`, `MANUAL.md` and
       `QUICK_DICT.md` into `Contents/Resources/`. Measured on a copy of the
@@ -255,7 +255,7 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       afterwards fails it with `a sealed resource is missing or invalid`.
       Signing after the plist but before those copies swaps one broken verdict
       for another. Task 2.1 edits `MANUAL.md`, which is one of them.
-- [ ] 1.2 Sign the AU bundle in `app/vst/CMakeLists.txt` after JUCE assembles
+- [x] 1.2 Sign the AU bundle in `app/vst/CMakeLists.txt` after JUCE assembles
       it. Measured: `Frogg3rs.component` is `adhoc,linker-signed`,
       `Info.plist=not bound`, `Sealed Resources=none` and fails
       `codesign --verify`, while `Frogg3rs.vst3` beside it is sealed and
