@@ -201,7 +201,7 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       pre-Sheaf VST plugin (`FroggersTigaPluginV2`, never built) or the
       already-deleted `sim/` tree; nothing in it survived. See 0.6's own
       recorded result and the commit that carries it.
-- [ ] 0.4 `README.md:6-9` lists `desktop/`, `desktop-v2/`, `sim/`, `src/`,
+- [x] 0.4 `README.md:6-9` lists `desktop/`, `desktop-v2/`, `sim/`, `src/`,
       `wasm/`, `vcv/`, `web/` as frozen trees "kept in the tree,
       byte-identical". Four of those seven — `desktop/`, `desktop-v2/`,
       `wasm/`, `web/` — no longer exist, deleted by the last change; `vcv/` has
