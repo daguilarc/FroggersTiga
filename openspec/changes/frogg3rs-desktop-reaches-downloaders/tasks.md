@@ -183,7 +183,7 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       Establish the invocation for each by bare name as well as by path, then
       delete what has none, and edit the prose that named it in the same
       commit.
-- [ ] 0.6 The spec set stops describing software that is not here. Of 61 live
+- [x] 0.6 The spec set stops describing software that is not here. Of 61 live
       capability specs, 36 name a product deleted in `b9a8199` — "desktop v2",
       "web sim", "WASM sim", "desktop standalone". `openspec/specs/` is the
       current-truth set, so today it states requirements for trees the
@@ -209,6 +209,86 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       part of the fix, not a cosmetic afterthought.
       Report found versus changed, and list every spec by the branch it took.
       Anything that does not fit the three branches is reported, not guessed.
+      **0.6 RESULT (recorded 2026-08-22, verified against the tree and against
+      what `src/core/` actually wires into the Daisy firmware, not just against
+      spec prose).** 43 specs deleted (branch 1), 5 kept with the dead subject
+      struck (branch 2), 13 already clean, 0 renamed (branch 3 — no spec's
+      surviving behavior turned out to live under a retired tree's name; where
+      a doc file had been split in two, e.g. `MANUAL.md` into `MANUAL.md` +
+      `DAISY_MANUAL.md`, that was handled as a branch-2 reference fix inside
+      `field-operator-doc-parity`, not a directory rename). `openspec validate
+      --all --strict` passes: 19 items, 0 failed.
+      Branch 1 (deleted): `audio-pair-ar-desktop-ui`, `audio-pair-ar-engine`,
+      `audio-pair-ar-web-ui`, `desktop-host-panel-column-order`,
+      `desktop-midi-cc-display`, `desktop-v2-adsr-page`,
+      `desktop-v2-boot-host-sync`, `desktop-v2-center-global-cluster`,
+      `desktop-v2-control-core`, `desktop-v2-encoder-rings`,
+      `desktop-v2-global-controls`, `desktop-v2-grid-layout`,
+      `desktop-v2-midi-cv-input`, `desktop-v2-mod-source-grid`,
+      `desktop-v2-modulator-visualizers`, `desktop-v2-module-column-layout`,
+      `desktop-v2-module-expansion`, `desktop-v2-page-carousel`,
+      `desktop-v2-performance-band-chrome`, `desktop-v2-scope-visualization`,
+      `desktop-v2-sequencing`, `froggers-host-master`,
+      `froggers-v2-app-manifest`, `froggers-v2-controller-configuration`,
+      `froggers-v2-product-contract`, `froggers-v2-review-options`,
+      `froggers-v2-runtime-audio-configuration`, `froggers-v2-sheaf-runtime`,
+      `global-strip-marbles-label`, `midi-cc-mod-gating`, `midi-cc-to-mod-cv`,
+      `mod-led-level-meter`, `mod-rack-dual-midi-jacks`,
+      `pair-ar-modulated-knob-display`, `pair-ar-randomize`,
+      `pair-ar-rotated-desktop-labels`, `pair-ar-vcv-time-range`,
+      `web-midi-mod-rack`, `web-mobile-external-audio-routing`,
+      `web-mobile-global-strip-placement`, `web-mobile-knob-labels`,
+      `web-playwright-e2e`, `web-v2-parameter-subset`. `froggers-v2-*` named
+      the same abandoned desktop-v2/VST-v2 convergence as the `desktop-v2-*`
+      specs, under a different filename — caught only by reading them, exactly
+      as flagged. `audio-pair-ar-engine` and its four `pair-ar-*`/
+      `audio-pair-ar-*` UI siblings looked salvageable (pair-AR's DSP still
+      compiles into `FroggersEngine`) until `SetAudioPairArState` traced to
+      zero call sites outside the deleted sim hosts — the pointer stays null on
+      every shipping build, so the pair-AR engine is dead weight, not dormant
+      firmware behavior.
+      Branch 2 (kept, dead subject struck): `desktop-v2-audio-io` (the given
+      worked example — dropped the `v2-stereo-default-desktop` and runtime-page
+      requirements, which had no VST content to preserve; kept
+      `v2-vst-bus-layout` verbatim). `external-ring-mod-mix` (struck
+      "desktop, web WASM" from the one scenario naming hosts, keeping "Daisy
+      Field" — confirmed live: `MixExternalAndOsc` runs unconditionally in
+      `FroggersEngine::ProcessBlock`, not behind a host gate).
+      `mod-blend-semantics` (the crossfade formula is genuinely live on Daisy —
+      `FroggersEngine::Config` wires `m_modMgr` unconditionally and
+      `DaisyIO.hpp` drives `m_externalCvActive` from real hardware CV presence
+      — but "Delay sidecar"/"DelayState" is a sim-only module with no
+      `src/core` counterpart and "on desktop and web" UI display is dead, so
+      three requirements built entirely on those were dropped and "Delay"
+      mentions struck from the two that survived). `froggers-sheaf-runtime-app`
+      (its one frozen-tree requirement named `desktop-v2/`, `desktop/`,
+      `wasm/`, and `web/` alongside `src/`; the first four are gone outright
+      rather than frozen, so they were struck along with the now-vacuous
+      "vendored slice" scenario checking a `desktop-v2/` path that cannot
+      resolve; `src/` stayed, since not modifying the Daisy firmware is still
+      real). `field-operator-doc-parity` (the Field manual it describes moved
+      from `MANUAL.md` to a dedicated `DAISY_MANUAL.md` sometime after this
+      spec was written — re-verified against the current file, table and all;
+      the "Quick dict mirrors stay aligned" requirement assumed three
+      duplicate glossary files, `QUICK_DICT.md` plus two under deleted
+      `docs/`/`web/public/`, and `QUICK_DICT.md` no longer carries Field
+      glosses at all — it just points at `DAISY_MANUAL.md` — so that
+      requirement was dropped rather than patched to one file it no longer
+      describes).
+      Unchanged (found, no dead subject): `field-button-input-latency`,
+      `frogg3rs-distribution`, `froggers-app-surface-layout`,
+      `froggers-browser-package`, `froggers-filter-transfer-visualizers`,
+      `froggers-fuegoization`, `froggers-marbles-modulator`,
+      `froggers-modulation-slate`, `froggers-sheaf-parameter-model`,
+      `froggers-transport-and-reset-controls`, `froggers-vco-topology`,
+      `froggers-vst-host`, `froggers-web-host`.
+      Nothing fit outside the three branches.
+      Cross-task collision, reported not guessed: deleting `froggers-host-master`
+      moots task 0.3 (its whole scope was that spec's now-gone verification
+      section) and deleting `mod-led-level-meter` + `web-playwright-e2e` moots
+      the "two live specs" `web/` references task 0.5 names — 0.3 and 0.5 were
+      left unchecked for whoever runs them to confirm, not silently completed
+      here.
 
 ## 1. Every shipped bundle carries a signature that matches itself
 
