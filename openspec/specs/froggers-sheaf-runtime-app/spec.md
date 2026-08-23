@@ -1,7 +1,7 @@
 # froggers-sheaf-runtime-app Specification
 
 ## Purpose
-Froggers satisfies `synth::SynthApplication`; it runs under Sheaf Runtime via `sheaf-patch` launcher registration and under the browser host via the browser app entry macro, with a JUCE-free app core and the legacy desktop-v2/desktop/src/wasm/web trees left frozen.
+Froggers satisfies `synth::SynthApplication`; it runs under Sheaf Runtime via `sheaf-patch` launcher registration and under the browser host via the browser app entry macro, with a JUCE-free app core and the Daisy firmware under `src/` left untouched.
 
 ## Requirements
 ### Requirement: Froggers is a Sheaf SynthApplication
@@ -31,24 +31,6 @@ The same app type SHALL be hostable in the Sheaf browser/patcher host via the br
 - **WHEN** the browser build is produced from the same app type as the desktop build
 - **THEN** no host-specific branching exists in the app core
 - **THEN** both hosts drive the identical `ProcessBlock` and `PortableSurface`
-
-### Requirement: Frozen legacy trees
-This capability SHALL NOT modify `desktop-v2/`, `desktop/`, `src/`, `wasm/`, or `web/`. Outside the new app tree, only the submodule declaration and the existing Pages workflow may change. The app SHALL consume Sheaf only through the `External/Sheaf` submodule and SHALL NOT resolve Sheaf headers through the frozen vendored slice under `desktop-v2/`.
-
-#### Scenario: Daisy firmware is unaffected
-- **WHEN** the full change is applied
-- **THEN** no file under `src/` (including the Daisy firmware) differs from its recorded pre-change baseline
-- **THEN** the Daisy firmware's raw binary image artifact hash matches its recorded baseline
-- **THEN** the other tracked firmware build artifacts are excluded from this hash comparison because they embed the absolute build path and would differ for that reason alone, not because they are unimportant
-
-#### Scenario: Verification does not itself write to a frozen tree
-- **WHEN** the frozen-tree proof is performed
-- **THEN** the firmware is built to a scratch location outside the repository trees
-- **THEN** the tracked build artifacts under `src/` are left untouched by the verification
-
-#### Scenario: Vendored slice is not referenced
-- **WHEN** the app is compiled
-- **THEN** no Sheaf header resolves through `desktop-v2/External/Sheaf`
 
 ### Requirement: Operator documentation ships with the app
 THE app SHALL carry its manual and quick dictionary locally in every host

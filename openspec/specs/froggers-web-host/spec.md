@@ -1,7 +1,7 @@
 # froggers-web-host Specification
 
 ## Purpose
-The same Sheaf app browser build replaces the public Froggers website; the legacy web and wasm trees go dormant (unmodified, no longer built or deployed); publication is gated on the repository rename, which does not affect operator-visible product naming.
+The same Sheaf app browser build replaces the public Froggers website; the legacy web and wasm trees have been retired entirely; publication is gated on the repository rename, which does not affect operator-visible product naming.
 ## Requirements
 ### Requirement: The new app is the public web build
 The published Froggers website SHALL be served by the new Sheaf app's browser build. The previously deployed web application SHALL no longer be built or deployed. The same app type SHALL serve the desktop host, the Sheaf launcher package, and the public site, with no host-specific branching in the app core.
@@ -15,20 +15,6 @@ The published Froggers website SHALL be served by the new Sheaf app's browser bu
 - **WHEN** the desktop build, the Sheaf catalog package, and the public site are compared
 - **THEN** all three are produced from the same app type
 - **THEN** the app core contains no branch selecting between them
-
-### Requirement: The legacy web and wasm trees are superseded, not edited
-This change SHALL stop building and deploying the legacy web and wasm trees, and SHALL NOT modify them. Their deletion, and the removal of the shared-engine flags that exist to serve them, belong to a separate retirement change.
-
-#### Scenario: Legacy trees go dormant, not deleted
-- **WHEN** this change is applied
-- **THEN** no file under the legacy web or wasm trees differs from its baseline
-- **THEN** the deployment pipeline no longer builds or publishes them
-
-#### Scenario: The shared engine is untouched
-- **WHEN** this change is applied
-- **THEN** the shared engine's host-kind flags remain in place and unmodified
-- **THEN** the Daisy firmware's raw binary image artifact is unchanged, verified against its recorded baseline
-- **THEN** build artifacts that embed the build path are excluded from that comparison
 
 ### Requirement: Publication is gated on the repository rename
 No public build SHALL be committed, pushed, or released under the old repository name. The repository SHALL be renamed first, so that the site URL, the published catalog URL, and the package artifact URLs are all minted under the new name and never have to be reissued.
@@ -77,8 +63,8 @@ manual link pointing at the manual that documents the published app.
 
 ### Requirement: Playwright layout regression for the published site
 THE repository SHALL provide a Playwright suite for the new site — its
-own harness, since the legacy `web/` tree and its suite stay dormant and
-byte-identical — with mobile-emulated and desktop-emulated tests
+own harness, since the legacy `web/` tree and its suite are gone — with
+mobile-emulated and desktop-emulated tests
 asserting the mobile stacking scenario and the link roles without
 starting audio, runnable in CI before any deploy.
 
@@ -102,8 +88,8 @@ while the live site stays untouched until merge.
 ### Requirement: Parameter controls are legible before audio starts
 WHEN the published site loads, THE parameter controls SHALL show their
 names and current values without requiring the visitor to press Play or
-interact at all, matching the guarantee the predecessor site made
-(`web-mobile-knob-labels`). Audio SHALL still not start without a user
+interact at all, matching the guarantee the retired web sim's mobile
+layout made. Audio SHALL still not start without a user
 gesture.
 
 #### Scenario: Knobs are readable on arrival
