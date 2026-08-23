@@ -2,9 +2,10 @@
 # Builds the sheaf-patch launcher with the Froggers app injected out-of-tree.
 #
 # EXTRA_APP_HEADERS must list EVERY header the app compiles: the sheaf-patch
-# Makefile uses them as literal prerequisites (Makefile:47-48) and generates no
-# -MMD/-MP dependency files, so an unlisted header is untracked and edits to it
-# produce a build that succeeds while silently ignoring the change.
+# Makefile uses them as literal prerequisites on the EXTRA_APP_HEADERS variable
+# and generates no -MMD/-MP dependency files, so an unlisted header is
+# untracked and edits to it produce a build that succeeds while silently
+# ignoring the change.
 # Globbing keeps that list from rotting -- a hand-written list
 # tracked 4 of 18 headers, missing all of app/dsp/.
 set -euo pipefail
@@ -22,8 +23,9 @@ APP_HEADERS="$(ls "$REPO_ROOT"/app/*.hpp "$REPO_ROOT"/app/dsp/*.hpp | tr '\n' ' 
 # instead of the picker (Main.cpp). APP_BUILD_DIR also moves our build
 # artifacts out of the External/Sheaf submodule and into our own tree.
 #
-# APP_INFO_PLIST must be overridden TOGETHER WITH APP_NAME: juce_build.mk:154
-# copies the plist verbatim with no templating, so leaving sheaf-patch's plist
+# APP_INFO_PLIST must be overridden TOGETHER WITH APP_NAME: juce_build.mk's
+# $(APP_BUNDLE) rule copies the plist verbatim with no templating, so leaving
+# sheaf-patch's plist
 # in place ships a bundle whose CFBundleExecutable (SheafPatch) names a binary
 # that does not exist (Frogg3rs). A Finder double-click then fails while
 # running the binary directly still works, so the breakage hides from any
@@ -41,7 +43,7 @@ nice make -j2 -C External/Sheaf/projects/synth/apps/sheaf-patch \
   "$@"
 
 # Icon: the launcher build should use the same logo as the v1 build, but
-# juce_build.mk's bundle rule (:152-154) has no
+# juce_build.mk's $(APP_BUNDLE) rule has no
 # icon/resource step at all -- it only mkdir's Contents/MacOS and copies the
 # binary and Info.plist, so Contents/Resources/ does not exist after the make
 # above runs. app/Frogg3rs-Info.plist's CFBundleIconFile (see that file's own

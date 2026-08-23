@@ -15,7 +15,7 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
 
 ## 0. Hygiene
 
-- [ ] 0.1 Sweep the packaging surface: `app/build-launcher.sh`,
+- [x] 0.1 Sweep the packaging surface: `app/build-launcher.sh`,
       `app/vst/CMakeLists.txt` and the three release workflows. Report dead
       steps, stale paths, and anything naming a tree the last change retired.
       Two things are already known to be in it and are fixed here:
