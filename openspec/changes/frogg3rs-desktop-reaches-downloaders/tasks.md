@@ -263,20 +263,20 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       to the copy-plugin step, and to no AU target — read in
       `JUCEUtils.cmake:962-980,1001,1237,1364`, not inferred from the one
       build. Both bundles are release assets of `vst-plugin.yml`.
-- [ ] 1.3 Every bundle a release ships passes
+- [x] 1.3 Every bundle a release ships passes
       `codesign --verify --deep --strict`, and `spctl --assess --type execute`
       returns a verdict rather than an error. Enumerate the bundles from the
       workflows that publish them, not from memory: `Frogg3rs.app`,
       `Frogg3rs.vst3`, `Frogg3rs.component`. Both commands are one line;
       neither was ever run on any of the three.
-- [ ] 1.4 Gate it, at the build entry points rather than in the workflows, so a
+- [x] 1.4 Gate it, at the build entry points rather than in the workflows, so a
       local build fails the same way CI does. A bundle whose signature does not
       match its contents fails the build rather than reaching a release.
       POSITIVE CONTROL required: show the gate failing on a deliberately
       unsigned or mis-assembled bundle, and separately on a bundle signed
       before its resources are copied in, since that is the failure this
       change's own fix could reintroduce.
-- [ ] 1.5 Verify against a real download, not a local build. Apply
+- [x] 1.5 Verify against a real download, not a local build. Apply
       `com.apple.quarantine` to the packaged `.dmg` and to the packaged plugin
       zips, and report what `spctl --assess` says for each. A locally built
       bundle carries no quarantine, which is precisely why this defect survived
