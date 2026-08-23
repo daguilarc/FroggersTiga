@@ -303,7 +303,7 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
 
 ## 3. Windows
 
-- [ ] 3.1 Trace and report before writing anything, and before choosing a build
+- [x] 3.1 Trace and report before writing anything, and before choosing a build
       system. Four things, all readable today:
       (a) what `juce_build.mk` assembles for the standalone — sources, defines,
       include paths, link flags — and what its existing Windows branches
@@ -323,6 +323,48 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       `git show b9a8199^:.github/workflows/desktop-release.yml`. Note that
       `app/vst/CMakeLists.txt` requests `FORMATS VST3 AU` and AU is Apple-only,
       so it is JUCE's CMake that is cross-platform, not that file as written.
+      **3.1 RESULT (recorded 2026-08-22, from the real GitHub Actions run
+      history via `gh run list`/`gh run view --log-failed`, not from the
+      proposal's own account).**
+      (b) is corrected: five `frogg3rs_v2` runs exist, not three, and
+      `build-windows` has failed in every one. The most recent
+      (run `32585757125`, macOS build and release both succeeded the same run)
+      is a real compiler failure, not plumbing: `x86_64-w64-mingw32-g++`
+      rejects JUCE's own headers —
+      `juce_UMPFactory.h:303,324`: `'memcpy' is not a member of 'std'`;
+      `juce_Memory.h:44`: `'memset' was not declared in this scope`;
+      `juce_FloatVectorOperations.cpp:47` and `juce_HashMap.h:61`: a pointer
+      cast to `juce::pointer_sized_int`/`pointer_sized_uint` "loses precision"
+      because that type resolves to 32-bit `int` on what is a 64-bit MinGW
+      target (`x86_64-w64-mingw32`). This is JUCE's own vendored header code,
+      pinned and not ours to patch, failing under a compiler JUCE does not
+      primarily test against. Earlier plumbing failures were real and are
+      already fixed — three of the five runs' own commit messages record
+      exactly that ("take Sheaf's Windows-safe filenames", "correct two paths
+      only a real run could expose") — so this MinGW/JUCE incompatibility is
+      what remains once the plumbing was cleared, not a symptom of it.
+      (a) confirmed unchanged from the file as read: `CXX ?= clang++` is the
+      default, and the runner's `g++` invocation shows nothing in this
+      Makefile overrides it to `clang-cl`/`cl.exe` on Windows, so the MinGW
+      branch of `juce_build.mk`'s own link-flag switch is the one running —
+      exactly as that file's comments anticipated, and exactly the branch
+      hitting JUCE's MinGW gaps.
+      (c) and (d) confirmed as written: `app/vst/CMakeLists.txt` builds
+      `libsynth.a` via Sheaf's own Makefile and links the archive; the v1
+      `desktop/CMakeLists.txt` precedent used `juce_add_gui_app` with a real
+      MSVC branch, and CMake's default Windows generator resolves to MSVC
+      (`cl.exe`), not MinGW.
+      **3.1 DECISION.** CMake, not further Makefile porting. The blocker is
+      not a path or an invocation this repository controls — it is MinGW g++
+      hitting gaps in JUCE's own headers that a CMake-driven MSVC build
+      (JUCE's actively-tested Windows toolchain, and what both the deleted
+      v1 precedent and the live `app/vst/CMakeLists.txt` already use) is not
+      expected to hit at all. Continuing to patch the Makefile would mean
+      debugging vendored JUCE source under a compiler it was never the
+      primary target for; task 3.2 builds the standalone the same way
+      `app/vst/CMakeLists.txt` already builds the plugin — Sheaf's Makefile
+      producing `libsynth.a`, linked by a small CMake target that lets CMake
+      pick MSVC on Windows.
 - [ ] 3.2 On that trace, choose: finish the Makefile's Windows port, or give
       the standalone a CMake build. Report the reason. Either way the result
       produces the same application `build-launcher.sh` produces on macOS —
