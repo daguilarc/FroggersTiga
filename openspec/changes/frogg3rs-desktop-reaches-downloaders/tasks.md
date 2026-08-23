@@ -133,6 +133,30 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       resolves. Report found versus changed for every category.
       `sim/Fuegoize.hpp`'s divide-by-zero at full fuego is not repaired: it
       leaves with the tree that carried it.
+      **0.2d POSTFLIGHT FIX — what the removal made dead.** The postflight
+      found live `src/core` code whose last callers were the deleted shims, and
+      §13.0 fixes what the sweep finds inside the change rather than listing it.
+      Verified against the tree:
+      `Page::ConfigureV2Fuego` (`src/core/Page.hpp:133`) has no callers; the
+      only other mention is a comment at `:18` describing it.
+      `AudioPairArState::setV2FuegoConfig` (`AudioPairArState.hpp:159`) has no
+      callers, and it is the only writer of `m_hostKind` (`:162`), so that field
+      is now permanently its `SimHostKind::Desktop` default (`:194`). Therefore
+      `AudioPairArState.hpp:179`'s `UsesV2Fuego(m_hostKind)` is always false and
+      the V2 fuego path behind it is unreachable.
+      That reaches further, and the trace decides how far rather than this text:
+      `UsesV2Fuego` is true only for `DesktopV2`, `VstV2` and `Web`
+      (`SimModSource.hpp:31,36`), and every surviving caller of the
+      `SimHostKind` predicates passes `Desktop` literally (`:55`, `:65`,
+      `Page.hpp:432`). Establish whether any reachable path can still carry a
+      non-`Desktop` kind. If none can, the parameter, the enum's other values,
+      and the branches on them at `SimModSource.hpp:82,135` are unreachable too,
+      and they go — a branch nothing can enter is the dead-gate rot this sweep
+      exists to remove, and it still passes review by looking like logic.
+      Do not delete beyond what the trace proves unreachable, and report found
+      versus changed. `test/firmware` compiles `Page.hpp`, `AudioPairArState.hpp`
+      and `SimModSource.hpp` through `FroggersEngine`, so it is the gate: 3/3
+      before and after.
 
 - [ ] 0.3 `openspec/specs/froggers-host-master/spec.md`'s verification section
       cannot survive 0.2: it names `OwnedAllocation_test` and
