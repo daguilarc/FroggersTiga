@@ -12,20 +12,8 @@ function(add_firmware_test name source)
 endfunction()
 
 # This target asserts the Daisy firmware's DSP directly out of src/core, with
-# only src/core on the include path. It stays free of any host shim so it
-# keeps compiling regardless of what happens to the simulator tree.
-#
-# Two of the simulator's assertions are deliberately absent.
-#
-# V2IndependentPm_test's only assertion of live firmware behavior is a
-# flag-off golden-pin check, and that check only compiles against
-# DesktopHostIO and PagedHostIO. Keeping those host shims around to preserve
-# one assertion is worse than losing the assertion.
-#
-# Fuegoize_test compared the simulator's free-function fuegoize against the
-# firmware's inline one in Parameter::Get and asserted the two agree. The
-# firmware has no fuegoize header of its own, so with the simulator copy gone
-# the comparison has nothing on its other side.
+# only src/core on the include path, so it compiles with nothing else in the
+# repository present.
 
 add_firmware_test(HookIdentity_test HookIdentity_test.cpp)
 add_firmware_test(ModMgr_test ModMgr_test.cpp)
