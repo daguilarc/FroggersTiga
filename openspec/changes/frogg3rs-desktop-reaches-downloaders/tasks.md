@@ -194,15 +194,13 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       confirming LTO had not already stripped this at compile time and the
       removal reached the shipped binary.
 
-- [ ] 0.3 `openspec/specs/froggers-host-master/spec.md`'s verification section
-      cannot survive 0.2: it names `OwnedAllocation_test` and
-      `WasmSimHostMalloc_test`, both of which leave with `sim/`. The rest of
-      that block is already stale independently: the block runs `cd web && npm run ...`
-      against a `web/` directory that is not in the repository and a root
-      `package.json` that declares no scripts, and it names
-      `HostParameterProcessor_test`, a ctest target that exists nowhere in the
-      tree. Fix the whole block or delete it; do not leave a verification
-      section that cannot be run.
+- [x] 0.3 Moot: 0.6 deleted `openspec/specs/froggers-host-master/spec.md`
+      wholesale, not just its verification section. The trace for that
+      deletion is broader than this task anticipated — every requirement in
+      the file, not only the verification block, described either the
+      pre-Sheaf VST plugin (`FroggersTigaPluginV2`, never built) or the
+      already-deleted `sim/` tree; nothing in it survived. See 0.6's own
+      recorded result and the commit that carries it.
 - [ ] 0.4 `README.md:6-9` lists `desktop/`, `desktop-v2/`, `sim/`, `src/`,
       `wasm/`, `vcv/`, `web/` as frozen trees "kept in the tree,
       byte-identical". Four of those seven — `desktop/`, `desktop-v2/`,
