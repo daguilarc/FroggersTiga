@@ -7,7 +7,6 @@
 #include <cmath>
 #include "RGen.hpp"
 #include "ModMgr.hpp"
-#include "SimModSource.hpp"
 
 struct ParameterName
 {
@@ -214,15 +213,6 @@ struct Parameter
         {
             m_modIndex = static_cast<uint8_t>(rgen.RangeGen(ModMgr::x_numMods));
         }
-    }
-
-    void RandomizeModSim(float currentKnobPosition,
-                         const CvMidiBridge& bridge,
-                         SimHostKind hostKind)
-    {
-        RGen rgen;
-        m_modAmount = rgen.UniGenRange(0, 1.0f);
-        m_modIndex = DrawAssignableModLane(rgen, bridge, hostKind);
     }
 
     void PageDeSelect(float knobValue)

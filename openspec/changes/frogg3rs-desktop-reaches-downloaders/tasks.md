@@ -157,6 +157,42 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       versus changed. `test/firmware` compiles `Page.hpp`, `AudioPairArState.hpp`
       and `SimModSource.hpp` through `FroggersEngine`, so it is the gate: 3/3
       before and after.
+      **0.2d RESULT (executed 2026-08-22, verified against the tree).** The
+      trace went further than "possibly unreachable" to "provably so": grepping
+      every construction of a `SimHostKind` value repo-wide finds exactly three,
+      all the literal `Desktop` — nothing anywhere ever constructs `Web`, `Vst`,
+      `Vcv`, `DesktopV2` or `VstV2`. Every function taking a `hostKind` parameter
+      is therefore reachable with only one value, always, which made the whole
+      abstraction collapsible rather than merely one branch prunable.
+      Removed: `SimHostKind` (the enum), `SimModSource` (the enum, plus
+      `CoreIndexToSimModSource`/`SimModSourceToCoreIndex`, both already
+      zero-caller), `IsV2SimHostKind`, `UsesV2Fuego`, `DrawAssignableModLane`,
+      `IsSimModSourceAvailable` (`SimModSource.hpp`); `V2FuegoFns` and its three
+      function-pointer typedefs, `Page::ConfigureV2Fuego`,
+      `Page::ApplyV2MusicalFuego`, `Page::GetParamV2`, `Page::GetPreFuegoValue`,
+      `Page::RandomizePageModSim`, `Page::RandomizeAllPagesModSim`, and the six
+      `Page` member fields only those methods touched (`Page.hpp`);
+      `AudioPairArState::randomizeMod`, `AudioPairArState::setV2FuegoConfig`,
+      `m_hostKind`, `m_audioPageForFuego`, and the dead half of `blendKnob`
+      (`AudioPairArState.hpp`); `Parameter::RandomizeModSim` (`Parameter.hpp`).
+      `IsSimAssignableModIndex`/`IsValidSimModAssignment` collapsed to their
+      1-arg forms — their only surviving callers already passed `Desktop`
+      either as a literal or through the 1-arg convenience overload — and
+      `Page.hpp:432`'s call site updated to match. `#include "CvMidiBridge.hpp"`
+      dropped from `AudioPairArState.hpp` and `SimModSource.hpp`; the
+      `SimModSource.hpp` include dropped from `Parameter.hpp`, which no longer
+      calls anything in it.
+      Verified, not assumed: `git grep` for every removed symbol name, repo-wide,
+      returns one hit — a comment in `app/FroggersAppCore.hpp` already phrased in
+      the past tense ("used to mirror"), which stays accurate as written.
+      `test/firmware` 3/3 before and after. The real gate is the firmware
+      itself, which `app/`'s suite is not — `app/check_no_frozen_includes.sh`
+      forbids `app/**` from including `src/core` at all, so that suite was
+      never going to move either way. `src/FroggersTiga` (the actual Daisy
+      target) built clean on the ARM cross-compiler before and after, and
+      shrank measurably: `dec` 279164 -> 278412 bytes, 752 bytes smaller,
+      confirming LTO had not already stripped this at compile time and the
+      removal reached the shipped binary.
 
 - [ ] 0.3 `openspec/specs/froggers-host-master/spec.md`'s verification section
       cannot survive 0.2: it names `OwnedAllocation_test` and

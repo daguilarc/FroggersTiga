@@ -9,49 +9,12 @@
 
 struct PageManager;
 
-// V2-fuego modulation is implemented outside this header (PermanentModTapRack,
-// V2LaneDepthStore, V2FuegoStack/Fuegoize) but Page must stay compilable by
-// firmware targets that never need those types (Daisy) -- Page
-// never enables V2Fuego there, so it never needs the complete V2Fuego types,
-// only an opaque pointer + a small bundle of function pointers to call
-// through. Callers that DO need V2Fuego supply the real typed
-// implementation via ConfigureV2Fuego; see V2LaneDepthStore.hpp's
-// ApplyV2FuegoOpaque and V2FuegoStack.hpp's
-// ApplyGlobal/ApplyMusicalRow (the latter two take only primitives, so they
-// are passed directly as function pointers -- no opaque wrapper needed).
-using V2FuegoApplyFn = float (*)(float knobValue,
-                                 uint8_t modIndex,
-                                 float modAmount,
-                                 uint8_t pageId,
-                                 uint8_t position,
-                                 const void* taps,
-                                 const void* laneDepths);
-using V2FuegoGlobalFn = float (*)(float value, float globalCrunchy, uint8_t row);
-using V2FuegoMusicalRowFn = float (*)(float value,
-                                      float globalCrunchy,
-                                      float crispyKnobPreFuego,
-                                      uint8_t row,
-                                      uint8_t crispyRow);
-
-struct V2FuegoFns
-{
-    V2FuegoApplyFn apply = nullptr;
-    V2FuegoGlobalFn applyGlobal = nullptr;
-    V2FuegoMusicalRowFn applyMusicalRow = nullptr;
-};
-
 struct Page
 {
     static constexpr size_t x_numParameters = Parameter::x_numParameters;
     uint8_t m_pageId;
     Parameter m_parameters[x_numParameters];
     ModMgr* m_modMgr;
-    bool m_useV2Fuego = false;
-    float* m_globalCrunchy = nullptr;
-    const void* m_v2ModTaps = nullptr;
-    const void* m_v2LaneDepths = nullptr;
-    V2FuegoFns m_v2Fuego{};
-    uint8_t m_v2CrispyRow = static_cast<uint8_t>(Parameter::x_numParameters - 1);
 
     void InitParam(const char* name, uint8_t position, float defaultValue)
     {
@@ -60,10 +23,6 @@ struct Page
 
     float GetParam(uint8_t position) const
     {
-        if (m_useV2Fuego)
-        {
-            return GetParamV2(position);
-        }
         return m_parameters[position].Get(m_modMgr);
     }
 
@@ -130,32 +89,6 @@ struct Page
         }
     }
 
-    void ConfigureV2Fuego(float* globalCrunchy,
-                          uint8_t crispyRow,
-                          const void* v2ModTaps,
-                          const V2FuegoFns& fns,
-                          const void* v2LaneDepths = nullptr)
-    {
-        m_useV2Fuego = true;
-        m_globalCrunchy = globalCrunchy;
-        m_v2CrispyRow = crispyRow;
-        m_v2ModTaps = v2ModTaps;
-        m_v2Fuego = fns;
-        m_v2LaneDepths = v2LaneDepths;
-    }
-
-    float ApplyV2MusicalFuego(float preFuegoValue, uint8_t row) const
-    {
-        if (!m_useV2Fuego || !m_v2Fuego.applyMusicalRow)
-        {
-            return preFuegoValue;
-        }
-        const float globalCrunchy = m_globalCrunchy ? *m_globalCrunchy : 0.0f;
-        const float crispyKnobPre = GetPreFuegoValue(m_v2CrispyRow);
-        return m_v2Fuego.applyMusicalRow(
-            preFuegoValue, globalCrunchy, crispyKnobPre, row, m_v2CrispyRow);
-    }
-
     void KnobUpdate(uint8_t position, float knobPosition, uint8_t modIndex)
     {
         if (modIndex == 255)
@@ -166,46 +99,6 @@ struct Page
         {
             m_parameters[position].ModUpdate(modIndex, knobPosition);
         }
-    }
-
-private:
-    float GetPreFuegoValue(uint8_t position) const
-    {
-        if (position >= x_numParameters)
-        {
-            return 0.0f;
-        }
-        const Parameter& param = m_parameters[position];
-        if (m_useV2Fuego && m_v2Fuego.apply && m_v2ModTaps)
-        {
-            return m_v2Fuego.apply(param.m_knobValue,
-                                   param.m_modIndex,
-                                   param.m_modAmount,
-                                   m_pageId,
-                                   position,
-                                   m_v2ModTaps,
-                                   m_v2LaneDepths);
-        }
-        if (!m_modMgr || param.m_modIndex == 255)
-        {
-            return param.m_knobValue;
-        }
-        if (param.m_modIndex <= 6)
-        {
-            return m_modMgr->Modulate(param.m_knobValue, param.m_modIndex, param.m_modAmount);
-        }
-        return param.m_knobValue;
-    }
-
-    float GetParamV2(uint8_t position) const
-    {
-        const float value = GetPreFuegoValue(position);
-        if (position == m_v2CrispyRow || position >= x_numParameters)
-        {
-            const float globalCrunchy = m_globalCrunchy ? *m_globalCrunchy : 0.0f;
-            return m_v2Fuego.applyGlobal ? m_v2Fuego.applyGlobal(value, globalCrunchy, position) : value;
-        }
-        return ApplyV2MusicalFuego(value, position);
     }
 };
 
@@ -350,23 +243,6 @@ struct PageManager
         }
     }
 
-    void RandomizePageModSim(uint8_t page, const CvMidiBridge& bridge, SimHostKind hostKind)
-    {
-        for (size_t j = 0; j < Parameter::x_numParameters; j++)
-        {
-            float knobPos = m_pages[page].m_parameters[j].m_knobValue;
-            m_pages[page].m_parameters[j].RandomizeModSim(knobPos, bridge, hostKind);
-        }
-    }
-
-    void RandomizeAllPagesModSim(const CvMidiBridge& bridge, SimHostKind hostKind)
-    {
-        for (uint8_t i = 0; i < m_numPages; i++)
-        {
-            RandomizePageModSim(i, bridge, hostKind);
-        }
-    }
-
     void ClearModRoutesForIndex(uint8_t modIndex)
     {
         for (uint8_t p = 0; p < m_numPages; p++)
@@ -429,7 +305,7 @@ struct PageManager
     {
         Parameter& param = m_pages[page].m_parameters[position];
         const bool valid = modIndex == 255
-            || IsSimAssignableModIndex(modIndex, SimHostKind::Desktop)
+            || IsSimAssignableModIndex(modIndex)
             || IsPermanentModSourceIndex(modIndex);
         if (!valid)
         {

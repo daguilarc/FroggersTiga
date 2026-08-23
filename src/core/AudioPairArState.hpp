@@ -1,6 +1,5 @@
 #pragma once
 
-#include "CvMidiBridge.hpp"
 #include "ModMgr.hpp"
 #include "Page.hpp"
 #include "RGen.hpp"
@@ -113,16 +112,6 @@ struct AudioPairArState
         return getEffectiveKnob(index, m_modMgr);
     }
 
-    void randomizeMod(const CvMidiBridge& bridge, SimHostKind hostKind)
-    {
-        RGen rgen;
-        for (uint8_t i = 0; i < kCount; i++)
-        {
-            modDepth[i] = rgen.UniGenRange(0.0f, 1.0f);
-            modSource[i] = DrawAssignableModLane(rgen, bridge, hostKind);
-        }
-    }
-
     void randomizeKnobs()
     {
         RGen rgen;
@@ -156,12 +145,6 @@ struct AudioPairArState
         }
     }
 
-    void setV2FuegoConfig(const Page* audioPage, SimHostKind hostKind)
-    {
-        m_audioPageForFuego = audioPage;
-        m_hostKind = hostKind;
-    }
-
     std::array<float, kCount> knobs{};
     std::array<uint8_t, kCount> modSource{};
     std::array<float, kCount> modDepth{};
@@ -176,10 +159,6 @@ private:
             value = modMgr->Modulate(
                 knobValue, static_cast<int>(modSource[index]), modDepth[index]);
         }
-        if (m_audioPageForFuego && UsesV2Fuego(m_hostKind))
-        {
-            value = m_audioPageForFuego->ApplyV2MusicalFuego(value, index);
-        }
         return value;
     }
 
@@ -190,7 +169,5 @@ private:
 
     float m_sampleRate = 44100.0f;
     const ModMgr* m_modMgr = nullptr;
-    const Page* m_audioPageForFuego = nullptr;
-    SimHostKind m_hostKind = SimHostKind::Desktop;
     std::array<float, kCount> m_effectiveSmoothed{};
 };
