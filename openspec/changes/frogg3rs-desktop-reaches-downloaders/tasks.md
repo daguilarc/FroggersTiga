@@ -208,7 +208,7 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       zero tracked files and reaches nobody who clones the repository, and
       `README.md:347` already says so. This is that change's own unswept
       inbound half. Name only what is there.
-- [ ] 0.5 `scripts/` is 499 lines across seven `.mjs` files and nothing invokes
+- [x] 0.5 `scripts/` is 499 lines across seven `.mjs` files and nothing invokes
       any of them: no workflow, no Makefile, and the root `package.json` has no
       `scripts` key at all. Five of the seven read or write paths under `web/`,
       which is gone — `web/src/hostDisplay.generated.ts`,

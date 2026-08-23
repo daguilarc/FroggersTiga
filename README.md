@@ -314,8 +314,6 @@ desktop/web Help → Manual). `MANUAL.md` and `QUICK_DICT.md` now document the c
 `app/` (Daisy Field firmware is documented separately in `DAISY_MANUAL.md`, repository only, not shipped to sim hosts) —
 they no longer describe this frozen web sim's own parameter layout.
 
-**Host page labels:** `sim/ParamDisplayNames.hpp` and `sim/HostPanelLayout.hpp` are the authorities; `web/src/hostDisplay.generated.ts` is generated for instant UI labels. `node scripts/generate-host-display.mjs --check` runs on every web build and e2e run.
-
 **Publish:** GitHub **Settings → Pages → branch `main` / `/docs`**. CI: `pages.yml` deploys the web sim; repo hygiene and browser regression checks are local commands documented in `docs/CI.md`.
 
 ## Desktop simulator (JUCE)
