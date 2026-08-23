@@ -9,14 +9,14 @@
 
 struct PageManager;
 
-// V2-fuego modulation is implemented in sim/ (PermanentModTapRack,
+// V2-fuego modulation is implemented outside this header (PermanentModTapRack,
 // V2LaneDepthStore, V2FuegoStack/Fuegoize) but Page must stay compilable by
-// firmware targets that never put sim/ on their include path (Daisy) -- Page
-// never enables V2Fuego there, so it never needs the complete sim/ types,
+// firmware targets that never need those types (Daisy) -- Page
+// never enables V2Fuego there, so it never needs the complete V2Fuego types,
 // only an opaque pointer + a small bundle of function pointers to call
-// through. Callers that DO need V2Fuego (desktop-v2, VST, web, VCV, sim
-// tests) supply the real typed implementation via ConfigureV2Fuego; see
-// sim/V2LaneDepthStore.hpp's ApplyV2FuegoOpaque and V2FuegoStack.hpp's
+// through. Callers that DO need V2Fuego supply the real typed
+// implementation via ConfigureV2Fuego; see V2LaneDepthStore.hpp's
+// ApplyV2FuegoOpaque and V2FuegoStack.hpp's
 // ApplyGlobal/ApplyMusicalRow (the latter two take only primitives, so they
 // are passed directly as function pointers -- no opaque wrapper needed).
 using V2FuegoApplyFn = float (*)(float knobValue,

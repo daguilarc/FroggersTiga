@@ -8,7 +8,7 @@ Desktop v2 SHALL provide global randomization actions, global **Crunchy**, and *
 
 #### Scenario: Preserved v1 randomization buttons
 - **WHEN** desktop v2 renders the top chrome stack global-command band at 1280×920
-- **THEN** Rand All, Rand Mods, Rand waveforms, and Rand Resample are present and invoke the same `DesktopHostIO` mutations as v1 (adapted for ADSR and global Crunchy)
+- **THEN** Rand All, Rand Mods, Rand waveforms, and Rand Resample are present and invoke the same host mutations as v1 (adapted for ADSR and global Crunchy)
 
 #### Scenario: Crunchy encoder in global-command band
 - **WHEN** desktop v2 renders the top chrome stack global-command band

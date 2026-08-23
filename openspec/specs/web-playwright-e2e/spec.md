@@ -5,7 +5,7 @@ Require CI Playwright coverage that builds WASM, serves the web sim, and exercis
 ## Requirements
 ### Requirement: Playwright runs on web changes in CI
 
-The repository SHALL include a CI workflow that builds WASM, builds the web sim preview, and runs `npm run test:e2e` when files under `web/`, `wasm/`, or `sim/` change.
+The repository SHALL include a CI workflow that builds WASM, builds the web sim preview, and runs `npm run test:e2e` when files under `web/` or `wasm/` change.
 
 #### Scenario: Web PR triggers e2e
 
@@ -14,7 +14,7 @@ The repository SHALL include a CI workflow that builds WASM, builds the web sim 
 
 #### Scenario: WASM change triggers e2e
 
-- **WHEN** a pull request modifies `wasm/` or `sim/` sources that affect the engine
+- **WHEN** a pull request modifies `wasm/` sources that affect the engine
 - **THEN** CI rebuilds WASM and runs Playwright tests
 
 #### Scenario: Non-web changes skip e2e

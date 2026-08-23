@@ -15,7 +15,7 @@ Carousel and desktop-v2 host callback lambdas SHALL capture the `HostCallbackCon
 #### Scenario: Page change after construction
 
 - **WHEN** the user changes carousel page after the main window is shown
-- **THEN** `pushSelectPage` runs with a valid `DesktopHostIO&` and `syncToHost` completes without memory access faults
+- **THEN** `pushSelectPage` runs with a valid host reference and `syncToHost` completes without memory access faults
 
 ### Requirement: HostedMainComponentV2 callback parity
 
@@ -69,7 +69,7 @@ The desktop-v2 test target SHALL include a unit test that wires carousel callbac
 
 ### Requirement: Global Crunchy sync uses valid host object
 
-`FroggersV2HostBridge::syncToHost` SHALL call `DesktopHostIO::SetGlobalCrunchy` only through a `DesktopHostIO&` that refers to `AudioEngine::m_host` for the active audio engine instance.
+`FroggersV2HostBridge::syncToHost` SHALL call the host's `SetGlobalCrunchy` only through the host reference that refers to `AudioEngine::m_host` for the active audio engine instance.
 
 #### Scenario: Crunchy write after visible-row knob loop
 

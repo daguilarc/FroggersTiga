@@ -9,7 +9,7 @@ The host engine SHALL compute each modulated parameter's effective value (0–1)
 
 `effective = clamp(base × (1 − depth) + modSource × depth, 0, 1)`
 
-where `base` is the stored knob value, `depth` is mod amount, and `modSource` is the current sample on mod bus index `modIndex`. This is a **crossfade**, not `base × modSource` (VCV-style attenuator).
+where `base` is the stored knob value, `depth` is mod amount, and `modSource` is the current sample on mod bus index `modIndex`. This is a **crossfade**, not `base × modSource` (a multiplicative attenuator).
 
 All sim hosts SHALL implement this via `ModMgr::Modulate` (not duplicated inline crossfade math) for page rows and Delay sidecar rows.
 

@@ -1,7 +1,7 @@
 # pair-ar-randomize Specification
 
 ## Purpose
-Include all four pair-AR knobs in Audio page randomize, global Rand Mods, and host randomize parity across desktop, web, WASM, and VCV.
+Include all four pair-AR knobs in Audio page randomize, global Rand Mods, and host randomize parity across desktop, web, and WASM.
 ## Requirements
 ### Requirement: Pair-AR knobs randomize with Audio page Randomize
 
@@ -49,16 +49,16 @@ When the operator triggers **global Rand All**, the system SHALL randomize pair-
 
 ### Requirement: Shared host orchestration
 
-Pair-AR randomize behavior SHALL be implemented once in shared host orchestration consumed by both `PagedHostIO` and `DesktopHostIO`; platform-specific duplicate randomize logic for pair-AR SHALL NOT exist.
+Pair-AR randomize behavior SHALL be implemented once in shared host orchestration common to every host implementation; platform-specific duplicate randomize logic for pair-AR SHALL NOT exist.
 
 #### Scenario: Single orchestration entry point
 
 - **WHEN** either host performs page or global randomize that affects pair-AR
-- **THEN** the mutation is routed through the shared helper that gates on `AudioPairArLayout::kAudioHostPage`
+- **THEN** the mutation is routed through the shared helper that gates on the Audio host page index
 
 ### Requirement: Unit test coverage
 
-The sim test suite SHALL include tests that verify pair-AR knob values change after Audio page randomize and global Rand All via `PagedHostIO`.
+Automated tests SHALL verify pair-AR knob values change after Audio page randomize and global Rand All.
 
 #### Scenario: Page randomize test
 

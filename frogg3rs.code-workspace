@@ -12,7 +12,6 @@
     "files.watcherExclude": {
       "**/node_modules/**": true,
       "**/.emsdk/**": true,
-      "**/sim/build/**": true,
       "**/wasm/build/**": true,
       "**/desktop/build/**": true
     }

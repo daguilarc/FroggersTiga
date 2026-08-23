@@ -29,7 +29,7 @@ Desktop v2 and VST v2 SHALL provide host page index 6 (ADSR module) with ten par
 - **THEN** ADSR row 9 Crispy is skipped (matching v1 FUEG exclusion)
 
 ### Requirement: v2-gated-adsr-per-vco
-On v2 hosts, each VCO SHALL have an independent **gated ADSR** envelope driven by rows 0–8 and a gate from MIDI note input, sequencer step gate, or `DesktopHostIO`.
+On v2 hosts, each VCO SHALL have an independent **gated ADSR** envelope driven by rows 0–8 and a gate from MIDI note input, sequencer step gate, or the host bridge.
 
 #### Scenario: Gate on triggers attack and sustain
 - **WHEN** the gate rises for VCO1

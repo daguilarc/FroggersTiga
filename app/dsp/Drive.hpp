@@ -285,7 +285,7 @@ struct SampleRateReducer
 // directly).
 //
 // FIX, NOT A REPRODUCTION: unlike
-// the fuegoize UB (sim/Fuegoize.hpp), which is carried forward
+// the fuegoize UB (the retired simulator's Fuegoize.hpp), which is carried forward
 // because the frozen tree also contains a *correct* reference (the
 // firmware's Parameter.hpp:143) to port instead, there is no such correct
 // reference here -- both PolynomialDrive.hpp:138 in the frozen `src/core/`
@@ -323,7 +323,7 @@ struct SampleRateReducer
 // PLAINLY: the frozen firmware (src/core/PolynomialDrive.hpp:125-163) has
 // this exact same f(0) != 0 behaviour -- it is a property of the original
 // bit-scramble math, not a porting error -- and no DC blocker or highpass
-// exists anywhere in this signal chain (src/core/, sim/, and app/ all
+// exists anywhere in this signal chain (src/core/ and app/ both
 // checked). On real hardware, an analog output stage AC-couples a DC offset
 // away for free, so this was inaudible on the original instrument; this
 // port has no such output stage, so without a fix nothing downstream ever

@@ -344,7 +344,7 @@ cmake -B build -DFROGGERS_JUCE_SOURCE_DIR=/path/to/JUCE
 
 This uses CMake `FetchContent`'s local source override and avoids silently depending on a live network fetch during configure.
 
-**VCV Rack (local-only, pre-launch):** `vcv/` is local-only and not built on CI. This surface remains under local validation and is intentionally absent from the public SIM manual until launch.
+**VCV Rack:** the local-only VCV Rack module build has been retired; `vcv/` no longer exists in the repository.
 
 Links `src/core/` + `DesktopHostIO` only (no libDaisy). Transport bar: **Play/Stop**, format toggles (**WAV/MP3/FLAC/OGG**), **Record** (stereo export), **MIDI**, **Audio**. **WAV** and **OGG** export work in default JUCE builds; **MP3** needs `JUCE_USE_MP3AUDIOFORMAT` + LAME at compile time; **FLAC** needs `JUCE_USE_FLAC`. macOS menu **FroggersTiga → Manual / Quick Dict / License** (embedded docs).
 
@@ -367,6 +367,6 @@ explicitly requested.
 
 Subagents are not allowed to run git commands. Any git inspection, staging, committing, branching, worktree setup, or pushing is handled only by the primary agent when explicitly requested.
 
-Shared DSP/control logic belongs in `src/core/` or `sim/` first. `src/common/` is a firmware compatibility layer; headers mirroring `src/core/<name>.hpp` stay as thin include wrappers, while firmware adapter files such as `App.hpp`, `DaisyIO.hpp`, and `Include.hpp` remain firmware-side exceptions.
+Shared DSP/control logic belongs in `src/core/` first. `src/common/` is a firmware compatibility layer; headers mirroring `src/core/<name>.hpp` stay as thin include wrappers, while firmware adapter files such as `App.hpp`, `DaisyIO.hpp`, and `Include.hpp` remain firmware-side exceptions.
 
 Existing build outputs under `src/FroggersTiga/build`, `src/TestControl/build`, and `src/Blink/build` are firmware-scoped leftovers, not host cleanup targets. A separate firmware cleanup should decide whether to keep, remove, or ignore them.

@@ -5,7 +5,7 @@ Froggers v2 declares shared product controls, projection overlays, the permanent
 
 ## Requirements
 ### Requirement: Froggers v2 manifest family authority
-Froggers v2 SHALL declare shared product controls plus desktop, VST/AU, and reserved VCV projection overlay fields through one manifest family. The product manifest SHALL own module pages, rows, ranges, defaults, stable IDs, display names, mod eligibility, MIDI assignment targets, exactly 16 sequencer snapshot slots, sequencer written/unwritten state, sequencer lock fields, scene support, clock sync declarations, sequencer direction/speed controls, and global randomization scene/step scope controls. Projection overlays SHALL declare context-specific visibility, host mapping, hardware controls, and layout groups.
+Froggers v2 SHALL declare shared product controls plus desktop and VST/AU projection overlay fields through one manifest family. The product manifest SHALL own module pages, rows, ranges, defaults, stable IDs, display names, mod eligibility, MIDI assignment targets, exactly 16 sequencer snapshot slots, sequencer written/unwritten state, sequencer lock fields, scene support, clock sync declarations, sequencer direction/speed controls, and global randomization scene/step scope controls. Projection overlays SHALL declare context-specific visibility, host mapping, hardware controls, and layout groups.
 
 #### Scenario: Manifest covers every visible module row
 - **WHEN** the manifest validation command runs
@@ -15,7 +15,7 @@ Froggers v2 SHALL declare shared product controls plus desktop, VST/AU, and rese
 #### Scenario: No duplicate structural tables
 - **WHEN** the OMNI duplicate-authority check scans desktop-v2 sources
 - **THEN** no independent hand-written table duplicates manifest-owned row labels, stable host IDs, MIDI target IDs, sequencer snapshot fields, or mod eligibility
-- **THEN** any desktop, VST/AU, or VCV variation is declared as a projection overlay rather than an untracked table
+- **THEN** any desktop or VST/AU variation is declared as a projection overlay rather than an untracked table
 
 #### Scenario: Manifest declares global randomization scope controls
 - **WHEN** manifest validation runs
@@ -36,11 +36,6 @@ Froggers v2 SHALL declare shared product controls plus desktop, VST/AU, and rese
 - **WHEN** the VST/AU projection overlay is validated
 - **THEN** hardware audio selectors, standalone MIDI device selectors, and standalone record/export controls are marked hidden
 - **THEN** host parameters still map to product-manifest stable control IDs
-
-#### Scenario: VCV overlay remains reserved in this change
-- **WHEN** manifest validation runs for this convergence change
-- **THEN** VCV overlay fields exist only as reserved schema entries
-- **THEN** no VCV runtime behavior, panel topology, Rack parameter IDs, MIDI boundary, CV semantics, or packaging behavior changes without a separate scoped VCV v2 change
 
 ### Requirement: Manifest projections are generated or checked by projection type
 The system SHALL generate mechanical manifest projections and verify platform-code projections before implementation is considered complete. Generated outputs SHALL include a sorted JSON snapshot and Markdown reviewer report. Checked platform outputs SHALL include desktop rows, host parameter inventory, controller targets, sequencer fields, and hosted projection behavior.

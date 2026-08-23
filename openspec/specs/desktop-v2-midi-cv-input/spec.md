@@ -8,7 +8,7 @@ Desktop v2 SHALL expose one primary MIDI input device selector for user-assignab
 
 #### Scenario: Pitch assignment from MIDI input
 - **WHEN** the user maps incoming MIDI note messages to Pitch CV on VCO1
-- **THEN** note number and velocity (per design) update the configured pitch target through `DesktopHostIO`
+- **THEN** note number and velocity (per design) update the configured pitch target through the host bridge
 - **THEN** v1 dual CC-pair MIDI Settings UI is not shown in v2
 
 #### Scenario: Gate assignment from MIDI input

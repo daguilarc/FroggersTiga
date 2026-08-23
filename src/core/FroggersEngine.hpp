@@ -774,7 +774,7 @@ struct FroggersEngine
         if (m_vcoAdsr && m_adsrParams)
         {
             // Task 7.5 (D15): per-VCO triplet row order (Attack, Sustain,
-            // Release) x3, matching V2EngineSetup::configureAdsrPage's
+            // Release) x3, matching the retired simulator's per-VCO ADSR page
             // InitParam layout below.
             v1 = m_vcoAdsr->apply(
                 0, v1, m_adsrParams->GetParam(0), m_adsrParams->GetParam(1), m_adsrParams->GetParam(2));

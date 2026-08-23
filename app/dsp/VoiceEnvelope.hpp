@@ -5,7 +5,7 @@
 //
 // Ported from:
 //   - src/core/VcoAdsrState.hpp (whole file, verbatim -- it already has no
-//     #include of src/, sim/, or desktop-v2/ paths of its own, so this is a
+//     #include of src/ or desktop-v2/ paths of its own, so this is a
 //     line-for-line copy under app/, not a shared header)
 //   - src/core/FroggersEngine.hpp:772-809 (MixOscVoices) -- specifically
 //     the `m_vcoAdsr && m_adsrParams` branch at :774-784, plus the plain
@@ -700,7 +700,7 @@ inline void ComputeVcoBalanceWeights(float knob01, float& w1, float& w2, float& 
 // state, so the frozen engine's `if (m_vcoAdsr && m_adsrParams)` guard has
 // no off-state here -- followed by the plain average return at :786-788.
 // adsr[v] rows are (attack, sustain, release) per voice, matching
-// V2EngineSetup::configureAdsrPage's per-VCO triplet row order.
+// the retired simulator's per-VCO ADSR page triplet row order.
 //
 // `balanceKnob01` (Audio slot 13): drives ComputeVcoBalanceWeights
 // above, replacing the old hardcoded equal-thirds average. Defaults to 0.5f

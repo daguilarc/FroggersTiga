@@ -2,7 +2,7 @@
 // TEST_CASE pins one ported unit to its cited Froggers formula. This TU
 // includes ONLY app/dsp/*.hpp (no Sheaf, no JUCE, no frozen-tree headers) --
 // the DSP port is dependency-free, and check_no_frozen_includes.sh
-// mechanically enforces that no file under app/ includes src/, sim/,
+// mechanically enforces that no file under app/ includes src/,
 // desktop-v2/, wasm/, vcv/, web/, or desktop/.
 //
 // Harness mirrors FroggersHeadlessTests.cpp's self-registering TEST_CASE /
@@ -1035,7 +1035,7 @@ TEST_CASE(short_gate_with_long_attack_and_active_grace_completes_attack_and_deca
 }
 
 // =========================================================================
-// 3.3 -- Envelope followers (sim/V2EnvelopeFollowerBank.hpp:22-25,30-35)
+// 3.3 -- Envelope followers (ported from the retired simulator's V2EnvelopeFollowerBank)
 // =========================================================================
 
 TEST_CASE(envelope_followers_coeffs_match_exp_formula) {
@@ -1216,8 +1216,8 @@ TEST_CASE(random_sh_locked_loop_source_replays_without_regenerating) {
 }
 
 // =========================================================================
-// 3.5 -- Fuegoize (sim/V2FuegoStack.hpp:9-23; parity target
-// src/core/Parameter.hpp:129-151, NOT sim/Fuegoize.hpp)
+// 3.5 -- Fuegoize (ported from the retired simulator's V2FuegoStack; parity target
+// src/core/Parameter.hpp:129-151, NOT the retired simulator's divide-by-zero Fuegoize copy)
 // =========================================================================
 
 namespace {
@@ -1239,7 +1239,7 @@ uint8_t ReferenceShAt256(uint8_t row) {
 // large `row` values (roughly >=31) that shift count reaches or exceeds a
 // 32-bit int's width, which is undefined behavior. That UB is a latent
 // property of the algorithm itself -- identical in the firmware's
-// Parameter.hpp:143-144 and in sim/Fuegoize.hpp -- not something this port
+// Parameter.hpp:143-144 and in the retired simulator's Fuegoize.hpp copy -- not something this port
 // introduces or fixes; it was hit and confirmed while drafting these tests
 // with an out-of-domain row=200 (finite-looking output at -O0, a mismatch
 // between two supposedly-identical calls at -O2). It is harmless in
@@ -1277,7 +1277,7 @@ TEST_CASE(fuegoize_zero_knob_is_passthrough) {
 }
 
 TEST_CASE(fuego_stack_apply_musical_row_warps_crispy_by_crunchy_first) {
-    // sim/V2FuegoStack.hpp:14-23: crispy is itself Crunchy-warped before use.
+    // The retired simulator's V2FuegoStack.hpp:14-23: crispy is itself Crunchy-warped before use.
     const float value = 0.6f;
     const float globalCrunchy = 0.7f;
     const float crispyPreFuego = 0.2f;
@@ -3357,8 +3357,8 @@ TEST_CASE(drive_blend_phase_static_phase_output_unchanged_by_smoothing_and_limit
 }
 
 // =========================================================================
-// 3.10 -- Delay (sim/StereoDelay.hpp whole file; sim/DelayState.hpp:165-198
-// row->DelayParams mapping and Color/Halo fold at :180-193). A full
+// 3.10 -- Delay (ported from the retired simulator's StereoDelay whole file, and
+// DelayState's row->DelayParams mapping and Color/Halo fold). A full
 // Froggers original exists for all nine params -- nothing here is authored.
 // =========================================================================
 
@@ -3586,7 +3586,7 @@ TEST_CASE(delay_wet_output_stays_at_or_below_limiter_ceiling_at_max_feedback) {
 // after construction/SetSampleRate, `writePos == 0`, so a call with a
 // large-enough delay time makes `readPos` in `ReadAt` negative -- the
 // "first ~delaySamples calls after construction" window the frozen
-// sim/StereoDelay.hpp:120 and this port's pre-fix code both hit undefined
+// the retired simulator's StereoDelay.hpp:120 and this port's pre-fix code both hit undefined
 // behavior on (a negative-float-to-size_t narrowing conversion). As with
 // Fix 1a, there is no correct frozen reference to port instead here -- the
 // frozen source has the identical UB -- so this is a fix, not a

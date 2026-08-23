@@ -7,16 +7,16 @@
 // CORRECTED SCOPE: an
 // earlier draft claimed 8 of 9 Delay-page params had no frozen original
 // because it searched only src/core/. A full original exists in
-// sim/DelayState.hpp + sim/StereoDelay.hpp (absent from src/core/ because
-// the delay is a sim/desktop feature the Daisy firmware never shipped).
+// the retired simulator's DelayState.hpp + StereoDelay.hpp (absent from src/core/ because
+// the delay is a feature only the retired simulator and desktop app had -- the Daisy firmware never shipped it).
 // All nine params are ported here; nothing on this page is newly authored.
 //
 // Ported from:
-//   - sim/StereoDelay.hpp (whole file) -- DelayParams, WetPair (renamed
+//   - the retired simulator's StereoDelay.hpp (whole file) -- DelayParams, WetPair (renamed
 //     DelayWetPair to avoid any collision), and StereoDelay::{setSampleRate,
 //     clearBuffers, process, toReverbMono, readAt, writeSample, wrapIndex,
 //     advanceWrite}, verbatim.
-//   - sim/DelayState.hpp:165-198 (processInsert) -- specifically the
+//   - the retired simulator's DelayState.hpp:165-198 (processInsert) -- specifically the
 //     row -> DelayParams mapping at :180-186 (dtim/dsnd/dfbk/dwid/ddet/
 //     dmod/dmix <- rows 0-6) and the Color/Halo folding at :187-193
 //     (`params.ddet = clamp(0.5*(ddet+color))`,
@@ -128,7 +128,7 @@ static_assert(kDelayWetLimiterThreshold < kDelayWetLimiterCeiling,
 inline constexpr float kDelayWetLimiterAttackSeconds = 2.0e-6f;   // 2 microseconds -- see comment above.
 inline constexpr float kDelayWetLimiterReleaseSeconds = kSharedReleaseSeconds;  // shared; see Limiter.hpp.
 
-// sim/StereoDelay.hpp:10-19, plus three fields added later that
+// the retired simulator's StereoDelay.hpp:10-19, plus three fields added later that
 // are not present in that frozen source -- see each field's own comment.
 struct DelayParams
 {
@@ -150,7 +150,7 @@ struct DelayParams
                         // per-channel DelayDiffuser on the wet tap -- see StereoDelay::Process() below.
 };
 
-// sim/StereoDelay.hpp:21-25 (WetPair).
+// the retired simulator's StereoDelay.hpp:21-25 (WetPair).
 struct DelayWetPair
 {
     float l = 0.0f;
@@ -398,7 +398,7 @@ struct DelayReverser
     float StateMagnitude() const { return std::fabs(elapsed); }
 };
 
-// sim/StereoDelay.hpp:27-157 (StereoDelay), verbatim.
+// the retired simulator's StereoDelay.hpp:27-157 (StereoDelay), verbatim.
 struct StereoDelay
 {
     static constexpr float kMaxDelaySeconds = 2.0f;
@@ -991,11 +991,11 @@ private:
     // construction/clear), `readPos` is negative, and casting a negative
     // float straight to `size_t` is a negative-float-to-unsigned
     // conversion the standard leaves unspecified/UB when the value is out
-    // of range -- identical to the frozen sim/StereoDelay.hpp:120.
+    // of range -- identical to the retired simulator's frozen StereoDelay.hpp:120.
     //
     // FIX, NOT A REPRODUCTION: as
     // with DigitalReorganizer::Process (Drive.hpp), there is no correct
-    // frozen reference to port here instead -- the frozen sim/StereoDelay.hpp
+    // frozen reference to port here instead -- the retired simulator's frozen StereoDelay.hpp
     // hits the identical UB, so carrying it forward would have no parity
     // value. The intended behavior during warm-up (documented above as
     // "confirmed harmless on this target -- correct silence, since the
@@ -1155,7 +1155,7 @@ private:
     float lfoInc = 0.0f;
 };
 
-// sim/DelayState.hpp:165-198 (processInsert): originally the row ->
+// the retired simulator's DelayState.hpp:165-198 (processInsert): originally the row ->
 // DelayParams mapping (:180-186) and the Color/Halo fold (:187-193).
 // REMOVED: the fold is gone -- every one of the nine rows below now maps
 // to exactly one DelayParams field, no two rows are combined, and row4/

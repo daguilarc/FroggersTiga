@@ -1,7 +1,7 @@
 # froggers-sheaf-runtime-app Specification
 
 ## Purpose
-Froggers satisfies `synth::SynthApplication`; it runs under Sheaf Runtime via `sheaf-patch` launcher registration and under the browser host via the browser app entry macro, with a JUCE-free app core and the legacy desktop-v2/desktop/src/sim/wasm/vcv/web trees left frozen.
+Froggers satisfies `synth::SynthApplication`; it runs under Sheaf Runtime via `sheaf-patch` launcher registration and under the browser host via the browser app entry macro, with a JUCE-free app core and the legacy desktop-v2/desktop/src/wasm/web trees left frozen.
 
 ## Requirements
 ### Requirement: Froggers is a Sheaf SynthApplication
@@ -33,7 +33,7 @@ The same app type SHALL be hostable in the Sheaf browser/patcher host via the br
 - **THEN** both hosts drive the identical `ProcessBlock` and `PortableSurface`
 
 ### Requirement: Frozen legacy trees
-This capability SHALL NOT modify `desktop-v2/`, `desktop/`, `src/`, `sim/`, `wasm/`, `vcv/`, or `web/`. Outside the new app tree, only the submodule declaration and the existing Pages workflow may change. The app SHALL consume Sheaf only through the `External/Sheaf` submodule and SHALL NOT resolve Sheaf headers through the frozen vendored slice under `desktop-v2/`.
+This capability SHALL NOT modify `desktop-v2/`, `desktop/`, `src/`, `wasm/`, or `web/`. Outside the new app tree, only the submodule declaration and the existing Pages workflow may change. The app SHALL consume Sheaf only through the `External/Sheaf` submodule and SHALL NOT resolve Sheaf headers through the frozen vendored slice under `desktop-v2/`.
 
 #### Scenario: Daisy firmware is unaffected
 - **WHEN** the full change is applied

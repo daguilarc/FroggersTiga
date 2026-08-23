@@ -14,4 +14,4 @@ Standalone desktop v2 previously placed global randomize actions, **Crunchy**, a
 
 #### Scenario: Center cluster host callbacks preserved through top band (RETIRED)
 - **WHEN** the operator invokes global controls from the global-command band
-- **THEN** the same control-core and `DesktopHostIO` mutations fire as the prior center-cluster projection
+- **THEN** the same control-core and host mutations fire as the prior center-cluster projection

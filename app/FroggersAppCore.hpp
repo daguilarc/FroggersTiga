@@ -1628,7 +1628,7 @@ private:
         // Peak freq/gain/Q -> ResonantBump, Comb delay/feedback/LP -> Comb,
         // Comb/Peak -> blend, Scoop -> scoopMix). The old `useParallel` bool
         // (which used to mirror `SetUseV2FilterParallel(UsesV2Fuego(hostKind))`,
-        // src/core/DesktopHostIO.hpp:330, always `true` for this app) has
+        // always `true` for this app) has
         // been replaced by the Filter slot-9 "Topology" knob, a continuous
         // morph -- see FilterFxChain::Process's own comment (FilterFx.hpp).
         // Clamped to `PureDelay::kSize` so a very high host sample rate
@@ -1767,14 +1767,12 @@ private:
         // -- Delay bank -> dsp::StereoDelay ---------------------
         // Positioned exactly where the frozen engine's `m_simFxInsert` hook
         // sits: FroggersEngine.hpp:840-843, between the filter chain
-        // (:824-839) and Reverb (:844-847) -- confirmed by
-        // `sim/WasmSimHost.hpp:34` (`io.m_engine.SetSimFxInsert(
-        // simDelayInsertCallback, &delay)`), which wires this exact ported
-        // unit's frozen counterpart (`DelayState::processInsert`,
-        // `sim/DelayState.hpp:165-198,334`) into that hook. `processInsert`'s
-        // own shape is `delay.process(bumpIn, params)` then
-        // `delay.toReverbMono(bumpIn, wet, params.dmix)` (:196-198),
-        // reproduced identically below.
+        // (:824-839) and Reverb (:844-847) -- confirmed by the retired
+        // simulator's `WasmSimHost`, which wired this exact ported unit's
+        // frozen counterpart (`DelayState::processInsert`) into that hook.
+        // `processInsert`'s own shape is `delay.process(bumpIn, params)` then
+        // `delay.toReverbMono(bumpIn, wet, params.dmix)`, reproduced
+        // identically below.
         // T2.2: row4Freeze (the Freeze KNOB, dsp::DelayParams::dfrz) goes
         // through stoppedKnob too -- kStopFreezeKnob (0.0f) while stopped,
         // regardless of the commanded knob -- distinct from the Freeze

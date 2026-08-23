@@ -22,11 +22,11 @@ Desktop v2 SHALL render source-indicator scope cells where envelope followers di
 - **THEN** the trace represents the envelope follower of `|VCO2 + VCO3|` (or documented sum-then-detect path from design)
 
 ### Requirement: v2-random-sh-gated-green-leds
-Random S&H sources SHALL NOT use oscilloscope cells; they SHALL use gated green LEDs with level-proportional brightness per `sim/ModLedBrightness.hpp`.
+Random S&H sources SHALL NOT use oscilloscope cells; they SHALL use gated green LEDs with level-proportional brightness driven by CV level and gate state.
 
 #### Scenario: Random S&H LED brightness curve
 - **WHEN** Random S&H 1 CV is 0.3 with audio running
-- **THEN** LED brightness equals `ModLedDisplayBrightness(0.3, true)`
+- **THEN** LED brightness follows the level-proportional curve for CV 0.3 with the gate active
 
 #### Scenario: EF scopes exclude Random S&H
 - **WHEN** the scope grid renders

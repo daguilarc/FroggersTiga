@@ -1,7 +1,7 @@
 # froggers-fuegoization Specification
 
 ## Purpose
-Global Crunchy and per-bank Crispy are applied on Sheaf's `ReplaceCachedKnobValue` parameter-filtering seam (between phase-1 and phase-2), preserving the Froggers Crunchy/Crispy cascade semantics and the Daisy firmware's defined transform rather than the divide-by-zero variant in `sim/Fuegoize.hpp`.
+Global Crunchy and per-bank Crispy are applied on Sheaf's `ReplaceCachedKnobValue` parameter-filtering seam (between phase-1 and phase-2), preserving the Froggers Crunchy/Crispy cascade semantics and the Daisy firmware's defined transform rather than the divide-by-zero variant the retired simulator carried in its own fuegoize copy.
 
 ## Requirements
 ### Requirement: Fuegoization is applied on the parameter filtering seam

@@ -2,11 +2,11 @@
 
 ## Purpose
 
-Canonical cross-host contract for Froggers Tiga **sim surfaces** (desktop standalone, web/WASM, VST/AU, VCV Rack) after `omni-repository-harmonization`. Use this document first for **what differs per host**; drill into linked baseline specs for scenario-level detail. Excludes Daisy Field firmware (`MANUAL.md`, `src/mk/`, libDaisy).
+Canonical cross-host contract for Froggers Tiga **sim surfaces** (desktop standalone, web/WASM, VST/AU) after `omni-repository-harmonization`. Use this document first for **what differs per host**; drill into linked baseline specs for scenario-level detail. Excludes Daisy Field firmware (`MANUAL.md`, `src/mk/`, libDaisy).
 ## Requirements
-### Requirement: Four sim hosts with one shared engine
+### Requirement: Three sim hosts with one shared engine
 
-The repository SHALL treat desktop standalone, web/WASM, VST/AU, and VCV Rack as peers over shared `sim/` and `src/core/` code. Host-specific behavior SHALL be expressed through `SimHostKind`, `HostPanelLayout::kModRackCatalog`, host IO adapters, and generated display projections — not duplicated label/topology literals.
+The repository SHALL treat desktop standalone, web/WASM, and VST/AU as peers over shared `src/core/` code. Host-specific behavior SHALL be expressed through `SimHostKind`, `HostPanelLayout::kModRackCatalog`, host IO adapters, and generated display projections — not duplicated label/topology literals.
 
 #### Scenario: Host kind selects mod availability
 
@@ -18,19 +18,19 @@ The repository SHALL treat desktop standalone, web/WASM, VST/AU, and VCV Rack as
 ---
 
 ### Requirement: Mod rack topology differs by host
-Mod rack cells SHALL come from `HostPanelLayout::kModRackCatalog` for hosts `Desktop`, `Web`, `Vst`, and `Vcv`. Hosts `DesktopV2` and `VstV2` SHALL use the manifest-owned permanent 15-lane modulation source catalog declared in `FroggersV2AppManifest.hpp` (`kPermanentModulationSources`), with UI projection defined in v2 specs; they SHALL NOT render v1 mod rack cells or the legacy eight-source `V2ModSourceCatalog` indices 7–14 as structural authority.
+Mod rack cells SHALL come from `HostPanelLayout::kModRackCatalog` for hosts `Desktop`, `Web`, and `Vst`. Hosts `DesktopV2` and `VstV2` SHALL use the manifest-owned permanent 15-lane modulation source catalog declared in `FroggersV2AppManifest.hpp` (`kPermanentModulationSources`), with UI projection defined in v2 specs; they SHALL NOT render v1 mod rack cells or the legacy eight-source `V2ModSourceCatalog` indices 7–14 as structural authority.
 
-| Mod index | Source | Desktop | Web | VST/AU | VCV | DesktopV2 | VstV2 |
-|-----------|--------|---------|-----|--------|-----|-----------|-------|
-| 0 | MIDI CC 1 | yes | yes | no | no | no | no |
-| 1 | MIDI CC 2 | yes | no | no | no | no | no |
-| 4 | VCO Envelope (legacy sum) | yes | yes | yes | yes | no | no |
-| 5 | Random S&H 1 | yes | yes | yes | yes | no | no |
-| 6 | Random S&H 2 | yes | yes | yes | yes | no | no |
+| Mod index | Source | Desktop | Web | VST/AU | DesktopV2 | VstV2 |
+|-----------|--------|---------|-----|--------|-----------|-------|
+| 0 | MIDI CC 1 | yes | yes | no | no | no |
+| 1 | MIDI CC 2 | yes | no | no | no | no |
+| 4 | VCO Envelope (legacy sum) | yes | yes | yes | no | no |
+| 5 | Random S&H 1 | yes | yes | yes | no | no |
+| 6 | Random S&H 2 | yes | yes | yes | no | no |
 
 **DesktopV2 / VstV2 mod sources:** fifteen permanent manifest lanes (VCO pair buses 1+2 / 2+3 / 1+3, per-VCO and pair EFs, LFO 1–3, Random/Marbles 1–2, External Audio audio-rate and EF). MIDI CC A/B are controller targets only — not mod-rack lanes. Raw VCO audio-rate lanes and VCO 1+2+3 EF are absent.
 
-**Cell counts:** desktop **5**; web **4**; VST/AU v1 **3**; VCV **3**; DesktopV2 **15-lane parameter-detail rack + local indicators**; VstV2 **same manifest rack projection**.
+**Cell counts:** desktop **5**; web **4**; VST/AU v1 **3**; DesktopV2 **15-lane parameter-detail rack + local indicators**; VstV2 **same manifest rack projection**.
 
 #### Scenario: v2 desktop excludes v1 CC scope cells
 - **WHEN** desktop v2 renders mod sources
@@ -49,7 +49,6 @@ Each sim host SHALL expose external MIDI, continuous parameters, and mod-assignm
 | **Desktop standalone** | Two hardware CC pairs via MIDI Settings (CC 1 default On, CC 2 default Off); QWERTY → CC 1 | On-panel knobs + patch cables | Patch cables from mod rack |
 | **Web** | Web MIDI CC 1 when enabled | Expanded pages 1–5 + **global Crunchy**; v1 mod dropdowns | Dropdown per knob; v1 four-cell mod bay |
 | **VST / AU v1** | **None** in plugin — `acceptsMidi()` false; DAW maps any MIDI/CC to **107** host parameters | DAW automation + plugin knobs | Patch cables; no hosted MIDI Settings |
-| **VCV Rack** | **None** in module — use Rack MIDI-to-CV → per-parameter jacks | Section knobs + per-parameter CV inputs + global Crunchy CV; no selected page | Internal mod routes + CV jacks |
 | **Desktop v2** | One assignable MIDI input for pitch/gate/CC targets | Carousel knobs + mod grid + control core | Lit cells + dropdown |
 | **VST / AU v2** | DAW MIDI → any `HostParameterInventoryV2` parameter | Full v2 inventory + carousel UI | Lit cells + dropdown; DAW maps MIDI to parameters |
 
@@ -57,49 +56,6 @@ Each sim host SHALL expose external MIDI, continuous parameters, and mod-assignm
 - **WHEN** a DAW sends MIDI to FroggersTigaPluginV2
 - **THEN** `acceptsMidi()` is true
 - **THEN** parameter changes from MIDI arrive through JUCE host parameter mapping, not raw `ModMgr` CC slots 0/1
-
-#### Scenario: VCV exposes no MIDI boundary
-- **WHEN** a VCV main or extension module is placed
-- **THEN** the module has no Froggers-owned MIDI port, MIDI queue, CC-enable control, or MIDI-specific saved state
-- **THEN** external MIDI must arrive as ordinary Rack CV from another module
-
-### Requirement: VCV host contract is section and expander based
-VCV Rack SHALL be modeled as a section/expander host, not a paged host. The Rack-facing VCV code SHALL use named sections and extension snapshots for Audio, Random, Filter, Drive, Reverb, Delay, Global, and VCO AR controls. VCV SHALL NOT use `m_currentPage`, page navigation, or shared hardware/current-page knob positions to apply Rack controls.
-
-#### Scenario: VCV control surface has no selected page
-- **WHEN** a VCV Rack knob changes on any visible section
-- **THEN** the host applies the value to named VCV section state
-- **THEN** there is no selected-page transition or current-page replay
-
-#### Scenario: Shared engine compatibility remains internal
-- **WHEN** VCV section state is applied to the shared engine
-- **THEN** any internal legacy page/bank mapping remains behind a VCV-safe adapter
-- **THEN** desktop, web, and VST host behavior remains unchanged
-
-### Requirement: VCV global Crunchy participates in host differences
-VCV Rack SHALL expose global Crunchy as a main-module knob with a CV input. The effective value SHALL clamp the sum of knob value and normalized Rack CV. This global control SHALL coexist with section-local Crispy controls.
-
-#### Scenario: VCV global Crunchy appears as global control
-- **WHEN** a user places the VCV main module
-- **THEN** global Crunchy knob and CV input are available on the main module
-- **THEN** per-section Crispy rows remain available where those sections expose Crispy
-
-### Requirement: VCV per-parameter CV combines with internal modulation
-
-VCV SHALL compute `internalEffective = ModMgr::Modulate(base, modIndex, depth)` once per target, then for connected jacks `clamp(internalEffective + voltage / 10, 0, 1)`. Disconnected jacks SHALL use `internalEffective` only. Base, route, and depth SHALL NOT mutate during jack evaluation. VCV SHALL pass this combined value as temporary effective state and SHALL NOT write the combined value back into the stored base knob while the internal route remains active.
-
-#### Scenario: Negative CV clamps
-
-- **WHEN** a negative CV is patched to a parameter jack
-- **THEN** the effective value clamps at 0 after addition
-
-#### Scenario: Disconnected internal route is not doubled
-- **WHEN** a VCV target has base `0.0`, internal route source `5`, depth `1.0`, source value `0.4`, and no jack connected
-- **THEN** the effective value supplied to the engine is `0.4`
-- **THEN** the stored base value remains `0.0`
-- **THEN** the route source `5` is not applied a second time by a later engine read
-
----
 
 ### Requirement: Shared modulation blend on all hosts
 
@@ -118,7 +74,7 @@ Invalid or `None` mod indices SHALL be safe (no crash, predictable fallback).
 
 ### Requirement: Generated host display authority
 
-Labels, page names, global-strip strings, mod-rack projections, and scope capacity SHALL originate from `sim/ParamDisplayNames.hpp` and `sim/HostPanelLayout.hpp`, with web projection generated to `web/src/hostDisplay.generated.ts` by `scripts/generate-host-display.mjs`. Hand-maintained duplicate tables in host UI source SHALL NOT exist.
+Labels, page names, global-strip strings, mod-rack projections, and scope capacity SHALL originate from one shared C++ authority, with web projection generated to `web/src/hostDisplay.generated.ts` by `scripts/generate-host-display.mjs`. Hand-maintained duplicate tables in host UI source SHALL NOT exist.
 
 #### Scenario: Generator check in CI
 
@@ -229,7 +185,7 @@ v2 sim hosts SHALL include `SequencerState` integrated with the control core and
 
 ## Host difference reference
 
-Read top-to-bottom when implementing or reviewing a change. **Same** = behavior matches across all four sim hosts unless noted.
+Read top-to-bottom when implementing or reviewing a change. **Same** = behavior matches across all three sim hosts unless noted.
 
 ### Desktop standalone
 
@@ -282,26 +238,6 @@ Read top-to-bottom when implementing or reviewing a change. **Same** = behavior 
 
 **Supersedes:** `juce-vst-cc-mod-gating` (historical fixed CC-pair model — do not re-implement)
 
----
-
-### VCV Rack (local-only build)
-
-| Topic | Behavior |
-|-------|----------|
-| Mod rack | **3 cells** — 4/5/6; Random LEDs only (no scopes on 5/6) |
-| MIDI | **None** in module; patch Rack MIDI-to-CV externally |
-| CV jacks | Per-parameter; voltage adds to internal route |
-| Random pools | Exclude mod indices 0 and 1 |
-| Patch state | Schema v2 marker; v1→v2 ID remap on load |
-| Panel | Generated from shared catalog; silkscreen readable at 100% zoom |
-| Pair-AR time | 1 ms – 10 s exponential (Fundamental ADSR parity) |
-
-**Supersedes:** `vcv-cc-mod-gating` (historical CC enable/MIDI ingest — removed)
-
-**Baseline specs:** `vcv-panel-silkscreen`, `pair-ar-vcv-time-range`
-
----
-
 ## Shared across all sim hosts
 
 | Topic | Spec / code authority |
@@ -310,7 +246,6 @@ Read top-to-bottom when implementing or reviewing a change. **Same** = behavior 
 | Pair-AR randomize parity | `pair-ar-randomize` |
 | Modulated knob display (pair-AR) | `pair-ar-modulated-knob-display` |
 | Mod blend semantics | `mod-blend-semantics`, `ModMgr::Modulate` |
-| PM3 knob label parity | `sim-pm3-knob-parity` |
 | Global strip labels | `global-strip-marbles-label` |
 | CC→mod CV mapping (where MIDI exists) | `midi-cc-to-mod-cv` |
 
@@ -330,7 +265,7 @@ Read top-to-bottom when implementing or reviewing a change. **Same** = behavior 
 | `pair-ar-vcv-time-range` | All (VCV display ref) | 1 ms–10 s |
 | `mod-blend-semantics` | All | Crossfade |
 | `global-strip-marbles-label` | Desktop, Web | Rand Resample |
-| `mod-led-level-meter` | Desktop, Web, VST, VCV | Random LED brightness |
+| `mod-led-level-meter` | Desktop, Web, VST | Random LED brightness |
 | `midi-cc-mod-gating` | Desktop, Web | CC enable flags |
 | `midi-cc-to-mod-cv` | Desktop, Web | Bridge mapping |
 | `mod-rack-dual-midi-jacks` | Desktop | Two CC jacks |
@@ -340,9 +275,6 @@ Read top-to-bottom when implementing or reviewing a change. **Same** = behavior 
 | `web-mobile-global-strip-placement` | Web | Strip order |
 | `web-mobile-external-audio-routing` | Web mobile | audioSession |
 | `web-playwright-e2e` | Web CI | Playwright |
-| `sim-pm3-knob-parity` | All | Label parity |
-| `vcv-panel-silkscreen` | VCV | Panel SVG |
-| `vcv-cc-mod-gating` | — | **Historical only** — pre-omni VCV MIDI |
 | `juce-vst-cc-mod-gating` | — | **Historical only** — pre-omni VST CC pairs |
 
 ---

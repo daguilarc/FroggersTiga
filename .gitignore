@@ -1,5 +1,4 @@
 # Host build/package outputs
-sim/build/
 wasm/build/
 desktop/build/
 desktop/build-vst-test/

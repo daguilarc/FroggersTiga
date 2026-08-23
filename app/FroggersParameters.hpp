@@ -511,7 +511,7 @@ private:
         // Global
         // Crunchy receives NO fuego stage at all. It is the source of the
         // warp, and warping Crunchy by Crunchy is self-referential; the
-        // cascade (sim/V2FuegoStack.hpp:9-23) only defines the treatment of
+        // cascade (the retired simulator's V2FuegoStack.hpp:9-23) only defines the treatment of
         // ordinary parameters (both stages) and of a Crispy control (global
         // stage only, src/core/Page.hpp:203-207) -- it says nothing about
         // Crunchy itself now that it is on the grid at slot 15. This
@@ -528,7 +528,7 @@ private:
 
             // A Crispy control receives ONLY the global stage --
             // it is itself Crunchy-warped before use as the per-bank
-            // cascade key below (sim/V2FuegoStack.hpp:9-23's ApplyGlobal
+            // cascade key below (the retired simulator's V2FuegoStack.hpp:9-23's ApplyGlobal
             // call on crispyKnobPreFuego; v2 wiring proof at
             // src/core/Page.hpp:203-207). This is also exactly the value a
             // DSP/UI consumer of the Crispy parameter itself would read.
@@ -538,7 +538,7 @@ private:
 
             // Ordinary (page) parameters get both stages -- global
             // Crunchy then this bank's Crispy -- via the full musical-row
-            // cascade (sim/V2FuegoStack.hpp:14-23). Passing crispyPreFuego
+            // cascade (the retired simulator's V2FuegoStack.hpp:14-23). Passing crispyPreFuego
             // (not crispyAfterCrunchy) matches ApplyMusicalRow's own
             // signature: it re-derives the Crunchy-warped Crispy value
             // internally from the pre-fuego knob, identically to the

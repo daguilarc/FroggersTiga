@@ -5,7 +5,7 @@ Gate independent MIDI CC 1 and CC 2 enable flags for desktop standalone and web 
 ## Requirements
 ### Requirement: Per-pair MIDI CC enable flags
 
-The sim host SHALL maintain independent enable flags for MIDI CC 1 (mod index 0) and MIDI CC 2 (mod index 1). Defaults: MIDI CC 1 enabled and MIDI CC 2 disabled on desktop, VST, and VCV; on web both disabled until External MIDI is turned on (then CC 1 enabled, CC 2 disabled unless the operator enables it).
+The sim host SHALL maintain independent enable flags for MIDI CC 1 (mod index 0) and MIDI CC 2 (mod index 1). Defaults: MIDI CC 1 enabled and MIDI CC 2 disabled on desktop and VST; on web both disabled until External MIDI is turned on (then CC 1 enabled, CC 2 disabled unless the operator enables it).
 
 #### Scenario: Desktop defaults
 
@@ -89,12 +89,7 @@ Hosts SHALL visually distinguish disabled MIDI CC mod sources from active ones.
 
 ### Requirement: Host scope
 
-Desktop standalone, JUCE VST/AU, and web SHALL implement CC mod gating. VCV Rack is excluded from this change; a separate change wires VCV ingest through `CvMidiBridge` enable flags.
-
-#### Scenario: VCV excluded from this change
-
-- **WHEN** CC mod gating is deployed on desktop, VST, and web
-- **THEN** VCV Rack CC ingest behavior is unchanged until `vcv-vst-cc-mod-gating` is applied separately
+Desktop standalone, JUCE VST/AU, and web SHALL implement CC mod gating.
 
 ### Requirement: Dual CC to CV conversion with enable gating
 
