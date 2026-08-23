@@ -37,7 +37,7 @@ The parallel formula SHALL NOT route through `MixOscVoices` (pair-AR VCO sum). P
 
 #### Scenario: All hosts share one formula
 
-- **WHEN** Daisy Field processes a sample with external gate open
+- **WHEN** any host (Daisy Field, desktop, web WASM) processes a sample with external gate open
 - **THEN** the pre-drive mix matches the parallel formula above
 
 #### Scenario: FUEG knob position with external present

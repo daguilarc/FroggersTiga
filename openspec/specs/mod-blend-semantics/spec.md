@@ -1,7 +1,7 @@
 # mod-blend-semantics Specification
 
 ## Purpose
-Standardize modulated parameter blending as depth crossfade via ModMgr::Modulate across page rows.
+Standardize modulated parameter blending as depth crossfade via ModMgr::Modulate across page rows, Delay sidecar, and pair-AR targets.
 ## Requirements
 ### Requirement: Modulation uses crossfade blend not attenuator multiply
 
@@ -11,7 +11,7 @@ The host engine SHALL compute each modulated parameter's effective value (0–1)
 
 where `base` is the stored knob value, `depth` is mod amount, and `modSource` is the current sample on mod bus index `modIndex`. This is a **crossfade**, not `base × modSource` (a multiplicative attenuator).
 
-This SHALL be implemented via `ModMgr::Modulate` (not duplicated inline crossfade math) for page rows.
+All sim hosts SHALL implement this via `ModMgr::Modulate` (not duplicated inline crossfade math) for page rows and Delay sidecar rows.
 
 #### Scenario: Zero depth returns base only
 
@@ -30,12 +30,12 @@ This SHALL be implemented via `ModMgr::Modulate` (not duplicated inline crossfad
 
 ### Requirement: Modulation applied before fuegoization
 
-For fuego-enabled parameters (page rows 1–7), the pipeline SHALL be:
+For fuego-enabled parameters (page rows 1–7, Delay rows 1–7), the pipeline SHALL be:
 
 1. Mod crossfade on stored base
 2. Fuego bit-scramble using effective Crispy amount (mod crossfade on Crispy when assigned)
 
-Fuego SHALL NOT apply to Crispy itself.
+Fuego SHALL NOT apply to Crispy itself. Pair-AR parameters SHALL NOT be fuegoized.
 
 #### Scenario: Mod then fuego on page row
 
@@ -60,6 +60,53 @@ When mod source index ≠ 255, the host SHALL retain base independently of mod d
 
 - **WHEN** mod source cleared after modulation was active
 - **THEN** UI returns stored base, not last effective value
+
+### Requirement: External CV mod sources gated by presence
+
+For mod indices 0–3, `ModMgr::Modulate` SHALL return base unchanged when `m_externalCvActive[index]` is false. Delay sidecar SHALL use `ModMgr::Modulate` so this gating applies equally.
+
+#### Scenario: Inactive external CV ignored on Delay row
+
+- **WHEN** MIDI CC 1 assigned to Delay Send with depth > 0 but CC input inactive
+- **THEN** effective Send equals stored base
+
+### Requirement: Delay Crispy mod parity with page Crispy
+
+`DelayState` SHALL apply mod crossfade to row 7 (Crispy) when mod source ≠ 255 and depth > 0. Effective Crispy SHALL drive `Fuegoize()` for rows 0–6. Delay Crispy SHALL NOT be fuegoized.
+
+#### Scenario: Delay Crispy mod affects display
+
+- **WHEN** VCO Envelope mod patched to Delay Crispy with depth 1.0 and mod bus moves
+- **THEN** `getEffectiveKnob(7)` tracks mod bus
+
+#### Scenario: Modulated Delay Crispy affects scramble
+
+- **WHEN** Delay Crispy mod depth 1.0, mod bus = 1.0, row 0 base = 0.5, Crispy base = 0.0
+- **THEN** row 0 effective with fuego differs from row 0 with mod bus = 0.0 on Crispy
+
+#### Scenario: Delay Crispy mod no longer dead route
+
+- **WHEN** operator patches mod cable to Delay Crispy on desktop
+- **THEN** audible and visual behavior changes when mod bus moves (not silent ignore)
+
+### Requirement: Sim UI displays effective value and edits depth when mod assigned
+
+On desktop and web, mod-assigned knobs SHALL display effective value while idle and edit mod depth while dragging — including Delay Crispy.
+
+#### Scenario: Idle Delay Crispy tracks mod bus on desktop
+
+- **WHEN** Delay Crispy has mod depth 1.0 and mod bus active on desktop
+- **THEN** on-screen rotary updates to effective value via `SubModulePanel` refresh
+
+#### Scenario: Idle Delay row tracks mod bus on web
+
+- **WHEN** Delay page is active in the browser, row has mod source ≠ 255, and audio is playing
+- **THEN** `postScreen` row `value` comes from `froggers_delay_get_effective_knob`, not raw `froggers_delay_get_knob`
+
+#### Scenario: Drag adjusts depth not base
+
+- **WHEN** user drags mod-assigned knob
+- **THEN** mod depth changes; base preserved
 
 ### Requirement: First mod assignment default depth on page rows
 
