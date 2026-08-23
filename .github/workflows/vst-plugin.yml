@@ -108,15 +108,36 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           name: plugin-bundles
           path: dist
 
+      # Release notes come from MANUAL.md's own "Release platforms" section,
+      # the same extraction desktop-release.yml uses -- one source for the
+      # opening-a-download step instead of a second hand-written copy that
+      # can drift from it. Everything else in the body (install paths,
+      # Windows-VST3 absence) is plugin-specific and stays inline here.
+      - name: Extract release notes from MANUAL.md
+        run: |
+          awk '/^## Release platforms$/{flag=1; next} /^## /{flag=0} /^---$/{flag=0} flag' MANUAL.md > platform-notes.md
+          {
+            echo "Frogg3rs as an audio plugin — $GITHUB_REF_NAME"
+            echo
+            echo "Contains VST3 and Audio Unit builds for macOS. Both are built on a"
+            echo "macOS runner, so this release carries no Windows VST3."
+            echo
+            echo "Install by unzipping into:"
+            echo "- VST3: ~/Library/Audio/Plug-Ins/VST3/"
+            echo "- AU:   ~/Library/Audio/Plug-Ins/Components/"
+            echo
+            cat platform-notes.md
+          } > release-notes.md
+
       # gh is preinstalled on the runner, so the release needs no third-party
-      # action. The body states platform coverage explicitly: both formats are
-      # built on macOS, so a Windows VST3 is absent by construction rather
-      # than by failure, and saying so keeps its absence from reading as one.
+      # action.
       - name: Publish plugin release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -124,11 +145,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" dist/*.zip \
             --repo "$GITHUB_REPOSITORY" \
             --title "Frogg3rs audio plugin — $GITHUB_REF_NAME" \
-            --notes "Frogg3rs as an audio plugin.
-
-          Contains VST3 and Audio Unit builds for macOS. Both are built on a
-          macOS runner, so this release carries no Windows VST3.
-
-          Install by unzipping into:
-          - VST3: ~/Library/Audio/Plug-Ins/VST3/
-          - AU:   ~/Library/Audio/Plug-Ins/Components/"
+            --notes-file release-notes.md

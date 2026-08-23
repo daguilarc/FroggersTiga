@@ -28,6 +28,25 @@ ported rather than merely configured for Windows.
 
 The VST3 and Audio Unit plugin releases for macOS only.
 
+### Opening a downloaded build
+
+The desktop app and both plugin formats are signed but not notarized: macOS does not recognise the
+signing identity, so opening any of them for the first time takes one extra step.
+
+Double-clicking the downloaded app shows "Apple could not verify [it] is free of malware" and offers
+no way to continue. Instead, open **System Settings → Privacy & Security**, scroll to the **Security**
+section, and click **Open Anyway** next to the app's name. macOS remembers this choice; later launches
+open normally. The same step applies before loading the VST3 or Audio Unit in a DAW for the first time.
+
+This step goes away once the builds are signed with a Developer ID and notarized by Apple — see
+Notarization, below.
+
+### Notarization
+
+Developer ID signing plus Apple notarization is what makes a download open without the extra step
+above. That requires an Apple Developer Program account and CI secrets this project does not have, so
+it is recorded here as the fix rather than attempted.
+
 ---
 
 Six parameter banks — **Audio**, **Envelope**, **Filter**, **Drive**, **Delay**, **Reverb** — each with

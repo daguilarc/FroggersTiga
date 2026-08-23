@@ -285,18 +285,18 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
 
 ## 2. The release says what a downloader must do
 
-- [ ] 2.1 `MANUAL.md` states what a downloader sees and the step that opens it,
+- [x] 2.1 `MANUAL.md` states what a downloader sees and the step that opens it,
       for as long as the builds are unnotarized. Plain present tense. It covers
       the plugin bundles as well as the application, since both are downloaded
       and both are unsigned by any identity the system recognises.
-- [ ] 2.2 The release bodies carry the same, from one source.
+- [x] 2.2 The release bodies carry the same, from one source.
       `desktop-release.yml` already extracts its body from `MANUAL.md`'s
       `## Release platforms` section with `awk`, so the desktop half is 2.1's
       edit and nothing more. `vst-plugin.yml` instead carries its body inline
       in `--notes`, so state where the plugin's copy comes from: extend the
       same extraction to it, or say why a second copy is correct. Do not write
       the sentence into a workflow twice.
-- [ ] 2.3 Record notarization as the thing that removes the step: Developer ID
+- [x] 2.3 Record notarization as the thing that removes the step: Developer ID
       signing plus notarization is what makes a download open normally. It
       needs an Apple Developer account and CI secrets that do not exist, so it
       is named here, not attempted.
