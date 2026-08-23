@@ -116,7 +116,7 @@ NO_JUCE_CHECK := $(BUILD_DIR)/check_no_juce
 
 # --- DSP port (pure, dependency-free, own test suite) ------
 # app/dsp/*.hpp are copies of Froggers DSP formulas -- no
-# #include of src/, sim/, or desktop-v2/, and no Sheaf/JUCE dependency at
+# #include of src/ or desktop-v2/, and no Sheaf/JUCE dependency at
 # all: the port is deliberately pure DSP. DSP_HEADERS is
 # listed as a prerequisite so editing any ported unit rebuilds the suite.
 DSP_HEADERS := $(wildcard $(APP_DIR)/dsp/*.hpp)
@@ -149,8 +149,8 @@ $(APP): $(APP_SOURCES) $(SHEAF_LIB) | $(BUILD_DIR)
 
 # --- mechanical frozen-tree-include guard --------------------
 # Fails the build if any file under app/ (**/*.hpp, **/*.cpp) #includes
-# from src/ or sim/ -- the DSP port is a sanctioned copy, not a shared
-# header, so neither tree may ever be reached from app/ code, however the
+# from src/ -- the DSP port is a sanctioned copy, not a shared
+# header, so that tree may never be reached from app/ code, however the
 # include path is spelled.
 check-no-frozen-deps:
 	@bash $(APP_DIR)/check_no_frozen_includes.sh "$(APP_DIR)"
