@@ -42,6 +42,7 @@ function fail(root, error) {
   const message = error instanceof Error ? error.message : "frogg3rs failed to start";
   root.dataset.synthStatus = message;
   root.style.height = "";
+  root.style.minHeight = "";
   root.style.overflow = "";
   const notice = document.createElement("div");
   notice.className = "boot-error";

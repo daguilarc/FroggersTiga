@@ -22,8 +22,11 @@ what a viewer sees.
 The narrow topology SHALL be free to differ in the OUTER split weights and in
 a block's internal arrangement, not only in the order of rows within one
 block. Where the shell derives a single scale from one block, a narrow
-topology that leaves another block narrower than the viewport SHALL be
-treated as an incomplete topology rather than as a shell defect.
+topology that leaves another SURFACE-EMITTED block narrower than the viewport
+SHALL be treated as an incomplete topology rather than as a shell defect. This
+covers the blocks this surface emits. Sheaf's own runtime sidebar is stacked by
+the same shell but emitted by Sheaf, so this surface has no weight to declare
+for it and it is out of scope here.
 
 The flag SHALL be set only by the browser host. No desktop, standalone, or
 plugin path SHALL set it.
@@ -31,7 +34,10 @@ plugin path SHALL set it.
 #### Scenario: No duplicate controls at any width
 
 - **WHEN** the surface renders at any viewport width
-- **THEN** exactly one Randomize row and one Reset row exist in the node tree
+- **THEN** exactly one node exists for each of Randomize Page, Randomize All,
+  Reset Page and Reset All
+- **AND** the container carrying them is the only one: the wide layout's two
+  rows and the narrow layout's column never both exist
 
 #### Scenario: Other hosts are unaffected
 
@@ -39,11 +45,11 @@ plugin path SHALL set it.
 - **THEN** the narrow-viewport flag is false and the desktop layout is
   emitted, with the desktop split weights
 
-#### Scenario: A narrow topology leaves no block short of the viewport
+#### Scenario: A narrow topology leaves no surface block short of the viewport
 
 - **WHEN** the browser host sets the narrow-viewport flag
-- **THEN** every stacked block renders at substantially the full viewport
-  width under the shell's shared scale
+- **THEN** every block this surface emits renders at substantially the full
+  viewport width under the shell's shared scale
 
 ### Requirement: The page scrolls, and a test proves it
 

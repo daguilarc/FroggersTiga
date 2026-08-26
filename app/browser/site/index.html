@@ -123,10 +123,11 @@
           if (!root) return;
           shown = true;
           // Same reason as fail()'s own clear: a late failure can land
-          // after fitSurface/mobile-stack.mjs left an inline height (and,
-          // when narrow, overflow: hidden) on this element, which would
-          // otherwise clip the panel below down to invisible.
+          // after fitSurface left an inline height, and mobile-stack.mjs a
+          // narrow-mode min-height and overflow: hidden, on this element,
+          // which would otherwise clip the panel below down to invisible.
           root.style.height = "";
+          root.style.minHeight = "";
           root.style.overflow = "";
           root.textContent = "";
           var notice = document.createElement("div");

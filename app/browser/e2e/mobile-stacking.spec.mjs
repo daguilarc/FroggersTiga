@@ -17,17 +17,21 @@
 // else above or below the grid includes the sidebar, so it is not
 // left beside anything either.
 //
-// SHARED SCALE: only the GRID is stretched to fill the
-// viewport width. Chrome and the sidebar render at that SAME scale
-// (mobile-stack.mjs's own comment has the full reasoning: their design
-// widths are roughly half and a sixth of the grid's, so independently
-// stretching each of them to full width too made chrome balloon to ~2x
-// the height it needed and pushed the grid far down the page), so they
-// come out narrower than the viewport, left-aligned under it.
+// SHARED SCALE: only the GRID is stretched to fill the viewport width.
+// Every other stacked block renders at that SAME scale (mobile-stack.mjs's
+// own comment has the full reasoning: independently stretching each block
+// to full width made a narrow block balloon in height and pushed the grid
+// far down the page). How wide a block ends up is therefore decided by its
+// own declared design width, in the surface. The chrome block declares
+// equal weight with the grid when narrow and so comes out the same width;
+// Sheaf's own generic sidebar has no narrow variant and comes out
+// narrower, left-aligned under the grid.
 import { expect, test } from "@playwright/test";
 import {
+  BPM_SELECTOR,
   ENCODER_ROW_SELECTORS,
   LEFT_BLOCK_SELECTOR,
+  RANDOMIZE_RESET_SELECTORS,
   RIGHT_BLOCK_SELECTOR,
   SIDEBAR_SELECTOR,
   encoderGridBoundingBox,
@@ -57,21 +61,26 @@ test.describe("mobile stacking (phone-width layout)", () => {
     expect(verticalOverlapPx(rightBlockBox, leftBlockBox)).toBe(0);
   });
 
-  test("chrome renders at the grid's shared scale, not stretched to its own full width", async ({ page }) => {
-    // The grid alone is stretched to the viewport width; chrome shares
-    // THAT scale rather than independently filling the viewport too (see
-    // this file's own header comment and mobile-stack.mjs's for why).
-    // expectedStackedWidth derives it the same way mobile-stack.mjs itself
-    // derives it: viewport width over the grid's own live wire width,
-    // times chrome's own live wire width -- never a hardcoded 600ish
-    // design-width number.
+  test("chrome renders at the grid's shared scale, and at the grid's own width", async ({ page }) => {
+    // This test used to assert the opposite of its second half: that
+    // chrome came out "well short of the grid's own full width". That was
+    // a deliberate guard on the shell not stretching each block
+    // independently, and it stayed correct for as long as the surface
+    // declared the chrome block at half the grid's weight. The surface now
+    // declares them EQUAL when narrow
+    // (FroggersCellMap::kLeftBlockWeightNarrow), because the half-width
+    // chrome block left the other half of a phone viewport empty with
+    // nothing able to reach it. The shared-scale half below is unchanged
+    // and still the thing that would catch an independent stretch: a block
+    // stretched on its own would not land on the grid's scale times its
+    // own wire width except by coincidence.
     const gridBox = await page.locator(RIGHT_BLOCK_SELECTOR).boundingBox();
     const chromeBox = await page.locator(LEFT_BLOCK_SELECTOR).boundingBox();
 
     expect(Math.abs(chromeBox.width - (await expectedStackedWidth(page, LEFT_BLOCK_SELECTOR)))).toBeLessThan(1.5); // within ~1.5px
-    // Well short of the grid's own full width -- proves it is NOT also
-    // independently stretched to fill the viewport.
-    expect(chromeBox.width).toBeLessThan(gridBox.width * 0.95);
+    // Same width as the grid, within the delta's own 5%, so neither block
+    // leaves a usable strip of the viewport empty beside it.
+    expect(Math.abs(chromeBox.width - gridBox.width)).toBeLessThan(gridBox.width * 0.05);
 
     // Sits fully above the grid (zero vertical overlap, same "stacked not
     // beside" check the other tests here use) and does not spill past the
@@ -80,13 +89,124 @@ test.describe("mobile stacking (phone-width layout)", () => {
     expect(chromeBox.x + chromeBox.width).toBeLessThanOrEqual(gridBox.x + gridBox.width + 1);
   });
 
+  test("the four Randomize/Reset buttons sit beside the sliders, inside the chrome block", async ({ page }) => {
+    const chromeBox = await page.locator(LEFT_BLOCK_SELECTOR).boundingBox();
+    const bpmBox = await page.locator(BPM_SELECTOR).boundingBox();
+    const bpmCentre = bpmBox.x + bpmBox.width / 2;
+
+    for (const selector of RANDOMIZE_RESET_SELECTORS) {
+      const box = await page.locator(selector).boundingBox();
+      expect(box, selector).not.toBeNull();
+      // To the right of the BPM slider, and vertically within the chrome
+      // block -- i.e. beside the sliders, in the strip that used to render
+      // as empty viewport.
+      expect(box.x + box.width / 2, selector).toBeGreaterThan(bpmCentre);
+      const centreY = box.y + box.height / 2;
+      expect(centreY, selector).toBeGreaterThanOrEqual(chromeBox.y);
+      expect(centreY, selector).toBeLessThanOrEqual(chromeBox.y + chromeBox.height);
+      // Inside the chrome block's own box, on both axes.
+      expect(box.x, selector).toBeGreaterThanOrEqual(chromeBox.x - 1);
+      expect(box.x + box.width, selector).toBeLessThanOrEqual(chromeBox.x + chromeBox.width + 1);
+      // Sized to the label rather than to a share of the block width.
+      expect(box.width, selector).toBeLessThan(chromeBox.width / 2);
+    }
+  });
+
+  test("no Randomize or Reset button falls inside the encoder grid block", async ({ page }) => {
+    // The layout this rejects: the four buttons hoisted into the encoder
+    // COLUMN, above or below the encoder rows. That arrangement was built
+    // once and turned down -- it pushes encoder rows past the fold, which
+    // trades a control the operator touches occasionally for controls they
+    // touch constantly. Every assertion here is about which block the
+    // buttons are in, not about how high up the page they are, because
+    // "above the encoder rows" is exactly what the rejected layout also
+    // satisfied.
+    const gridBox = await page.locator(RIGHT_BLOCK_SELECTOR).boundingBox();
+
+    for (const selector of RANDOMIZE_RESET_SELECTORS) {
+      const box = await page.locator(selector).boundingBox();
+      const overlapsHorizontally = box.x < gridBox.x + gridBox.width && box.x + box.width > gridBox.x;
+      const overlapsVertically = verticalOverlapPx(box, gridBox) > 0;
+      expect(overlapsHorizontally && overlapsVertically, selector).toBe(false);
+    }
+  });
+
+  test("each of the four buttons is emitted exactly once", async ({ page }) => {
+    // The narrow layout MOVES these buttons; a shell that rearranged
+    // emitted controls, or a surface that emitted a second narrow copy,
+    // would leave two of each in the tree.
+    for (const selector of RANDOMIZE_RESET_SELECTORS) {
+      await expect(page.locator(selector), selector).toHaveCount(1);
+    }
+  });
+
+  test("the first encoder row is reachable without scrolling", async ({ page }) => {
+    // The chrome block spans the viewport when narrow, and the shell stacks
+    // it above the grid. A chrome block that kept its full-page height
+    // while doubling in width would take half again as much vertical space
+    // and carry the whole encoder grid off the first screen -- the same
+    // cost that got an earlier attempt at this layout turned down. The
+    // surface declares a shorter chrome block when narrow
+    // (FroggersCellMap::kLeftBlockCrossWeightNarrow) to hold this.
+    const viewport = page.viewportSize();
+    const row = await page.locator(ENCODER_ROW_SELECTORS[0]).boundingBox();
+    expect(row.y).toBeGreaterThan(0);
+    expect(row.y + row.height).toBeLessThanOrEqual(viewport.height);
+  });
+
+  test("a scroll offset survives the render loop", async ({ page }) => {
+    // The published site could not be scrolled at all: an offset held for
+    // about two frames and was then pinned back at the top, every frame,
+    // so everything below the fold was unreachable. Nothing called a
+    // scroll API. Sheaf's fitSurface writes the mount's `height` at the
+    // end of every render frame, sized for its own un-stacked scale, and
+    // mobile-stack.mjs used to reserve the stacked height on that same
+    // property -- so between the two writes the document briefly fitted
+    // the viewport, and the first layout read in that window made the
+    // browser clamp the scroll offset to zero. The reservation is now a
+    // `min-height`, which floors the used height above whatever fitSurface
+    // writes, so the document is never momentarily short.
+    //
+    // Asserted after several animation frames, not immediately: a
+    // single-frame check passes against the bug.
+    const target = 200;
+    await page.evaluate((y) => window.scrollTo(0, y), target);
+    const offsets = await page.evaluate(async () => {
+      const seen = [];
+      for (let frame = 0; frame < 30; frame++) {
+        await new Promise(requestAnimationFrame);
+        seen.push(Math.round(window.scrollY));
+      }
+      return seen;
+    });
+    expect(Math.min(...offsets)).toBe(target);
+  });
+
+  test("controls below the fold are reachable by scrolling", async ({ page }) => {
+    // The stacked layout is taller than a phone viewport by construction,
+    // so the sidebar -- the last stacked block -- starts below the fold.
+    // Bringing it into view is the end-to-end version of the scroll
+    // assertion above: it fails both if the page cannot scroll and if the
+    // mount clips the block away once it is scrolled to.
+    const viewport = page.viewportSize();
+    const before = await page.locator(SIDEBAR_SELECTOR).boundingBox();
+    expect(before.y).toBeGreaterThan(viewport.height); // positive control: it really is below the fold
+    await page.locator(SIDEBAR_SELECTOR).scrollIntoViewIfNeeded();
+    await expect(page.locator(SIDEBAR_SELECTOR)).toBeInViewport({ timeout: 5_000 });
+  });
+
   test("the sidebar stacks below the grid at the grid's shared scale, not full width", async ({ page }) => {
     // Sheaf's own generic runtime sidebar is "everything else" for
     // this stacking rule too -- verifies it must be part of
     // the stack (directly below the grid, zero overlap with anything),
     // not left at its native design position where it would otherwise
     // sit beside the app's own content. It shares the grid's scale rather
-    // than being independently stretched to full width, same as chrome.
+    // than being independently stretched to full width. It is the one
+    // stacked block that still comes out narrower than the viewport: it is
+    // Sheaf's own generic runtime chrome, emitted by SidebarSurface, so
+    // the frogg3rs surface's narrow topology has no weight to declare for
+    // it. Widening it would mean a Sheaf-side change, which this shell
+    // deliberately does not make.
     const gridBox = await page.locator(RIGHT_BLOCK_SELECTOR).boundingBox();
     const sidebarBox = await page.locator(SIDEBAR_SELECTOR).boundingBox();
 
@@ -110,7 +230,7 @@ test.describe("mobile stacking (phone-width layout)", () => {
     // boxes throughout that window (not just before/after) to catch a
     // transient revert a single before/after snapshot would miss.
     await expect
-      .poll(async () => page.locator("#synth-root").evaluate((el) => el.style.height), { timeout: 5_000 })
+      .poll(async () => page.locator("#synth-root").evaluate((el) => el.style.minHeight), { timeout: 5_000 })
       .not.toBe("");
     const chromeBefore = await page.locator(LEFT_BLOCK_SELECTOR).boundingBox();
     const gridBefore = await page.locator(RIGHT_BLOCK_SELECTOR).boundingBox();

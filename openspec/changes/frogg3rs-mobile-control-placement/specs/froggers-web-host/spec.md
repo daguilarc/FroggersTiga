@@ -37,6 +37,14 @@ Those four buttons SHALL be sized to their labels rather than stretched to a
 share of the block width, so that four of them fit in the space beside the
 sliders.
 
+Widening the chrome block SHALL NOT push the encoder grid off the first
+screen. The shell stacks the blocks vertically and scales them together, so a
+chrome block that keeps its full-page height while doubling in width takes half
+again as much vertical space and carries the grid down with it. The narrow
+chrome block SHALL therefore declare a height that keeps its rows at the density
+they were laid out for, so that the encoder grid still begins above the fold and
+a full row of encoders is reachable without scrolling.
+
 #### Scenario: Phone-width layout stacks
 - **WHEN** the site loads at a phone-width viewport
 - **THEN** the encoder grid spans the viewport width
@@ -63,8 +71,13 @@ sliders.
 - **WHEN** the site loads at a viewport width of 720px or less
 - **THEN** no Randomize or Reset button falls inside the encoder grid
   block's bounding box
-- **AND** the first encoder row's bounding-box top is above every Randomize
-  and Reset button's bounding-box top
+- **AND** exactly one node exists for each of the four buttons, so the narrow
+  layout moved them rather than adding a second copy
+
+#### Scenario: The encoder grid is still reachable near the top of the page
+- **WHEN** the site loads at a viewport width of 720px or less
+- **THEN** the first encoder row is fully within the viewport without
+  scrolling
 
 #### Scenario: Buttons are sized to their labels
 - **WHEN** the site loads at a viewport width of 720px or less

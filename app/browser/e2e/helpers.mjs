@@ -14,6 +14,20 @@ export const RIGHT_BLOCK_SELECTOR = '[data-synth-node-id="froggers.layout.right"
 // the 16-slot (4x4) encoder grid (FroggersUiSurface.hpp:201-206).
 export const ENCODER_ROW_SELECTORS = [0, 1, 2, 3].map((row) => `[data-synth-node-id="froggers.layout.right.row.${row}"]`);
 export const SYNTH_ROOT_SELECTOR = "#synth-root";
+// FroggersNodeIds::kRandomizePage/kRandomizeAll/kResetPage/kResetAll
+// (FroggersUiSurface.hpp:148-151), in the order
+// FroggersCellMap::kRandomizeResetButtons lists them. The wide layout puts
+// them in two rows below the encoder grid; the narrow layout puts the same
+// four in a column inside the chrome block, beside the sliders.
+export const RANDOMIZE_RESET_SELECTORS = [
+  "froggers.randomize.page",
+  "froggers.randomize.all",
+  "froggers.reset.page",
+  "froggers.reset.all",
+].map((id) => `[data-synth-node-id="${id}"]`);
+// FroggersNodeIds::kBpm -- the lowest of the chrome block's two sliders,
+// and the one the narrow button column has to sit to the right of.
+export const BPM_SELECTOR = '[data-synth-node-id="froggers.bpm"]';
 export const SURFACE_ROOT_SELECTOR = '[data-synth-node-id="froggers.root"]';
 // RuntimePages.hpp:34 `NodeIds::kSidebarRoot` -- Sheaf's own generic
 // runtime-chrome sidebar (Audio/Controllers/Sync/File + CPU meter), a
@@ -165,6 +179,25 @@ export async function canvasHasPaintedPixels(page, canvasSelector) {
  *    signal that would catch that separate failure mode.
  */
 export async function expectEncoderCanvasVisible(page, canvasSelector) {
-  await expect(page.locator(canvasSelector), canvasSelector).toBeInViewport();
+  // Scrolled to first, because the stacked narrow layout is taller than a
+  // phone viewport: the encoder grid sits below the chrome block, so the
+  // lower encoder rows are legitimately off the initial fold. "Reachable
+  // and painted" is the guarantee here; "on screen without scrolling" is
+  // asserted at the wider viewports, by the desktop project.
+  // This does NOT blunt the clipping guard above: a collapsed,
+  // overflow:hidden ancestor clips its child away at every scroll offset,
+  // so scrolling cannot bring such a child into the viewport and the
+  // assertion below still fails.
+  // The scroll is INSIDE the retry: once audio is running, renderFrame
+  // re-applies the stacked transforms every frame, which can move a
+  // just-scrolled-to row back out from under the viewport. Scrolling once
+  // and then waiting only works while nothing re-lays-out underneath.
+  // Still toBeInViewport (IntersectionObserver), never a hand-rolled
+  // getBoundingClientRect check -- see this helper's own note above on why
+  // that distinction is the whole point.
+  await expect(async () => {
+    await page.locator(canvasSelector).scrollIntoViewIfNeeded();
+    await expect(page.locator(canvasSelector), canvasSelector).toBeInViewport({ timeout: 2_000 });
+  }, canvasSelector).toPass({ timeout: 20_000 });
   await expect.poll(() => canvasHasPaintedPixels(page, canvasSelector), { timeout: 10_000 }).toBe(true);
 }

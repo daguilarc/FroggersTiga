@@ -29,15 +29,11 @@ The VST3 and Audio Unit plugin releases for macOS only.
 
 ### Opening a downloaded build
 
-Every build here is **ad-hoc signed**: the signature is real and covers the bundle's contents, but it
-carries no Developer ID and no team identifier. `codesign --verify --deep --strict` reports the app
-valid on disk and satisfying its designated requirement; `spctl --assess` rejects it, because there
-is no identity for Gatekeeper to evaluate. The Windows build is not signed at all.
-
-That distinction matters when you open it. A *damaged* build is one whose signature does not match
-its contents, and macOS refuses those outright with no way through. These builds are not that — they
-are intact and unidentified, so the operating system will let you open them once you say so
-explicitly.
+macOS builds here are ad-hoc signed. The signature covers the bundle's contents and is applied
+after the bundle is fully assembled, so it matches what ships, but it carries no Developer ID.
+Gatekeeper has no identity to check it against, so it treats the app as unidentified and asks you to
+confirm before opening it. Windows builds are not signed, and SmartScreen asks the same kind of
+question. Both let you through once you say so explicitly. The steps are below.
 
 **macOS.** Double-clicking shows **"Frogg3rs" Not Opened** — "Apple could not verify Frogg3rs is free
 of malware..." — with a single **Done** button. That dialog will never offer a way to continue, no
@@ -63,18 +59,13 @@ then **Run anyway**. Windows remembers this for that copy of the file; later lau
 
 ### Why the extra step is permanent
 
-Only two things remove these prompts, and this project has deliberately not bought either: an Apple
-Developer Program membership, which is what makes Developer ID signing and notarization possible, and
-a Windows code-signing certificate for Authenticode.
+Removing these prompts takes an Apple Developer Program membership on macOS and an Authenticode
+code-signing certificate on Windows. This project has neither, so expect these steps on every
+release.
 
-That is a standing decision, not a task waiting to be done. Ad-hoc signing cannot substitute for it
-at any amount of build-script work — Gatekeeper and SmartScreen are asking who vouches for the
-binary, and the answer is nobody. So the steps above are how these builds are opened, and they are
-documented here rather than treated as a defect to be fixed later.
-
-What the signing that *is* done buys: the signature is applied after the bundle is fully assembled,
-so it matches what ships. That is what keeps a download in the "unidentified, openable" state above
-instead of the "damaged, refused" one.
+This is the only way to do it without me having to pay for an Apple Developer license annually. If
+you'd like to sponsor a fully authenticated MacOS and iOS app, please get in touch about how much
+money you are willing to donate to the cause.
 
 ---
 
@@ -85,16 +76,17 @@ regardless of which one is on screen — switching banks only changes what you'r
 
 ## Global controls
 
-### Crispy and Crunchy (fuego)
+### Crispy and Crunchy (fuego-ization)
 
-Both controls apply the same bit-scramble ("fuego") to parameter values before they reach the DSP —
-they are not audio effects on their own; they corrupt the *values* other knobs are already set to.
-Internally, a parameter's value is treated as an 8-bit number; the higher the fuego amount, the more of
-that number's low bits get folded into an XOR/shift scramble that depends on which slot the parameter
-sits in. At the fuego knob's minimum, this is an exact no-op — parameters pass through completely
-unscrambled, bit-for-bit. As the fuego amount rises, small knob or modulation moves stop being smooth:
-values snap between "islands" instead of sweeping continuously, and different slots on the same bank
-scramble differently from each other because the scramble pattern is keyed by slot index.
+Both controls apply the same bit-scramble ("fuego") to parameter values on their way to the DSP. What
+they corrupt is the *values* other knobs are already set to, so what you hear depends on where those
+other knobs are sitting.
+
+A parameter's value is treated internally as an 8-bit number. The higher the fuego amount, the more of
+that number's low bits get folded into an XOR/shift scramble keyed to the slot the parameter sits in.
+At the knob's minimum, values pass through untouched. As the amount rises, small knob and modulation
+moves stop being smooth: values snap between islands. Different slots on the same bank scramble
+differently from each other, because the scramble pattern follows the slot index.
 
 - **Crispy** (slot 14, one instance per bank, colored like that bank) scrambles only that bank's own 14
   page parameters (slots 0–13). It does not touch Crunchy, and it does not touch any other bank.
@@ -108,37 +100,45 @@ scramble differently from each other because the scramble pattern is keyed by sl
 ### Bank selection
 
 Six named buttons — Audio, Envelope, Filter, Drive, Delay, Reverb — pick which bank's 16 slots populate
-the encoder grid on screen. This only changes what's visible/editable; every bank keeps processing audio
-in the background regardless of which one is selected.
+the encoder grid on screen. Every bank keeps processing audio whichever one is selected; the buttons
+change what you can see and edit.
 
 ### Transport and the envelope gate
 
-**Play** / **Stop** control the master clock's transport — there is no separate note-on/note-off or MIDI
-note input in this app. Instead, while the transport is running, the shared envelope gate that drives all
-three VCOs' Attack/Decay/Sustain/Release stages (Envelope bank) pulses automatically: **open for the
-first half of every quarter note, closed for the second half**, at whatever tempo the BPM control (30–300
-BPM) is set to. That's what re-triggers the envelopes on every beat — there is nothing to "press" to play
-a note; starting the transport is the note-on.
+**Play** / **Stop** control the master clock's transport. Starting the transport is what plays notes:
+while it runs, the shared envelope gate driving all three VCOs' Attack/Decay/Sustain/Release stages
+(Envelope bank) pulses automatically — **open for the first half of every quarter note, closed for the
+second half** — at whatever tempo the BPM control (30–300 BPM) is set to. That re-triggers the
+envelopes on every beat. This app takes no MIDI note input.
 
-**Stop** forces a fast ~50 ms fade on all three voices regardless of what the Release knobs are set to
-(so Stop always reads as immediate, never as a multi-second tail), and clears the Delay/Reverb tails once
-every voice has fully gone silent.
+**Stop** fades all three voices out over about 50 ms whatever the Release knobs are set to, so Stop
+always reads as immediate, and clears the Delay/Reverb tails once every voice has gone silent.
 
 ### Modulation assignment
 
 Click any parameter's encoder — a page parameter or a bank's own Crispy (Crunchy is excluded) — to open
-a modulation view for that one parameter. It exposes **15 independent modulation sources**, each with its
-own signed depth (depth 0 = that source off for this parameter). Turning a source's depth changes how
-hard that source pushes the target; multiple non-zero sources on the same parameter **sum together**
-rather than crossfading one at a time. Click the parameter's encoder again (or the view's back target) to
-leave the modulation view.
+a modulation view for that one parameter. It exposes 15 modulation sources, each with its own signed
+depth. A depth of 0 means that source is off for this parameter. Turning a source's depth changes how
+hard that source pushes the target, and depths on the same parameter sum together. Click the
+parameter's encoder again, or the back target in the corner, to leave the modulation view.
 
-The 15 sources are: six Random S&H/LFO-style random lanes, each VCO's own raw audio-rate signal (VCO1–3
-Audio), each VCO's own slow envelope follower (VCO1–3 EF), one broadband Noise source, and External Audio
-plus its envelope follower. External Audio and External Audio EF carry real signal only once an external
-input is connected — see Audio and MIDI configuration, below, for how each host connects one. Until
-connected, both sources hold silent, defined values (External Audio at 0.5, its envelope follower at 0.0)
-rather than modulating from anything live.
+The view fills the same 4×4 grid the parameters use: 15 sources and, in the last slot, the way back
+out.
+
+| | | | |
+|---|---|---|---|
+| Random S&H 1 | Random S&H 2 | Random S&H 3 | Random S&H 4 |
+| Random S&H 5 | Random S&H 6 | VCO1 Audio | VCO2 Audio |
+| VCO3 Audio | VCO1 EF | VCO2 EF | VCO3 EF |
+| Noise | External Audio | External Audio EF | **[Back]** |
+
+The six Random S&H sources are sample-and-hold / LFO-style random lanes. The VCO Audio sources are
+each oscillator's raw signal at audio rate. The EF sources are each oscillator's slow envelope
+follower. Noise is broadband.
+
+External Audio and External Audio EF carry signal once an external input is connected — see Audio and
+MIDI configuration, below, for how each host connects one. Until then External Audio holds at 0.5 and
+its envelope follower at 0.0, so neither one modulates anything.
 
 ### Randomize
 
@@ -169,14 +169,12 @@ all, and four or more sources lands on roughly one draw in sixteen. Whatever the
 chosen are always distinct, and only sources that are currently connected are eligible — an
 unconnected External Audio source is never drawn.
 
-**These weights are deliberate, and they are there to make the results musical.** A parameter pushed by
-many sources at once tends to sit near its center, because independent movements cancel each other out;
-a patch where every parameter is modulated by everything sounds uniformly busy and none of the movement
-is audible as movement. Keeping most parameters on one or two sources makes each source's contribution
-legible, and leaving a share of parameters completely still gives a randomized patch contrast — some
-elements holding steady while others move. Wide draws stay in the table rather than being excluded, so
-an occasional densely modulated parameter is still possible; it is just rare enough to be a feature of a
-patch rather than the texture of every patch.
+The weights are shaped this way because a parameter pushed by many sources at once tends to sit near
+its center — independent movements cancel each other out — and a patch where everything is modulated
+by everything sounds uniformly busy. Most parameters landing on one or two sources keeps each
+source's contribution audible, and the share of parameters that come out completely still gives a
+randomized patch some contrast. Wide draws stay in the table, so an occasional densely modulated
+parameter still happens.
 
 ---
 
@@ -225,9 +223,10 @@ granted.
 
 ## Audio bank
 
-Three independent oscillators. Unlike older hosts, there is **no cross-coupler** — nothing here reads
-another VCO's phase or output except each VCO's own internal ring-mod carrier, and mixing is a simple
-three-way balance, not pairwise coupling.
+Three independent oscillators. Each one's phase modulation and ring modulation run off its own
+internal carrier, so nothing in this bank reads another VCO's phase or output directly. Mixing is a
+three-way balance. Cross-oscillator routing lives in the modulation view instead, where each VCO's
+audio-rate output is a source (Modulation assignment, above).
 
 **VCO1 / VCO2 / VCO3** (`VCO1`/`VCO2`/`VCO3`, slots 0–2) — each VCO's pitch, mapped exponentially from
 20 Hz to 20 kHz. Default values land on 110 Hz, 220 Hz, and 330 Hz respectively, so a freshly launched app
@@ -246,11 +245,11 @@ three VCOs' LFOs share one rate (see PM rate, slot 12).
 internal carrier oscillator (20 Hz–5 kHz), never another VCO's signal. Has a genuine zero at the very
 bottom of its travel — below a small floor, ring mod is completely off, not just quiet — then blends in
 more of the metallic ring-modulated product as it's raised, fully replacing the dry tone at maximum.
-Defaults to 0 (off), so a fresh app sounds unchanged from before Ring mod existed.
+Defaults to 0, so ring mod is off on a fresh app.
 
 **PM rate** (`PMrt`, slot 12) — one shared knob (0.05 Hz–20 Hz) setting the phase-mod LFO rate for all
-three VCOs at once. Previously each VCO's own PM depth knob doubled as its rate; that coupling is gone —
-depth and rate are now fully independent.
+three VCOs at once. Depth and rate are independent: this sets the rate for all three, and each VCO's
+own Phase mod knob sets its depth.
 
 **VCO balance** (`VBal`, slot 13) — a single tilt sweeping mix emphasis from VCO1 (bottom of travel)
 through an even three-way split (center, the default) to VCO3 (top of travel). By construction, every
@@ -269,7 +268,7 @@ two knobs shared across all three voices.
 transport's envelope gate opens, mapped exponentially from 1 ms to 250 ms. Defaults to the floor
 (fastest, essentially instant-on).
 
-**Decay VCO1/2/3** (`D1`/`D2`/`D3`, slots 1/5/9) — new. Time for that VCO's level to fall from the
+**Decay VCO1/2/3** (`D1`/`D2`/`D3`, slots 1/5/9) — time for that VCO's level to fall from the
 Attack peak down to its Sustain level, mapped exponentially from 5 ms to 1 s.
 
 **Sustain VCO1/2/3** (`S1`/`S2`/`S3`, slots 2/6/10) — the level held while the gate stays open. Floored
@@ -280,17 +279,15 @@ a freshly launched app makes sound without touching any knob.
 the gate closes, mapped exponentially from 5 ms to 2.5 s. Defaults to the floor (fastest). Stop always
 overrides this with a fast ~50 ms fade regardless of this knob's position.
 
-**Curve** (`Curv`, slot 12) — new, shared across all three voices. Reshapes every Attack/Decay/Release
-ramp from a straight linear ramp (bottom of travel, the default — bit-identical to the ramp shape before
-Curve existed) toward an increasingly "slow start, fast finish" ease-in curve at the top. Sustain, being
-a level rather than a ramp, is unaffected.
+**Curve** (`Curv`, slot 12) — shared across all three voices. Reshapes every Attack/Decay/Release
+ramp from a straight linear ramp (bottom of travel, the default) toward an increasingly "slow start,
+fast finish" ease-in curve at the top. Sustain is a level rather than a ramp, so it is unaffected.
 
-**Grace** (`Grac`, slot 13) — new, shared across all three voices. A minimum-hold: once a note reaches
+**Grace** (`Grac`, slot 13) — shared across all three voices. A minimum-hold: once a note reaches
 Sustain, Grace keeps it there for at least this long (0–1 s) before honoring a gate-close, so a very
-short gate pulse can't cut a note off mid-way through its own Attack/Decay. At its default (0) it's an
-exact no-op — a note behaves exactly as it did before Grace existed, cutting to Release the instant the
-gate closes. Grace never changes the length of Attack, Decay, or Release themselves — it only delays
-*when* Release is allowed to start.
+short gate pulse can't cut a note off mid-way through its own Attack/Decay. At its default (0) a note
+cuts to Release the instant the gate closes. Grace only delays *when* Release starts; it never changes
+the length of Attack, Decay or Release themselves.
 
 ---
 
@@ -330,24 +327,23 @@ pure comb).
 at maximum). This is the notch's own height/depth; whether the notch is audible in the output at all is
 a separate control (Scoop depth, slot 13).
 
-**Topology** (`Topo`, slot 9) — new. A **continuous morph**, not a switch, between running the comb path
-and the peak **in parallel** (bottom of travel, the default — the comb's output is not fed into the
-peak, bit-identical to how this bank always behaved before Topology existed) and running them fully **in
-series** (top of travel — the comb's output becomes the peak's own input, so the peak now further shapes
-an already comb-colored signal). Every value in between blends smoothly.
+**Topology** (`Topo`, slot 9) — a continuous morph between running the comb path and the peak **in
+parallel** (bottom of travel, the default — the comb's output does not reach the peak) and running
+them fully **in series** (top of travel — the comb's output becomes the peak's input, so the peak
+shapes an already comb-colored signal). Every value in between blends smoothly.
 
-**Scoop freq** (`ScFq`, slot 10) — new. The notch's own center frequency (100 Hz–20 kHz), now independent
-of Peak freq — it used to just copy Peak freq's value.
+**Scoop freq** (`ScFq`, slot 10) — the notch's own center frequency (100 Hz–20 kHz), independent of
+Peak freq.
 
-**Scoop width** (`ScWd`, slot 11) — new. The notch's own Q/width, now independent of Peak Q.
+**Scoop width** (`ScWd`, slot 11) — the notch's own Q/width, independent of Peak Q.
 
-**Comb drive** (`CDrv`, slot 12) — new. Pre-gain (0.25×–4×) into the comb's own saturator; unity gain at
-the center default. Raising it pushes the comb's ringing into progressively harder, more distorted
-saturation without raising the hard ceiling the saturator still enforces on the comb's output level.
+**Comb drive** (`CDrv`, slot 12) — pre-gain (0.25×–4×) into the comb's own saturator; unity gain at the
+center default. Raising it pushes the comb's ringing into harder, more distorted saturation. The
+saturator's own ceiling on the comb's output level holds regardless.
 
-**Scoop depth** (`ScDp`, slot 13) — new. How much of the notch is actually blended into this bank's final
-output — independent from the notch's own height (Scoop, slot 8). At 0, the notch is still computed but
-has no audible effect at all; at 1, it's fully applied.
+**Scoop depth** (`ScDp`, slot 13) — how much of the notch is blended into this bank's final output,
+independent of the notch's own height (Scoop, slot 8). At 0 the notch is inaudible; at 1 it is fully
+applied.
 
 ---
 
@@ -386,26 +382,21 @@ chain output. 0 = dry only, untouched by everything above; 1 = fully wet.
 crossfade above. At Blend 0 this has no audible effect at all, since dry passes through unfiltered
 regardless of this knob's position.
 
-**Anti-alias brightness** (`ABrt`, slot 9) — new. Fine-tunes the cutoff of the oversampler's anti-alias
-filter within a narrow range around its original fixed point — mostly a brightness trim; center default
-reproduces the exact original fixed cutoff.
+**Anti-alias brightness** (`ABrt`, slot 9) — trims the cutoff of the oversampler's anti-alias filter
+within a narrow range. A brightness adjustment, small either way.
 
-**Link** (`Link`, slot 10) — new. How strongly the Drive knob's amount couples into (skews) Shape's own
-coefficients. Center default reproduces the original fixed coupling exactly; doubling toward the top of
-travel unlocks a stronger coupling than the app had before this knob existed.
+**Link** (`Link`, slot 10) — how strongly the Drive knob's amount skews Shape's coefficients. Turning
+it up makes Drive pull Shape's harmonic character along with it; turning it down decouples them.
 
-**Fold** (`Fold`, slot 11) — new. Divisor inside the sine-fold stage (1×–16×). A lower divisor folds
-harder/more aggressively; a higher divisor folds more gently. Center default reproduces the original
-fixed divisor exactly.
+**Fold** (`Fold`, slot 11) — divisor inside the sine-fold stage (1×–16×). A lower divisor folds harder;
+a higher divisor folds more gently.
 
-**Tone** (`Tone`, slot 12) — new. A low-pass filter at the very end of the Drive chain. Fully open/exact
-bypass at the top of travel (the default); gets progressively darker and more muffled as it's turned
-down.
+**Tone** (`Tone`, slot 12) — a low-pass filter at the end of the Drive chain. Fully open at the top of
+travel (the default), progressively darker and more muffled as it is turned down.
 
-**Waveshaper offset** (`Bias`, slot 13) — new, short name `Bias`. Shifts the waveshaper's input by a
-small DC offset (up to ±0.02) before shaping, then removes that same offset from the output afterward —
-biases the shaping asymmetrically without adding audible DC. Center default is exactly zero offset (no
-change from before this knob existed).
+**Waveshaper offset** (`Bias`, slot 13) — shifts the waveshaper's input by a small DC offset (up to
+±0.02) before shaping, then removes the same offset from the output afterward. This biases the shaping
+asymmetrically without adding audible DC. Zero offset at the center default.
 
 ---
 
@@ -437,24 +428,23 @@ motion on the repeats.
 
 **Halo** (`Halo`, slot 8) — folds into and biases Mod depth (averaged 50/50 with Mod depth's own value).
 
-**Feedback drive** (`FbDr`, slot 9) — new. Pre-gain (0.25×–4×, unity at the center default) into the
-feedback path's saturator. Raising it drives the repeats into more obvious saturation without raising the
-hard ceiling the saturator still enforces.
+**Feedback drive** (`FbDr`, slot 9) — pre-gain (0.25×–4×, unity at the center default) into the
+feedback path's saturator. Raising it drives the repeats into more obvious saturation. The saturator's
+own ceiling holds regardless.
 
-**Feedback tone** (`FbTn`, slot 10) — new. A low-pass filter inside the feedback loop itself, so
-successive repeats get progressively darker over time as this is turned down. Fully open/exact bypass at
-the top of travel (the default).
+**Feedback tone** (`FbTn`, slot 10) — a low-pass filter inside the feedback loop, so successive repeats
+get progressively darker as this is turned down. Fully open at the top of travel (the default).
 
-**Mod rate** (`MdRt`, slot 11) — new. Rate of the delay-time LFO that Mod depth (slot 5) controls the
-depth of (0.05 Hz–1.25 Hz). Previously fixed at 0.25 Hz; center default reproduces that exact rate.
+**Mod rate** (`MdRt`, slot 11) — rate of the delay-time LFO whose depth Mod depth (slot 5) sets
+(0.05 Hz–1.25 Hz). 0.25 Hz at the center default.
 
-**Width balance** (`WBal`, slot 12) — new. An overall scalar on how strongly Stereo width's own cross-feed
-and time-spread apply. At the top of travel (the default) it reproduces the original fixed stereo
-behavior exactly; turning it down narrows the stereo image Width itself can produce.
+**Width balance** (`WBal`, slot 12) — an overall scalar on how strongly Stereo width's cross-feed and
+time-spread apply. Full strength at the top of travel (the default); turning it down narrows the
+stereo image Width can produce.
 
-**Crush** (`Crsh`, slot 13) — new. A sample-rate reducer applied only to the feedback tap (not the dry
-signal), so just the repeats get progressively more bit-crushed/lo-fi as this is raised from its off
-default (0 = exact bypass, no crushing).
+**Crush** (`Crsh`, slot 13) — a sample-rate reducer on the feedback tap only, so the repeats get
+progressively more bit-crushed as this is raised. Off at its default of 0; the dry signal is never
+crushed.
 
 ---
 
@@ -491,21 +481,21 @@ movement in the tail. 0 = no movement.
 self-oscillation — indefinitely extending the tail's sustain without ever letting it hang forever. At 0
 it adds nothing beyond ordinary Decay.
 
-**Mod rate** (`MdRt`, slot 9) — new. Rate of the Mod depth LFO (0.07 Hz–1.75 Hz). Previously fixed at
-0.35 Hz; center default reproduces that exact rate.
+**Mod rate** (`MdRt`, slot 9) — rate of the Mod depth LFO (0.07 Hz–1.75 Hz). 0.35 Hz at the center
+default.
 
-**Tank drive** (`TkDv`, slot 10) — new. Pre-gain (0.25×–4×, unity at the center default) into the tank's
-own feedback saturator, for more obvious saturation on the tail as it's raised.
+**Tank drive** (`TkDv`, slot 10) — pre-gain (0.25×–4×, unity at the center default) into the tank's own
+feedback saturator, for more obvious saturation on the tail as it is raised.
 
-**Grit** (`Grit`, slot 11) — new. Routes the tank's feedback taps through the same bit-scramble/XOR
-digital reorganizer used in the Drive bank, adding digital grit/noise to the tail. Exact bypass at 0.
+**Grit** (`Grit`, slot 11) — routes the tank's feedback taps through the same bit-scramble/XOR digital
+reorganizer the Drive bank uses, adding digital grit to the tail. Off at 0.
 
-**Tilt** (`Tilt`, slot 12) — new. A bipolar tone control on the final reverb output, crossfading between
-a darker (lowpass-emphasized) tail and a brighter (highpass-emphasized) tail around a fixed ~1 kHz
-corner. Center default = no change.
+**Tilt** (`Tilt`, slot 12) — a bipolar tone control on the final reverb output, crossfading between a
+darker (lowpass-emphasized) tail and a brighter (highpass-emphasized) tail around a fixed ~1 kHz
+corner. No change at the center default.
 
-**Tuned** (`Tund`, slot 13) — new. A static (non-LFO) offset on the tank's own delay-line lengths, up to
-±300 samples around whatever Room size already set. Center default = exactly zero offset. Unlike a pitch
-tracker, this does not follow incoming pitch — it's an ordinary hand-tuned control.
+**Tuned** (`Tund`, slot 13) — a static offset on the tank's delay-line lengths, up to ±300 samples
+around whatever Room size set, tuning the tank's own resonance by hand. Zero offset at the center
+default.
 
 ---

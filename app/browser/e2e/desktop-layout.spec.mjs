@@ -15,6 +15,7 @@ import {
   expectedStackedWidth,
   verticalOverlapPx,
   waitForSurfaceReady,
+  wireWidth,
 } from "./helpers.mjs";
 
 test.describe("desktop layout sanity", () => {
@@ -103,11 +104,23 @@ test.describe("desktop layout sanity", () => {
     // in mobile-stack.mjs, the grid's rendered width always exactly
     // equals whatever `mount.clientWidth` was at that specific frame, so
     // it cannot read >=351 without the width truly having reached ~390).
+    // A THIRD signal, and the one that is specific to a live resize: the
+    // shell reacts to the new width immediately, but the SURFACE only
+    // switches to its narrow topology once the browser-narrow action the
+    // shell dispatches has reached the wasm app and it has emitted another
+    // frame. Between those two the blocks are stacked while still carrying
+    // WIDE design widths, and anything derived from a wire width -- the
+    // shared scale below is -- reads a value that is about to change.
+    // Equal chrome and grid wire widths is the surface-side half of
+    // "settled": it is true only of the narrow topology
+    // (FroggersCellMap::kLeftBlockWeightNarrow).
     await expect
       .poll(
         async () => {
           const box = await page.locator(RIGHT_BLOCK_SELECTOR).boundingBox();
-          return box.x < 50 && box.width >= 390 * 0.9;
+          const gridWire = await wireWidth(page, RIGHT_BLOCK_SELECTOR);
+          const chromeWire = await wireWidth(page, LEFT_BLOCK_SELECTOR);
+          return box.x < 50 && box.width >= 390 * 0.9 && Math.abs(gridWire - chromeWire) < 1;
         },
         { timeout: 5_000 },
       )
@@ -125,14 +138,14 @@ test.describe("desktop layout sanity", () => {
     expect(Math.abs(sidebarNarrow.width - expectedSidebarWidth)).toBeLessThan(1.5);
 
     await page.setViewportSize({ width: 1280, height: 800 });
-    // Wide-mode settle signal: the shell RELEASES the mount height back to
-    // Sheaf rather than clearing it. If mobile-stack.mjs's wide branch
-    // wrote `mount.style.height = ""` instead, it would blank
-    // every wide viewport -- clobbering the same inline property
-    // fitSurface owns (Sheaf browser/src/ui.ts), collapsing the mount to 0
-    // with the stylesheet's `overflow: hidden` clipping the surface away.
-    // So "settled wide" is: a non-empty px height authored by Sheaf, AND
-    // the stacked blocks' own transforms released.
+    // Wide-mode settle signal: the mount's `height` is Sheaf's alone
+    // (browser/src/ui.ts's fitSurface) at every width, and the shell never
+    // writes it. What the shell writes when narrow, and must drop when
+    // wide, is a `min-height` reserving the stacked total; a stale
+    // reservation left behind would hold every wide viewport open to a
+    // phone-sized page. So "settled wide" is: a non-empty px height
+    // authored by Sheaf, no reservation from the shell, AND the stacked
+    // blocks' own transforms released.
     await expect
       .poll(
         async () =>
@@ -143,6 +156,9 @@ test.describe("desktop layout sanity", () => {
     await expect
       .poll(async () => page.locator("#synth-root").evaluate((el) => el.style.height), { timeout: 5_000 })
       .not.toBe("");
+    await expect
+      .poll(async () => page.locator("#synth-root").evaluate((el) => el.style.minHeight), { timeout: 5_000 })
+      .toBe("");
     // mobile-stack.mjs's own follow-up burst (scheduleApply, FOLLOW_UP_TICKS)
     // keeps re-asserting for a short span after the resize to out-last a
     // possible race with ui.ts's own internal resize-triggered fitSurface()

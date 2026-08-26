@@ -3,10 +3,14 @@
 // encoder grid": chrome block above, encoder-grid block below, spanning the
 // full viewport width, with everything else -- Sheaf's own generic sidebar
 // included -- also placed above or below, never beside). The grid is what
-// spans the full viewport width; chrome and the sidebar share ITS scale
-// (see applyMobileStack's own comment) rather than each
-// being independently stretched to full width too, so they render at
-// their own smaller, design-proportional size, left-aligned under it. The
+// spans the full viewport width; every other block shares ITS scale (see
+// applyMobileStack's own comment) rather than being independently
+// stretched to full width, so how wide a block renders is decided by the
+// surface's own narrow topology, not here. The chrome block declares equal
+// weight with the grid when narrow and so renders the same width
+// (FroggersCellMap::kLeftBlockWeightNarrow); Sheaf's sidebar has no such
+// variant and renders at its own smaller, design-proportional size,
+// left-aligned under the grid. The
 // input-mapping this mechanism relies on
 // needed drag/press coordinate math in
 // Sheaf's own ui.ts to be made transform-robust first. This file hooks
@@ -18,6 +22,7 @@
 // `fitSurface()`'s own later, root-only re-application survives that
 // clear. Installing over `renderFrame` also reaches past that method's own
 // public surface: the same patched function reads `this.dispatchBrowserAction`
+// (see this file's own `dispatchViewportNarrow`) to report narrow/wide
 // state to the C++ surface, even though `ui.ts` declares that constructor
 // property `private readonly` -- TypeScript erases that at runtime, so the
 // call works, and nothing else reaches this backend instance to dispatch
@@ -27,7 +32,7 @@
 // public `renderFrame` method and reruns its own application synchronously,
 // in the same JS turn, right after Sheaf's own per-frame writes. It only
 // ever sets host-owned CSS (`transform`/`transformOrigin` on the stacked
-// block elements, `height`/`overflow` on the mount) and never touches a
+// block elements, `min-height`/`overflow` on the mount) and never touches a
 // protocol node's wire-managed position/size (`left`/`top`/`width`/
 // `height`) -- the "per-block CONTAINER transform" mechanism: it composes
 // with the wire-managed properties instead of fighting them, which is what
@@ -71,6 +76,29 @@ function isNarrow(mount) {
 // signal, consumed by `HandleAction` to set `narrowViewport_` off
 // `action.value == "1"`. "0" is dispatched for every other value,
 // including wide.
+const VIEWPORT_NARROW_ACTION = "froggers.viewport.narrow";
+// Last value actually dispatched for VIEWPORT_NARROW_ACTION, so a
+// narrow/wide state that hasn't changed since the previous frame is never
+// redispatched -- renderFrame's own ~33ms cadence would otherwise flood
+// the wasm app with a same-value action on every single frame while
+// sitting still at one width. `null` (neither "0" nor "1") so the very
+// first frame always dispatches once, regardless of which side it starts
+// on.
+let lastDispatchedNarrow = null;
+
+// Reports the mount's narrow/wide state to the C++ surface off the SAME
+// isNarrow() decision this file already uses for its own stacking
+// transform -- never a second threshold or predicate. Called from inside
+// the patched `renderFrame` (installMobileStack), where `this` is the
+// `BrowserUiBackend` instance whose `dispatchBrowserAction` this reaches
+// past the public API to call (see this file's own header comment).
+function dispatchViewportNarrow(backend, mount) {
+  const narrow = isNarrow(mount);
+  const value = narrow ? "1" : "0";
+  if (value === lastDispatchedNarrow) return;
+  lastDispatchedNarrow = value;
+  backend.dispatchBrowserAction({ name: VIEWPORT_NARROW_ACTION, value });
+}
 
 // Reads a block's WIRE-SET design-space extent -- the exact px string
 // ui.ts's updateNode() writes from the node's resolved protocol bounds
@@ -162,15 +190,12 @@ function applyStackedTransform(measurement, scale, targetLeft, targetTop) {
 // chrome/grid to something close to their NATIVE, un-stacked size even
 // though the restore code ran, because what it captured and restored was
 // already the cleared value, not the real one.)
-// `lastGoodMountHeight` is the same idea for the mount's own height:
-// ui.ts's `fitSurface()` (also inside the original renderFrame, also
-// always running before this module) unconditionally rewrites
-// `mount.style.height` to its own (wide-appropriate) value every frame
-// too, so "leave it untouched on failure" would silently let that
-// wide-style value show through the mount for that one frame instead of
-// this module's own last-good stacked total.
+// The mount's own stacked extent needs no equivalent cache. It is
+// reserved with `min-height`, which nothing else on the page writes
+// (ui.ts's `fitSurface` writes the mount's `height`, and `min-height`
+// floors the used height above it), so a frame that measures badly and
+// returns early simply leaves the previous frame's reservation standing.
 const lastGoodTransform = new Map();
-let lastGoodMountHeight = null;
 
 /**
  * Applies (while narrow) or clears (while wide) the per-block stack
@@ -187,9 +212,9 @@ let lastGoodMountHeight = null;
  * and forced deterministically in the e2e regression test for this),
  * every element that measureBlock already cleared to `transform: none`
  * earlier in this same pass is put back to its own last KNOWN-GOOD
- * stacked transform (lastGoodTransform, see its own comment), the mount's
- * height is likewise put back to its own last-good total
- * (lastGoodMountHeight), and this frame is otherwise a no-op -- the
+ * stacked transform (lastGoodTransform, see its own comment), the
+ * mount's own reservation is left as the previous frame set it, and this
+ * frame is otherwise a no-op -- the
  * PREVIOUS frame's fully-correct stacked state is what's left standing,
  * not one block reverted to its native position while the other two stay
  * stacked. Everything in this function runs synchronously (no `await`/rAF
@@ -209,8 +234,8 @@ export function applyMobileStack() {
     // Sheaf's own renderFrame call this runs after already left the
     // correct wide-mode state on every node it owns.
     //
-    // Deliberately does NOT clear lastGoodTransform/lastGoodMountHeight
-    // here. `mount.clientWidth` can transiently read a stale "still wide"
+    // Deliberately does NOT clear lastGoodTransform here.
+    // `mount.clientWidth` can transiently read a stale "still wide"
     // value for a frame or two while an active resize is settling (layout
     // catching up with a just-issued viewport change), so `isNarrow()`
     // reaching `false` for one frame mid-transition does not reliably mean
@@ -226,25 +251,14 @@ export function applyMobileStack() {
     // mode could fall back to a slightly-stale (previous viewport width's)
     // transform for one frame instead of "no transform" -- strictly better,
     // not worse, and self-corrects on the very next successful frame.
-    // `overflow` is ours to clear; the mount's `height` is NOT OURS TO WRITE
-    // AT ALL out here. Sheaf's fitSurface owns that inline property
-    // (browser/src/ui.ts's `fitSurface`, `root.style.height = surfaceHeight *
-    // surfaceScale`) and this hook runs immediately AFTER each renderFrame,
-    // so the `mount.style.height = ""` that used to live here erased Sheaf's
-    // sizing every frame: the mount's only child is absolutely positioned,
-    // so the mount computed to height 0 and clipped the whole surface away
-    // -- a blank page at every wide viewport, which narrow mode masked by
-    // setting a height of its own. Leaving the property untouched HERE (the
-    // wide branch) keeps Sheaf the sole writer of the WIDE-mode value
-    // specifically -- not a project-wide single-writer guarantee for this
-    // property: the narrow branch below (applyMobileStack's own
-    // `mount.style.height = ...` lines) writes it too, on purpose, with its
-    // own separately-computed stacked total, which is a distinct value for
-    // a distinct state rather than a re-derivation of Sheaf's number.
-    // Entering wide mode is by definition a width
-    // change, so Sheaf's own ResizeObserver -> fitSurface re-asserts the
-    // correct height on the same resize that clears the narrow layout; the
-    // narrow branch's height therefore never outlives the transition.
+    // `min-height` and `overflow` are this shell's own properties and are
+    // cleared here; the mount's `height` is Sheaf's, written by fitSurface
+    // (browser/src/ui.ts, `root.style.height = surfaceHeight *
+    // surfaceScale`) and never touched by this module at any width. The
+    // mount's only child is absolutely positioned, so a mount whose height
+    // this shell blanked would compute to zero and clip the whole surface
+    // away.
+    mount.style.minHeight = "";
     mount.style.overflow = "";
     return;
   }
@@ -256,31 +270,34 @@ export function applyMobileStack() {
   if (measurements.some((measurement) => measurement === null)) {
     // Restore every block to its own cached last-good transform (leaving
     // it cleared if this stack has never successfully applied yet --
-    // nothing better to fall back to), and the mount to its own
-    // last-good total height.
+    // nothing better to fall back to). The mount's reservation is left
+    // exactly as the previous frame set it -- see lastGoodTransform's own
+    // comment for why the mount needs no cache of its own.
     STACK_SELECTORS.forEach((selector, index) => {
       const cached = lastGoodTransform.get(selector);
       if (!cached) return;
       elements[index].style.transformOrigin = cached.transformOrigin;
       elements[index].style.transform = cached.transform;
     });
-    if (lastGoodMountHeight !== null) mount.style.height = lastGoodMountHeight;
     return;
   }
 
   const viewportWidth = mount.clientWidth;
   const mountRect = mount.getBoundingClientRect();
 
-  // ONE shared scale for the WHOLE stack: each block used
-  // to be stretched to its OWN full viewport width, but the grid's design
-  // width (~600 of the 900 design box) is roughly double the chrome
-  // block's (~300, FroggersUiSurface.hpp:464-467's 4:2 weighting), so
-  // that made chrome render at ~2x the scale the grid needed -- ballooning
-  // chrome's height and pushing the grid far down the page. Deriving ONE
+  // ONE shared scale for the WHOLE stack: each block used to be stretched
+  // to its OWN full viewport width, which made a block render at whatever
+  // scale its own design width happened to need -- ballooning a narrow
+  // block's height and pushing the grid far down the page. Deriving ONE
   // scale from the grid block's own live wire width and applying it to
   // every stacked block keeps the grid spanning the full viewport width
-  // (unchanged requirement) while chrome and the sidebar render at their
-  // own, smaller, design-proportional size instead of being stretched.
+  // (unchanged requirement) and makes every other block's rendered width a
+  // direct read-out of its own declared design width. That is what lets
+  // the surface decide the narrow layout: the chrome block declares equal
+  // weight with the grid when narrow (FroggersCellMap, the
+  // kViewportNarrow action this file dispatches) and therefore renders the
+  // same width, while Sheaf's own sidebar, which has no narrow variant,
+  // renders at its own smaller, design-proportional size.
   const gridIndex = STACK_SELECTORS.indexOf(GRID_BLOCK_SELECTOR);
   const sharedScale = viewportWidth / measurements[gridIndex].extent.width;
 
@@ -309,8 +326,25 @@ export function applyMobileStack() {
   // shell's own footer chrome sits right below the sidebar, and clip
   // whatever of Sheaf's own composite tree (e.g. its own outer margin)
   // would otherwise peek out under `overflow: visible`.
-  lastGoodMountHeight = `${totalHeight}px`;
-  mount.style.height = lastGoodMountHeight;
+  //
+  // Reserved as `min-height`, NOT as `height`, and that choice is what
+  // makes the page scrollable. fitSurface writes the mount's `height` at
+  // the end of every renderFrame -- 279px at a 390px viewport, against a
+  // ~1242px stack -- so a shell that reserved the stack on `height` too
+  // would leave that short value standing for the rest of the frame,
+  // until this function overwrote it. Anything that reads layout in that
+  // window (this function's own `mount.clientWidth` does, on its very
+  // first line) forces the browser to lay the page out while the document
+  // fits the viewport, and a document that fits the viewport has a
+  // maximum scroll offset of zero, so any scroll offset is clamped to the
+  // top. Putting the tall value back afterwards does not restore the
+  // clamped offset, and no scroll API is involved, so nothing watching
+  // `scrollTo`/`scrollTop` can see it happen. `min-height` floors the used
+  // height above whatever fitSurface writes, so the document is never
+  // momentarily short on any path -- including Sheaf's own
+  // ResizeObserver, which calls fitSurface a whole frame before this
+  // module's rAF-deferred follow-up runs.
+  mount.style.minHeight = `${totalHeight}px`;
   mount.style.overflow = "hidden";
 }
 
@@ -382,9 +416,12 @@ export function installMobileStack(BrowserUiBackend) {
     const result = originalRenderFrame.apply(this, args);
     applyMobileStack();
     // Reports narrow/wide state to the C++ surface every frame, but only
+    // actually dispatches on a change (dispatchViewportNarrow's own
     // comment) -- `this` is the `BrowserUiBackend` instance `renderFrame`
     // was called on, which is what makes `this.dispatchBrowserAction`
     // reachable here despite it not being public API.
+    const mount = document.querySelector(MOUNT_SELECTOR);
+    if (mount) dispatchViewportNarrow(this, mount);
     return result;
   };
 

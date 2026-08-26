@@ -105,6 +105,12 @@ inline constexpr const char* kRoot = "froggers.root";
 inline constexpr const char* kLayoutRoot = "froggers.layout.root";
 inline constexpr const char* kLeftBlock = "froggers.layout.left";
 inline constexpr const char* kRightBlock = "froggers.layout.right";
+// The chrome block's two inner columns, emitted only in narrow mode
+// (AppendLeftBlock below): the kLeftRows stack, and the column of
+// Randomize/Reset buttons that sits beside it. In wide mode kLeftBlock is
+// itself that stack and neither id exists.
+inline constexpr const char* kLeftStack = "froggers.layout.left.stack";
+inline constexpr const char* kLeftButtons = "froggers.layout.left.buttons";
 
 inline constexpr const char* kPlay = "froggers.transport.play";
 inline constexpr const char* kStop = "froggers.transport.stop";
@@ -246,6 +252,12 @@ inline constexpr const char* kEncoderDrag = "froggers.encoder.drag";
 // None). See FroggersNodeIds::kInputSelect above and HandleAction's own
 // branch for the exact cycle/callback mechanics.
 inline constexpr const char* kInputSelect = "froggers.transport.input";
+// Dispatched by a browser shell to report its own viewport width, not
+// something this surface measures itself. Selects the narrow topology:
+// equal outer split weights, and the Randomize/Reset buttons emitted
+// beside the sliders in the chrome block rather than below the encoder
+// grid. "1" is narrow; every other value, including wide, is not.
+inline constexpr const char* kViewportNarrow = "froggers.viewport.narrow";
 
 }  // namespace FroggersActions
 
@@ -390,10 +402,12 @@ static_assert(FroggersEncoderGridLayout::kEncoderCount == kFroggersSlotsPerBank,
 
 // The operator-approved topology, kept as PURE DATA -- no builder calls, no
 // layout math -- separate from the emission code that interprets it
-// (AppendLeftBlock()/AppendRightBlock() below). This is what a future mobile
-// or VST topology would replace with a DIFFERENT table consumed by analogous
-// emission code, without forking this surface: this stays the one definition
-// site for "what goes where".
+// (AppendLeftBlock()/AppendRightBlock() below). This stays the one
+// definition site for "what goes where", including the narrow-viewport
+// variant: the narrow topology differs in the outer split weights
+// (kLeftBlockWeightNarrow/kRightBlockWeightNarrow) and in which block the
+// four Randomize/Reset buttons land in, and both of those are values here,
+// read by the same emission code rather than a forked builder path.
 //
 // The left and right columns are two INDEPENDENT stacked Columns (siblings
 // under the outer split Row, AppendLeftBlock()/AppendRightBlock()), not one
@@ -425,6 +439,18 @@ static_assert(FroggersEncoderGridLayout::kEncoderCount == kFroggersSlotsPerBank,
 //   5 | slot 8 | slot 9 | slot 10 | slot 11
 //   6 | slot 12 | slot 13 | slot 14 CRIS | slot 15 CRNC
 //   7 | Randomize page (span 2) | Randomize all (span 2)
+//   8 | Reset page (span 2) | Reset all (span 2)
+//
+//   NARROW (a phone, where the browser shell stacks the two blocks
+//   vertically instead of placing them side by side): the two blocks carry
+//   equal weight so each spans the viewport, rows 7 and 8 above are not
+//   emitted, and their four buttons become a second column inside the LEFT
+//   block, beside the Scope/Transport/Scenes/blend/BPM stack:
+//   L | Scope        | Randomize page
+//     | Play | Stop  | Randomize all
+//     | Scene 1 | 2  | Reset page
+//     | Scene blend  | Reset all
+//     | BPM          |
 struct FroggersCellMap {
     enum class LeftKind { Scope, Transport, Scenes, SceneBlend, Bpm };
     enum class RightKind { BankTabs, Header, EncoderRow, Randomize, Reset };
@@ -441,6 +467,11 @@ struct FroggersCellMap {
         // Meaningful only for RightKind::EncoderRow: the first of the 4
         // consecutive encoder slot indices this row renders.
         std::size_t firstEncoderIndex;
+    };
+    struct ButtonCell {
+        const char* id;
+        const char* label;
+        const char* action;
     };
 
     static constexpr std::array<LeftRow, 5> kLeftRows = {{
@@ -465,10 +496,42 @@ struct FroggersCellMap {
         {RightKind::Reset, 0},
     }};
 
+    // The four Randomize/Reset buttons, in operator order. ONE definition
+    // site for their identity, because two layouts emit them: the wide
+    // layout as two rows of two below the encoder grid (AppendRandomizeRow
+    // / AppendResetRow), the narrow layout as one column beside the
+    // sliders (AppendNarrowButtonColumn). A second list would be the same
+    // four ids, labels and actions written twice.
+    static constexpr std::array<ButtonCell, 4> kRandomizeResetButtons = {{
+        {FroggersNodeIds::kRandomizePage, "Randomize Page", FroggersActions::kRandomizePage},
+        {FroggersNodeIds::kRandomizeAll, "Randomize All", FroggersActions::kRandomizeAll},
+        {FroggersNodeIds::kResetPage, "Reset Page", FroggersActions::kResetPage},
+        {FroggersNodeIds::kResetAll, "Reset All", FroggersActions::kResetAll},
+    }};
+
     // The outer split Row's weights (L1+L2 = 2 units, E1-E4 = 4 units,
     // matching the table's 6-column width exactly).
     static constexpr float kLeftBlockWeight = 2.0f;
     static constexpr float kRightBlockWeight = 4.0f;
+    // The same split at a narrow viewport, where the two blocks are stacked
+    // vertically by the browser shell rather than placed side by side. The
+    // shell derives ONE scale from the grid block and applies it to every
+    // stacked block (app/browser/site/mobile-stack.mjs, `sharedScale`), so
+    // a chrome block narrower than the grid block renders narrower than the
+    // viewport with the remainder left empty. Equal weights make the two
+    // blocks the same width in design space and therefore the same width on
+    // screen, which is what puts usable room beside the sliders.
+    static constexpr float kLeftBlockWeightNarrow = 3.0f;
+    static constexpr float kRightBlockWeightNarrow = 3.0f;
+    // How tall the chrome block is when narrow, as a fraction of the outer
+    // Row's height. Widening the block without shortening it would keep
+    // laying its five rows out over the whole page height, spreading the
+    // same controls over half again as much space and pushing the encoder
+    // grid -- stacked underneath it by the shell -- clean off the first
+    // screen. The ratio of the two weights above is what keeps the block's
+    // design AREA the same as it widens, so its rows stay at the density
+    // they were drawn for and the grid starts where it used to.
+    static constexpr float kLeftBlockCrossWeightNarrow = kLeftBlockWeight / kLeftBlockWeightNarrow;
 };
 
 // Play/Stop as coloured icons (operator 2026-07-27) -- "Play =
@@ -943,13 +1006,74 @@ private:
 
     void AppendLeftBlock(synth::ui::Builder& builder) const {
         synth::ui::LayoutOptions blockLayout;
-        blockLayout.main = synth::ui::Extent::Weight(FroggersCellMap::kLeftBlockWeight);
-        blockLayout.cross = synth::ui::Extent::Weight(1.0f);
+        blockLayout.main = synth::ui::Extent::Weight(narrowViewport_ ? FroggersCellMap::kLeftBlockWeightNarrow
+                                                                     : FroggersCellMap::kLeftBlockWeight);
+        blockLayout.cross = synth::ui::Extent::Weight(
+            narrowViewport_ ? FroggersCellMap::kLeftBlockCrossWeightNarrow : 1.0f);
         blockLayout.padding = 0.0f;
         blockLayout.gap = FroggersPageLayout::kGap;
-        builder.Column(FroggersNodeIds::kLeftBlock, blockLayout, [this](synth::ui::Builder& b) {
-            for (const FroggersCellMap::LeftRow& row : FroggersCellMap::kLeftRows) {
-                AppendLeftRow(b, row);
+        if (!narrowViewport_) {
+            builder.Column(FroggersNodeIds::kLeftBlock, blockLayout, [this](synth::ui::Builder& b) {
+                AppendLeftRows(b);
+            });
+            return;
+        }
+        // Narrow: the block is a Row of two Columns instead of one Column.
+        // The kLeftRows stack keeps its own shape and takes the width left
+        // over; the Randomize/Reset buttons take the rest, which at a phone
+        // width is the region that used to render as empty viewport beside
+        // this block.
+        builder.Row(FroggersNodeIds::kLeftBlock, blockLayout, [this](synth::ui::Builder& b) {
+            synth::ui::LayoutOptions stackLayout;
+            stackLayout.main = synth::ui::Extent::Weight(1.0f);
+            stackLayout.cross = synth::ui::Extent::Weight(1.0f);
+            stackLayout.padding = 0.0f;
+            stackLayout.gap = FroggersPageLayout::kGap;
+            b.Column(FroggersNodeIds::kLeftStack, stackLayout, [this](synth::ui::Builder& c) {
+                AppendLeftRows(c);
+            });
+            AppendNarrowButtonColumn(b);
+        });
+    }
+
+    // The kLeftRows stack, emitted into whichever Column carries it: the
+    // chrome block itself when wide, the block's left-hand inner column
+    // when narrow.
+    void AppendLeftRows(synth::ui::Builder& builder) const {
+        for (const FroggersCellMap::LeftRow& row : FroggersCellMap::kLeftRows) {
+            AppendLeftRow(builder, row);
+        }
+    }
+
+    // The narrow chrome block's second column: the same four buttons the
+    // wide layout puts in two rows below the encoder grid
+    // (FroggersCellMap::kRandomizeResetButtons, the one definition site of
+    // their identity), stacked instead beside the oscilloscope and the
+    // sliders.
+    //
+    // Both axes Intrinsic, which is what "sized to the label" means here.
+    // Inside a Column the MAIN axis is the height and the CROSS axis is the
+    // width (PortableUILayout.hpp's `MainAxisFor`: Vertical for anything
+    // that is not a Row), so it is `cross` that has to be Intrinsic for a
+    // short label to produce a narrow button -- `main` alone would size the
+    // height and leave the width untouched. A Button's intrinsic width is
+    // its label width with a 72px floor (PortableUIMetrics.hpp's
+    // `IntrinsicFor`), so four of them cost one label's width here, not a
+    // share of the block.
+    void AppendNarrowButtonColumn(synth::ui::Builder& builder) const {
+        synth::ui::LayoutOptions columnLayout;
+        // Intrinsic along the parent Row's main axis: the column is exactly
+        // as wide as its widest button, leaving everything else to the stack.
+        columnLayout.main = synth::ui::Extent::Intrinsic();
+        columnLayout.cross = synth::ui::Extent::Weight(1.0f);
+        columnLayout.padding = 0.0f;
+        columnLayout.gap = FroggersPageLayout::kGap;
+        builder.Column(FroggersNodeIds::kLeftButtons, columnLayout, [](synth::ui::Builder& b) {
+            for (const FroggersCellMap::ButtonCell& button : FroggersCellMap::kRandomizeResetButtons) {
+                synth::ui::ControlStyle style{};
+                style.layout.main = synth::ui::Extent::Intrinsic();
+                style.layout.cross = synth::ui::Extent::Intrinsic();
+                b.Button(button.id, button.label, synth::ui::Action::Named(button.action), style);
             }
         });
     }
@@ -1359,7 +1483,8 @@ private:
 
     void AppendRightBlock(synth::ui::Builder& builder) const {
         synth::ui::LayoutOptions blockLayout;
-        blockLayout.main = synth::ui::Extent::Weight(FroggersCellMap::kRightBlockWeight);
+        blockLayout.main = synth::ui::Extent::Weight(narrowViewport_ ? FroggersCellMap::kRightBlockWeightNarrow
+                                                                     : FroggersCellMap::kRightBlockWeight);
         blockLayout.cross = synth::ui::Extent::Weight(1.0f);
         blockLayout.padding = 0.0f;
         blockLayout.gap = FroggersPageLayout::kGap;
@@ -1381,10 +1506,21 @@ private:
             case FroggersCellMap::RightKind::EncoderRow:
                 AppendEncoderRow(builder, row.firstEncoderIndex);
                 return;
+            // Narrow moves these two rows into the chrome block
+            // (AppendNarrowButtonColumn), so the encoder column emits
+            // neither and the four buttons exist exactly once at every
+            // width. Skipping them here rather than selecting a second row
+            // table keeps kRightRows the one description of this column.
             case FroggersCellMap::RightKind::Randomize:
+                if (narrowViewport_) {
+                    return;
+                }
                 AppendRandomizeRow(builder);
                 return;
             case FroggersCellMap::RightKind::Reset:
+                if (narrowViewport_) {
+                    return;
+                }
                 AppendResetRow(builder);
                 return;
         }
@@ -1866,8 +2002,8 @@ private:
     // The operator-facing property ("same size" halves) is now structural:
     // the two rows cannot drift apart.
     void AppendTwoButtonRow(synth::ui::Builder& builder, const char* rowId,
-                            const char* leftId, const char* leftLabel, const char* leftAction,
-                            const char* rightId, const char* rightLabel, const char* rightAction) const {
+                            const FroggersCellMap::ButtonCell& left,
+                            const FroggersCellMap::ButtonCell& right) const {
         synth::ui::LayoutOptions rowLayout;
         // `kUnchangedRowHeight`, same reasoning as AppendBankTabsRow
         // above -- Randomize and Reset (this method's two callers) both
@@ -1880,19 +2016,19 @@ private:
             synth::ui::ControlStyle leftStyle{};
             leftStyle.layout.main = synth::ui::Extent::Weight(2.0f);
             leftStyle.layout.cross = synth::ui::Extent::Intrinsic();
-            b.Button(leftId, leftLabel, synth::ui::Action::Named(leftAction), leftStyle);
+            b.Button(left.id, left.label, synth::ui::Action::Named(left.action), leftStyle);
 
             synth::ui::ControlStyle rightStyle{};
             rightStyle.layout.main = synth::ui::Extent::Weight(2.0f);
             rightStyle.layout.cross = synth::ui::Extent::Intrinsic();
-            b.Button(rightId, rightLabel, synth::ui::Action::Named(rightAction), rightStyle);
+            b.Button(right.id, right.label, synth::ui::Action::Named(right.action), rightStyle);
         });
     }
 
     void AppendRandomizeRow(synth::ui::Builder& builder) const {
         AppendTwoButtonRow(builder, FroggersNodeIds::kRandomizeRow,
-                           FroggersNodeIds::kRandomizePage, "Randomize Page", FroggersActions::kRandomizePage,
-                           FroggersNodeIds::kRandomizeAll, "Randomize All", FroggersActions::kRandomizeAll);
+                           FroggersCellMap::kRandomizeResetButtons[0],
+                           FroggersCellMap::kRandomizeResetButtons[1]);
     }
 
     // Operator: "below them, same size". Row 7, directly below
@@ -1903,8 +2039,8 @@ private:
     // two rows should also be each other's visual twin.
     void AppendResetRow(synth::ui::Builder& builder) const {
         AppendTwoButtonRow(builder, FroggersNodeIds::kResetRow,
-                           FroggersNodeIds::kResetPage, "Reset Page", FroggersActions::kResetPage,
-                           FroggersNodeIds::kResetAll, "Reset All", FroggersActions::kResetAll);
+                           FroggersCellMap::kRandomizeResetButtons[2],
+                           FroggersCellMap::kRandomizeResetButtons[3]);
     }
 
     bool BankSelected(std::size_t bankIx) const {
@@ -2180,6 +2316,12 @@ private:
             }
             return;
         }
+        if (action.name == FroggersActions::kViewportNarrow) {
+            // A UI-only flag, same as pluginHostMode_ -- no PushMessage,
+            // the audio thread has no concept of viewport width.
+            narrowViewport_ = (action.value == "1");
+            return;
+        }
     }
 
     void PushMessage(const synth::MessageIn& message) {
@@ -2202,6 +2344,15 @@ private:
     // existing construction of this class -- default constructed, this flag
     // never touched -- renders exactly as before.
     bool pluginHostMode_ = false;
+    // Set only by kViewportNarrow, which a browser shell dispatches to
+    // report its own viewport width. Purely a rendering choice -- which
+    // outer split weights AppendLeftBlock/AppendRightBlock declare, and
+    // whether the chrome block is a plain stack or a stack beside a button
+    // column -- so it never reaches the audio thread, same as
+    // pluginHostMode_ above. Defaults false, so every existing
+    // construction of this class (default constructed, no such action ever
+    // dispatched) renders exactly as before.
+    bool narrowViewport_ = false;
     // See SetInputOptions()'s own comment. Defaults to just "None" (index
     // 0), the same "unavailable" reading a disabled/zero-channel bus
     // produces -- so a plugin-host construction that has not yet called

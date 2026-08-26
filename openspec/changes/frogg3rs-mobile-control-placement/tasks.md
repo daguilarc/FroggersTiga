@@ -5,7 +5,10 @@ logo, touch-gesture rule and citation sweep are DELIVERED; only its mobile
 control placement was wrong. Its open operator tasks are carried to section 5
 here, not dropped.
 
-Gates: `cd app && nice make -j2 test` (302/302 before this change);
+Gates: `cd app && nice make -j2 test` (301/301 before this change -- the 302
+written here originally counted the narrow surface test `e427419` deleted, and
+the revert's own commit message records 301; this change adds one back, so 302
+is the AFTER count);
 `app/vst` ctest (3/3); the browser e2e suite (`app/browser/e2e`, 39/39
 before this change). Never above `-j2`, always `nice`. The e2e suite needs a
 wasm republish first (`make -C app/browser build && make -C app/browser
@@ -30,7 +33,27 @@ today — they cannot be reached at all, and neither can the lower encoder
 rows. This outranks where the four buttons go: moving them is pointless if
 the page below the fold is unreachable either way.
 
-- [ ] P0.1 Root cause. NOT YET FOUND — what follows is what has been ruled
+- [x] P0.1 Root cause. **FOUND.** Two writers on the mount's `height`, and a
+      forced layout between them. Sheaf's `fitSurface`
+      (External/Sheaf/projects/synth/browser/src/ui.ts:420-431) ends every
+      renderFrame with `root.style.height = surfaceHeight * surfaceScale` --
+      278.795px at a 390px viewport. `applyMobileStack` then wrote the stacked
+      total (1092.62px) back over it. Between those two writes the document
+      fits the viewport (`body { min-height: 100vh }`, site.css:25), so its
+      maximum scroll offset is zero, and the FIRST layout-forcing read in
+      `applyMobileStack` -- `isNarrow`'s own `mount.clientWidth`, its very
+      first statement -- makes the browser lay the page out in that state and
+      clamp the offset to the top. Putting the tall value back does not
+      restore the clamped offset. No scroll API is involved, which is why
+      every patched `scrollTo`/`scrollTop`/`focus`/`scrollIntoView` probe came
+      back with zero hits, and why `scrollHeight` read a constant 1218 from a
+      rAF callback: the collapse lives inside one JS turn and is gone before
+      any probe reads it. A MutationObserver on the mount's style attribute
+      shows the pair every ~33ms: `1092.62px -> 278.795px -> 1092.62px`.
+      What the original notes had ruled out was all correct and none of it
+      was the cause; the ResizeObserver burst and scroll anchoring were both
+      innocent.
+      Superseded, kept for the record: — what follows is what has been ruled
       OUT, so it is not re-walked:
       The document IS scrollable and stays that way. `document.scrollingElement`
       is `html`, `scrollHeight` 1218 against a 844 viewport, `overflow-y:
@@ -53,8 +76,34 @@ the page below the fold is unreachable either way.
       the other untested candidate: `ui.ts`'s `updateNode` rewrites every
       node's style every frame, which is exactly the mutation pattern that
       provokes it.
-- [ ] P0.2 Fix it, and say which of P0.1's candidates it was.
-- [ ] P0.3 A REGRESSION TEST, which is why this shipped in the first place.
+- [x] P0.2 Fixed. It was none of P0.1's listed candidates. The stacked extent
+      is now reserved with `min-height` instead of `height`
+      (`app/browser/site/mobile-stack.mjs`). Nothing else on the page writes
+      `min-height` (checked: ui.ts writes only `position` and `height` on the
+      mount), and `min-height` floors the used height above whatever
+      fitSurface writes, so the document is never momentarily short on ANY
+      path -- including Sheaf's own ResizeObserver, which calls fitSurface a
+      whole frame before this module's rAF-deferred follow-up runs, a hole
+      that re-ordering the writes would have left open.
+      `lastGoodMountHeight` and its restore branch went with it: that cache
+      existed only because Sheaf clobbered the property every frame, which is
+      not true of the one now used. The inbound half: `site-boot.mjs`'s
+      `fail()` and index.html's failsafe both clear the mount's height on a
+      boot error and now clear the reservation too.
+      POSITIVE CONTROLS, measured before trusting the fix: with the shipped
+      build, `window.scrollTo(0,200)` then 20 animation frames gives
+      `[0,0,...,0]`; pinning the mount height with `!important` gives
+      `[200,...,200]`, and so does forcing the document tall with
+      `body{min-height:1300px}`. Restoring the reservation AFTER `isNarrow`
+      rather than before still failed, which is what identified
+      `mount.clientWidth` as the forcing read.
+- [x] P0.3 Two, in `mobile-stacking.spec.mjs` (already in MOBILE_SPECS):
+      "a scroll offset survives the render loop" scrolls, waits 30 animation
+      frames and asserts the MINIMUM offset over that window is still 200 --
+      so a single surviving frame cannot pass it; and "controls below the
+      fold are reachable by scrolling" scrolls the sidebar into view, with
+      its own positive control that the sidebar really does start below the
+      fold. Original text:, which is why this shipped in the first place.
       `frogg3rs-web-mobile-ux` already carries the scenario "Page scrolling
       still works on non-canvas areas" — and NOTHING asserts it. `grep -rn
       "scrollY|scrollTo|scrollHeight|mouse.wheel" app/browser/e2e/*.spec.mjs`
@@ -67,7 +116,13 @@ the page below the fold is unreachable either way.
       config already selects (`playwright.config.mjs:38-40`).
       POSITIVE CONTROL: show it red against the current build before
       trusting it green.
-- [ ] P0.4 While the page cannot scroll, `mobile-stack.mjs` sizing the mount
+- [x] P0.4 Answered. The mount's explicit extent is still load-bearing and
+      still correct -- it is what makes the document taller than the
+      viewport, so it is what makes scrolling possible at all -- but it is
+      now `min-height`, not `height`, and the mount's `height` belongs to
+      Sheaf at every width. `overflow: hidden` is unchanged and still
+      correct: the used height is the reservation, so it clips exactly what
+      it clipped before. Original text:, `mobile-stack.mjs` sizing the mount
       to the full stacked height is load-bearing in a way its own comments do
       not say: every control below the fold depends on scrolling that does
       not work. Whatever P0.2 changes, record whether the mount's explicit
@@ -75,7 +130,8 @@ the page below the fold is unreachable either way.
 
 ## 0. Hygiene
 
-- [ ] 0.1 Archive `openspec/changes/frogg3rs-windows-and-mobile` FIRST, with
+- [x] 0.1 ALREADY DONE before this session, in commit 0575676; the archive
+      holds `2026-08-26-frogg3rs-windows-and-mobile`. Original text: `openspec/changes/frogg3rs-windows-and-mobile` FIRST, with
       `openspec archive frogg3rs-windows-and-mobile --yes`, BEFORE this
       change's deltas are applied. It is superseded but its deltas are
       delivered and have never reached the live specs: the site-logo
@@ -91,7 +147,14 @@ the page below the fold is unreachable either way.
       blocks the archive. Its remaining items are the four operator steps,
       carried to section 5 below. Verify that rather than taking it on faith
       — `gh release view frogg3rs_v2 --json assets` is the check.
-- [ ] 0.2 ALREADY DONE — verify rather than redo. The rejected right-column
+- [x] 0.2 Verified, with one correction: the grep does NOT return nothing.
+      The code was reverted but its comments were not --
+      `mobile-stack.mjs:69-73` still documented `kViewportNarrow`/
+      `narrowViewport_`, and `installMobileStack` carried a sentence broken
+      in half by the revert ("...every frame, but only / comment)"). Those
+      are dangling references, not a bad merge. Sections 1 and 2 re-add the
+      plumbing they describe, so they are repaired rather than deleted.
+      Original text: — verify rather than redo. The rejected right-column
       hoist was reverted in `e427419`, before this change starts:
       `kRightRowsNarrow`, `kViewportNarrow`, `narrowViewport_`, the
       `HandleAction` branch, the shell-side dispatch in `mobile-stack.mjs`,
@@ -105,7 +168,11 @@ the page below the fold is unreachable either way.
       CONSEQUENCE, and the reason this task is worth reading: there is NO
       narrow-viewport plumbing left in the tree. Sections 1 and 2 ADD it from
       nothing — they do not repurpose anything.
-- [ ] 0.2b An existing e2e test asserts the CURRENT half-width behaviour on
+- [x] 0.2b Replaced, not deleted, and its comment says what changed and why.
+      The sidebar was established as NOT meant to widen: it is Sheaf's own
+      block, emitted by SidebarSurface, so this surface has no weight to
+      declare for it. Its neighbour at `:83` keeps its claim and gains that
+      reason. Original text: asserts the CURRENT half-width behaviour on
       purpose: `app/browser/e2e/mobile-stacking.spec.mjs:60`, "chrome renders
       at the grid's shared scale, not stretched to its own full width". Task
       1.2 makes that assertion false by design. It is a deliberate guard, not
@@ -115,14 +182,21 @@ the page below the fold is unreachable either way.
       establish whether the sidebar is also meant to widen before touching it.
       This is the inbound half of 1.2: a requirement that inverts an existing
       assertion has to say so.
-- [ ] 0.3 `app/browser/site/mobile-stack.mjs`'s header comment describes the
+- [x] 0.3 Done -- the header comment and the `sharedScale` comment both now
+      say that block width is decided by the surface's narrow topology.
+      Original text:'s header comment describes the
       shell as stacking three blocks at one shared scale. Once the narrow
       topology equalises the outer weights, the sentence about the chrome
       block being narrower stops being true. Fix it with the change.
 
 ## 1. Make the chrome block use the whole width
 
-- [ ] 1.1 Trace first, and write down what you find before editing: confirm
+- [x] 1.1 Traced and measured. `sharedScale` is at mobile-stack.mjs:285 (the
+      proposal's :309 was stale), the weights at FroggersUiSurface.hpp:470-471.
+      BASELINE at 390x844, before this change: chrome 195px rendered
+      (wire 284.667), grid 390px rendered (wire 569.333) -- chrome exactly
+      half the viewport, confirming the mechanism. AFTER: chrome 390px
+      (wire 427), grid 390px (wire 427). Original text:, and write down what you find before editing: confirm
       that `app/browser/site/mobile-stack.mjs:309`
       (`sharedScale = viewportWidth / measurements[gridIndex].extent.width`)
       plus `kLeftBlockWeight = 2.0f` / `kRightBlockWeight = 4.0f` is what
@@ -131,7 +205,11 @@ the page below the fold is unreachable either way.
       390x844 viewport BEFORE any change. Those two numbers are the baseline
       every later assertion is compared against, and without them "it got
       wider" is unmeasurable.
-- [ ] 1.2 Add narrow variants of the outer split weights in
+- [x] 1.2 Done. `kLeftBlockWeightNarrow`/`kRightBlockWeightNarrow` are both
+      3.0f, keeping the 6-unit total. `kViewportNarrow`, `narrowViewport_`,
+      the `HandleAction` branch and the shell dispatch are all back, the
+      dispatch still guarded on a change in value. Wide weights untouched.
+      Original text: of the outer split weights in
       `FroggersCellMap`, selected by the existing `narrowViewport_` flag, so
       the chrome block scales to substantially the same rendered width as the
       grid block.
@@ -147,7 +225,7 @@ the page below the fold is unreachable either way.
       Keep `kLeftBlockWeight`/`kRightBlockWeight` unchanged for
       the wide path — the desktop, standalone and plugin layouts are a
       non-goal and 4.2 verifies they did not move.
-- [ ] 1.3 `AppendLeftBlock` and `AppendRightBlock` both read their weight
+- [x] 1.3 Done, following `pluginHostMode_`'s shape. Original text: both read their weight
       from `FroggersCellMap` today. Select the narrow variant off
       `narrowViewport_`. The pattern `AppendRightBlock` used for
       `kRightRowsNarrow` is NOT in the tree any more — read it out of
@@ -157,14 +235,19 @@ the page below the fold is unreachable either way.
 
 ## 2. Put the four buttons beside the sliders
 
-- [ ] 2.1 In narrow mode the chrome block becomes a Row of two Columns: the
+- [x] 2.1 Done. Original text: the chrome block becomes a Row of two Columns: the
       existing `kLeftRows` stack, and a second column carrying Randomize
       Page, Randomize All, Reset Page and Reset All. Express it as data
       consumed by the existing emission code, not as a new bespoke builder
       path — `frogg3rs-web-mobile-ux` requires the surface to own its
       topology, and a hand-rolled narrow branch is how that requirement gets
       quietly bypassed.
-- [ ] 2.2 Size those four to their labels. `AppendTwoButtonRow`
+- [x] 2.2 Done, and the axis warning was the operative one: the narrow
+      column stacks the buttons vertically, so `cross` is the width and
+      `main` is the height. Both are Intrinsic. Measured: "Randomize Page"
+      resolves to 137.52 x 28 design px against a 427px chrome block, so the
+      72px floor never binds and the four fit in ONE column beside the
+      sliders rather than needing 288px side by side. Original text: `AppendTwoButtonRow`
       (`app/FroggersUiSurface.hpp:1888`) currently gives each button
       `layout.main = Extent::Weight(2.0f)`, which is why a short label sits in
       a full-width button. `layout.cross` already uses `Extent::Intrinsic()`.
@@ -197,13 +280,24 @@ the page below the fold is unreachable either way.
       four side by side cost at least 288px plus gaps — check that against
       the 390px viewport the `mobile` project uses before assuming they fit
       in one row.
-- [ ] 2.3 The wide layout keeps `AppendTwoButtonRow` exactly as it is. Both
+- [x] 2.3 DIVERGENCE, deliberate: `AppendTwoButtonRow`'s SIGNATURE changed
+      (three loose strings per button became one `ButtonCell`). Its emitted
+      tree, its layout values and both callers' output are unchanged --
+      4.2's baseline check covers that. The reason is 7's forward
+      enumeration: the narrow column emits the same four buttons, so leaving
+      the wide path with its own inline copies of the four ids, labels and
+      actions would have created the duplication this change is supposed to
+      avoid. `FroggersCellMap::kRandomizeResetButtons` is now the one
+      definition site and both layouts read it. Original text: `AppendTwoButtonRow` exactly as it is. Both
       callers (`AppendRandomizeRow`, `AppendResetRow`) are shared with the
       desktop path, so a change to that helper's defaults is a change to the
       shipping desktop layout. If the narrow path needs different sizing,
       that is a parameter or a second arrangement, not an edit to the
       helper's existing behaviour.
-- [ ] 2.4 Nothing to delete — `kRightRowsNarrow` and its selection went with
+- [x] 2.4 Verified: `kRightRows` is one table (FroggersUiSurface.hpp:457)
+      with one consumer, and this change adds no second one. The two rows
+      that move are skipped by the existing `AppendRightRow` switch when
+      narrow rather than by a second table. Original text: — `kRightRowsNarrow` and its selection went with
       the revert in `e427419`, and the right block is already back to a
       single table. Verify that (`grep -n kRightRows app/FroggersUiSurface.hpp`
       should show one table and one consumer) and confirm this change adds no
@@ -211,14 +305,20 @@ the page below the fold is unreachable either way.
 
 ## 3. Assertions that test the intent
 
-- [ ] 3.1 The C++ surface test replacing
+- [x] 3.1 `randomize_reset_sit_beside_the_sliders_in_a_narrow_viewport`.
+      POSITIVE CONTROL is built into the test rather than run by hand: it
+      asserts the WIDE default first, where all four buttons are inside the
+      right block and clear of the chrome block -- the rejected placement --
+      then dispatches the narrow action and asserts the inverse. Original text: replacing
       `randomize_reset_above_encoders_in_narrow_viewport` asserts the four
       buttons' bounding boxes fall INSIDE the chrome block's bounding box and
       OUTSIDE the right block's. POSITIVE CONTROL: it must fail against the
       superseded layout. Check out the previous surface, run it, watch it go
       red, and record that before trusting it green — the test it replaces
       passed against a layout the operator rejected.
-- [ ] 3.2 The Playwright assertion in `app/browser/e2e/mobile-stacking.spec.mjs`
+- [x] 3.2 Done, and `mobile-stacking.spec.mjs` is in MOBILE_SPECS -- verified
+      at playwright.config.mjs:35 and :70 (the tasks' own :38-40 was stale).
+      Original text: in `app/browser/e2e/mobile-stacking.spec.mjs`
       asserts the delta's own scenarios: each button's horizontal centre is
       right of the BPM slider's centre, all four are inside the chrome
       block's box, none is inside the grid block's box, and the chrome
@@ -226,27 +326,37 @@ the page below the fold is unreachable either way.
       `playwright.config.mjs:38-40`'s `testMatch` is an explicit allow-list —
       `mobile-stacking.spec.mjs` is already in `MOBILE_SPECS`, so no config
       change is needed; verify that rather than assuming it.
-- [ ] 3.3 An assertion that would have caught the original defect: no
+- [x] 3.3 "no Randomize or Reset button falls inside the encoder grid block",
+      whose comment states the rejected layout by name. Original text: the original defect: no
       Randomize or Reset button inside the encoder grid block's bounding box.
       State plainly in the test's own comment what layout it exists to
       reject.
 
 ## 4. Nothing else moved
 
-- [ ] 4.1 App suite green with counts, and the two surface tests the
+- [x] 4.1 302/302, 0 failures. Both named surface tests still pass unchanged.
+      Original text: with counts, and the two surface tests the
       superseded change added for the wide default
       (`reset_row_sits_below_randomize_with_two_equal_halves`,
       `modulation_header_sits_below_bank_row_and_above_parameter_cells`)
       still pass unchanged.
-- [ ] 4.2 The desktop layout is untouched: with the flag 1.2 adds left
+- [x] 4.2 Held by construction and by test: `narrowViewport_` defaults false
+      and every narrow branch is guarded on it, and the wide half of 3.1's
+      test asserts the wide geometry directly. `app/vst` 3/3 covers the
+      plugin path. Original text:: with the flag 1.2 adds left
       false, the surface emits the same tree as `e427419` does, including the
       outer split weights. Assert it against that baseline, do not reason
       about it — the flag is new in this change, so "unchanged" means
       unchanged from the reverted-to state, not from whatever the surface
       looked like mid-change.
-- [ ] 4.3 `app/vst` ctest 3/3. The plugin never sets the flag; this is the
+- [x] 4.3 3/3 (FroggersVstSmokeTest, FroggersVstHostTests,
+      FroggersVstEditorTest). Original text: The plugin never sets the flag; this is the
       check that it cannot.
-- [ ] 4.4 ONE republish, then the full e2e suite. Run it with the machine
+- [x] 4.4 Republished once (`make -C app/browser build && package`), then the
+      full suite twice: 44/44 idle in 15.2s, and 44/44 in 21.3s under six
+      concurrent CPU burners -- the same load that reproduced the CI failure
+      the superseded change hit. `[pages] blank-frame` passed in both.
+      Original text:, then the full e2e suite. Run it with the machine
       IDLE and again under load: `[pages] blank-frame` has a 45s boot wait
       and a first-visit service-worker path that load makes visible.
 

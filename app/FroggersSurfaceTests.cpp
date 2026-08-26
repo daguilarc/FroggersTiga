@@ -2281,6 +2281,84 @@ TEST_CASE(reset_row_sits_below_randomize_with_two_equal_halves) {
               << " ResetAll@" << resetAllIx << "\n";
 }
 
+TEST_CASE(randomize_reset_sit_beside_the_sliders_in_a_narrow_viewport) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("narrow_viewport_buttons"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+
+    // The layout this test exists to REJECT is the one the operator turned
+    // down: the four buttons anywhere inside the encoder column, whether
+    // above the encoder rows or below them. The wide default puts them
+    // below, inside the right block, so it doubles as the positive control
+    // -- a pass below means they MOVED, not that they were never there.
+    const synth::ui::NodeTree wide = surface.BuildTree();
+    const synth::ui::Bounds wideChrome = AbsoluteBounds(wide, synth_froggers::FroggersNodeIds::kLeftBlock);
+    const synth::ui::Bounds wideGrid = AbsoluteBounds(wide, synth_froggers::FroggersNodeIds::kRightBlock);
+    REQUIRE_TRUE(wideChrome.width > 0.0f && wideGrid.width > 0.0f);
+    for (const synth_froggers::FroggersCellMap::ButtonCell& button :
+         synth_froggers::FroggersCellMap::kRandomizeResetButtons) {
+        const synth::ui::Bounds box = AbsoluteBounds(wide, button.id);
+        REQUIRE_TRUE(box.width > 0.0f && box.height > 0.0f);
+        REQUIRE_TRUE(FullyInside(box, wideGrid));
+        REQUIRE_TRUE(!Overlaps(box, wideChrome));
+    }
+    // The wide split is the 2-of-6 / 4-of-6 one, i.e. the chrome block is
+    // materially narrower. Recorded here because the narrow assertion below
+    // is "these two are now the same width", which means nothing without a
+    // measured before.
+    REQUIRE_TRUE(wideChrome.width < wideGrid.width * 0.75f);
+
+    // The browser shell reports its own viewport width through this action;
+    // dispatching it here exercises the same path the shell takes rather
+    // than reaching past it to the flag.
+    surface.DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kViewportNarrow, "1"));
+    rig.RunBlocks(4);
+
+    const synth::ui::NodeTree narrow = surface.BuildTree();
+    const synth::ui::Bounds chrome = AbsoluteBounds(narrow, synth_froggers::FroggersNodeIds::kLeftBlock);
+    const synth::ui::Bounds grid = AbsoluteBounds(narrow, synth_froggers::FroggersNodeIds::kRightBlock);
+    REQUIRE_TRUE(chrome.width > 0.0f && grid.width > 0.0f);
+
+    // The shell derives ONE scale from the grid block and applies it to
+    // every stacked block, so equal design widths here are what makes the
+    // chrome block span the viewport on a phone instead of half of it.
+    REQUIRE_TRUE(std::fabs(chrome.width - grid.width) <= grid.width * 0.05f);
+
+    const synth::ui::Bounds bpm = AbsoluteBounds(narrow, synth_froggers::FroggersNodeIds::kBpm);
+    REQUIRE_TRUE(bpm.width > 0.0f);
+    for (const synth_froggers::FroggersCellMap::ButtonCell& button :
+         synth_froggers::FroggersCellMap::kRandomizeResetButtons) {
+        const synth::ui::Bounds box = AbsoluteBounds(narrow, button.id);
+        REQUIRE_TRUE(box.width > 0.0f && box.height > 0.0f);
+        // Inside the chrome block and clear of the encoder column.
+        REQUIRE_TRUE(FullyInside(box, chrome));
+        REQUIRE_TRUE(!Overlaps(box, grid));
+        // Beside the sliders, not above or below them.
+        REQUIRE_TRUE(box.x + box.width * 0.5f > bpm.x + bpm.width * 0.5f);
+        // Sized to the label rather than to a share of the block.
+        REQUIRE_TRUE(box.width < chrome.width * 0.5f);
+
+        // Moved, not copied: a shell that rearranged emitted controls would
+        // leave the originals behind as well.
+        std::size_t occurrences = 0;
+        for (const synth::ui::Node& node : narrow.nodes) {
+            if (node.id == button.id) {
+                ++occurrences;
+            }
+        }
+        REQUIRE_TRUE(occurrences == 1);
+    }
+
+    const synth::ui::Bounds randomizePage =
+        AbsoluteBounds(narrow, synth_froggers::FroggersNodeIds::kRandomizePage);
+    std::cout << "  [narrow chrome] chrome width " << wideChrome.width << " -> " << chrome.width
+              << " (grid " << wideGrid.width << " -> " << grid.width << "), Randomize Page "
+              << randomizePage.width << "x" << randomizePage.height << " at x=" << randomizePage.x << "\n";
+}
+
 TEST_CASE(reset_all_clears_values_and_neutralises_depths_end_to_end) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
         /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("reset_all_end_to_end"));
