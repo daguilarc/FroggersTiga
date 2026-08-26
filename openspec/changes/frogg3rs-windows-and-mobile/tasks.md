@@ -368,7 +368,7 @@ has never run is not covered by an observation of the stage before it.
 
 ## 7. Ship and close
 
-- [ ] 7.1 The desktop release ships both platforms, and `MANUAL.md:25-27`
+- [x] 7.1 The desktop release ships both platforms, and `MANUAL.md:25-27`
       stops saying the Windows build is in progress — the
       `frogg3rs-distribution` delta's own scenario.
       Nothing in `desktop-release.yml` wires this today, and the plan owes the
@@ -411,6 +411,17 @@ has never run is not covered by an observation of the stage before it.
       coverage drift this requirement forbids, pointing the other way. The
       release is an operator action; see 7.4's note on testing the artifact
       from the run BEFORE it is published.
+      **CLOSED. Run 33006852308**, triggered by the operator re-pointing
+      `frogg3rs_v2` at main. All three jobs green — `build-macos`,
+      `build-windows` AND `release`, the last of which had never run before.
+      The rewritten publish step took its update-in-place branch on its first
+      real execution and did not fail on the existing release.
+      The release now carries `Frogg3rs-macOS.dmg` (5,109,136 bytes) and
+      `Frogg3rs-windows.zip` (3,555,213 bytes), both stamped
+      2026-08-26T19:51:24Z. The body regenerated from `MANUAL.md`'s own
+      section and states both platforms, so the coverage drift this task
+      reopened over — a manual claiming Windows while the download had none —
+      is closed by the artifacts themselves rather than by editing the claim.
 - [x] 7.2 ONE republish: rebuild the wasm package
       (`app/browser/Makefile` / `build-browser.sh`) and stage the catalog,
       carrying section 5's surface change and section 6's logo together. The

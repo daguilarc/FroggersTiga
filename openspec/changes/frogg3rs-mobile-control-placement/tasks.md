@@ -28,10 +28,12 @@ layout. Every assertion below is written against the clause that was missed.
       archiving it strands whatever it already delivered — that exact defect
       was found and fixed once already in the change being superseded, so do
       not recreate it.
-      Note it still has ONE genuinely open non-operator task (its 7.1, the
-      release actually shipping both platforms). Establish whether the
-      release published before archiving, and if it did not, carry 7.1 here
-      rather than archiving it closed.
+      Its last non-operator task closed before this change was written: run
+      33006852308 published `frogg3rs_v2` carrying both
+      `Frogg3rs-macOS.dmg` and `Frogg3rs-windows.zip`, so nothing open there
+      blocks the archive. Its remaining items are the four operator steps,
+      carried to section 5 below. Verify that rather than taking it on faith
+      — `gh release view frogg3rs_v2 --json assets` is the check.
 - [ ] 0.2 Sweep `FroggersCellMap` and the surface's narrow-mode members.
       `kRightRowsNarrow` and its selection in `AppendRightBlock` are being
       deleted by 2.4; check for anything else that exists ONLY to serve the
