@@ -110,7 +110,7 @@ has never run is not covered by an observation of the stage before it.
       being built, from the repository's single copy. No second checked-in
       copy. On macOS this target is not the shipping path, so the copy exists
       there to keep both branches testable, not to ship.
-- [ ] 1.4 The Windows job builds. Report what it takes. If it fails on
+- [x] 1.4 The Windows job builds. Report what it takes. If it fails on
       something outside the audit's list, record the gap in this file before
       fixing it.
       **RUN 33003588859 (dispatch, 2026-08-26).** `build-macos` success,
@@ -136,7 +136,7 @@ has never run is not covered by an observation of the stage before it.
       this because it compiles two files plus `HostDataPaths.cpp` and never
       references the runtime shell, so it is not the working analogue it
       looks like.
-- [ ] 1.5 FIRST ATTEMPT — the link stage. Everything above fixes compilation,
+- [x] 1.5 FIRST ATTEMPT — the link stage. Everything above fixes compilation,
       which is as far as any Windows run has ever reached. The link has never
       run and crosses a toolchain seam the audit did not name:
       `External/Sheaf/projects/synth/Makefile:1` is `CXX ?= clang++` with
@@ -157,6 +157,31 @@ has never run is not covered by an observation of the stage before it.
       source list, which `External/Sheaf/projects/synth/Makefile` owns today.
       Record which outcome occurred. A failure here is expected discovery,
       not a new mystery.
+      **OUTCOME: the third listed case, and the decided fallback was taken.**
+      MSVC did not reject the archive as a foreign format, which was the
+      framing this task was written under; it consumed it and resolved
+      nothing from it — 38 x LNK2019 across every Sheaf symbol the runtime
+      shell needs. The libsynth step's own GCC-style warnings
+      (`-Wmissing-field-initializers`, `-Wswitch`) show `make` built it with
+      the Makefile's `CXX ?= clang++`, so the objects came from a different
+      driver than the one linking them.
+      Fixed as decided: on Windows those sources compile into the target, so
+      one compiler owns the whole link. Elsewhere the `libsynth.a` link is
+      untouched. The source list is globbed with `CONFIGURE_DEPENDS` rather
+      than copied, because Sheaf's `Makefile:37` builds exactly `src/*.cpp`
+      and a second copy of that set would fail this link again the day Sheaf
+      gains a source.
+      **RUN 33005171687: build-windows SUCCESS.** The first time this project
+      has ever produced a Windows binary. Every step green, including the
+      `test -f Frogg3rs.exe` assertion, and a `windows-zip` artifact of
+      3,552,443 bytes. `build-macos` success alongside it; `release` skipped,
+      correctly, because a dispatch is not the release tag.
+      Cost: three dispatches. One was real discovery (the link), one was a
+      self-inflicted configure error — `juce_add_gui_app` wrapped into an
+      `else()` branch, which a local `cmake -S app/standalone -B ...` would
+      have caught in seconds and which was skipped right after a structural
+      edit. Configure locally after every structural CMake change; the
+      Windows-only half still has no local proving ground, but this half did.
 
 ## 2. The Windows build is signed, or says why not
 
