@@ -54,7 +54,7 @@ defect to be closed.
 - **THEN** the operating system evaluates its signature and reports a verdict
 - **AND** it does not report the file as damaged
 
-#### Scenario: A platform with no obtainable identity ships unsigned and says so
+#### Scenario: A platform this project holds no identity for ships anyway, and says so
 - **WHEN** a release contains an artifact for a platform where this project
   holds no signing certificate
 - **THEN** that artifact ships unsigned rather than being withheld
