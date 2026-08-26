@@ -430,15 +430,46 @@ Local gates, all green:
    `height:0; overflow:hidden` still fails the assertion, so scrolling did
    not blunt the clipping check the helper was written for.
 
-### Known-flaky, not a regression
+### The `pages` failure was a real bug, not a flake
 
-`[pages] blank-frame` failed twice on a loaded machine (45s boot timeout) and
-passes on an idle one (523ms; full suite 23.4s versus 1.1-1.3m when loaded).
-That origin is served `--no-isolation-headers`, so it has no
-`SharedArrayBuffer` and boots through a slower fallback; its 45s wait is thin
-under load. The same spec on the `desktop` project never failed. This has NOT
-been shown to pre-date the change - that would need a full-suite run under
-load on the pre-change tree - so the thin timeout is worth watching in CI.
+First called known-flaky and not a regression. That was asserted from
+adjacent evidence, not traced, and it was wrong on the mechanism twice: the
+app does not boot slowly on the non-isolated origin, it hard-fails there, and
+the reason is a race with a fixed cause rather than machine speed.
+
+Read off the failing page rather than reasoned about:
+
+    frogg3rs could not start in this browser.
+    Failed to execute 'postMessage' on 'Worker':
+    SharedArrayBuffer transfer requires self.crossOriginIsolated.
+
+`index.html` loads `coi-serviceworker.js` before `site-boot.mjs` so the
+worker can inject COOP/COEP and reload into an isolated context. On a FIRST
+visit `registration.active` is null, so the reload branch is skipped and the
+code falls through to an `updatefound` listener -- but `register()` resolves
+only after `registration.installing` is set, so `updatefound` has usually
+already fired and a listener attached afterwards never runs. No reload
+happens, the page stays non-isolated, and a capable browser gets a permanent
+"could not start" panel. An idle machine sometimes finishes the install
+before `register()` resolves, taking the working branch, which is what made
+it look intermittent.
+
+This is a first-visit failure on the published site, and it lands hardest on
+the slow phones this change exists to serve.
+
+FIXED at the source: the reload is now keyed on
+`navigator.serviceWorker.ready`, which resolves once there is an active
+registration and so covers the fresh-install and already-active cases alike.
+`reloadOnce`'s sessionStorage guard still bounds it to one attempt per tab.
+
+POSITIVE CONTROL: six CPU burners reproduce the failure reliably on the old
+code (38 passed / 1 failed, suite 1.3m). Under that same load after the fix,
+the `pages` project passes 3/3 standalone (1.0s, 723ms, 662ms) and the full
+suite is 39/39 in 20.7s. The instrument moved the result both ways.
+
+Not caused by this change -- `coi-serviceworker.js`, `site-boot.mjs`'s boot
+path and `index.html`'s script order are all untouched by it -- but found by
+0.3's sweep of `app/browser/site/`, so fixed inside it rather than filed.
 
 ### Still open by design
 

@@ -92,16 +92,30 @@ if (typeof window === "undefined") {
       sessionStorage.setItem(RELOAD_GUARD_KEY, "1");
       window.location.reload();
     };
-    navigator.serviceWorker.register(scriptUrl).then((registration) => {
-      // Already active from an earlier visit but not yet controlling THIS
-      // load (the very first navigation after registration never is) --
-      // reload so the worker's fetch handler covers the navigation itself.
-      if (registration.active && !navigator.serviceWorker.controller) {
-        reloadOnce();
+    navigator.serviceWorker.register(scriptUrl).then(() => {
+      // Already controlled: the worker's fetch handler covers this
+      // navigation, isolation holds, nothing to do.
+      if (navigator.serviceWorker.controller) {
         return;
       }
-      registration.addEventListener("updatefound", () => {
-        reloadOnce();
+      // Otherwise reload once the worker is active, so its fetch handler
+      // covers the navigation itself.
+      //
+      // Keyed on navigator.serviceWorker.ready rather than an `updatefound`
+      // listener: register() resolves only AFTER registration.installing is
+      // set, so on a first visit `updatefound` has usually already fired by
+      // the time a listener could be attached, and a listener attached after
+      // the fact never runs -- no reload, the page stays non-isolated, and
+      // the SharedArrayBuffer failure surfaces as a permanent "could not
+      // start" panel on what is a perfectly capable browser. That window is
+      // wider the busier the machine is, which made it look intermittent.
+      // `ready` resolves once there IS an active registration, covering the
+      // fresh-install and already-active cases alike, and reloadOnce's
+      // sessionStorage guard still bounds this to one attempt per tab.
+      navigator.serviceWorker.ready.then(() => {
+        if (!navigator.serviceWorker.controller) {
+          reloadOnce();
+        }
       });
     }).catch((error) => {
       console.error("cross-origin-isolation service worker registration failed", error);
