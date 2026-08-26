@@ -54,48 +54,30 @@ jobs:
       - name: Fetch JUCE (pinned, matches app/vst's locally-verified checkout)
         run: git clone --branch 8.0.12 --depth 1 https://github.com/juce-framework/JUCE.git "$HOME/JUCE"
 
-      # The JUCE runtime shell (External/Sheaf/projects/synth/runtime/juce_build.mk)
-      # was made cross-platform but has never actually been built or linked on
-      # Windows. This builds the same target app/build-launcher.sh builds on
-      # macOS, with the same out-of-tree Froggers-app overrides, but names the
-      # plain binary ($(APP)) rather than the default `all` target: the
-      # default target also builds a macOS app bundle via `plutil`, a tool
-      # that does not exist on Windows and has nothing to do with whether the
-      # JUCE/Froggers build itself links on this platform. No
-      # continue-on-error: if this fails, the job fails, and that failure is
-      # real information about the Windows port.
-      - name: Build standalone binary (Frogg3rs, unverified on Windows)
-        run: |
-          # The sheaf-patch Makefile takes these as literal prerequisites and
-          # runs from its own directory, so they must be absolute. They must
-          # also be in ONE spelling: this shell's $PWD is POSIX (/d/a/...)
-          # while MSYS rewrites bare path arguments to Windows form (D:/a/...),
-          # so make would otherwise see two names for the same file and match
-          # neither. cygpath -m puts every path in Windows form with forward
-          # slashes, which both make and the compiler accept.
-          ROOT="$(cygpath -m "$PWD")"
-          APP_HEADERS="$(ls "$PWD"/app/*.hpp "$PWD"/app/dsp/*.hpp | while read -r f; do cygpath -m "$f"; done | tr '\n' ' ')"
-          make -j2 -C External/Sheaf/projects/synth/apps/sheaf-patch \
-            EXTRA_APP_DIR="$ROOT/app" \
-            EXTRA_APP_HEADER=FroggersRegistration.hpp \
-            EXTRA_APP_TYPE=synth_froggers::FroggersApp \
-            EXTRA_APP_REGISTRAR=synth_froggers::MakeFroggersRegistration \
-            EXTRA_APP_HEADERS="$APP_HEADERS" \
-            APP_NAME=Frogg3rs \
-            APP_SOURCES="$ROOT/app/FroggersMain.cpp" \
-            APP_BUILD_DIR="$ROOT/app/build-launcher-windows" \
-            APP_INFO_PLIST="$ROOT/app/Frogg3rs-Info.plist" \
-            "$ROOT/app/build-launcher-windows/Frogg3rs"
+      # app/standalone/CMakeLists.txt, not External/Sheaf's juce_build.mk:
+      # that Makefile drives x86_64-w64-mingw32-g++ on this runner, and
+      # MinGW g++ cannot compile JUCE's own headers here -- memcpy/memset
+      # missing from std:: and pointer_sized_int resolving to 32-bit int on
+      # a 64-bit target, confirmed against a real run of this job before
+      # this change (see app/standalone/CMakeLists.txt's own header comment
+      # for the exact errors and files). CMake's default Windows generator
+      # resolves to MSVC instead, which is what JUCE is actually tested
+      # against. No continue-on-error: if this fails, the job fails, and
+      # that failure is real information about the port.
+      - name: Configure
+        run: cmake -S app/standalone -B app/standalone/build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build standalone (Frogg3rs.exe)
+        run: cmake --build app/standalone/build --config Release -- -j2
 
       - name: Assert binary was built
-        run: test -f app/build-launcher-windows/Frogg3rs || test -f app/build-launcher-windows/Frogg3rs.exe
+        run: test -f app/standalone/build/FroggersStandalone_artefacts/Release/Frogg3rs.exe
 
       - name: Package Windows binary
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          $bin = Get-ChildItem -Path app/build-launcher-windows -Filter "Frogg3rs*" -File | Select-Object -First 1
-          Compress-Archive -Path $bin.FullName -DestinationPath dist/Frogg3rs-windows.zip
+          Compress-Archive -Path app/standalone/build/FroggersStandalone_artefacts/Release/Frogg3rs.exe -DestinationPath dist/Frogg3rs-windows.zip
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4

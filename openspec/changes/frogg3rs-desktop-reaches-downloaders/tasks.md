@@ -365,7 +365,7 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       `app/vst/CMakeLists.txt` already builds the plugin — Sheaf's Makefile
       producing `libsynth.a`, linked by a small CMake target that lets CMake
       pick MSVC on Windows.
-- [ ] 3.2 On that trace, choose: finish the Makefile's Windows port, or give
+- [x] 3.2 On that trace, choose: finish the Makefile's Windows port, or give
       the standalone a CMake build. Report the reason. Either way the result
       produces the same application `build-launcher.sh` produces on macOS —
       Sheaf's runtime shell, not JUCE's `Standalone` plugin wrapper. That
@@ -374,7 +374,21 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       no-input selector would not exist on Windows. And either way the synth
       core is reused, not re-listed: a second source list for the same binary
       is the duplication this change would be creating, not inheriting.
-- [ ] 3.3 The macOS build path is unchanged by the Windows work. Not
+      **3.2 RESULT.** CMake, per 3.1's decision. `app/standalone/CMakeLists.txt`
+      builds `app/FroggersMain.cpp` through `juce_add_gui_app` — Sheaf's
+      runtime shell and the same direct-launch entry point
+      `build-launcher.sh` drives, NOT JUCE's `Standalone` plugin wrapper, so
+      both platforms ship the same application. The synth core is reused, not
+      re-listed: the same `FroggersSheafLibsynth` custom target
+      `app/vst/CMakeLists.txt` already uses runs Sheaf's own Makefile for
+      `libsynth.a` and links the archive, adding only
+      `runtime/HostDataPaths.cpp` alongside it. The JUCE module list is the
+      same eight `juce_build.mk` compiles for this app on macOS, no more.
+      Verified locally before pushing: configures and builds clean on this
+      machine (macOS is not its target, but a CMake, include-path or link
+      error surfaces here just as well as on a runner), producing a working
+      `Frogg3rs.app` whose post-build sign-and-verify step passes.
+- [x] 3.3 The macOS build path is unchanged by the Windows work. Not
       byte-identical — that is unavailable here and always was:
       `juce_build.mk` compiles JUCE's `juce_core_CompilationTime.cpp`, which is
       `__DATE__` and `__TIME__` captured into the binary, so two clean builds
@@ -384,6 +398,16 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       and after, and every gate that was green stays green with counts
       reported. A port that quietly changes the macOS build is a regression
       wearing a feature's clothes.
+      **3.3 RESULT.** Unchanged and re-verified after the Windows work landed:
+      `git diff` reports no change to `app/build-launcher.sh`, `app/Makefile`,
+      `app/Frogg3rs-Info.plist` or `app/vst/CMakeLists.txt` since section 1
+      committed them, and `desktop-release.yml`'s `build-macos` job is
+      untouched by the `build-windows` rewrite. Rebuilt from clean:
+      `app/build-launcher.sh` exits 0, its own signature gate passes, and the
+      bundle's file inventory is exactly `Contents/Info.plist`,
+      `Contents/MacOS/Frogg3rs`, `Contents/Resources/{Icon.icns,MANUAL.md,
+      QUICK_DICT.md}` and `Contents/_CodeSignature/CodeResources` — the same
+      set as before. App suite 301/301, 0 failed.
 - [ ] 3.4 The Windows job builds and the signature gate's platform equivalent
       runs there. Report what it takes; if something cannot run on a Windows
       runner, say which step and why rather than marking it unverified and
