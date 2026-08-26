@@ -16,7 +16,7 @@ one of them — there is nothing to modify until it lands.
 ### Requirement: A downloadable build carries a signature matching its contents
 Every bundle a release ships SHALL carry a code signature that covers the bundle
 as assembled, including files placed into it after its executable was linked,
-on every platform where a signing identity this project can obtain exists.
+on every platform where this project holds a signing identity.
 This applies to application bundles and to plug-in bundles alike, since both are
 downloaded by the same person onto the same operating system. Signing SHALL
 happen after assembly is complete, and every packaged result SHALL be verified
@@ -29,17 +29,20 @@ build signed only at link time, before its bundle is assembled, is in exactly
 that state. So is a build signed partway through assembly, before the last of
 its resources is copied in.
 
-Where a platform admits no signing identity this project can obtain, its
-artifact SHALL ship unsigned and the release SHALL state what the operator
-sees instead. An unsigned artifact under an unqualified signing rule is a
-requirement violated by the first thing that ships under it; naming the
-condition is what keeps the rule true. This is the same shape as the macOS
-case, where the identity exists but notarization does not, and the extra step
-is documented rather than pretended away.
+Where this project holds no signing identity for a platform, its artifact
+SHALL ship ad-hoc signed or unsigned, and the release SHALL state what the
+operator sees instead and the exact steps that open it. An unsigned artifact
+under an unqualified signing rule is a requirement violated by the first
+thing that ships under it; naming the condition is what keeps the rule true.
+Holding no identity is a STANDING DECISION here, not a blocked task: neither
+an Apple Developer Program membership nor a Windows code-signing certificate
+is being purchased. Documentation SHALL describe the resulting step as
+permanent rather than as a fix awaiting work, so that nobody reads it as a
+defect to be closed.
 
 #### Scenario: Every shipped bundle verifies
-- **WHEN** a release artifact is packaged on a platform with an obtainable
-  signing identity
+- **WHEN** a release artifact is packaged on a platform where this project
+  holds a signing identity
 - **THEN** verifying its signature against its own contents succeeds
 - **AND** a build whose signature does not match its contents fails the build
   rather than reaching a release
@@ -53,7 +56,7 @@ is documented rather than pretended away.
 
 #### Scenario: A platform with no obtainable identity ships unsigned and says so
 - **WHEN** a release contains an artifact for a platform where this project
-  can obtain no signing certificate
+  holds no signing certificate
 - **THEN** that artifact ships unsigned rather than being withheld
 - **AND** the operator manual states what the operating system shows on first
   open and the step that gets past it
