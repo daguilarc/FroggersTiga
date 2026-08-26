@@ -43,6 +43,16 @@ body {
   margin: 8px auto;
 }
 
+/* Encoder knobs are Draw nodes (canvas). On mobile, the browser treats a
+   finger-drag on a knob as a scroll/pan gesture unless we claim it here.
+   Without `touch-action: none`, the pointer stream is cancelled after one or
+   two moves and the knob never receives a real drag. Container rows and
+   non-canvas areas keep the default `touch-action: auto`, so the page still
+   scrolls by dragging on buttons, gaps, the header, and the footer. */
+#synth-root [data-synth-node-kind="draw"] {
+  touch-action: none;
+}
+
 /* Shown only when site-boot.mjs's `fail()` replaces the surface: a blank
    frame tells a visitor nothing, and told the operator nothing either. */
 .boot-error {

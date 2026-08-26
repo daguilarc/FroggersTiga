@@ -104,7 +104,7 @@ would let the guard pass over a blank app surface.
 ## Status
 
 **Sections 0, 1 and 2 delivered. Windows superseded by
-`frogg3rs-windows-standalone`.** The hygiene sweep, the signing fix across all
+`frogg3rs-windows-and-mobile`.** The hygiene sweep, the signing fix across all
 three shipped bundles, and the downloader documentation are committed. The
 Windows section stalled and its remaining work — plus the site header logo and
 the closing gates — moved to that change, which starts from a source audit

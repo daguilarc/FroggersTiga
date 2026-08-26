@@ -32,3 +32,26 @@ stated coverage and the actual coverage cannot drift apart.
 - **WHEN** the desktop release is published and the Windows build succeeds
 - **THEN** the Windows artifact is attached to that release
 - **AND** no operator-facing document still calls the Windows build pending
+
+## ADDED Requirements
+
+### Requirement: The published site carries the application's mark
+The published site SHALL show the application's own logo in its header,
+resolving from a file the site build stages rather than from an external host.
+The site is the first thing a downloader sees, and a title alone does not
+identify the application the downloads belong to.
+
+The header is the required position, not an incidental one. The blank-frame
+guard measures the header's box and samples only the band beneath it, so that
+the header's own colour cannot stand in for a rendering application surface. A
+mark placed outside the header enters that sampled band and lets the guard pass
+over a blank deployment.
+
+#### Scenario: The header identifies the application
+- **WHEN** the published site loads
+- **THEN** the application's logo renders inside the site header
+- **AND** the image resolves, rather than rendering as a broken reference
+
+#### Scenario: The blank-surface guard still fails on a blank surface
+- **WHEN** the application surface renders blank beneath the header
+- **THEN** the guard fails, with the logo present in the header

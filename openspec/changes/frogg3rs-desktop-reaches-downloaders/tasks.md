@@ -301,14 +301,14 @@ its ctest suite is a gate for this change: configure and build `sim/`, run
       needs an Apple Developer account and CI secrets that do not exist, so it
       is named here, not attempted.
 
-## 3. Windows — SUPERSEDED by `frogg3rs-windows-standalone`
+## 3. Windows — SUPERSEDED by `frogg3rs-windows-and-mobile`
 
 Sections 0, 1 and 2 above are delivered and committed. This section is NOT.
 It stalled after three CI attempts, the last of which proved the CMake/MSVC
 decision correct (JUCE and `libsynth.a` both compile clean under MSVC) and
 then stopped on this repository's own macOS-only code. The remaining work,
 the audit it should have started from, and the two remainders below (3b and
-section 4) are carried by `frogg3rs-windows-standalone`. Do not execute 3.1
+section 4) are carried by `frogg3rs-windows-and-mobile`. Do not execute 3.1
 onward from here.
 
 - [x] 3.1 Trace and report before writing anything, and before choosing a build
