@@ -96,12 +96,23 @@ layout. Every assertion below is written against the clause that was missed.
       `PortableUIMetrics.hpp`'s `IntrinsicFor` returns, for
       `NodeKind::Button`,
       `{0, 0, std::max(72.0f, TextWidth(node.label, style)), 28.0f}`.
-      Two consequences to design against rather than discover: the 72px floor
-      means a button never shrinks below 72px however short its label, so
-      four of them cost at least 288px of width side by side; and the
-      intrinsic HEIGHT is 28px while the existing row asks for
-      `kUnchangedRowHeight` on main — decide deliberately which governs the
-      narrow column's row heights, and record which.
+      MIND THE AXIS, because it decides whether Intrinsic gives you a width
+      at all. `PortableUILayout.hpp:122-124`'s `MainAxisFor` is
+      `node.kind == NodeKind::Row ? Axis::Horizontal : Axis::Vertical`, so
+      `main` is the WIDTH inside a Row and the HEIGHT inside a Column, with
+      `cross` the other one. In `AppendTwoButtonRow`, a Row, `main` is width —
+      which is why `Weight(2.0f)` there is what stretches these buttons, and
+      why Intrinsic there is the fix.
+      If 2.1's narrow column stacks the four buttons vertically instead, the
+      axes flip: `main` becomes height and the WIDTH comes from `cross`.
+      Setting `main = Intrinsic()` in a Column would size the height and
+      leave the width alone, which looks like the change silently doing
+      nothing. Pick the axis the arrangement actually has.
+      The 72px floor is the real width constraint: `max(72.0f, TextWidth)`
+      means a button never narrows below 72px however short its label, so
+      four side by side cost at least 288px plus gaps — check that against
+      the 390px viewport the `mobile` project uses before assuming they fit
+      in one row.
 - [ ] 2.3 The wide layout keeps `AppendTwoButtonRow` exactly as it is. Both
       callers (`AppendRandomizeRow`, `AppendResetRow`) are shared with the
       desktop path, so a change to that helper's defaults is a change to the
