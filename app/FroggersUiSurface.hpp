@@ -246,6 +246,11 @@ inline constexpr const char* kEncoderDrag = "froggers.encoder.drag";
 // None). See FroggersNodeIds::kInputSelect above and HandleAction's own
 // branch for the exact cycle/callback mechanics.
 inline constexpr const char* kInputSelect = "froggers.transport.input";
+// Dispatched by a browser shell to report its own viewport width, not
+// something this surface measures itself -- toggles which right-column row
+// order (FroggersCellMap::kRightRows vs. kRightRowsNarrow) AppendRightBlock
+// selects.
+inline constexpr const char* kViewportNarrow = "froggers.viewport.narrow";
 
 }  // namespace FroggersActions
 
@@ -463,6 +468,20 @@ struct FroggersCellMap {
         {RightKind::EncoderRow, 12},
         {RightKind::Randomize, 0},
         {RightKind::Reset, 0},
+    }};
+
+    // Same eight rows as kRightRows, reordered for a narrow viewport:
+    // Randomize and Reset sit above the encoder rows instead of below them,
+    // so they stay reachable without scrolling past the whole grid.
+    static constexpr std::array<RightRow, 8> kRightRowsNarrow = {{
+        {RightKind::BankTabs, 0},
+        {RightKind::Header, 0},
+        {RightKind::Randomize, 0},
+        {RightKind::Reset, 0},
+        {RightKind::EncoderRow, 0},
+        {RightKind::EncoderRow, 4},
+        {RightKind::EncoderRow, 8},
+        {RightKind::EncoderRow, 12},
     }};
 
     // The outer split Row's weights (L1+L2 = 2 units, E1-E4 = 4 units,
@@ -1364,7 +1383,8 @@ private:
         blockLayout.padding = 0.0f;
         blockLayout.gap = FroggersPageLayout::kGap;
         builder.Column(FroggersNodeIds::kRightBlock, blockLayout, [this](synth::ui::Builder& b) {
-            for (const FroggersCellMap::RightRow& row : FroggersCellMap::kRightRows) {
+            const auto& rightRows = narrowViewport_ ? FroggersCellMap::kRightRowsNarrow : FroggersCellMap::kRightRows;
+            for (const FroggersCellMap::RightRow& row : rightRows) {
                 AppendRightRow(b, row);
             }
         });
@@ -2180,6 +2200,12 @@ private:
             }
             return;
         }
+        if (action.name == FroggersActions::kViewportNarrow) {
+            // A UI-only flag, same as pluginHostMode_ -- no PushMessage,
+            // the audio thread has no concept of viewport width.
+            narrowViewport_ = (action.value == "1");
+            return;
+        }
     }
 
     void PushMessage(const synth::MessageIn& message) {
@@ -2202,6 +2228,14 @@ private:
     // existing construction of this class -- default constructed, this flag
     // never touched -- renders exactly as before.
     bool pluginHostMode_ = false;
+    // Set only by kViewportNarrow, which a browser shell dispatches to
+    // report its own viewport width -- purely a rendering choice for
+    // AppendRightBlock (which right-column row order it selects), so it
+    // never reaches the audio thread, same as pluginHostMode_ above.
+    // Defaults false, so every existing construction of this class --
+    // default constructed, no such action ever dispatched -- renders
+    // exactly as before (kRightRows, not kRightRowsNarrow).
+    bool narrowViewport_ = false;
     // See SetInputOptions()'s own comment. Defaults to just "None" (index
     // 0), the same "unavailable" reading a disabled/zero-channel bus
     // produces -- so a plugin-host construction that has not yet called

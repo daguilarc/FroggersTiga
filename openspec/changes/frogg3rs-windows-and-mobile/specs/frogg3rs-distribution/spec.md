@@ -6,7 +6,57 @@ Windows could not build. Once it does, "states its platforms" is satisfied by
 a release that ships both, and the standing statement that a Windows build is
 in progress becomes the stale half.
 
+This delta applies AFTER `frogg3rs-desktop-reaches-downloaders` is archived
+(that change's tasks 0.4 here). Its two ADDED requirements are delivered in
+code but have never reached this spec, and the signature requirement below is
+one of them — there is nothing to modify until it lands.
+
 ## MODIFIED Requirements
+
+### Requirement: A downloadable build carries a signature matching its contents
+Every bundle a release ships SHALL carry a code signature that covers the bundle
+as assembled, including files placed into it after its executable was linked,
+on every platform where a signing identity this project can obtain exists.
+This applies to application bundles and to plug-in bundles alike, since both are
+downloaded by the same person onto the same operating system. Signing SHALL
+happen after assembly is complete, and every packaged result SHALL be verified
+before it is published.
+
+An operating system that quarantines downloads treats a bundle whose signature
+does not match itself as damaged rather than as unsigned, which tells the person
+who downloaded it that the file is broken and offers them no way forward. A
+build signed only at link time, before its bundle is assembled, is in exactly
+that state. So is a build signed partway through assembly, before the last of
+its resources is copied in.
+
+Where a platform admits no signing identity this project can obtain, its
+artifact SHALL ship unsigned and the release SHALL state what the operator
+sees instead. An unsigned artifact under an unqualified signing rule is a
+requirement violated by the first thing that ships under it; naming the
+condition is what keeps the rule true. This is the same shape as the macOS
+case, where the identity exists but notarization does not, and the extra step
+is documented rather than pretended away.
+
+#### Scenario: Every shipped bundle verifies
+- **WHEN** a release artifact is packaged on a platform with an obtainable
+  signing identity
+- **THEN** verifying its signature against its own contents succeeds
+- **AND** a build whose signature does not match its contents fails the build
+  rather than reaching a release
+- **AND** this holds for every bundle the release publishes, not only the
+  application
+
+#### Scenario: A downloaded build is assessed, not rejected as damaged
+- **WHEN** a packaged build is downloaded and carries the quarantine attribute
+- **THEN** the operating system evaluates its signature and reports a verdict
+- **AND** it does not report the file as damaged
+
+#### Scenario: A platform with no obtainable identity ships unsigned and says so
+- **WHEN** a release contains an artifact for a platform where this project
+  can obtain no signing certificate
+- **THEN** that artifact ships unsigned rather than being withheld
+- **AND** the operator manual states what the operating system shows on first
+  open and the step that gets past it
 
 ### Requirement: Each artifact has its own release, named for what it is
 The desktop application and the audio plugin SHALL be released independently,

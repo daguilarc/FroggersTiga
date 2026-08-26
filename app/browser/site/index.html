@@ -16,8 +16,8 @@
   Dedicated to frogg3rs: boots the app directly via its own catalog +
   package (./site-boot.mjs), mirroring Sheaf's own
   `launchCatalogApplication` (External/Sheaf/projects/synth/browser/src/
-  main.ts:393-421) MINUS `SheafPatchLauncher`'s picker UI
-  (main.ts:372-391, never imported here) -- so no catalog-browser list of
+  main.ts's `launchCatalogApplication`) MINUS `SheafPatchLauncher`'s picker UI
+  (`installSheafPatchLauncher`, never imported here) -- so no catalog-browser list of
   apps is ever rendered, only frogg3rs itself. Every Sheaf symbol
   site-boot.mjs imports is unmodified and re-exported from the runtime
   copy below; no Sheaf source is edited or special-cased for frogg3rs
@@ -29,11 +29,11 @@
   ALONE cannot reflow the surface's own internal layout.
   FroggersUiSurface.hpp lays the
   encoder grid and the left-hand chrome block (scope, transport, scenes,
-  scene-blend, bpm) out as ONE outer Row (FroggersUiSurface.hpp:856-859,
-  `AppendLeftBlock`+`AppendRightBlock` as Weight(2)/Weight(4) siblings),
+  scene-blend, bpm) out as ONE outer Row (`AppendLeftBlock` and
+  `AppendRightBlock` as Weight(2)/Weight(4) siblings),
   which Sheaf's browser UI backend positions as absolutely-bounded DOM
   nodes and scales as ONE unit (External/Sheaf/projects/synth/browser/
-  src/ui.ts `fitSurface`, ui.ts:308-319 -- a single uniform
+  src/ui.ts `fitSurface` -- a single uniform
   `transform: scale()` on the whole surface root), so no plain stylesheet
   rule can independently reflow those internal, wire-positioned nodes
   without rewriting the surface's own topology (an app-core change, out
@@ -59,6 +59,7 @@
   </head>
   <body>
     <header class="site-header">
+      <img class="site-logo" src="./site-logo.png" alt="" width="24" height="24" />
       <h1 class="site-title">frogg3rs</h1>
     </header>
     <main id="synth-root" data-synth-catalog-sources="./catalog-sources.json"></main>

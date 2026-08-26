@@ -54,7 +54,11 @@ public:
             // separate from the app's own rendered surface (MainWindow's
             // content, set below) -- opening the manual/quick dictionary
             // needs no new UI inside FroggersUiSurface's node tree.
+#if JUCE_MAC
             juce::MenuBarModel::setMacMainMenu(&helpMenu_);
+#else
+            window_->setMenuBar(&helpMenu_);
+#endif
 
             LaunchRegisteredApp<synth_froggers::FroggersApp>(
                 synth::SheafPatchDataPathsForApp(dataRoot_, "frogg3rs"));
@@ -66,7 +70,18 @@ public:
     }
 
     void shutdown() override {
+#if JUCE_MAC
         juce::MenuBarModel::setMacMainMenu(nullptr);
+#else
+        // Guarded where the macOS call is not: setMacMainMenu is static and
+        // safe whatever happened during startup, but this one dereferences
+        // window_, and initialise() catches its own exceptions -- a throw
+        // before the MainWindow is constructed leaves window_ null and still
+        // reaches shutdown() on quit.
+        if (window_ != nullptr) {
+            window_->setMenuBar(nullptr);
+        }
+#endif
         window_.reset();
         activeSession_.reset();
     }
@@ -75,10 +90,10 @@ public:
     void anotherInstanceStarted(const juce::String&) override {}
 
 private:
-    // Native macOS "Help" main-menu entries for the two documents this app
-    // bundles at build time (see this file's own comment at the
-    // setMacMainMenu call site, and FroggersBundledDocs.hpp's header
-    // comment for how the bundled file is located and opened).
+    // "Help" main-menu entries for the two documents this app bundles at
+    // build time (see this file's own comment at the setMacMainMenu /
+    // setMenuBar call sites, and FroggersBundledDocs.hpp's header comment
+    // for how the bundled file is located and opened).
     class HelpMenuModel final : public juce::MenuBarModel {
     public:
         juce::StringArray getMenuBarNames() override { return {"Help"}; }
@@ -244,10 +259,12 @@ private:
 
     std::filesystem::path dataRoot_;
     // Declared BEFORE window_ so it is destroyed AFTER it (member
-    // destruction is declaration-reverse): setMacMainMenu(&helpMenu_) is
-    // cleared in shutdown() before window_.reset() runs, but this ordering
-    // is a second belt-and-suspenders guard against the main menu ever
-    // outliving the model object it points to.
+    // destruction is declaration-reverse): the Help menu -- set via
+    // setMacMainMenu(&helpMenu_) on macOS or window_->setMenuBar(&helpMenu_)
+    // elsewhere -- is cleared in shutdown() before window_.reset() runs, but
+    // this ordering is a second belt-and-suspenders guard against the main
+    // menu ever outliving the model object it points to, on either
+    // platform.
     HelpMenuModel helpMenu_;
     std::unique_ptr<MainWindow> window_;
     std::unique_ptr<synth_runtime::RuntimeShellSession<synth_froggers::FroggersApp>> activeSession_;

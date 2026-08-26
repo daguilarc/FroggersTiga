@@ -22,9 +22,8 @@ Terse one-line-per-parameter glossary for this app: [`QUICK_DICT.md`](QUICK_DICT
 
 ## Release platforms
 
-The desktop application releases for macOS. A Windows build is in progress and is not part of the
-release yet; the standalone builds through a toolchain that has only ever run on macOS, and it is
-ported rather than merely configured for Windows.
+The desktop application releases for macOS and Windows. Each desktop release carries both: a macOS
+disk image and a Windows zip holding the standalone executable.
 
 The VST3 and Audio Unit plugin releases for macOS only.
 
@@ -40,6 +39,15 @@ open normally. The same step applies before loading the VST3 or Audio Unit in a 
 
 This step goes away once the builds are signed with a Developer ID and notarized by Apple — see
 Notarization, below.
+
+On Windows the extra step has a different cause. The macOS builds are signed but not notarized; the
+Windows build is not signed at all. Authenticode signing needs a code-signing certificate this
+project does not have, the same way notarization needs an Apple Developer Program account it does
+not have — so the Windows executable ships unsigned rather than not shipping.
+
+Opening it shows Microsoft Defender SmartScreen's blue **Windows protected your PC** dialog, which
+names an unrecognised app and offers only a **Don't run** button. Click **More info**, then **Run
+anyway**. Windows remembers this choice for that copy of the file; later launches open normally.
 
 ### Notarization
 

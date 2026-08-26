@@ -2281,6 +2281,64 @@ TEST_CASE(reset_row_sits_below_randomize_with_two_equal_halves) {
               << " ResetAll@" << resetAllIx << "\n";
 }
 
+TEST_CASE(randomize_reset_above_encoders_in_narrow_viewport) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("narrow_viewport_rows"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+
+    // POSITIVE CONTROL: the wide default first, so a pass below means the
+    // rows MOVED rather than that they were always above the grid. If this
+    // half ever stops holding, the narrow half proves nothing.
+    const synth::ui::NodeTree wide = surface.BuildTree();
+    const synth::ui::Bounds wideRandomize = AbsoluteBounds(wide, synth_froggers::FroggersNodeIds::kRandomizeRow);
+    const synth::ui::Bounds wideReset = AbsoluteBounds(wide, synth_froggers::FroggersNodeIds::kResetRow);
+    const synth::ui::Bounds wideFirstEncoder =
+        AbsoluteBounds(wide, synth_froggers::FroggersNodeIds::Encoder(0));
+    REQUIRE_TRUE(wideRandomize.height > 0.0f && wideReset.height > 0.0f && wideFirstEncoder.height > 0.0f);
+    REQUIRE_TRUE(wideRandomize.y > wideFirstEncoder.y);  // below the grid, as the desktop order emits.
+    REQUIRE_TRUE(wideReset.y > wideRandomize.y);
+
+    // The browser shell reports its own viewport width through this action;
+    // dispatching it here exercises the same path the shell takes rather
+    // than reaching past it to the flag.
+    surface.DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kViewportNarrow, "1"));
+    rig.RunBlocks(4);
+
+    const synth::ui::NodeTree narrow = surface.BuildTree();
+    const synth::ui::Bounds gridRegion =
+        AbsoluteBounds(narrow, synth_froggers::FroggersNodeIds::kRightBlock);
+    REQUIRE_TRUE(gridRegion.width > 0.0f && gridRegion.height > 0.0f);
+
+    const synth::ui::Bounds randomize = AbsoluteBounds(narrow, synth_froggers::FroggersNodeIds::kRandomizeRow);
+    const synth::ui::Bounds reset = AbsoluteBounds(narrow, synth_froggers::FroggersNodeIds::kResetRow);
+    const synth::ui::Bounds firstEncoder =
+        AbsoluteBounds(narrow, synth_froggers::FroggersNodeIds::Encoder(0));
+    REQUIRE_TRUE(randomize.height > 0.0f && reset.height > 0.0f && firstEncoder.height > 0.0f);
+    REQUIRE_TRUE(FullyInside(randomize, gridRegion));
+    REQUIRE_TRUE(FullyInside(reset, gridRegion));
+
+    REQUIRE_TRUE(randomize.y < firstEncoder.y);  // above the grid now.
+    REQUIRE_TRUE(reset.y > randomize.y);         // still Randomize then Reset.
+    REQUIRE_TRUE(reset.y < firstEncoder.y);      // and still above the grid.
+
+    // Exactly one of each row survives the reorder -- a shell-side move
+    // would have left the originals in place as well.
+    std::size_t randomizeRows = 0;
+    std::size_t resetRows = 0;
+    for (const synth::ui::Node& node : narrow.nodes) {
+        if (node.id == synth_froggers::FroggersNodeIds::kRandomizeRow) { ++randomizeRows; }
+        if (node.id == synth_froggers::FroggersNodeIds::kResetRow) { ++resetRows; }
+    }
+    REQUIRE_TRUE(randomizeRows == 1);
+    REQUIRE_TRUE(resetRows == 1);
+
+    std::cout << "  [narrow rows] wide Randomize@y=" << wideRandomize.y << " -> narrow y=" << randomize.y
+              << " firstEncoder@y=" << firstEncoder.y << "\n";
+}
+
 TEST_CASE(reset_all_clears_values_and_neutralises_depths_end_to_end) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
         /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("reset_all_end_to_end"));

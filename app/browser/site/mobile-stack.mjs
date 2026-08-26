@@ -10,14 +10,19 @@
 // input-mapping this mechanism relies on
 // needed drag/press coordinate math in
 // Sheaf's own ui.ts to be made transform-robust first. This file hooks
-// `BrowserUiBackend`'s PUBLIC `renderFrame` method
-// (ui.ts:41) rather than fighting CSS at the stylesheet level, which cannot
-// reflow the surface's own internal layout (see index.html's own header
-// comment): ui.ts's `updateNode()`
+// `BrowserUiBackend`'s `renderFrame` method rather than fighting CSS at
+// the stylesheet level, which cannot reflow the surface's own internal
+// layout (see index.html's own header comment): ui.ts's `updateNode()`
 // unconditionally clears EVERY protocol node's `transform` on every render
-// frame (ui.ts:94, `element.style.transform = "";`), and only
-// `fitSurface()`'s own later, root-only re-application (ui.ts:308-319)
-// survives that clear. A transform this shell applies directly to the
+// frame (`element.style.transform = "";`), and only
+// `fitSurface()`'s own later, root-only re-application survives that
+// clear. Installing over `renderFrame` also reaches past that method's own
+// public surface: the same patched function reads `this.dispatchBrowserAction`
+// (see this file's own `dispatchViewportNarrow`) to report narrow/wide
+// state to the C++ surface, even though `ui.ts` declares that constructor
+// property `private readonly` -- TypeScript erases that at runtime, so the
+// call works, and nothing else reaches this backend instance to dispatch
+// through instead. A transform this shell applies directly to the
 // wire-managed block elements would be wiped within one frame (~33ms)
 // unless reasserted on that exact cadence -- so this module wraps the
 // public `renderFrame` method and reruns its own application synchronously,
@@ -29,9 +34,9 @@
 // with the wire-managed properties instead of fighting them, which is what
 // makes it survive where a plain-CSS approach could not.
 
-// Legacy site's own mobile breakpoint (web/src/main.ts:300,
-// `window.matchMedia("(max-width: 720px)")`; web/src/style.css:321,507),
-// carried forward as this shell's own threshold.
+// Legacy site's own mobile breakpoint
+// (`window.matchMedia("(max-width: 720px)")`), carried forward as this
+// shell's own threshold.
 const NARROW_MAX_WIDTH = 720;
 // Shell's own choice, not a wire value: vertical gap between each stacked
 // block.
@@ -62,9 +67,38 @@ function isNarrow(mount) {
   return mount.clientWidth > 0 && mount.clientWidth <= NARROW_MAX_WIDTH;
 }
 
+// FroggersActions::kViewportNarrow (FroggersUiSurface.hpp,
+// `"froggers.viewport.narrow"`) -- the C++ surface's own narrow/wide
+// signal, consumed by `HandleAction` to set `narrowViewport_` off
+// `action.value == "1"`. "0" is dispatched for every other value,
+// including wide.
+const VIEWPORT_NARROW_ACTION = "froggers.viewport.narrow";
+// Last value actually dispatched for VIEWPORT_NARROW_ACTION, so a
+// narrow/wide state that hasn't changed since the previous frame is never
+// redispatched -- renderFrame's own ~33ms cadence would otherwise flood
+// the wasm app with a same-value action on every single frame while
+// sitting still at one width. `null` (neither "0" nor "1") so the very
+// first frame always dispatches once, regardless of which side it starts
+// on.
+let lastDispatchedNarrow = null;
+
+// Reports the mount's narrow/wide state to the C++ surface off the SAME
+// isNarrow() decision this file already uses for its own stacking
+// transform -- never a second threshold or predicate. Called from inside
+// the patched `renderFrame` (installMobileStack), where `this` is the
+// `BrowserUiBackend` instance whose `dispatchBrowserAction` this reaches
+// past the public API to call (see this file's own header comment).
+function dispatchViewportNarrow(backend, mount) {
+  const narrow = isNarrow(mount);
+  const value = narrow ? "1" : "0";
+  if (value === lastDispatchedNarrow) return;
+  lastDispatchedNarrow = value;
+  backend.dispatchBrowserAction({ name: VIEWPORT_NARROW_ACTION, value });
+}
+
 // Reads a block's WIRE-SET design-space extent -- the exact px string
 // ui.ts's updateNode() writes from the node's resolved protocol bounds
-// (ui.ts:98-99: `element.style.width/height = node.bounds.width/height +
+// (ui.ts's `updateNode`: `element.style.width/height = node.bounds.width/height +
 // "px"`). Read live every call; never a hardcoded copy of the interior
 // layout numbers (the 900x712 design box, the two Froggers block ids, and
 // the sidebar's own id are the only structural facts this file bakes in,
@@ -218,7 +252,7 @@ export function applyMobileStack() {
     // not worse, and self-corrects on the very next successful frame.
     // `overflow` is ours to clear; the mount's `height` is NOT OURS TO WRITE
     // AT ALL out here. Sheaf's fitSurface owns that inline property
-    // (browser/src/ui.ts:346, `root.style.height = surfaceHeight *
+    // (browser/src/ui.ts's `fitSurface`, `root.style.height = surfaceHeight *
     // surfaceScale`) and this hook runs immediately AFTER each renderFrame,
     // so the `mount.style.height = ""` that used to live here erased Sheaf's
     // sizing every frame: the mount's only child is absolutely positioned,
@@ -349,7 +383,7 @@ function scheduleApply() {
  * it regardless.
  *
  * Resize detection uses a `ResizeObserver` on the SAME host element Sheaf
- * itself observes for `fitSurface` (ui.ts:37-38, `this.resizeObserver =
+ * itself observes for `fitSurface` (ui.ts's constructor, `this.resizeObserver =
  * new ResizeObserver(() => this.fitSurface()); this.resizeObserver.
  * observe(root);` where `root` is the mount passed into
  * `BrowserUiBackend`'s constructor -- `#synth-root`, same as
@@ -371,6 +405,13 @@ export function installMobileStack(BrowserUiBackend) {
   BrowserUiBackend.prototype.renderFrame = function patchedRenderFrame(...args) {
     const result = originalRenderFrame.apply(this, args);
     applyMobileStack();
+    // Reports narrow/wide state to the C++ surface every frame, but only
+    // actually dispatches on a change (dispatchViewportNarrow's own
+    // comment) -- `this` is the `BrowserUiBackend` instance `renderFrame`
+    // was called on, which is what makes `this.dispatchBrowserAction`
+    // reachable here despite it not being public API.
+    const mount = document.querySelector(MOUNT_SELECTOR);
+    if (mount) dispatchViewportNarrow(this, mount);
     return result;
   };
 

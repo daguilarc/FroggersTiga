@@ -30,3 +30,6 @@ app/browser/e2e/playwright-report/
 
 # Daisy firmware build output: the field firmware source is kept, its builds are not
 src/*/build/
+
+# Host-side firmware test build output (cmake -S test/firmware -B test/firmware/build)
+test/firmware/build/

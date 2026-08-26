@@ -34,8 +34,9 @@ export const PLAY_SELECTOR = '[data-synth-node-id="froggers.transport.play"]';
 // canvas per row: the same per-row sampling convention
 // ENCODER_ROW_SELECTORS above already uses, rather than all 16. Each
 // encoder is a Draw-kind node, which Sheaf's browser UI backend gives
-// exactly one <canvas> child (ui.ts:206) and paints into via a 2D context
-// (ui.ts:433-436, `canvas.getContext("2d")`).
+// exactly one <canvas> child (ui.ts's `createNode`, the NodeKind.Draw
+// case) and paints into via a 2D context (ui.ts's `paintDrawCommands`,
+// `canvas.getContext("2d")`).
 export const ENCODER_CANVAS_SELECTORS = [0, 4, 8, 12].map(
   (ix) => `[data-synth-node-id="froggers.encoder.${ix}"] canvas`,
 );
@@ -111,8 +112,9 @@ export function verticalOverlapPx(boxA, boxB) {
 /**
  * Waits for the app's own post-click audio activation to finish
  * (main.ts's `startUserActivation`, dispatched after every UI action --
- * main.ts:174-177 -- which renders `audio:${started ? "online" : ...}` into
- * the root's `data-synth-status`, main.ts:275, the same attribute the
+ * main.ts's `startUserActivation` call site -- which renders
+ * `audio:${started ? "online" : ...}` into
+ * the root's `data-synth-status` (main.ts's `setStatus`), the same attribute the
  * desktop-layout suite's own "no audio starts on load" test reads).
  */
 export async function waitForAudioOnline(page) {
@@ -125,7 +127,7 @@ export async function waitForAudioOnline(page) {
  * True if the given <canvas> element's OWN backing store holds at least
  * one non-transparent pixel -- read directly via getImageData, not from a
  * screenshot, so this answers "did paint() ever draw into this canvas"
- * (ui.ts:433-436) independent of whether the canvas is currently
+ * (ui.ts's `paintDrawCommands`) independent of whether the canvas is currently
  * on-screen. Deliberately scans every pixel rather than a fixed sample
  * point: encoders draw a filled ring roughly centered in their own
  * bounds (EncoderDraw.hpp's `BuildEncoderDrawCommands`), but nothing here
@@ -163,6 +165,27 @@ export async function canvasHasPaintedPixels(page, canvasSelector) {
  *    signal that would catch that separate failure mode.
  */
 export async function expectEncoderCanvasVisible(page, canvasSelector) {
-  await expect(page.locator(canvasSelector), canvasSelector).toBeInViewport();
+  // Scrolled to first, because the stacked narrow layout is TALLER than a
+  // phone viewport: the encoder grid sits below the chrome block and the
+  // Randomize/Reset rows, so the lower encoder rows are legitimately off
+  // the initial fold. "Reachable and painted" is the guarantee; "on screen
+  // without scrolling" never was, and the desktop project still exercises
+  // the un-scrolled case at its own wider viewport.
+  // This does NOT blunt the clipping guard above: a collapsed,
+  // overflow:hidden ancestor clips its child away at every scroll offset,
+  // so scrolling cannot bring such a child into the viewport and the
+  // assertion below still fails -- which the positive control for this
+  // helper demonstrates rather than assumes.
+  // The scroll is INSIDE the retry: once audio is running, renderFrame
+  // re-applies the stacked transforms every frame, which can move a
+  // just-scrolled-to row back out from under the viewport. Scrolling once
+  // and then waiting only works while nothing re-lays-out underneath.
+  // Still toBeInViewport (IntersectionObserver), never a hand-rolled
+  // getBoundingClientRect check -- see this helper's own note above on why
+  // that distinction is the whole point.
+  await expect(async () => {
+    await page.locator(canvasSelector).scrollIntoViewIfNeeded();
+    await expect(page.locator(canvasSelector), canvasSelector).toBeInViewport({ timeout: 2_000 });
+  }, canvasSelector).toPass({ timeout: 20_000 });
   await expect.poll(() => canvasHasPaintedPixels(page, canvasSelector), { timeout: 10_000 }).toBe(true);
 }

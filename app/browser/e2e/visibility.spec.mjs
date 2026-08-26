@@ -74,4 +74,16 @@ test.describe("surface visibility", () => {
       await expectEncoderCanvasVisible(page, selector);
     }
   });
+
+  test("the header logo image resolves", async ({ page }) => {
+    // Checks the decoded image's own natural dimensions, not merely that
+    // the <img> element is present: an element whose `src` failed to load
+    // still exists in the DOM (rendered as the browser's broken-image
+    // icon) and would pass an existence-only or even a boundingBox()-based
+    // check, so only the browser's own decoded-image state actually
+    // proves the file shipped.
+    const logo = page.locator(".site-logo");
+    await expect.poll(() => logo.evaluate((img) => img.naturalWidth), { timeout: 10_000 }).toBeGreaterThan(0);
+    await expect.poll(() => logo.evaluate((img) => img.naturalHeight), { timeout: 10_000 }).toBeGreaterThan(0);
+  });
 });

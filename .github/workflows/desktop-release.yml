@@ -98,11 +98,13 @@ jobs:
           if-no-files-found: error
 
   release:
-    # The desktop release ships macOS. The Windows job still runs, because its
-    # output is how the port gets driven forward, but it does not gate the
-    # release: holding the dmg back until an unfinished port succeeds means no
-    # desktop download at all.
-    needs: [build-macos]
+    # Both build jobs gate the release: a release must not claim platform
+    # coverage it does not have, so a red Windows job blocks it exactly like
+    # a red macOS job would. This only bites at release time -- the workflow
+    # fires on the frogg3rs_v2 tag or a manual dispatch (see the triggers
+    # above), and the release job below is additionally gated on that tag,
+    # so this coupling cannot block an ordinary push.
+    needs: [build-macos, build-windows]
     # Publishes only for the release tag. Without this a manual dispatch
     # would reach `gh release create` and cut a release named after whatever
     # ref was dispatched -- same guard vst-plugin.yml's own release job uses.
@@ -117,7 +119,11 @@ jobs:
           name: macos-dmg
           path: dist
 
-
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-zip
+          path: dist
 
       # Release notes come straight from MANUAL.md's own "Release platforms"
       # section, so the statement of platform coverage and the Windows
@@ -136,7 +142,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/Frogg3rs-macOS.dmg \
+          gh release create "$GITHUB_REF_NAME" dist/Frogg3rs-macOS.dmg dist/Frogg3rs-windows.zip \
             --repo "$GITHUB_REPOSITORY" \
             --title "Frogg3rs desktop — $GITHUB_REF_NAME" \
             --notes-file release-notes.md

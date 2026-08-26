@@ -60,11 +60,16 @@ add_custom_target(FroggersSheafLibsynth ALL
     VERBATIM
 )
 
-# ICON_BIG/ICON_SMALL take the same PNG build-launcher.sh's icon derives
-# from (see that script's own header comment on Icon.png vs Icon.icns) --
-# juce_add_gui_app converts it per-platform itself, so one source file
-# covers both the macOS .icns path this target does not build and the
-# Windows .ico path it does.
+# ICON_BIG/ICON_SMALL take Resources/Icon.png. Its sibling Resources/
+# Icon.icns is what build-launcher.sh copies into the macOS bundle, and
+# neither file is generated from the other -- no iconutil, sips or magick
+# step exists anywhere in the tree. They are two images kept in step by
+# hand, so an edit to one is an edit owed to the other.
+# juce_add_gui_app converts the PNG per platform through juceaide (JUCE's
+# own _juce_generate_icon), which is the mechanism this target relies on
+# for the Windows .ico. Nothing here has exercised it yet: app/vst passes
+# no ICON_BIG at all, so no build in this repository has produced an icon
+# through this path on any platform.
 juce_add_gui_app(FroggersStandalone
     PRODUCT_NAME "Frogg3rs"
     COMPANY_NAME "frogg3rs"
@@ -119,6 +124,30 @@ target_link_libraries(FroggersStandalone PRIVATE
     juce::juce_gui_extra
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
+)
+
+# The two operator documents FroggersBundledDocs.hpp opens, copied from the
+# repository's single copy so no second checked-in copy exists to drift from
+# it. The destination is wherever OpenBundledDoc looks on the platform being
+# built: a macOS bundle's Contents/Resources, or beside the executable
+# everywhere else, since currentApplicationFile resolves to a bundle root on
+# macOS and to the executable file itself elsewhere.
+# On macOS this target is not the shipping path -- build-launcher.sh is, and
+# it does its own copy -- so the copy here exists to keep both branches
+# testable rather than to ship.
+if(APPLE)
+    set(FROGGERS_DOC_DEST "$<TARGET_BUNDLE_CONTENT_DIR:FroggersStandalone>/Resources")
+else()
+    set(FROGGERS_DOC_DEST "$<TARGET_FILE_DIR:FroggersStandalone>")
+endif()
+add_custom_command(TARGET FroggersStandalone POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${FROGGERS_DOC_DEST}"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "${APP_DIR}/../MANUAL.md" "${FROGGERS_DOC_DEST}/MANUAL.md"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "${APP_DIR}/../QUICK_DICT.md" "${FROGGERS_DOC_DEST}/QUICK_DICT.md"
+    COMMENT "app/standalone: copying MANUAL.md/QUICK_DICT.md next to the app"
+    VERBATIM
 )
 
 # Signing must be the last step, after every file the bundle needs has

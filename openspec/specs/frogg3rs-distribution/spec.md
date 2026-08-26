@@ -2,7 +2,6 @@
 
 ## Purpose
 What the published site, the desktop download and the plugin download each are.
-
 ## Requirements
 ### Requirement: Every host ships from one app and one shell
 The standalone, the plugin and the browser build SHALL be produced from the same
@@ -15,7 +14,6 @@ one in the controls it offers.
 - **WHEN** a host is made to build on an additional platform
 - **THEN** it presents the same runtime shell, including audio device selection
 - **AND** every control documented in the manual is present on both platforms
-
 
 ### Requirement: The published site is built from the current app
 The published site SHALL be produced from the current application's browser
@@ -34,7 +32,6 @@ name that no longer resolves.
 - **AND** each link resolves to that artifact's own release, not to whichever
   release happened to be published most recently
 
-
 ### Requirement: Each artifact has its own release, named for what it is
 The desktop application and the audio plugin SHALL be released independently,
 each on its own tag, so that either can be published without republishing the
@@ -50,7 +47,6 @@ the absence of a platform-specific artifact as a failure.
 - **WHEN** a release contains artifacts for some platforms and not others
 - **THEN** the release states which platforms it covers
 
-
 ### Requirement: A publishing trigger that cannot fire is a defect
 A tag intended to publish SHALL actually publish. A workflow SHALL NOT declare a
 trigger whose pattern cannot match the tag it documents, nor a permission set
@@ -63,3 +59,51 @@ that forbids the publication it exists to perform.
 #### Scenario: A superseded release does not outrank the current one
 - **WHEN** a release exists for a product line that no longer ships
 - **THEN** it does not present itself as the current download
+
+### Requirement: A downloadable build carries a signature matching its contents
+Every bundle a release ships SHALL carry a code signature that covers the bundle
+as assembled, including files placed into it after its executable was linked.
+This applies to application bundles and to plug-in bundles alike, since both are
+downloaded by the same person onto the same operating system. Signing SHALL
+happen after assembly is complete, and every packaged result SHALL be verified
+before it is published.
+
+An operating system that quarantines downloads treats a bundle whose signature
+does not match itself as damaged rather than as unsigned, which tells the person
+who downloaded it that the file is broken and offers them no way forward. A
+build signed only at link time, before its bundle is assembled, is in exactly
+that state. So is a build signed partway through assembly, before the last of
+its resources is copied in.
+
+#### Scenario: Every shipped bundle verifies
+- **WHEN** a release artifact is packaged
+- **THEN** verifying its signature against its own contents succeeds
+- **AND** a build whose signature does not match its contents fails the build
+  rather than reaching a release
+- **AND** this holds for every bundle the release publishes, not only the
+  application
+
+#### Scenario: A downloaded build is assessed, not rejected as damaged
+- **WHEN** a packaged build is downloaded and carries the quarantine attribute
+- **THEN** the operating system evaluates its signature and reports a verdict
+- **AND** it does not report the file as damaged
+
+### Requirement: A release states what opening it requires
+A release SHALL state what the person downloading it will see and what they must
+do to open it, whenever its artifacts are not signed by an identity the
+operating system recognises. That statement SHALL appear both in the operator
+manual and in the release itself, since someone who downloads an artifact has
+not necessarily read the manual, and SHALL be written once and carried to each
+release body from that one source.
+
+#### Scenario: The extra step is documented where it is met
+- **WHEN** a release ships artifacts an operating system will not open directly
+- **THEN** the release body states what the operator will see and the step that
+  opens it
+- **AND** the operator manual states the same
+
+#### Scenario: Recognised signing removes the step
+- **WHEN** artifacts are signed by an identity the operating system recognises
+- **THEN** the download opens without an extra step, and the documented step is
+  removed rather than left standing
+

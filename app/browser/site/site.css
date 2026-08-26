@@ -27,7 +27,16 @@ body {
 
 .site-header {
   padding: 12px 16px 0;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.site-logo {
+  width: 24px;
+  height: 24px;
+  flex: none;
 }
 
 .site-title {

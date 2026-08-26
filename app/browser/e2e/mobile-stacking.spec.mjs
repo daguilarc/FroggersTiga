@@ -26,6 +26,7 @@
 // come out narrower than the viewport, left-aligned under it.
 import { expect, test } from "@playwright/test";
 import {
+  ENCODER_ROW_SELECTORS,
   LEFT_BLOCK_SELECTOR,
   RIGHT_BLOCK_SELECTOR,
   SIDEBAR_SELECTOR,
@@ -92,6 +93,25 @@ test.describe("mobile stacking (phone-width layout)", () => {
     expect(Math.abs(sidebarBox.width - (await expectedStackedWidth(page, SIDEBAR_SELECTOR)))).toBeLessThan(1.5);
     expect(sidebarBox.y).toBeGreaterThanOrEqual(gridBox.y + gridBox.height);
     expect(verticalOverlapPx(sidebarBox, gridBox)).toBe(0);
+  });
+
+  test("Randomize and Reset sit above the encoder grid, not below it", async ({ page }) => {
+    // FroggersCellMap::kRightRowsNarrow reorders the right block's rows for
+    // a narrow viewport: BankTabs, Header, Randomize, Reset, then the four
+    // EncoderRows (FroggersUiSurface.hpp's `kRightRowsNarrow`) -- the
+    // inverse of `kRightRows`' order, where Randomize/Reset sit after the
+    // grid. This keeps both reachable without scrolling past the whole
+    // 16-slot grid on a phone-width screen. Bounding-box tops (not row
+    // index) are what actually prove the on-screen order, since row index
+    // alone says nothing about where the mobile stack transform (this
+    // file's own header comment) ultimately places the row.
+    const randomizeBox = await page.locator('[data-synth-node-id="froggers.layout.right.randomize"]').boundingBox();
+    const resetBox = await page.locator('[data-synth-node-id="froggers.layout.right.reset"]').boundingBox();
+    const firstEncoderRowBox = await page.locator(ENCODER_ROW_SELECTORS[0]).boundingBox();
+
+    expect(randomizeBox.y).toBeLessThan(firstEncoderRowBox.y);
+    expect(resetBox.y).toBeGreaterThan(randomizeBox.y);
+    expect(resetBox.y).toBeLessThan(firstEncoderRowBox.y);
   });
 
   test("a transient measurement failure on one block does not disturb the other two", async ({ page }) => {
@@ -211,5 +231,68 @@ test.describe("mobile stacking (phone-width layout)", () => {
     await encoder.dispatchEvent("pointerup", { pointerId: 1, clientX: center.x + 80, clientY: center.y - 80, bubbles: true, isPrimary: true });
 
     await expect.poll(canvasDataUrl, { timeout: 5_000 }).not.toBe(before);
+  });
+
+  test("a touch drag on an encoder reaches pointerup without the browser ever cancelling it", async ({ page }) => {
+    // `#synth-root [data-synth-node-kind="draw"] { touch-action: none; }`
+    // (site.css) is what stops the browser from claiming a finger-drag on
+    // an encoder canvas as its own page-scroll/pan gesture; without it, a
+    // touch-type pointer sequence gets cut short after a move or two --
+    // the browser fires `pointercancel` on the element (the pointer has
+    // been handed off to native scrolling) and, if a capture was set,
+    // `lostpointercapture` fires as part of that same cancellation, before
+    // the drag ever reaches its own `pointerup`. Both are the actual
+    // regression signal, not merely that a drag "still works" (the encoder
+    // -drag test above already covers that with mouse-type pointers, which
+    // `touch-action` never governs): a scroll-hijacked drag can still end
+    // up moving the encoder's value.
+    const encoder = page.locator('[data-synth-node-id="froggers.encoder.0"]');
+    const box = await encoder.boundingBox();
+    const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+
+    await page.evaluate((selector) => {
+      const element = document.querySelector(selector);
+      window.__touchDragEventOrder = [];
+      const record = (event) => window.__touchDragEventOrder.push(event.type);
+      element.addEventListener("pointercancel", record);
+      element.addEventListener("lostpointercapture", record);
+      element.addEventListener("pointerup", record);
+    }, '[data-synth-node-id="froggers.encoder.0"]');
+
+    await encoder.dispatchEvent("pointerdown", {
+      pointerId: 1,
+      pointerType: "touch",
+      clientX: center.x,
+      clientY: center.y,
+      bubbles: true,
+      isPrimary: true,
+      button: 0,
+    });
+    for (let step = 1; step <= 10; step++) {
+      await encoder.dispatchEvent("pointermove", {
+        pointerId: 1,
+        pointerType: "touch",
+        clientX: center.x + step * 8,
+        clientY: center.y - step * 8,
+        bubbles: true,
+        isPrimary: true,
+      });
+    }
+    await encoder.dispatchEvent("pointerup", {
+      pointerId: 1,
+      pointerType: "touch",
+      clientX: center.x + 80,
+      clientY: center.y - 80,
+      bubbles: true,
+      isPrimary: true,
+    });
+
+    const eventOrder = await page.evaluate(() => window.__touchDragEventOrder);
+    expect(eventOrder).not.toContain("pointercancel");
+    expect(eventOrder).toContain("pointerup");
+    const lostCaptureIndex = eventOrder.indexOf("lostpointercapture");
+    if (lostCaptureIndex !== -1) {
+      expect(lostCaptureIndex).toBeGreaterThan(eventOrder.indexOf("pointerup"));
+    }
   });
 });

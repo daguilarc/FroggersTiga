@@ -1,7 +1,6 @@
-// Playwright config for the site's own e2e harness. Idiom
-// borrowed from web/playwright.config.ts (the legacy suite's own file,
-// never edited or copied verbatim -- this is a fresh file, chromium-only
-// and workers capped, to stay within this machine's own resource limits).
+// Playwright config for the site's own e2e harness -- a fresh file,
+// chromium-only and workers capped, to stay within this machine's own
+// resource limits.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -16,11 +15,9 @@ const port = 8799;
 const pagesPort = 8800;
 
 // Reuse an already-downloaded chromium build from the shared Playwright
-// cache instead of triggering a second download (web/ and
-// External/Sheaf/projects/synth/browser both already pin @playwright/test
-// ^1.60.0 / chromium-1223 on this machine) -- same cache-detection idiom
-// web/playwright.config.ts uses, ported rather than imported (that file
-// stays untouched).
+// cache instead of triggering a second download
+// (External/Sheaf/projects/synth/browser already pins @playwright/test
+// ^1.60.0 / chromium-1223 on this machine).
 if (!process.env.CI) {
   const cacheCandidates = [
     path.join(os.homedir(), "Library/Caches/ms-playwright"),
@@ -71,8 +68,7 @@ export default defineConfig({
     {
       name: "mobile",
       testMatch: MOBILE_SPECS,
-      // iPhone-class viewport, matching web/e2e/helpers.ts's MOBILE_USE --
-      // the legacy site's own mobile emulation, ported not imported.
+      // iPhone-class viewport for the mobile-emulated e2e project.
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 390, height: 844 },

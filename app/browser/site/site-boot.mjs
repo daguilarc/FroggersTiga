@@ -1,7 +1,7 @@
 // Direct-load boot for the dedicated frogg3rs site. Mirrors
 // Sheaf's own `launchCatalogApplication`
-// (External/Sheaf/projects/synth/browser/src/main.ts:393-421) MINUS
-// `SheafPatchLauncher`'s picker UI (main.ts:372-391, never imported here):
+// (External/Sheaf/projects/synth/browser/src/main.ts, `launchCatalogApplication`) MINUS
+// `SheafPatchLauncher`'s picker UI (`installSheafPatchLauncher`, never imported here):
 // this page is dedicated to frogg3rs, so it loads the catalog, finds the
 // one app, and boots it directly -- no catalog-browser list is ever
 // rendered. Every imported symbol is Sheaf's own, unmodified, copied
@@ -12,10 +12,10 @@
 //
 // Deliberately does NOT pass an `activationLease`: `SheafPatchLauncher`
 // only needs one because its "Launch" button click is the user gesture
-// audio activation must be anchored to (main.ts:372-391). This page has no
+// audio activation must be anchored to (`installSheafPatchLauncher`). This page has no
 // such click -- `SynthBrowserApp` defers audio activation to the first
 // in-app UI action instead (main.ts's own `BrowserUiBackend` dispatch
-// wiring, main.ts:174-177, calls `startUserActivation()` after every
+// wiring calls `startUserActivation()` after every
 // dispatched action), which is exactly the app's own Play control, same as
 // every other Sheaf host. No audio starts on load (sbw-4 covers input;
 // this covers output the same way): matches the e2e suite's "no audio
