@@ -165,27 +165,6 @@ export async function canvasHasPaintedPixels(page, canvasSelector) {
  *    signal that would catch that separate failure mode.
  */
 export async function expectEncoderCanvasVisible(page, canvasSelector) {
-  // Scrolled to first, because the stacked narrow layout is TALLER than a
-  // phone viewport: the encoder grid sits below the chrome block and the
-  // Randomize/Reset rows, so the lower encoder rows are legitimately off
-  // the initial fold. "Reachable and painted" is the guarantee; "on screen
-  // without scrolling" never was, and the desktop project still exercises
-  // the un-scrolled case at its own wider viewport.
-  // This does NOT blunt the clipping guard above: a collapsed,
-  // overflow:hidden ancestor clips its child away at every scroll offset,
-  // so scrolling cannot bring such a child into the viewport and the
-  // assertion below still fails -- which the positive control for this
-  // helper demonstrates rather than assumes.
-  // The scroll is INSIDE the retry: once audio is running, renderFrame
-  // re-applies the stacked transforms every frame, which can move a
-  // just-scrolled-to row back out from under the viewport. Scrolling once
-  // and then waiting only works while nothing re-lays-out underneath.
-  // Still toBeInViewport (IntersectionObserver), never a hand-rolled
-  // getBoundingClientRect check -- see this helper's own note above on why
-  // that distinction is the whole point.
-  await expect(async () => {
-    await page.locator(canvasSelector).scrollIntoViewIfNeeded();
-    await expect(page.locator(canvasSelector), canvasSelector).toBeInViewport({ timeout: 2_000 });
-  }, canvasSelector).toPass({ timeout: 20_000 });
+  await expect(page.locator(canvasSelector), canvasSelector).toBeInViewport();
   await expect.poll(() => canvasHasPaintedPixels(page, canvasSelector), { timeout: 10_000 }).toBe(true);
 }

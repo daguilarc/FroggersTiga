@@ -18,7 +18,6 @@
 // `fitSurface()`'s own later, root-only re-application survives that
 // clear. Installing over `renderFrame` also reaches past that method's own
 // public surface: the same patched function reads `this.dispatchBrowserAction`
-// (see this file's own `dispatchViewportNarrow`) to report narrow/wide
 // state to the C++ surface, even though `ui.ts` declares that constructor
 // property `private readonly` -- TypeScript erases that at runtime, so the
 // call works, and nothing else reaches this backend instance to dispatch
@@ -72,29 +71,6 @@ function isNarrow(mount) {
 // signal, consumed by `HandleAction` to set `narrowViewport_` off
 // `action.value == "1"`. "0" is dispatched for every other value,
 // including wide.
-const VIEWPORT_NARROW_ACTION = "froggers.viewport.narrow";
-// Last value actually dispatched for VIEWPORT_NARROW_ACTION, so a
-// narrow/wide state that hasn't changed since the previous frame is never
-// redispatched -- renderFrame's own ~33ms cadence would otherwise flood
-// the wasm app with a same-value action on every single frame while
-// sitting still at one width. `null` (neither "0" nor "1") so the very
-// first frame always dispatches once, regardless of which side it starts
-// on.
-let lastDispatchedNarrow = null;
-
-// Reports the mount's narrow/wide state to the C++ surface off the SAME
-// isNarrow() decision this file already uses for its own stacking
-// transform -- never a second threshold or predicate. Called from inside
-// the patched `renderFrame` (installMobileStack), where `this` is the
-// `BrowserUiBackend` instance whose `dispatchBrowserAction` this reaches
-// past the public API to call (see this file's own header comment).
-function dispatchViewportNarrow(backend, mount) {
-  const narrow = isNarrow(mount);
-  const value = narrow ? "1" : "0";
-  if (value === lastDispatchedNarrow) return;
-  lastDispatchedNarrow = value;
-  backend.dispatchBrowserAction({ name: VIEWPORT_NARROW_ACTION, value });
-}
 
 // Reads a block's WIRE-SET design-space extent -- the exact px string
 // ui.ts's updateNode() writes from the node's resolved protocol bounds
@@ -406,12 +382,9 @@ export function installMobileStack(BrowserUiBackend) {
     const result = originalRenderFrame.apply(this, args);
     applyMobileStack();
     // Reports narrow/wide state to the C++ surface every frame, but only
-    // actually dispatches on a change (dispatchViewportNarrow's own
     // comment) -- `this` is the `BrowserUiBackend` instance `renderFrame`
     // was called on, which is what makes `this.dispatchBrowserAction`
     // reachable here despite it not being public API.
-    const mount = document.querySelector(MOUNT_SELECTOR);
-    if (mount) dispatchViewportNarrow(this, mount);
     return result;
   };
 

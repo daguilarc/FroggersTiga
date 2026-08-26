@@ -315,6 +315,26 @@ has never run is not covered by an observation of the stage before it.
       grid. Measured: Randomize y=546 wide, y=138 narrow, first encoder row
       y=302.
 
+**SECTION 5 WAS REVERTED (2026-08-26).** Everything it built —
+`kViewportNarrow`, `narrowViewport_`, `kRightRowsNarrow`, the shell dispatch,
+and both tests asserting the resulting order — is removed from the tree.
+
+Two reasons, and the operator's is the one that matters. The layout it
+produced was rejected: the request was to move Randomize/Reset SIDEWAYS into
+the empty column beside the oscilloscope and sliders, not UP into the encoder
+column. `frogg3rs-mobile-control-placement` supersedes it.
+
+It also broke the site pipeline. Hoisting two rows above the encoder rows put
+encoders 8-15 right at a phone's fold, where reachability turns on font
+metrics and timing. `GitHub Pages` failed 7 consecutive runs at the Playwright
+step with `deploy: skipped`, so the site stopped deploying entirely — the COI
+service-worker fix included. It was marginal rather than deterministic: the
+same code passed once at `ec7d5a7` and failed every run after, and the
+commits that "started" the failures touch only
+`app/standalone/CMakeLists.txt`, which Pages never builds.
+After the revert: app 301/301, browser e2e 38/38 idle and 38/38 twice more
+under the six-burner load that reproduced the CI failure.
+
 ## 6. Site header logo
 
 - [x] 6.1 Source it from `app/Resources/Icon.png` (800x800, 313 KB) rather

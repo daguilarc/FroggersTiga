@@ -43,6 +43,16 @@ layout. Every assertion below is written against the clause that was missed.
       not below it" in `app/browser/e2e/mobile-stacking.spec.mjs`. Those two
       tests assert the WRONG layout and go with it. A guard whose sole target
       is deleted still passes.
+- [ ] 0.2b An existing e2e test asserts the CURRENT half-width behaviour on
+      purpose: `app/browser/e2e/mobile-stacking.spec.mjs:60`, "chrome renders
+      at the grid's shared scale, not stretched to its own full width". Task
+      1.2 makes that assertion false by design. It is a deliberate guard, not
+      an oversight, so replace it with one asserting the new rule rather than
+      deleting it silently, and say in its comment what changed and why. Its
+      neighbour at `:83` makes the same claim about the sidebar block —
+      establish whether the sidebar is also meant to widen before touching it.
+      This is the inbound half of 1.2: a requirement that inverts an existing
+      assertion has to say so.
 - [ ] 0.3 `app/browser/site/mobile-stack.mjs`'s header comment describes the
       shell as stacking three blocks at one shared scale. Once the narrow
       topology equalises the outer weights, the sentence about the chrome

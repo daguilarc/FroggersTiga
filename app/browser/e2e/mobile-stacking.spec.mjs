@@ -95,25 +95,6 @@ test.describe("mobile stacking (phone-width layout)", () => {
     expect(verticalOverlapPx(sidebarBox, gridBox)).toBe(0);
   });
 
-  test("Randomize and Reset sit above the encoder grid, not below it", async ({ page }) => {
-    // FroggersCellMap::kRightRowsNarrow reorders the right block's rows for
-    // a narrow viewport: BankTabs, Header, Randomize, Reset, then the four
-    // EncoderRows (FroggersUiSurface.hpp's `kRightRowsNarrow`) -- the
-    // inverse of `kRightRows`' order, where Randomize/Reset sit after the
-    // grid. This keeps both reachable without scrolling past the whole
-    // 16-slot grid on a phone-width screen. Bounding-box tops (not row
-    // index) are what actually prove the on-screen order, since row index
-    // alone says nothing about where the mobile stack transform (this
-    // file's own header comment) ultimately places the row.
-    const randomizeBox = await page.locator('[data-synth-node-id="froggers.layout.right.randomize"]').boundingBox();
-    const resetBox = await page.locator('[data-synth-node-id="froggers.layout.right.reset"]').boundingBox();
-    const firstEncoderRowBox = await page.locator(ENCODER_ROW_SELECTORS[0]).boundingBox();
-
-    expect(randomizeBox.y).toBeLessThan(firstEncoderRowBox.y);
-    expect(resetBox.y).toBeGreaterThan(randomizeBox.y);
-    expect(resetBox.y).toBeLessThan(firstEncoderRowBox.y);
-  });
-
   test("a transient measurement failure on one block does not disturb the other two", async ({ page }) => {
     // Regression test for a real bug this suite caught during development:
     // mobile-stack.mjs's
