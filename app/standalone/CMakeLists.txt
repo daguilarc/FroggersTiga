@@ -46,43 +46,74 @@ set(SHEAF_LIB "${SHEAF_SYNTH_DIR}/build/libsynth.a")
 # add_custom_target (not a configure-time execute_process) and why
 # add_dependencies() below is what keeps this machine's two nested -j2's
 # serialized rather than multiplying.
-find_program(FROGGERS_NICE_EXE nice)
-if(FROGGERS_NICE_EXE)
-    set(FROGGERS_SHEAF_LIB_BUILD_COMMAND "${FROGGERS_NICE_EXE}" -n 10 make -j2 build)
+# Sheaf's synth core reaches this target two different ways, because the
+# toolchains do.
+#
+# Everywhere except Windows: build libsynth.a through Sheaf's own Makefile
+# and link it, exactly as app/vst does, so there is one archive and one
+# build recipe shared with the macOS paths.
+#
+# On Windows: compile those same sources INTO this target instead. The
+# Makefile drives `CXX ?= clang++` with GCC-style flags, entirely outside
+# CMake's compiler selection, so `make` there produces an archive from a
+# different toolchain than the one linking it -- and MSVC's linker cannot
+# resolve MSVC-mangled references against those objects. The symbols are all
+# genuinely in the archive; they are simply unusable, which surfaces as
+# LNK2019 on every Sheaf symbol app/FroggersMain.cpp needs for the runtime
+# shell. Compiling them here keeps one compiler for the whole link.
+#
+# Globbed rather than listed, deliberately: Sheaf's Makefile builds exactly
+# src/*.cpp, so a hand-copied list here would be a second definition of that
+# set and would drift the day Sheaf gains a source -- macOS would keep
+# working and Windows would fail at the link again, the same way it just
+# did. CONFIGURE_DEPENDS makes a new source trigger a reconfigure.
+if(WIN32)
+    file(GLOB FROGGERS_SHEAF_SYNTH_SOURCES CONFIGURE_DEPENDS "${SHEAF_SYNTH_DIR}/src/*.cpp")
+    if(NOT FROGGERS_SHEAF_SYNTH_SOURCES)
+        message(FATAL_ERROR "no Sheaf synth sources found in ${SHEAF_SYNTH_DIR}/src")
+    endif()
 else()
-    set(FROGGERS_SHEAF_LIB_BUILD_COMMAND make -j2 build)
+    find_program(FROGGERS_NICE_EXE nice)
+    if(FROGGERS_NICE_EXE)
+        set(FROGGERS_SHEAF_LIB_BUILD_COMMAND "${FROGGERS_NICE_EXE}" -n 10 make -j2 build)
+    else()
+        set(FROGGERS_SHEAF_LIB_BUILD_COMMAND make -j2 build)
+    endif()
+    add_custom_target(FroggersSheafLibsynth ALL
+        COMMAND ${FROGGERS_SHEAF_LIB_BUILD_COMMAND}
+        WORKING_DIRECTORY "${SHEAF_SYNTH_DIR}"
+        BYPRODUCTS "${SHEAF_LIB}"
+        COMMENT "app/standalone: building Sheaf's libsynth.a (nice make -j2 build in ${SHEAF_SYNTH_DIR})"
+        VERBATIM
+    )
+
+    # ICON_BIG/ICON_SMALL take Resources/Icon.png. Its sibling Resources/
+    # Icon.icns is what build-launcher.sh copies into the macOS bundle, and
+    # neither file is generated from the other -- no iconutil, sips or magick
+    # step exists anywhere in the tree. They are two images kept in step by
+    # hand, so an edit to one is an edit owed to the other.
+    # juce_add_gui_app converts the PNG per platform through juceaide (JUCE's
+    # own _juce_generate_icon), which is the mechanism this target relies on
+    # for the Windows .ico. Nothing here has exercised it yet: app/vst passes
+    # no ICON_BIG at all, so no build in this repository has produced an icon
+    # through this path on any platform.
+    juce_add_gui_app(FroggersStandalone
+        PRODUCT_NAME "Frogg3rs"
+        COMPANY_NAME "frogg3rs"
+        BUNDLE_ID "dev.sheaf.Frogg3rs.standalone"
+        ICON_BIG "${APP_DIR}/Resources/Icon.png"
+        ICON_SMALL "${APP_DIR}/Resources/Icon.png"
+        MICROPHONE_PERMISSION_ENABLED TRUE
+        MICROPHONE_PERMISSION_TEXT "Frogg3rs needs audio input access for external ring-mod (mic, line-in, or interface)."
+    )
 endif()
-add_custom_target(FroggersSheafLibsynth ALL
-    COMMAND ${FROGGERS_SHEAF_LIB_BUILD_COMMAND}
-    WORKING_DIRECTORY "${SHEAF_SYNTH_DIR}"
-    BYPRODUCTS "${SHEAF_LIB}"
-    COMMENT "app/standalone: building Sheaf's libsynth.a (nice make -j2 build in ${SHEAF_SYNTH_DIR})"
-    VERBATIM
-)
 
-# ICON_BIG/ICON_SMALL take Resources/Icon.png. Its sibling Resources/
-# Icon.icns is what build-launcher.sh copies into the macOS bundle, and
-# neither file is generated from the other -- no iconutil, sips or magick
-# step exists anywhere in the tree. They are two images kept in step by
-# hand, so an edit to one is an edit owed to the other.
-# juce_add_gui_app converts the PNG per platform through juceaide (JUCE's
-# own _juce_generate_icon), which is the mechanism this target relies on
-# for the Windows .ico. Nothing here has exercised it yet: app/vst passes
-# no ICON_BIG at all, so no build in this repository has produced an icon
-# through this path on any platform.
-juce_add_gui_app(FroggersStandalone
-    PRODUCT_NAME "Frogg3rs"
-    COMPANY_NAME "frogg3rs"
-    BUNDLE_ID "dev.sheaf.Frogg3rs.standalone"
-    ICON_BIG "${APP_DIR}/Resources/Icon.png"
-    ICON_SMALL "${APP_DIR}/Resources/Icon.png"
-    MICROPHONE_PERMISSION_ENABLED TRUE
-    MICROPHONE_PERMISSION_TEXT "Frogg3rs needs audio input access for external ring-mod (mic, line-in, or interface)."
-)
-
-add_dependencies(FroggersStandalone FroggersSheafLibsynth)
+if(NOT WIN32)
+    add_dependencies(FroggersStandalone FroggersSheafLibsynth)
+endif()
 
 target_sources(FroggersStandalone PRIVATE
+    ${FROGGERS_SHEAF_SYNTH_SOURCES}
     "${APP_DIR}/FroggersMain.cpp"
     # The tiny data-root helper, compiled directly rather than through
     # libsynth.a -- same split app/vst/CMakeLists.txt uses, and the same
@@ -113,7 +144,7 @@ endif()
 # juce_audio_formats/juce_audio_processors, since this app never links them
 # there either.
 target_link_libraries(FroggersStandalone PRIVATE
-    "${SHEAF_LIB}"
+    "$<$<NOT:$<BOOL:${WIN32}>>:${SHEAF_LIB}>"
     juce::juce_audio_basics
     juce::juce_audio_devices
     juce::juce_core

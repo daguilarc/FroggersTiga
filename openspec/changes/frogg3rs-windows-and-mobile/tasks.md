@@ -113,6 +113,29 @@ has never run is not covered by an observation of the stage before it.
 - [ ] 1.4 The Windows job builds. Report what it takes. If it fails on
       something outside the audit's list, record the gap in this file before
       fixing it.
+      **RUN 33003588859 (dispatch, 2026-08-26).** `build-macos` success,
+      `build-windows` failure, `release` skipped — the coupled `needs` behaved
+      as intended. Every compile fix in 1.1-1.3 held: JUCE, all twelve Sheaf
+      sources and this repository's own code compiled. It failed at the LINK,
+      which is where 1.5 said it would.
+      38 x `LNK2019 unresolved external symbol`, every one of them a Sheaf
+      symbol from `libsynth.a` — `MidiConfigViewModel::*`, `MidiDevicePoller`,
+      `ControllerWizard`, `EncoderModeCatalog`, `FieldIsInteger`.
+      NOT a missing source list, which was the first reading and was wrong:
+      `ar t` shows the archive holds all twelve objects, `MidiConfigViewModel.o`
+      included, and Sheaf's `Makefile:37` builds exactly `src/*.cpp`. The
+      symbols are present and the linker still cannot use them.
+      The cause is the toolchain seam, read off the runner rather than
+      inferred: the libsynth step emitted `-Wmissing-field-initializers` and
+      `-Wswitch` warnings, which are GCC/Clang diagnostics. `make` built that
+      archive with the Makefile's `CXX ?= clang++` and its GCC-style flags,
+      outside CMake's compiler selection, and MSVC's linker cannot resolve
+      MSVC-mangled references against objects that driver produced.
+      Only `app/FroggersMain.cpp` needs those symbols — it hosts Sheaf's
+      runtime shell. `app/vst` links the same archive on macOS and never hits
+      this because it compiles two files plus `HostDataPaths.cpp` and never
+      references the runtime shell, so it is not the working analogue it
+      looks like.
 - [ ] 1.5 FIRST ATTEMPT — the link stage. Everything above fixes compilation,
       which is as far as any Windows run has ever reached. The link has never
       run and crosses a toolchain seam the audit did not name:
