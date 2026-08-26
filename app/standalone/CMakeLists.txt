@@ -86,27 +86,27 @@ else()
         COMMENT "app/standalone: building Sheaf's libsynth.a (nice make -j2 build in ${SHEAF_SYNTH_DIR})"
         VERBATIM
     )
-
-    # ICON_BIG/ICON_SMALL take Resources/Icon.png. Its sibling Resources/
-    # Icon.icns is what build-launcher.sh copies into the macOS bundle, and
-    # neither file is generated from the other -- no iconutil, sips or magick
-    # step exists anywhere in the tree. They are two images kept in step by
-    # hand, so an edit to one is an edit owed to the other.
-    # juce_add_gui_app converts the PNG per platform through juceaide (JUCE's
-    # own _juce_generate_icon), which is the mechanism this target relies on
-    # for the Windows .ico. Nothing here has exercised it yet: app/vst passes
-    # no ICON_BIG at all, so no build in this repository has produced an icon
-    # through this path on any platform.
-    juce_add_gui_app(FroggersStandalone
-        PRODUCT_NAME "Frogg3rs"
-        COMPANY_NAME "frogg3rs"
-        BUNDLE_ID "dev.sheaf.Frogg3rs.standalone"
-        ICON_BIG "${APP_DIR}/Resources/Icon.png"
-        ICON_SMALL "${APP_DIR}/Resources/Icon.png"
-        MICROPHONE_PERMISSION_ENABLED TRUE
-        MICROPHONE_PERMISSION_TEXT "Frogg3rs needs audio input access for external ring-mod (mic, line-in, or interface)."
-    )
 endif()
+
+# ICON_BIG/ICON_SMALL take Resources/Icon.png. Its sibling Resources/
+# Icon.icns is what build-launcher.sh copies into the macOS bundle, and
+# neither file is generated from the other -- no iconutil, sips or magick
+# step exists anywhere in the tree. They are two images kept in step by
+# hand, so an edit to one is an edit owed to the other.
+# juce_add_gui_app converts the PNG per platform through juceaide (JUCE's
+# own _juce_generate_icon), which is the mechanism this target relies on
+# for the Windows .ico. Nothing here has exercised it yet: app/vst passes
+# no ICON_BIG at all, so no build in this repository has produced an icon
+# through this path on any platform.
+juce_add_gui_app(FroggersStandalone
+    PRODUCT_NAME "Frogg3rs"
+    COMPANY_NAME "frogg3rs"
+    BUNDLE_ID "dev.sheaf.Frogg3rs.standalone"
+    ICON_BIG "${APP_DIR}/Resources/Icon.png"
+    ICON_SMALL "${APP_DIR}/Resources/Icon.png"
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "Frogg3rs needs audio input access for external ring-mod (mic, line-in, or interface)."
+)
 
 if(NOT WIN32)
     add_dependencies(FroggersStandalone FroggersSheafLibsynth)
@@ -143,8 +143,13 @@ endif()
 # macOS (JUCE_MODULE_SRC, that file) -- no juce_audio_utils/
 # juce_audio_formats/juce_audio_processors, since this app never links them
 # there either.
+# Only where the archive was produced by the compiler doing this link; on
+# Windows those sources are compiled into the target instead (see above).
+if(NOT WIN32)
+    target_link_libraries(FroggersStandalone PRIVATE "${SHEAF_LIB}")
+endif()
+
 target_link_libraries(FroggersStandalone PRIVATE
-    "$<$<NOT:$<BOOL:${WIN32}>>:${SHEAF_LIB}>"
     juce::juce_audio_basics
     juce::juce_audio_devices
     juce::juce_core
