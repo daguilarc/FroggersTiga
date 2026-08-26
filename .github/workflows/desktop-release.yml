@@ -142,7 +142,23 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/Frogg3rs-macOS.dmg dist/Frogg3rs-windows.zip \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Frogg3rs desktop — $GITHUB_REF_NAME" \
-            --notes-file release-notes.md
+          # The trigger is one FIXED tag, not a pattern, so this step runs
+          # again every time that tag is re-pointed at a newer commit -- and
+          # `gh release create` fails outright when a release for the tag
+          # already exists. Publishing a second desktop build is the normal
+          # case, not an edge case, so handle both: update the existing
+          # release in place, or create it the first time.
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" \
+              dist/Frogg3rs-macOS.dmg dist/Frogg3rs-windows.zip \
+              --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Frogg3rs desktop — $GITHUB_REF_NAME" \
+              --notes-file release-notes.md
+          else
+            gh release create "$GITHUB_REF_NAME" dist/Frogg3rs-macOS.dmg dist/Frogg3rs-windows.zip \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Frogg3rs desktop — $GITHUB_REF_NAME" \
+              --notes-file release-notes.md
+          fi

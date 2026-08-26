@@ -368,7 +368,7 @@ has never run is not covered by an observation of the stage before it.
 
 ## 7. Ship and close
 
-- [x] 7.1 The desktop release ships both platforms, and `MANUAL.md:25-27`
+- [ ] 7.1 The desktop release ships both platforms, and `MANUAL.md:25-27`
       stops saying the Windows build is in progress — the
       `frogg3rs-distribution` delta's own scenario.
       Nothing in `desktop-release.yml` wires this today, and the plan owes the
@@ -393,6 +393,24 @@ has never run is not covered by an observation of the stage before it.
       actual coverage not to drift, and an uncoupled job lets a macOS-only
       release publish green while the manual says both platforms ship. The
       cost is accepted — macOS cannot ship while Windows is broken.
+      **REOPENED.** Marked done after the three wiring edits were verified,
+      which was premature: none of them can fire. The trigger is one FIXED
+      tag rather than a pattern, and the publish step was a bare
+      `gh release create`, which fails when a release for that tag already
+      exists — and one does, at `3112f2b` from 2026-08-22, carrying a lone
+      `Frogg3rs-macOS.dmg` and no Windows zip. Re-pointing the tag would have
+      failed the release job rather than shipping anything.
+      The step now updates an existing release in place (`gh release upload
+      --clobber` plus `gh release edit`) and creates it only the first time.
+      Publishing a second desktop build is the normal case here, not an edge
+      case.
+      STILL OPEN, and not closable from here: main is 43 commits ahead of
+      that tag, so nothing published carries any of this work. Until the tag
+      is re-pointed, `MANUAL.md` on main says the release carries both
+      platforms while the only downloadable release carries one — the same
+      coverage drift this requirement forbids, pointing the other way. The
+      release is an operator action; see 7.4's note on testing the artifact
+      from the run BEFORE it is published.
 - [x] 7.2 ONE republish: rebuild the wasm package
       (`app/browser/Makefile` / `build-browser.sh`) and stage the catalog,
       carrying section 5's surface change and section 6's logo together. The
@@ -518,6 +536,27 @@ suite is 39/39 in 20.7s. The instrument moved the result both ways.
 Not caused by this change -- `coi-serviceworker.js`, `site-boot.mjs`'s boot
 path and `index.html`'s script order are all untouched by it -- but found by
 0.3's sweep of `app/browser/site/`, so fixed inside it rather than filed.
+
+### A publish step that can run twice — §7, found 2, changed 2
+
+Reopening 7.1 created a named concept: a release-publish step that survives
+its tag being re-pointed. Enumerating that concept by operand
+(`gh release create`, and the fixed tag triggers) found TWO sites, not one:
+
+- `desktop-release.yml:139` — fixed tag `frogg3rs_v2`, release already
+  exists at `3112f2b`.
+- `vst-plugin.yml:145` — fixed tag `frogg3rs_vst`, release already exists.
+
+Both were bare `gh release create`, so BOTH were unpublishable a second time;
+fixing only the desktop one would have left the plugin release with the
+identical defect and made it look single-sourced. Both now update in place
+via `gh release upload --clobber` plus `gh release edit`, and create only on
+the first run. FOUND 2, CHANGED 2, 0 remaining bare creates.
+
+This is the preflight's own failure recorded honestly: §13 says a release
+path nobody has taken gets its invocations traced rather than reviewed, and
+this one was reviewed. Every fact needed — the fixed tag, the tag gate, the
+existing release — was already in the preflight notes.
 
 ### Still open by design
 
