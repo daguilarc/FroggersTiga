@@ -84,9 +84,24 @@ layout. Every assertion below is written against the clause that was missed.
       (`app/FroggersUiSurface.hpp:1888`) currently gives each button
       `layout.main = Extent::Weight(2.0f)`, which is why a short label sits in
       a full-width button. `layout.cross` already uses `Extent::Intrinsic()`.
-      Whether `main` accepts `Intrinsic` is UNVERIFIED — check it against the
-      layout engine before relying on it, and if it does not, use the
-      smallest weight that fits "Randomize Page" without clipping and say so.
+      `main` accepts `Intrinsic` — verified, not assumed:
+      `PortableUILayout.hpp:32-33` declares
+      `enum class Mode { Fixed, Intrinsic, Fraction, Weighted }` with
+      `Mode::Intrinsic` as the default, and `:54` sets
+      `Extent main = Extent::Intrinsic()` as `LayoutOptions`' own default, so
+      the main axis is Intrinsic unless something overrides it. Sheaf's own
+      shipping code assigns exactly this at `RuntimePages.hpp:540`
+      (`style.layout.main = ui::Extent::Intrinsic();`).
+      A Button's intrinsic width is its LABEL width, with a floor:
+      `PortableUIMetrics.hpp`'s `IntrinsicFor` returns, for
+      `NodeKind::Button`,
+      `{0, 0, std::max(72.0f, TextWidth(node.label, style)), 28.0f}`.
+      Two consequences to design against rather than discover: the 72px floor
+      means a button never shrinks below 72px however short its label, so
+      four of them cost at least 288px of width side by side; and the
+      intrinsic HEIGHT is 28px while the existing row asks for
+      `kUnchangedRowHeight` on main — decide deliberately which governs the
+      narrow column's row heights, and record which.
 - [ ] 2.3 The wide layout keeps `AppendTwoButtonRow` exactly as it is. Both
       callers (`AppendRandomizeRow`, `AppendResetRow`) are shared with the
       desktop path, so a change to that helper's defaults is a change to the
