@@ -73,8 +73,13 @@ jobs:
       - name: Configure
         run: cmake -S app/standalone -B app/standalone/build -DCMAKE_BUILD_TYPE=Release
 
+      # --parallel, not `-- -j2`: everything after `--` goes to the native
+      # build tool, and this generator's is MSBuild, which has no -j switch
+      # (it spells it /m) and fails with MSB1001 rather than ignoring it.
+      # --parallel is CMake's own flag and translates per generator, so the
+      # same line works whichever one is picked.
       - name: Build standalone (Frogg3rs.exe)
-        run: cmake --build app/standalone/build --config Release -- -j2
+        run: cmake --build app/standalone/build --config Release --parallel 2
 
       - name: Assert binary was built
         run: test -f app/standalone/build/FroggersStandalone_artefacts/Release/Frogg3rs.exe
