@@ -2,7 +2,6 @@
 
 ## Purpose
 Froggers satisfies `synth::SynthApplication`; it runs under Sheaf Runtime via `sheaf-patch` launcher registration and under the browser host via the browser app entry macro, with a JUCE-free app core and the Daisy firmware under `src/` left untouched.
-
 ## Requirements
 ### Requirement: Froggers is a Sheaf SynthApplication
 The Froggers app SHALL be a type satisfying `synth::SynthApplication` — providing `Config()`, `Init(context)`, `ProcessBlock(block)`, and `PortableSurface()` — and SHALL assert that conformance at compile time. The app core SHALL NOT depend on JUCE.
@@ -41,6 +40,13 @@ second checked-in copy exists to drift from the first. The browser build
 MAY instead link to the published documents, because it is already running
 in a browser with the network available.
 
+Neither the way the operator reaches the documents nor the way the app
+locates them SHALL assume a single platform's conventions. Where a host's
+platform has no equivalent of the macOS main menu, the app SHALL present the
+same entries by that platform's own means; where it has no application
+bundle, the app SHALL find the documents where that platform's build places
+them.
+
 #### Scenario: Reading the manual offline in a DAW
 - **WHEN** the plugin is loaded in a DAW on a machine with no network
 - **THEN** the operator can open the manual and the quick dictionary from
@@ -51,7 +57,14 @@ in a browser with the network available.
 - **WHEN** the standalone app is opened with no network
 - **THEN** both documents are reachable from inside the app
 
+#### Scenario: Every shipped standalone platform reaches its documents
+- **WHEN** the standalone app is opened on any platform it is released for
+- **THEN** the manual and quick dictionary open from inside the app
+- **AND** the files opened are the ones that build placed, not a path that
+  resolves only on the platform the feature was written on
+
 #### Scenario: One copy, not two
 - **WHEN** the manual or the quick dictionary is edited in the repository
 - **THEN** the next build carries the edit
 - **AND** no checked-in duplicate of either document has to be re-synced
+
