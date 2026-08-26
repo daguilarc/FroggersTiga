@@ -29,31 +29,52 @@ The VST3 and Audio Unit plugin releases for macOS only.
 
 ### Opening a downloaded build
 
-The desktop app and both plugin formats are signed but not notarized: macOS does not recognise the
-signing identity, so opening any of them for the first time takes one extra step.
+Every build here is **ad-hoc signed**: the signature is real and covers the bundle's contents, but it
+carries no Developer ID and no team identifier. `codesign --verify --deep --strict` reports the app
+valid on disk and satisfying its designated requirement; `spctl --assess` rejects it, because there
+is no identity for Gatekeeper to evaluate. The Windows build is not signed at all.
 
-Double-clicking the downloaded app shows "Apple could not verify [it] is free of malware" and offers
-no way to continue. Instead, open **System Settings → Privacy & Security**, scroll to the **Security**
-section, and click **Open Anyway** next to the app's name. macOS remembers this choice; later launches
-open normally. The same step applies before loading the VST3 or Audio Unit in a DAW for the first time.
+That distinction matters when you open it. A *damaged* build is one whose signature does not match
+its contents, and macOS refuses those outright with no way through. These builds are not that — they
+are intact and unidentified, so the operating system will let you open them once you say so
+explicitly.
 
-This step goes away once the builds are signed with a Developer ID and notarized by Apple — see
-Notarization, below.
+**macOS.** Double-clicking shows **"Frogg3rs" Not Opened** — "Apple could not verify Frogg3rs is free
+of malware..." — with a single **Done** button. That dialog will never offer a way to continue, no
+matter how many times you open it. The permission lives elsewhere:
 
-On Windows the extra step has a different cause. The macOS builds are signed but not notarized; the
-Windows build is not signed at all. Authenticode signing needs a code-signing certificate this
-project does not have, the same way notarization needs an Apple Developer Program account it does
-not have — so the Windows executable ships unsigned rather than not shipping.
+1. Click **Done** to dismiss the dialog. Dismissing it is what registers the blocked attempt.
+2. Open **System Settings → Privacy & Security** and scroll to **Security**.
+3. Click **Open Anyway** next to Frogg3rs, and authenticate.
 
-Opening it shows Microsoft Defender SmartScreen's blue **Windows protected your PC** dialog, which
-names an unrecognised app and offers only a **Don't run** button. Click **More info**, then **Run
-anyway**. Windows remembers this choice for that copy of the file; later launches open normally.
+The **Open Anyway** button only appears after a blocked attempt, and only for a short window
+afterwards. If it is not there, double-click the app again to be blocked again, then go straight
+back to Privacy & Security.
 
-### Notarization
+macOS remembers the choice, so later launches open normally. The same three steps apply the first
+time a DAW loads the VST3 or the Audio Unit.
 
-Developer ID signing plus Apple notarization is what makes a download open without the extra step
-above. That requires an Apple Developer Program account and CI secrets this project does not have, so
-it is recorded here as the fix rather than attempted.
+Control-clicking the app and choosing **Open** used to bypass this. macOS 15 removed that route for
+apps in this state, so on current macOS the Privacy & Security panel is the only way through.
+
+**Windows.** Opening the executable shows Microsoft Defender SmartScreen's blue **Windows protected
+your PC** dialog, which names an unrecognised app and offers only **Don't run**. Click **More info**,
+then **Run anyway**. Windows remembers this for that copy of the file; later launches open normally.
+
+### Why the extra step is permanent
+
+Only two things remove these prompts, and this project has deliberately not bought either: an Apple
+Developer Program membership, which is what makes Developer ID signing and notarization possible, and
+a Windows code-signing certificate for Authenticode.
+
+That is a standing decision, not a task waiting to be done. Ad-hoc signing cannot substitute for it
+at any amount of build-script work — Gatekeeper and SmartScreen are asking who vouches for the
+binary, and the answer is nobody. So the steps above are how these builds are opened, and they are
+documented here rather than treated as a defect to be fixed later.
+
+What the signing that *is* done buys: the signature is applied after the bundle is fully assembled,
+so it matches what ships. That is what keeps a download in the "unidentified, openable" state above
+instead of the "damaged, refused" one.
 
 ---
 
