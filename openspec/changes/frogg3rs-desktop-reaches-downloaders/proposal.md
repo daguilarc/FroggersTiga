@@ -101,6 +101,15 @@ blank-frame guard, which measures `.site-header`'s box and samples only the band
 below it: a logo inside the header preserves that exclusion, and one outside it
 would let the guard pass over a blank app surface.
 
+## Status
+
+**Sections 0, 1 and 2 delivered. Windows superseded by
+`frogg3rs-windows-standalone`.** The hygiene sweep, the signing fix across all
+three shipped bundles, and the downloader documentation are committed. The
+Windows section stalled and its remaining work — plus the site header logo and
+the closing gates — moved to that change, which starts from a source audit
+rather than from CI round-trips.
+
 ## Impact
 
 - Affected specs: `frogg3rs-distribution`, which already owns the published
