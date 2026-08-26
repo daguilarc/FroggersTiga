@@ -96,9 +96,13 @@ requirement that will be implemented to the easy clause.
   carrying Randomize Page, Randomize All, Reset Page and Reset All.
 - **Intrinsic button width** for those four, so a short label does not force
   a full-width button.
-- **`kRightRowsNarrow` is DELETED.** The right block returns to a single
-  table. `narrowViewport_` survives and is consumed by `AppendLeftBlock`
-  instead of `AppendRightBlock`.
+- **The narrow plumbing is added from nothing.** `kRightRowsNarrow`,
+  `kViewportNarrow`, `narrowViewport_`, its `HandleAction` branch and the
+  shell dispatch were all reverted in `e427419` — the rejected layout was
+  pulled out of the tree before this change begins, because it had also made
+  the mobile e2e marginal enough to stop the site deploying. So nothing here
+  repurposes an existing flag: the action, the member, the branch and the
+  dispatch are re-added, this time consumed by `AppendLeftBlock`.
 - **Scenarios that test the intent**, including a negative one that fails if
   the rows land in the encoder column.
 

@@ -91,15 +91,20 @@ the page below the fold is unreachable either way.
       blocks the archive. Its remaining items are the four operator steps,
       carried to section 5 below. Verify that rather than taking it on faith
       — `gh release view frogg3rs_v2 --json assets` is the check.
-- [ ] 0.2 Sweep `FroggersCellMap` and the surface's narrow-mode members.
-      `kRightRowsNarrow` and its selection in `AppendRightBlock` are being
-      deleted by 2.4; check for anything else that exists ONLY to serve the
-      right-column hoist — comments describing the row order, the C++ surface
-      test `randomize_reset_above_encoders_in_narrow_viewport`, and the
-      Playwright assertion "Randomize and Reset sit above the encoder grid,
-      not below it" in `app/browser/e2e/mobile-stacking.spec.mjs`. Those two
-      tests assert the WRONG layout and go with it. A guard whose sole target
-      is deleted still passes.
+- [ ] 0.2 ALREADY DONE — verify rather than redo. The rejected right-column
+      hoist was reverted in `e427419`, before this change starts:
+      `kRightRowsNarrow`, `kViewportNarrow`, `narrowViewport_`, the
+      `HandleAction` branch, the shell-side dispatch in `mobile-stack.mjs`,
+      the C++ surface test
+      `randomize_reset_above_encoders_in_narrow_viewport` and the Playwright
+      assertion "Randomize and Reset sit above the encoder grid, not below
+      it" are all gone. Confirm with
+      `grep -rn "narrowViewport_\|kViewportNarrow\|kRightRowsNarrow" app/`
+      returning nothing, and treat a non-empty result as a bad merge rather
+      than as work to do.
+      CONSEQUENCE, and the reason this task is worth reading: there is NO
+      narrow-viewport plumbing left in the tree. Sections 1 and 2 ADD it from
+      nothing — they do not repurpose anything.
 - [ ] 0.2b An existing e2e test asserts the CURRENT half-width behaviour on
       purpose: `app/browser/e2e/mobile-stacking.spec.mjs:60`, "chrome renders
       at the grid's shared scale, not stretched to its own full width". Task
@@ -129,14 +134,26 @@ the page below the fold is unreachable either way.
 - [ ] 1.2 Add narrow variants of the outer split weights in
       `FroggersCellMap`, selected by the existing `narrowViewport_` flag, so
       the chrome block scales to substantially the same rendered width as the
-      grid block. Keep `kLeftBlockWeight`/`kRightBlockWeight` unchanged for
+      grid block.
+      The flag does not exist yet — 0.2's revert removed it. This task adds
+      it back: a `kViewportNarrow` action constant in `FroggersActions`, a
+      `narrowViewport_` member, and a `HandleAction` branch setting it from
+      `action.value == "1"`, plus the browser-shell dispatch in
+      `mobile-stack.mjs` off the `isNarrow()` predicate that is still there
+      (`NARROW_MAX_WIDTH = 720`). The reverted commit `e427419` is the
+      reference for what each of those looked like; note it dispatched from
+      inside the patched `renderFrame` and guarded on a change in value so
+      the wasm app is not flooded at ~33ms.
+      Keep `kLeftBlockWeight`/`kRightBlockWeight` unchanged for
       the wide path — the desktop, standalone and plugin layouts are a
       non-goal and 4.2 verifies they did not move.
 - [ ] 1.3 `AppendLeftBlock` and `AppendRightBlock` both read their weight
-      from `FroggersCellMap` today. Select the narrow variant the same way
-      `AppendRightBlock` selected `kRightRowsNarrow` — the pattern is already
-      there to copy, and it is the pattern being deleted, so copy it before
-      2.4 removes it.
+      from `FroggersCellMap` today. Select the narrow variant off
+      `narrowViewport_`. The pattern `AppendRightBlock` used for
+      `kRightRowsNarrow` is NOT in the tree any more — read it out of
+      `e427419` if you want it, or follow `pluginHostMode_`, which is the
+      same shape and is still live: a private bool, a `HandleAction` branch,
+      and a read at emission time.
 
 ## 2. Put the four buttons beside the sliders
 
@@ -186,10 +203,11 @@ the page below the fold is unreachable either way.
       shipping desktop layout. If the narrow path needs different sizing,
       that is a parameter or a second arrangement, not an edit to the
       helper's existing behaviour.
-- [ ] 2.4 DELETE `kRightRowsNarrow` and its selection in `AppendRightBlock`.
-      The right block returns to a single table. `narrowViewport_` survives,
-      consumed by the chrome-block path instead. Report found-versus-changed
-      for every site that referenced it.
+- [ ] 2.4 Nothing to delete — `kRightRowsNarrow` and its selection went with
+      the revert in `e427419`, and the right block is already back to a
+      single table. Verify that (`grep -n kRightRows app/FroggersUiSurface.hpp`
+      should show one table and one consumer) and confirm this change adds no
+      second right-column table anywhere.
 
 ## 3. Assertions that test the intent
 
@@ -220,9 +238,12 @@ the page below the fold is unreachable either way.
       (`reset_row_sits_below_randomize_with_two_equal_halves`,
       `modulation_header_sits_below_bank_row_and_above_parameter_cells`)
       still pass unchanged.
-- [ ] 4.2 The desktop layout is untouched: `narrowViewport_` false emits the
-      same tree as before this change, including the outer split weights.
-      Assert it, do not reason about it.
+- [ ] 4.2 The desktop layout is untouched: with the flag 1.2 adds left
+      false, the surface emits the same tree as `e427419` does, including the
+      outer split weights. Assert it against that baseline, do not reason
+      about it — the flag is new in this change, so "unchanged" means
+      unchanged from the reverted-to state, not from whatever the surface
+      looked like mid-change.
 - [ ] 4.3 `app/vst` ctest 3/3. The plugin never sets the flag; this is the
       check that it cannot.
 - [ ] 4.4 ONE republish, then the full e2e suite. Run it with the machine
