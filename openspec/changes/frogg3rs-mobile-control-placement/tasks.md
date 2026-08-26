@@ -16,6 +16,63 @@ starting.** The failure was not a coding error. A requirement said two things
 and its scenarios tested one, so three green checks certified the wrong
 layout. Every assertion below is written against the clause that was missed.
 
+## P0. The page does not scroll on a phone — DO THIS FIRST
+
+The operator reports that dragging down on the published site snaps straight
+back to the top. Reproduced against the deployed build, in the `mobile`
+Playwright project (390x844):
+
+    window.scrollTo(0, 200)  ->  scrollY = [200, 200, 0, 0, 0, 0, 0, 0, ...]
+
+It holds for exactly two frames and is then pinned at 0. Anything below the
+fold is unreachable, which means Randomize and Reset are not merely "buried"
+today — they cannot be reached at all, and neither can the lower encoder
+rows. This outranks where the four buttons go: moving them is pointless if
+the page below the fold is unreachable either way.
+
+- [ ] P0.1 Root cause. NOT YET FOUND — what follows is what has been ruled
+      OUT, so it is not re-walked:
+      The document IS scrollable and stays that way. `document.scrollingElement`
+      is `html`, `scrollHeight` 1218 against a 844 viewport, `overflow-y:
+      visible` on both `html` and `body`, `body` `position: static`, and all
+      of those are CONSTANT across every frame including the frame the reset
+      happens on. So it is not a height collapse clamping the offset.
+      No script scrolls. `window.scrollTo`, `Element.scrollIntoView`,
+      `HTMLElement.focus` and the `scrollTop` setter were all monkey-patched
+      to record a stack trace on any call that would zero the scroll: ZERO
+      hits during the reset. `document.activeElement` stays `BODY`, so it is
+      not focus stealing. Grep confirms no scroll or focus call exists in
+      `app/browser/site/`, in Sheaf's `browser/src/*.ts`, or in the shipped
+      `dist/site/sheaf-runtime/*.js`.
+      The two-frame delay is the strongest remaining clue: something
+      asynchronous completes and the offset goes. `mobile-stack.mjs`'s
+      per-frame `applyMobileStack` and its `ResizeObserver` burst
+      (`scheduleApply`) are the obvious suspects and have NOT been excluded —
+      excluding them means disabling the prototype patch and re-running this
+      probe, which is the next step. Scroll anchoring (`overflow-anchor`) is
+      the other untested candidate: `ui.ts`'s `updateNode` rewrites every
+      node's style every frame, which is exactly the mutation pattern that
+      provokes it.
+- [ ] P0.2 Fix it, and say which of P0.1's candidates it was.
+- [ ] P0.3 A REGRESSION TEST, which is why this shipped in the first place.
+      `frogg3rs-web-mobile-ux` already carries the scenario "Page scrolling
+      still works on non-canvas areas" — and NOTHING asserts it. `grep -rn
+      "scrollY|scrollTo|scrollHeight|mouse.wheel" app/browser/e2e/*.spec.mjs`
+      returns nothing across the whole suite. A scenario with no assertion is
+      how the button placement shipped wrong too; this is the same defect
+      wearing different clothes.
+      The test scrolls, waits several animation frames, and asserts the
+      offset SURVIVES — a single-frame check passes against this bug, since
+      the offset holds for two frames before it is lost. Put it in a spec the
+      config already selects (`playwright.config.mjs:38-40`).
+      POSITIVE CONTROL: show it red against the current build before
+      trusting it green.
+- [ ] P0.4 While the page cannot scroll, `mobile-stack.mjs` sizing the mount
+      to the full stacked height is load-bearing in a way its own comments do
+      not say: every control below the fold depends on scrolling that does
+      not work. Whatever P0.2 changes, record whether the mount's explicit
+      height and `overflow: hidden` are still correct afterwards.
+
 ## 0. Hygiene
 
 - [ ] 0.1 Archive `openspec/changes/frogg3rs-windows-and-mobile` FIRST, with

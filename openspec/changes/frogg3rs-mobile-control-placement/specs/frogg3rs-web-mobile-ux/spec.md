@@ -44,3 +44,26 @@ plugin path SHALL set it.
 - **WHEN** the browser host sets the narrow-viewport flag
 - **THEN** every stacked block renders at substantially the full viewport
   width under the shell's shared scale
+
+### Requirement: The page scrolls, and a test proves it
+
+On mobile-width viewports the published page SHALL scroll when its content is
+taller than the viewport, and a scroll offset once set SHALL persist rather
+than returning to the top on a later animation frame.
+
+The suite SHALL assert this directly. The existing "page scrolling still
+works" scenario has never had an assertion behind it, which is how a build
+that cannot scroll at all reached the published site. An assertion SHALL
+check the offset after several animation frames, not immediately, because the
+offset survives the first frames and is lost afterwards.
+
+#### Scenario: A scroll offset survives the render loop
+
+- **WHEN** the page is scrolled down at a viewport width of 720px or less
+- **AND** several animation frames elapse
+- **THEN** the scroll offset is still where it was put
+
+#### Scenario: Controls below the fold are reachable
+
+- **WHEN** the content is taller than the viewport at a phone-width viewport
+- **THEN** every emitted control can be brought into view by scrolling
