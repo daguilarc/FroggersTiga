@@ -1,18 +1,27 @@
 # Delta — `froggers-sheaf-parameter-model`
 
-The Drive bank's Tone range is a bare literal with nothing behind it: no
-requirement mentions it, and the only tests that touch the control pass its
-bypass default, so neither end of its travel is asserted. Stated here at the
-value this change sets it to, alongside the damping requirement that already
-covers the same class of mistake in the Reverb bank.
+The Drive bank's Tone range and the Delay bank's Feedback tone range are bare
+literals with nothing behind them: no requirement mentions either, and the only
+tests that touch these controls pass their bypass default, so neither end of
+either travel is asserted. They are also the same control in two places. Stated
+here as one requirement over both, at the range this change sets them to, and
+alongside the damping requirement that already covers the same class of mistake
+in the Reverb bank.
 
 ## ADDED Requirements
 
-### Requirement: The drive tone range excludes the inaudible end
+### Requirement: Tone controls share one range, and it excludes the inaudible end
 
-The Drive bank's Tone control SHALL map geometrically onto the one-pole
-coefficient of the filter closing the drive chain, with a floor high enough that
-its darkest setting is still a tone rather than a mute.
+The Drive bank's Tone and the Delay bank's Feedback tone SHALL map geometrically
+onto the one-pole coefficient of the filter each closes, with a floor high
+enough that the darkest setting is still a tone rather than a mute.
+
+Both SHALL resolve their coefficient through ONE shared mapping rather than each
+computing the range. They are the same control in two positions — a post-stage
+low-pass whose knob top is exact bypass — so two expressions of the range would
+be two things to keep in agreement by hand. The Reverb bank's damping filter
+SHALL NOT share it: its range is narrower and its knob inverted, because it
+darkens a tail rather than shaping a signal and never fully opens.
 
 Turning the control DOWN SHALL darken the driven signal: the control's bottom
 end maps to the smallest coefficient, and a smaller coefficient is a lower
@@ -29,21 +38,28 @@ mean of the range is a cutoff a driven signal can still be heard through.
 
 #### Scenario: The darkest setting is still a tone
 
-- **WHEN** the Tone control is at its minimum
+- **WHEN** either tone control is at its minimum
 - **THEN** the resulting cutoff is above 500 Hz at a 48 kHz sample rate
 
 #### Scenario: An untouched control removes nothing
 
-- **WHEN** the Tone control is at its default, fully open
+- **WHEN** either tone control is at its default, fully open
 - **THEN** the coefficient is exactly 1 and the stage passes its input unchanged
 
 #### Scenario: The mapping is geometric across its whole travel
 
-- **WHEN** the Tone control is at its midpoint
+- **WHEN** either tone control is at its midpoint
 - **THEN** the resulting coefficient is the geometric mean of the coefficients
-  at the control's two ends
+  at that control's two ends
 
 #### Scenario: Down is darker
 
-- **WHEN** the Tone control is lowered
+- **WHEN** either tone control is lowered
 - **THEN** the coefficient falls, and its cutoff with it
+
+#### Scenario: The two controls agree by construction
+
+- **WHEN** the Drive Tone and the Delay Feedback tone are set to the same knob
+  position, anywhere across the travel
+- **THEN** they resolve to the same coefficient, because they read the same
+  mapping rather than each computing the range

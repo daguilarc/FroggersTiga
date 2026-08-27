@@ -723,11 +723,15 @@ struct StereoDelay
     // ExpMapCompute(0.25,4,0.5) == 0.25*sqrt(16) == 1.0.
     void SetFeedbackDrive(float knob01) { fbDrive = ExpMapCompute(0.25f, 4.0f, knob01); }
 
-    // Alpha fed directly, same idiom as FrogBlock::SetTone (Drive.hpp).
-    // Default knob 1.0f reproduces alpha == 1.0f exactly (bypass).
+    // The SAME control as the Drive bank's Tone, so the same map: both read
+    // DspMath.hpp's ToneAlphaFromKnob, which is where the range and the
+    // reason for its floor live. This one sits inside the feedback loop, so
+    // its filter is applied on every pass and its darkening compounds across
+    // repeats -- which makes an inaudibly low floor worse here than on a
+    // through-signal, not better.
     void SetFeedbackTone(float knob01)
     {
-        const float alpha = ExpMapCompute(0.02f, 1.0f, knob01);
+        const float alpha = ToneAlphaFromKnob(knob01);
         fbToneL.alpha = alpha;
         fbToneR.alpha = alpha;
     }

@@ -3949,6 +3949,56 @@ TEST_CASE(stereo_delay_feedback_tone_default_knob_is_exact_bypass_alpha) {
     REQUIRE_NEAR(delay.fbToneR.alpha, 1.0f, 1e-6);
 }
 
+TEST_CASE(delay_feedback_tone_and_drive_tone_share_one_mapping) {
+    // These are the same control in two places -- a post-stage low-pass whose
+    // knob top is exact bypass -- so they read ONE function
+    // (dsp::ToneAlphaFromKnob) rather than each computing the same range.
+    // Asserted across the travel, not just at the ends: two ranges that
+    // happened to agree at 0 and 1 could still differ everywhere between, and
+    // the middle is where a uniform random draw actually lands.
+    //
+    // This is the assertion that fails if either call site is ever re-inlined.
+    dsp::FrogBlock block;
+    dsp::StereoDelay delay;
+
+    for (const float knob : {0.0f, 0.1f, 0.25f, 0.5f, 0.75f, 0.9f, 1.0f}) {
+        block.SetTone(knob);
+        delay.SetFeedbackTone(knob);
+        REQUIRE_NEAR(delay.fbToneL.alpha, block.tone.alpha, 1e-9);
+        REQUIRE_NEAR(delay.fbToneR.alpha, block.tone.alpha, 1e-9);
+        REQUIRE_NEAR(block.tone.alpha, dsp::ToneAlphaFromKnob(knob), 1e-9);
+    }
+}
+
+TEST_CASE(delay_feedback_tone_never_reaches_the_inaudible_end) {
+    // Feedback tone sits INSIDE the delay's feedback loop, so its filter is
+    // applied on every pass and its darkening compounds across repeats. That
+    // makes an inaudibly low floor worse here than on a through-signal, not
+    // better: at the 0.02 this was authored with, the darkest setting removed
+    // the repeats rather than darkening them.
+    dsp::StereoDelay delay;
+
+    delay.SetFeedbackTone(0.0f);
+    const float floorAlpha = delay.fbToneL.alpha;
+    delay.SetFeedbackTone(1.0f);
+    const float ceilingAlpha = delay.fbToneL.alpha;
+    delay.SetFeedbackTone(0.5f);
+    const float midAlpha = delay.fbToneL.alpha;
+
+    REQUIRE_NEAR(midAlpha, std::sqrt(floorAlpha * ceilingAlpha), 1e-6);
+    REQUIRE_TRUE(floorAlpha < midAlpha);
+    REQUIRE_TRUE(midAlpha < ceilingAlpha);
+    REQUIRE_NEAR(ceilingAlpha, 1.0f, 1e-9);
+
+    const float sr = 48000.0f;
+    const auto cutoffHz = [sr](float alpha) {
+        return -sr * std::log(1.0f - alpha) / (2.0f * 3.14159265358979323846f);
+    };
+    REQUIRE_TRUE(cutoffHz(floorAlpha) > 500.0f);
+    std::cout << "  [delay feedback tone] knob 0.0 -> " << cutoffHz(floorAlpha) << " Hz, knob 0.5 -> "
+              << cutoffHz(midAlpha) << " Hz, knob 1.0 -> bypass (at " << sr << " Hz)\n";
+}
+
 TEST_CASE(stereo_delay_crush_default_knob_is_exact_bypass_freq) {
     dsp::StereoDelay delay;
     delay.SetCrush(0.0f);  // D10 default knob.

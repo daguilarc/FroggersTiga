@@ -95,6 +95,34 @@ struct OnePoleLowPass
     }
 };
 
+// The knob-to-coefficient map every TONE control shares: a post-stage
+// low-pass whose knob top is exact bypass. Two controls use it -- the Drive
+// bank's Tone (FrogBlock::SetTone) and the Delay bank's Feedback tone
+// (StereoDelay::SetFeedbackTone) -- and they are the same control in two
+// places, not two ranges that happen to agree, so this is the one definition
+// site rather than the same expression written twice.
+//
+// Knob 1.0 gives alpha exactly 1.0, which makes OnePoleLowPass::Process an
+// exact identity (output = 1.0*input + 0.0*output). A tone control at its
+// default has to remove nothing exactly, not almost.
+//
+// Knob 0.0 gives 0.1, a cutoff near 805 Hz at 48kHz. The floor is not there
+// to bound the filter but to bound the DRAW: randomization takes each
+// parameter uniformly across its travel while this mapping is geometric, so
+// half of all draws land below the range's geometric mean. At the 0.02 both
+// controls were authored with, that mean was 0.141 -- about 1165 Hz -- and
+// the darkest reachable setting was 154 Hz, which is a mute rather than a
+// tone. One decade puts the median draw near 2.9 kHz instead.
+//
+// Reverb's damping filter deliberately does NOT use this: its range is
+// (0.02, 0.2) and its knob is inverted, because it darkens a tail rather
+// than shaping a signal and never fully opens. Same filter, different
+// control.
+inline float ToneAlphaFromKnob(float toneKnob01)
+{
+    return ExpMapCompute(0.1f, 1.0f, toneKnob01);
+}
+
 // -- src/core/BiquadSection.hpp:30-38 (Process only, Direct Form 1) -------
 struct BiquadDf1
 {

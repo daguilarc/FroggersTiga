@@ -47,7 +47,34 @@ its exact-identity default. 0.05 (darkest 392 Hz, median 1934 Hz) is the more
 conservative choice if 805 Hz turns out to have taken away a dark setting worth
 keeping.
 
-## The twin, which this change deliberately does not touch
+## The twin — ANSWERED, and now in scope
+
+**Operator, 2026-08-26: "delay feedback tone should have the same floor, shared
+function."** So it is, and the reasoning below about leaving it alone is
+superseded, kept because it is what the question was asked from.
+
+That answer also settles the "Not a refactor" section further down, and settles
+it the other way. That section was right while Tone was `(0.02, 1.0)` and
+Feedback tone was too: the shared `0.02f` was a coincidence of value across
+controls that could legitimately diverge. Once both are `(0.1, 1.0)` they are
+not two ranges that happen to agree — they are one mapping, for one concept ("a
+post-stage tone low-pass whose knob top is exact bypass"), written out twice.
+That is the duplication §7 exists for, and the fix is the one the operator
+named: one function, two callers.
+
+`ToneAlphaFromKnob` goes in `app/dsp/DspMath.hpp`, beside `OnePoleLowPass`
+itself — the coefficient it produces is that filter's own, and both callers
+already include that header (`Drive.hpp:68`, `Delay.hpp:48`). It clears §5's
+2-of-4 on reuse and on preventing structurally identical code.
+
+Reverb Damping stays out of it, and that is a classification rather than an
+oversight: its range is `(0.02, 0.2)` and its knob is inverted (`1.0f - knob`),
+so it is a different mapping for a different control — a tail-darkening filter
+that never fully opens, against a tone control that must reach exact bypass.
+Folding it in would need a floor that cannot be right for both, and would undo
+the range `frogg3rs-reverb-wetness-and-damping-floor` just set.
+
+## The twin, as the question was originally put
 
 Enumerating the concept by its operand rather than its name finds three
 one-pole-alpha-from-knob mappings, and two share this exact range:

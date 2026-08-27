@@ -78,7 +78,7 @@ Wet mix (slot 6) — Delay wet level continuing to Reverb.
 Color (slot 7) — Folds into/biases Detune.
 Halo (slot 8) — Folds into/biases Mod depth.
 Feedback drive (slot 9) — Pre-gain into the feedback saturator, 0.25×–4×, unity at default.
-Feedback tone (slot 10) — Low-pass inside the feedback loop; bypass at default.
+Feedback tone (slot 10) — Low-pass inside the feedback loop, ~800 Hz to bypass; bypass at default.
 Mod rate (slot 11) — Delay-time LFO rate, 0.05–1.25 Hz.
 Width balance (slot 12) — Overall scalar on Stereo width's own spread; default reproduces original fixed behavior.
 Crush (slot 13) — Sample-rate reduction on the feedback tap only; off at default.

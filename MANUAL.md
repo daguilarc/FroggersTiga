@@ -436,7 +436,9 @@ feedback path's saturator. Raising it drives the repeats into more obvious satur
 own ceiling holds regardless.
 
 **Feedback tone** (`FbTn`, slot 10) — a low-pass filter inside the feedback loop, so successive repeats
-get progressively darker as this is turned down. Fully open at the top of travel (the default).
+get progressively darker as this is turned down. Fully open at the top of travel (the default), to
+roughly an 800 Hz cutoff at the bottom — the same range as the Drive bank's Tone. Because it sits in
+the loop, the darkening compounds: each repeat passes the filter again.
 
 **Mod rate** (`MdRt`, slot 11) — rate of the delay-time LFO whose depth Mod depth (slot 5) sets
 (0.05 Hz–1.25 Hz). 0.25 Hz at the center default.

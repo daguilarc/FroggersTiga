@@ -449,23 +449,10 @@ struct FrogBlock
 
     // Alpha fed directly (Reverb.hpp's own damping-filter idiom -- "the
     // ExpMap output IS the alpha", not run through SetAlphaFromNatFreq).
-    // Default knob 1.0f reproduces alpha == 1.0f exactly, which makes
-    // OnePoleLowPass::Process an exact identity (output = 1.0*input +
-    // 0.0*output) -- "removes nothing" exactly at default, not merely
-    // approximately. That is why the ceiling stays 1.0f.
-    //
-    // The floor is 0.1, not the 0.02 this was authored with. Alpha IS the
-    // one-pole's coefficient and a smaller alpha is darker, so 0.02 put the
-    // darkest setting at a 154 Hz low-pass on the driven signal -- not a
-    // tone control, a mute. It dominated randomized patches rather than
-    // merely being available at one end: randomization draws uniformly
-    // across the knob while this mapping is geometric over a 50x range, so
-    // half of all draws landed below the geometric mean of 0.141, about
-    // 1165 Hz, and a quarter below 418 Hz. A floor of 0.1 makes the range
-    // one decade, darkest about 805 Hz with half of draws now above 2.9 kHz.
-    // The knob keeps its full travel, its direction and its identity
-    // default; only what the dark end maps onto moves.
-    void SetTone(float toneKnob01) { tone.alpha = ExpMapCompute(0.1f, 1.0f, toneKnob01); }
+    // The range, and why its floor is where it is, live with the map itself
+    // (DspMath.hpp's ToneAlphaFromKnob) rather than here: the Delay bank's
+    // Feedback tone is the same control and reads the same function.
+    void SetTone(float toneKnob01) { tone.alpha = ToneAlphaFromKnob(toneKnob01); }
 
     // Bias in [-0.02, 0.02] -- MEASURED: sweeping bias
     // across candidate ranges against PolynomialDrive::Process's own
