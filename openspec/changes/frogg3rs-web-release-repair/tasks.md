@@ -420,6 +420,15 @@ and is NOT satisfied — that is a known gap, stated rather than quietly dropped
 - [ ] 7.5 Pin bump for the Sheaf work, as its own step, after PR #9's head moves.
 - [ ] 7.6 Both trees clean and pushed.
 
+## SUPERSEDED FOR WHAT REMAINS
+
+Sections 1, 2, 4, 5 and 6 shipped (`ff1d110`, `0acbe93`, `260b5cf`, `d09e8f7`,
+`faf9db0`; Sheaf `80d9f4bb`). Everything still open below — section 3, the
+postflight findings, the operator checks, and task 5.0, which was a positive
+control that WAS NEVER RUN before section 5 shipped — is taken over by
+`openspec/changes/frogg3rs-first-visit-and-open-repairs`. Do not work these
+items here.
+
 ## 7b. Postflight findings not fixed here
 
 Recorded rather than actioned, so they are not rediscovered as surprises.
