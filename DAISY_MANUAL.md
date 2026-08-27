@@ -287,6 +287,18 @@ First processing stage on `(input + oscillators)`.
 
 Matches [dazed-and-con-fielded](https://github.com/jvictor0/dazed-and-con-fielded) except the app directory is **`src/FroggersTiga`** (not `src/Froggers`).
 
+### Toolchain
+
+Building the firmware needs these host tools on `PATH`:
+
+- `arm-none-eabi-gcc`, `arm-none-eabi-g++`, `arm-none-eabi-ar`, `arm-none-eabi-objcopy`, `arm-none-eabi-size`
+- `dfu-util`
+- `make`
+
+The build requires **Arm GNU Toolchain 14.3.rel1** installed under `/Applications/ArmGNUToolchain/14.3.rel1`. On Apple Silicon, download `arm-gnu-toolchain-14.3.rel1-darwin-arm64-arm-none-eabi.tar.xz` from [Arm GNU downloads](https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads), extract it, and `sudo mv` the folder to that path.
+
+`make` looks for `arm-none-eabi-g++` in `14.3.rel1/bin` or `14.3.rel1/arm-none-eabi/bin`. It does not use Homebrew or any other version on `PATH`.
+
 **First time (or after libDaisy changes), from repo root:**
 
 ```sh
@@ -314,16 +326,26 @@ Then flash (still in `src/FroggersTiga`):
 make program-dfu
 ```
 
-`program-dfu` uses `-s 0x08000000:leave` and resets into the new firmware when flash succeeds.
+`program-dfu` uses `-s 0x08000000:leave` and resets into the new firmware when flash succeeds. That address comes from `APP_TYPE=BOOT_NONE`, the one supported build mode for apps in this repo — it links against `STM32H750IB_flash.lds` and targets internal flash at `0x08000000`. The underlying Daisy build system also has `BOOT_SRAM` and `BOOT_QSPI`, which link against `STM32H750IB_sram.lds` / `STM32H750IB_qspi.lds` and load through the bootloader at `0x90040000` instead — this repo does not build apps that way.
 
 **Confirm you flashed FroggersTiga:** `build/FroggersTiga.bin` should be ~84 KB (the older `src/Froggers` build in dazed-and-con-fielded is ~81 KB and lacks the Audio/VCO page).
+
+### Updating the bootloader
+
+The vendored bootloader binary is `External/libDaisy/core/dsy_bootloader_v6_4-intdfu-2000ms.bin` — the correct variant for a Field connected over its normal Seed USB port. Put the Field into STM32 ROM DFU mode with the same BOOT-button procedure above, then from the repo root:
+
+```sh
+make program-boot
+```
+
+That flashes the bootloader itself to `0x08000000` with `:leave`.
 
 ---
 
 ## Troubleshooting
 
 - **`SW1` / `SW2` seem dead:** the tactile switch LEDs should light while each switch is held. If an LED lights but OLED page labels do not change (`V1VO` ↔ `PROB` ↔ `RVMX` …), the UI path is wrong; if neither LED lights, the switch or flash failed. Re-flash **`src/FroggersTiga`** (not dazed `src/Froggers`). Old dazed firmware blocks page switches while **`A1..A7`** mod-assign is held.  
-- **`SW1` stuck / always pressed (`r=1 p=1` on diag firmware):** Phase 1 (2026-06-26) confirmed hardware on `D30` for this unit — pin audit could not clear raw stuck state. See `openspec/changes/field-button-input-latency/phase1-findings.md`. Firmware suppression stops runaway page flips but cannot fix a stuck switch.  
+- **`SW1` stuck / always pressed (`r=1 p=1` on diag firmware):** Phase 1 (2026-06-26) confirmed hardware on `D30` for this unit — pin audit could not clear raw stuck state. See `openspec/changes/archive/2026-06-27-field-button-input-latency/phase1-findings.md`. Firmware suppression stops runaway page flips but cannot fix a stuck switch.  
 - **Intermittent slowness on `SW2` / randomize (`B1`–`B4`):** FroggersTiga decouples control polling from OLED refresh (~30 FPS) and queues heavy **Rand All** (`B2`/`B4`) so the poll loop stays fast under audio load. Bootloader is not involved (`BOOT_NONE` @ `0x08000000`).  
 - **Weird knob behavior on a page:** check **`FUEG`** — high fuegoization is supposed to make small moves jumpy.  
 - **Modulation seems dead on CV:** confirm cable and that the input is above the auto-bypass threshold.  

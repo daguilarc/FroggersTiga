@@ -1,22 +1,20 @@
 # Frogg3rs Manual
 
-Operator manual for **Frogg3rs — the Sheaf app** under [`app/`](app/), the current line of development.
+Operator manual for **Frogg3rs**, the Sheaf app — the current version of this instrument.
 
-The same instrument core runs in four hosts, built from the same `app/` sources:
+The same instrument core runs in four hosts:
 
-- **Standalone** — a self-contained desktop app (`app/FroggersMain.cpp`), with its own audio-device and
+- **Standalone** — a self-contained desktop app, with its own audio-device and
   MIDI-controller configuration (see Audio and MIDI configuration, below).
-- **Browser build** — the same core compiled to WebAssembly and run in a page (`app/browser/`).
-- **VST3** and **AU plugin** — the same core loaded inside a DAW (`app/vst/`), where the host owns audio
+- **Browser build** — the same core running in a browser page.
+- **VST3** and **AU plugin** — the same core loaded inside a DAW, where the host owns audio
   devices, transport and tempo.
 
 Every parameter and every bank below is identical across all four; what differs between them is covered
 in Audio and MIDI configuration.
 
-Two other instruments share this repository and are documented separately, because their parameter
-models do not map onto this one:
-
-- **Daisy Field hardware firmware** (`src/FroggersTiga/`, frozen) → [`DAISY_MANUAL.md`](DAISY_MANUAL.md)
+A different instrument, the frozen **Daisy Field hardware firmware**, shares this repository and is
+documented separately, since its parameter model does not map onto this one: [`DAISY_MANUAL.md`](DAISY_MANUAL.md).
 
 Terse one-line-per-parameter glossary for this app: [`QUICK_DICT.md`](QUICK_DICT.md).
 
@@ -63,10 +61,6 @@ then **Run anyway**. Windows remembers this for that copy of the file; later lau
 Removing these prompts takes an Apple Developer Program membership on macOS and an Authenticode
 code-signing certificate on Windows. This project has neither, so expect these steps on every
 release.
-
-This is the only way to do it without me having to pay for an Apple Developer license annually. If
-you'd like to sponsor a fully authenticated MacOS and iOS app, please get in touch about how much
-money you are willing to donate to the cause.
 
 ---
 
