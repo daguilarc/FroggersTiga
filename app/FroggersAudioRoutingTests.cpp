@@ -2216,6 +2216,55 @@ TEST_CASE(free_running_modulation_source_holds_while_stopped_with_positive_contr
 // read -- through the ordinary ProcessBlock path, with the transport never
 // started at all (this rig's default state, per this file's own header
 // comment: "The rig's transport starts Stopped by default").
+TEST_CASE(reverb_wet_mix_always_leaves_at_least_forty_percent_dry) {
+    // The property the wet ceiling exists to guarantee, read off what the DSP
+    // was actually handed rather than off the constant it was computed from.
+    // Reverb blends `(1 - mix) * dry + mix * wet` (dsp/Reverb.hpp), so the
+    // dry share at any knob position is exactly `1 - mix`: a mix that could
+    // reach 1.0 would remove the dry signal entirely, which reads as a drop
+    // in level rather than as more reverb.
+    //
+    // A test that asserted `kMaxReverbWetMix == 0.6f` would restate the edit
+    // and would keep passing if the ceiling were later applied to the wrong
+    // thing, or stopped being applied at all.
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("reverb_wet_ceiling"));
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+    using synth_froggers::FroggersBankId;
+
+    model.PageParameter(FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;  // Wet/dry commanded MAX.
+    ApplyPatchNow(rig);
+    rig.StartAt(120.0);
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(!rig.SawNaN());
+
+    const float mixAtMax = rig.Application().TestLastReverbWetMixEffective();
+    const float dryShare = 1.0f - mixAtMax;
+    std::cout << "  [reverb wet ceiling] knob 1.0 -> mix " << mixAtMax << ", dry share " << dryShare
+              << "\n";
+    // The epsilon is float representation, not slack in the requirement:
+    // 0.6 has no exact binary form, so the ceiling stores as 0.60000002 and
+    // `1 - mix` lands at 0.39999998. Asserting a bare `>= 0.40f` would fail
+    // on a ceiling that is exactly right.
+    REQUIRE_TRUE(dryShare >= 0.40f - 1e-6f);
+
+    // The control still sweeps its whole travel: the ceiling is on the mapped
+    // value, not on the knob's range, so half the knob is half the ceiling.
+    model.PageParameter(FroggersBankId::Reverb, 0).SceneCenter(0) = 0.5f;
+    ApplyPatchNow(rig);
+    rig.RunBlocks(4);
+    const float mixAtHalf = rig.Application().TestLastReverbWetMixEffective();
+    REQUIRE_TRUE(std::fabs(mixAtHalf - mixAtMax * 0.5f) < 1e-5f);
+
+    // POSITIVE CONTROL: the instrument really was asked for maximum wetness,
+    // so "the dry share is high" is a ceiling doing its job and not a knob
+    // that never moved.
+    REQUIRE_TRUE(mixAtMax > 0.0f);
+    model.PageParameter(FroggersBankId::Reverb, 0).SceneCenter(0) = 0.0f;
+    ApplyPatchNow(rig);
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().TestLastReverbWetMixEffective() == 0.0f);
+}
+
 TEST_CASE(patch_change_still_reaches_dsp_while_transport_stopped) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("s1a2_patch_reaches_dsp_while_stopped"));
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();

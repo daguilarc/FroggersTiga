@@ -467,8 +467,9 @@ settings.
 **Pre-delay** (`PreDly`, slot 3) — time before the input reaches the tank at all, separating a clean dry
 transient from the onset of the reverb tail.
 
-**Damping** (`Damp`, slot 4) — high-frequency loss in the feedback path. Higher knob values mean a
-brighter, less-damped tail; lower values mean a darker, duller tail.
+**Damping** (`Damp`, slot 4) — high-frequency loss in the feedback path. Turning it UP darkens the
+tail; turning it down brightens it, up to roughly a 1.7 kHz damping cutoff at the bottom of travel.
+The dark end is floored at about 150 Hz, so the tail keeps some top even at maximum.
 
 **Stereo width** (`Width`, slot 5) — spread between the tank's two internal taps in the final left/right
 output.

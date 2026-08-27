@@ -381,7 +381,18 @@ struct Reverb
     }
 
     // :459, :574 Damping -- the ExpMap output IS the damping filter's alpha.
-    static float DampAlphaFromKnob(float knob01) { return ExpMapCompute(0.001f, 0.2f, 1.0f - knob01); }
+    // The floor is 0.02, not the 0.001 this was ported with. Alpha IS the
+    // one-pole's coefficient and a smaller alpha is a darker tail, so 0.001
+    // is a damping cutoff near 8 Hz at 48kHz -- a tail with nothing audible
+    // left in it. That matters because randomization draws every parameter
+    // uniformly across its travel while this mapping is geometric, so half of
+    // all draws land below the range's geometric mean: sqrt(0.001 * 0.2) =
+    // 0.0141, about 108 Hz. Half of every randomized reverb was mud. A floor
+    // of 0.02 makes the range one decade, whose geometric mean is 0.0632 --
+    // about 500 Hz -- and whose darkest setting is about 154 Hz. The knob
+    // keeps its full travel and its direction; only what the dark end maps
+    // onto moves.
+    static float DampAlphaFromKnob(float knob01) { return ExpMapCompute(0.02f, 0.2f, 1.0f - knob01); }
 
     // (slot 9, Mod rate) -- see kModLfoHzMin/Max's own comment above.
     static float ModRateHzFromKnob(float knob01) { return ExpMapCompute(kModLfoHzMin, kModLfoHzMax, knob01); }

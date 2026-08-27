@@ -2131,11 +2131,47 @@ TEST_CASE(reverb_room_size_decay_predelay_damp_match_expmap_formulas) {
     REQUIRE_NEAR(dsp::Reverb::PreDelayNormFromKnob(0.0f, sr), 1.0f / sr, 1e-9);
     REQUIRE_NEAR(dsp::Reverb::PreDelayNormFromKnob(1.0f, sr), 100.0f / sr, 1e-9);
 
-    // Damping: ExpMap(0.001, 0.2, 1-knob) -- knob=0 -> upper bound 0.2,
-    // knob=1 -> lower bound 0.001 (the 1-knob flip is part of the cited
-    // formula, not a port error).
+    // Damping: ExpMap(0.02, 0.2, 1-knob) -- knob=0 -> upper bound 0.2,
+    // knob=1 -> lower bound 0.02 (the 1-knob flip is part of the cited
+    // formula, not a port error). The floor was 0.001 when this was ported;
+    // see DampAlphaFromKnob's own comment for why it is not any more.
     REQUIRE_NEAR(dsp::Reverb::DampAlphaFromKnob(0.0f), 0.2f, 1e-6);
-    REQUIRE_NEAR(dsp::Reverb::DampAlphaFromKnob(1.0f), 0.001f, 1e-6);
+    REQUIRE_NEAR(dsp::Reverb::DampAlphaFromKnob(1.0f), 0.02f, 1e-6);
+}
+
+TEST_CASE(reverb_damping_stays_geometric_and_never_reaches_the_inaudible_end) {
+    // Two separate properties, because the endpoints alone would not catch
+    // either failure the other covers.
+    //
+    // GEOMETRIC, across the whole travel. Alpha IS the one-pole's
+    // coefficient (dsp/DspMath.hpp: `out = alpha*in + (1-alpha)*out`), and
+    // the mapping is exponential, so the midpoint has to be the geometric
+    // mean of the ends. A mapping quietly changed to linear would keep both
+    // endpoints correct and move every value between them -- including the
+    // one that decides what half of all randomized patches sound like, since
+    // randomization draws uniformly across the knob's travel.
+    const float floorAlpha = dsp::Reverb::DampAlphaFromKnob(1.0f);
+    const float ceilingAlpha = dsp::Reverb::DampAlphaFromKnob(0.0f);
+    const float midAlpha = dsp::Reverb::DampAlphaFromKnob(0.5f);
+    REQUIRE_NEAR(midAlpha, std::sqrt(floorAlpha * ceilingAlpha), 1e-6);
+
+    // UP IS DARKER: a smaller alpha is a heavier low-pass. This is the clause
+    // the manual had backwards for as long as it existed.
+    REQUIRE_TRUE(floorAlpha < midAlpha);
+    REQUIRE_TRUE(midAlpha < ceilingAlpha);
+
+    // THE FLOOR IS AUDIBLE. A one-pole's cutoff is
+    // -fs * ln(1 - alpha) / 2pi; at the ported 0.001 that was about 8 Hz at
+    // 48kHz, which is a tail with nothing left in it, and half of every
+    // randomized draw landed below the range's geometric mean.
+    const float sr = 48000.0f;
+    const auto cutoffHz = [sr](float alpha) {
+        return -sr * std::log(1.0f - alpha) / (2.0f * 3.14159265358979323846f);
+    };
+    REQUIRE_TRUE(cutoffHz(floorAlpha) > 100.0f);
+    std::cout << "  [reverb damping] knob 0.0 -> " << cutoffHz(ceilingAlpha) << " Hz, knob 0.5 -> "
+              << cutoffHz(midAlpha) << " Hz, knob 1.0 -> " << cutoffHz(floorAlpha) << " Hz (at "
+              << sr << " Hz)\n";
 }
 
 TEST_CASE(reverb_wet_dry_mix_is_affine_in_mix_knob_at_fixed_history) {

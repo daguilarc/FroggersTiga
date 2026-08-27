@@ -156,7 +156,8 @@ at and what `jvictor0/Sheaf#9` tracks. Push to `fork`, which updates that PR.
       check that the RuntimeConfig field costs it nothing.
 - [x] 4.3 One republish, then 46/46 idle in 17.8s and 46/46 in 23.5s under six
       concurrent CPU burners. `[pages] blank-frame` passed in both. Original text: ONE republish, then the full e2e suite, idle and under load.
-- [ ] 4.4 Both trees clean and both pushed: the Sheaf branch, and frogg3rs with
+- [x] 4.4 Both clean and pushed: Sheaf `ef07e3da` on the PR #9 branch,
+      frogg3rs `c39e666` with the pin moved. Original text: Both trees clean and both pushed: the Sheaf branch, and frogg3rs with
       the moved pin.
 
 ## 5. Operator

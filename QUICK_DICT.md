@@ -89,7 +89,7 @@ Wet/dry (slot 0) — Reverb mix, capped at 70% wet.
 Room size (slot 1) — Both tank delay-line lengths.
 Decay (slot 2) — Tank feedback / tail length.
 Pre-delay (slot 3) — Time before input reaches the tank.
-Damping (slot 4) — HF loss in feedback; brighter tail at higher knob.
+Damping (slot 4) — HF loss in feedback; darker tail at higher knob.
 Stereo width (slot 5) — Spread between the tank's two taps.
 Diffusion (slot 6) — Cross-feed between the tank's two lines.
 Mod depth (slot 7) — Sinusoidal wow depth on the tank's read taps.

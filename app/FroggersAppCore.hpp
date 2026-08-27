@@ -1357,6 +1357,13 @@ public:
     // (DigitalReorganizer::Mangle) as a purely local, no member to read
     // back after the fact.
     float TestLastReverbGritKnobEffective() const { return lastReverbGritKnobEffective_; }
+    // The wet/dry mix actually handed to Reverb::Process, after the ceiling
+    // this file applies to the knob. Same rationale as the two accessors
+    // above: the ceiling is applied inline in the Process() argument list,
+    // so nothing reads it back afterwards. A test asserting the ceiling
+    // against this reads what the DSP was really given, rather than
+    // restating the constant it was computed from.
+    float TestLastReverbWetMixEffective() const { return lastReverbWetMixEffective_; }
 
     // Test/inspection access to the actual `DelayParams::dfrzLatched`
     // value RouteAudioSample() (below) last handed to `delay_.Process()` --
@@ -1823,15 +1830,16 @@ private:
         // (folded into Reverb::Process's own return -- see that struct's
         // header comment).
         // Wet/dry ceiling (operator 2026-07-29: "clamp the reverb wetness down
-        // to 70% of its current maximum, it's too fucking quiet"). Reverb's
+        // to 70% of its current maximum, it's too fucking quiet", and again
+        // 2026-08-26, to 60%). Reverb's
         // blend is `(1-mix)*dry + mix*wet` (dsp/Reverb.hpp), so mix == 1.0
         // removes the dry signal ENTIRELY and leaves only the diffuse tail --
         // which reads as a big drop in level, not as more reverb. Capping the
-        // mix at 0.7 keeps at least 30% dry in the output at every knob
+        // mix at 0.6 keeps at least 40% dry in the output at every knob
         // position, so turning the control up adds tail instead of trading
         // away the source. Applied to the mapped value, not the knob range, so
         // the control still sweeps its whole travel.
-        constexpr float kMaxReverbWetMix = 0.7f;
+        constexpr float kMaxReverbWetMix = 0.6f;
         // T2.2: stoppedKnob overrides Tank drive (slot 10) to
         // kStopUnityDriveKnob while stopped, same idiom as the Filter comb
         // drive and Delay feedback drive above. Reverb::Process computes
@@ -1859,9 +1867,11 @@ private:
         // own established convention differs from dsp::StereoDelay's, which
         // does use separate setters -- see dsp/Reverb.hpp's own comment on
         // each of these five).
+        const float reverbWetMixEffective = kMaxReverbWetMix * knob(FroggersBankId::Reverb, 0);
+        lastReverbWetMixEffective_ = reverbWetMixEffective;
         const float reverbOut = reverb_.Process(
             delayOut,
-            kMaxReverbWetMix * knob(FroggersBankId::Reverb, 0),
+            reverbWetMixEffective,
             knob(FroggersBankId::Reverb, 1), knob(FroggersBankId::Reverb, 2),
             knob(FroggersBankId::Reverb, 3), knob(FroggersBankId::Reverb, 4), knob(FroggersBankId::Reverb, 5),
             knob(FroggersBankId::Reverb, 6), sampleRate_,
@@ -2178,6 +2188,7 @@ private:
     float lastDelayFreezeKnobEffective_ = 0.0f;
     float lastReverbTankDriveKnobEffective_ = 0.5f;
     float lastReverbGritKnobEffective_ = 0.0f;
+    float lastReverbWetMixEffective_ = 0.0f;
     // The output-stage limiter's own per-sample
     // gain-envelope state -- see the comment above `SanitizeOutputSample()`
     // for the full design rationale, and `dsp::OutputLimiter`'s own
