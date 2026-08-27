@@ -81,17 +81,34 @@ This is a layout-model capability, and it is the reason the previous change
 stopped rather than the reason it was lazy: two agents were sent at it, and the
 second correctly refused a file list that made the fix unreachable.
 
-## 4. Browser MIDI has no path in
+## 4. Browser MIDI — the claim that it is unreachable is FALSE
 
-`installSynthBrowserApp` receives MIDI access only from a consumed
-`ActivationLease` (`main.ts:336,347`), and a lease cannot be acquired on a page
-with no launch gesture — that is what section 1 of the previous change
-established. So the site's MIDI is unreachable, and the previous proposal's
-claim that MIDI came along with the microphone fix was withdrawn rather than
-delivered.
+`frogg3rs-web-release-repair` asserted that MIDI arrives only through a
+consumed `ActivationLease`, so a page with no launch gesture can never have it.
+That was repeated into this proposal without being traced. Tracing it:
 
-Separating "here is a context" from "activation happened" in Sheaf's own
-interface is what would fix both this and the lease problem properly.
+- `main.ts:178` constructs the MIDI manager unconditionally and with no
+  options: `this.midi = new BrowserMidiManager(new BrowserMidiWorkerRuntime(...))`.
+- `BrowserMidiManager.startFromUserActivation()` (`midi.ts:112-115`) therefore
+  falls through to `navigator.requestMIDIAccess({ sysex: true })` itself.
+- `startUserActivation()` (`main.ts:267-276`) calls exactly that, and the
+  dispatch wiring at `main.ts:172-175` runs it after the first in-app action.
+
+So the site already has a MIDI path, on the same first-gesture route the audio
+context now uses. The lease branch at `main.ts:211-219` is the EAGER path, not
+the only one — which is the same mistake section 1 of the previous change made
+about the AudioContext, made a second time about MIDI.
+
+What is actually unknown is whether that path WORKS on the published site. It
+has never been exercised: no e2e asserts the `midi:` half of the status string
+that `startUserActivation` renders (`main.ts:275`), and no operator has tried a
+controller against the browser build. `requestMIDIAccess` with `sysex: true`
+needs both Web MIDI support and a permission grant, and Chromium headless is
+not a fair test of either.
+
+So this item is verification first, and repair only of whatever verification
+actually finds. It is not an interface design, and it was never a question of
+whether MIDI is wanted.
 
 ## 5. Duplications the previous change created or left standing
 

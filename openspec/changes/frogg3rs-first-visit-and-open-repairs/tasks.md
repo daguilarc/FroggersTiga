@@ -92,18 +92,33 @@ echo's status, not make's. Capture `NAME_EXIT=$?` and read it, and count
       (`:1618-1648`) that builds both sides through the current pipeline. If
       the fix breaks it, STOP and report rather than editing the assertion.
 
-## 4. MIDI, and the interface underneath it
+## 4. MIDI in the browser
 
-- [ ] 4.1 Establish first whether this is wanted now or is a placeholder. It is
-      the only item here that adds capability rather than repairing something
-      shipped, and it should not be built because it was listed.
-- [ ] 4.2 If wanted: separate "supply a context" from "activation happened" in
-      Sheaf's launcher, so `midiAccess` can arrive without a lease asserting a
-      gesture. The current coupling is `main.ts:211-219` gating auto-start on
-      `options.midiAccess` being present.
-- [ ] 4.3 Whatever lands must keep the site's consent default: nothing starts on
-      load, and `desktop-layout.spec.mjs`'s "no audio starts on load" must pass
-      for the right reason, not because a permission was denied.
+The premise that this needs new plumbing was false. The path exists
+(`main.ts:178`, `midi.ts:112-115`, `main.ts:267-276`); what is missing is any
+evidence it works.
+
+- [ ] 4.1 Assert the `midi:` half of the status string. `startUserActivation`
+      renders `audio:<...>; midi:<status>` into `data-synth-status`
+      (`main.ts:275`) and nothing anywhere asserts the second half. Add that
+      assertion to the browser e2e, and REPORT WHAT IT ACTUALLY SAYS after a
+      first in-app action rather than assuming it says `online`.
+- [ ] 4.2 Establish what Chromium headless can honestly demonstrate.
+      `requestMIDIAccess({ sysex: true })` needs Web MIDI support AND a
+      permission grant; Playwright's `midi`/`midi-sysex` permissions have never
+      been used in this repo, so treat them as a first attempt. If headless
+      cannot grant them, say so and assert the reachable half — that the path
+      runs and reports a status — instead of a test that passes for the wrong
+      reason.
+- [ ] 4.3 Whatever 4.1 reports is the real work item. If the status is already
+      `online`, MIDI works and the previous change's claim was simply wrong —
+      record that and stop. If it reports a failure, THAT diagnosis is the fix,
+      traced to its own file:line before anything is changed.
+- [ ] 4.4 Do not add a lease to make MIDI work. A lease asserts a gesture that
+      this page has not had, which is what broke the site once already.
+- [ ] 4.5 OPERATOR: a real controller against the published site. This is the
+      only test that settles it, because headless cannot grant Web MIDI
+      honestly.
 
 ## 5. The duplications
 
@@ -126,7 +141,8 @@ echo's status, not make's. Capture `NAME_EXIT=$?` and read it, and count
 - [ ] 6.1 OPERATOR: the disabled cell's grey by eye — `Rgb(90, 96, 100)` on the
       body stroke, no value arc. Both are first guesses.
 - [ ] 6.2 OPERATOR: a real microphone reaching External Audio on the published
-      site, which no headless test can confirm.
+      site, which no headless test can confirm. Same visit settles 4.5 if a
+      controller is to hand.
 - [ ] 6.3 OPERATOR: the load readout on a phone, after item 2 measures it.
 
 ## 7. Nothing else moved
