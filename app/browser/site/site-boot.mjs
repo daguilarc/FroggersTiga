@@ -10,16 +10,36 @@
 // digests -- package-loader.js's own `materializePackage`), or app
 // bootstrapping (main.js's own `installSynthBrowserApp`).
 //
-// Deliberately does NOT pass an `activationLease`: `SheafPatchLauncher`
-// only needs one because its "Launch" button click is the user gesture
-// audio activation must be anchored to (`installSheafPatchLauncher`). This page has no
-// such click -- `SynthBrowserApp` defers audio activation to the first
-// in-app UI action instead (main.ts's own `BrowserUiBackend` dispatch
-// wiring calls `startUserActivation()` after every
-// dispatched action), which is exactly the app's own Play control, same as
-// every other Sheaf host. No audio starts on load (sbw-4 covers input;
-// this covers output the same way): matches the e2e suite's "no audio
-// start" requirement.
+// Supplies the `AudioContext` directly, through `audioOptions`, and passes
+// no `activationLease`. The two are not interchangeable. A lease is a
+// record that a user gesture has already happened: `ActivationLease.acquire`
+// resumes its context and requests MIDI immediately (activation.ts), and a
+// launcher that receives one starts audio and capture inside `start()`
+// (main.ts). That is right for `SheafPatchLauncher`, whose lease is created
+// inside its "Launch" button click. This page has no such click, so a lease
+// acquired here would resume a context no one has interacted with -- which
+// the browser will not complete -- and would claim an activation that has
+// not occurred.
+//
+// Constructing a context is not starting one. A fresh `AudioContext` is
+// suspended, and `startAudioWorklet` resumes the one it is given, so
+// activation stays anchored to the first in-app UI action (main.ts's own
+// `BrowserUiBackend` dispatch wiring calls `startUserActivation()` after
+// every dispatched action) -- the app's own Play control, same as every
+// other Sheaf host. No audio starts on load (sbw-4 covers input; this
+// covers output the same way): matches the e2e suite's "no audio start"
+// requirement.
+//
+// The context has to come from somewhere, because microphone capture
+// attaches to it specifically: `acquireInput` releases with
+// `audioContextUnavailable` when `audioOptions.audioContext` is unset, so
+// without this the Input device list is empty and Retry Input cannot help.
+// Browser MIDI still has no path in -- it arrives only with a lease -- and
+// remains unreachable here.
+//
+// `launchCatalogApplication` also passes `runtimeClientFactory` and
+// `frameIntervalMs`. Both are optional pass-throughs left undefined at
+// Sheaf's own default call site, so omitting them here carries nothing.
 import { CatalogClient } from "./sheaf-runtime/catalog-client.js";
 import { runtimeIdentityForCatalogApp } from "./sheaf-runtime/catalog.js";
 import { installSynthBrowserApp } from "./sheaf-runtime/main.js";
@@ -71,6 +91,7 @@ async function boot(root) {
   }
 
   let materialized;
+  const audioContext = new AudioContext();
   try {
     materialized = await materializePackage(app);
     await installSynthBrowserApp(root, {
@@ -81,10 +102,12 @@ async function boot(root) {
         runtimeConfigVersion: app.browser.runtimeConfigVersion,
       },
       runtimeIdentity: runtimeIdentityForCatalogApp(app),
+      audioOptions: { audioContext },
       disposeModule: () => materialized.dispose(),
     });
   } catch (error) {
     materialized?.dispose();
+    void audioContext.close().catch(() => {});
     throw error;
   }
 }

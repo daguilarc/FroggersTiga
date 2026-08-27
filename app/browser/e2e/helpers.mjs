@@ -67,6 +67,15 @@ export const PLAY_SELECTOR = '[data-synth-node-id="froggers.transport.play"]';
 export const ENCODER_CANVAS_SELECTORS = [0, 4, 8, 12].map(
   (ix) => `[data-synth-node-id="froggers.encoder.${ix}"] canvas`,
 );
+// RuntimePages.hpp:57 `NodeIds::kAudioStatusLine` -- the Audio page's own
+// requested/active input line (`ComposeBrowserAudioStatusLine`,
+// BrowserAudioDevices.hpp), the DOM's only rendering of the native
+// `BrowserAudioInputStatusText` for the current `BrowserAudioInputStatus`.
+// Only present once the Audio page has been opened (SIDEBAR_BUTTON_SELECTORS[0])
+// and only non-empty once the app has actually requested input channels and
+// has a current diagnostic to show (RuntimePages.hpp's own `if
+// (!snapshot.statusLineText.empty())` guard around this node).
+export const AUDIO_STATUS_LINE_SELECTOR = '[data-synth-node-id="runtime.audio.status_line"]';
 
 /**
  * Waits for the app to have rendered at least one real UI frame (proof the
