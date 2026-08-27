@@ -2028,6 +2028,103 @@ TEST_CASE(randomize_lands_the_drawn_value_under_full_positive_audio_rate_modulat
               << " firstHalfMean=" << firstHalfMean << " secondHalfMean=" << secondHalfMean << "\n";
 }
 
+// ============================================================================
+// Lane 6's visualizer draws its own trace, not a full-node background
+// ============================================================================
+
+// source6Visualizer_ is constructed with drawBackground=false
+// (FroggersModulation.hpp's own constructor, the trailing argument to
+// GangedRandomLfoVisualizer<1>). GangedRandomLfoVisualizer::
+// AppendBackgroundAndAxis (GangedRandomLfoVisualizer.hpp:57-70) is the only
+// thing that Fill's the whole node in Color::Rgb(12, 14, 16) plus an axis
+// line, and it only runs when drawBackground is true -- lanes 1-5's own
+// RandomShLaneVisualizer (FroggersRandomShVisualizer.hpp) never had a
+// background to begin with, so this brings lane 6 in line with the other
+// five. The rest of what BuildGangedRandomLfoCommands draws per voice --
+// the trace polyline and the playhead dot -- is unconditional on
+// drawBackground (GangedRandomLfoVisualizer.hpp:199-243), so lane 6 must
+// still draw those.
+//
+// Reaches source6Visualizer_/the five lane visualizers through
+// ModulatorMetadata::visualizer (ParameterModulation.hpp), the same public
+// pointer FroggersUiSurface reads off a slot's published cell -- this test
+// never touches the private slate members directly.
+TEST_CASE(lane_six_visualizer_omits_the_full_node_background_but_still_draws_its_trace) {
+    Fixture fx;
+    // The bare fixture never calls PrepareBlockClock() (that is
+    // FroggersAppCore::ProcessBlock's job), so source #6's round shape
+    // stays at its defensive fallback (waiting mu=3.0s, moving mu=1.5s,
+    // FroggersModulation.hpp:689-693) -- tens of thousands of samples at
+    // the 48kHz this fixture prepares at. A handful of Step() calls leaves
+    // the round well short of completing: both a nonzero past trace and a
+    // still-open future remain, the state a running instrument is in
+    // almost all the time. PublishUiState() is a separate call from
+    // Step() (FroggersModulation.hpp's own comment: "called once per
+    // block ... AFTER the per-sample loop") -- without it, source #6's
+    // UiState was never published, ReadSnapshot() fails, and the
+    // visualizer draws nothing at all.
+    for (int i = 0; i < 8; ++i) {
+        fx.StepOnce();
+    }
+    fx.slate.PublishUiState();
+
+    constexpr synth::ui::Bounds kNodeBounds{0.0f, 0.0f, 120.0f, 60.0f};
+    const auto DrawLane = [&fx, kNodeBounds](std::size_t modIx) {
+        const synth::ModulatorMetadata& meta = fx.slate.Metadata(modIx);
+        REQUIRE_TRUE(meta.visualizer != nullptr);
+        meta.visualizer->SetBounds(kNodeBounds);
+        return meta.visualizer->Draw();
+    };
+
+    const std::vector<synth::ui::DrawCommand> lane6Commands = DrawLane(kModSlotRandomSh6);
+
+    // (a) No full-node background fill -- checked by the exact colour and
+    // extent AppendBackgroundAndAxis's Fill uses
+    // (GangedRandomLfoVisualizer.hpp:62-63), not by command count.
+    bool sawFullNodeBackgroundFill = false;
+    for (const synth::ui::DrawCommand& command : lane6Commands) {
+        if (command.kind == synth::ui::DrawCommand::Kind::Fill &&
+            command.color == synth::Color::Rgb(12, 14, 16) && command.bounds.width == kNodeBounds.width &&
+            command.bounds.height == kNodeBounds.height) {
+            sawFullNodeBackgroundFill = true;
+        }
+    }
+    REQUIRE_TRUE(!sawFullNodeBackgroundFill);
+
+    // (b) Lane 6 still draws its own trace and playhead.
+    bool lane6SawPolyline = false;
+    bool lane6SawPlayhead = false;
+    for (const synth::ui::DrawCommand& command : lane6Commands) {
+        if (command.kind == synth::ui::DrawCommand::Kind::Polyline) {
+            lane6SawPolyline = true;
+        }
+        if (command.kind == synth::ui::DrawCommand::Kind::FillEllipse) {
+            lane6SawPlayhead = true;
+        }
+    }
+    REQUIRE_TRUE(lane6SawPolyline);
+    REQUIRE_TRUE(lane6SawPlayhead);
+
+    // (c) Lanes 1-5 are unaffected -- this change touches only lane 6's
+    // constructor argument; each of the other five still draws exactly its
+    // own trace/playhead pair.
+    for (std::size_t lane = kModSlotRandomSh1; lane <= kModSlotRandomSh5; ++lane) {
+        const std::vector<synth::ui::DrawCommand> laneCommands = DrawLane(lane);
+        bool laneSawPolyline = false;
+        bool laneSawPlayhead = false;
+        for (const synth::ui::DrawCommand& command : laneCommands) {
+            if (command.kind == synth::ui::DrawCommand::Kind::Polyline) {
+                laneSawPolyline = true;
+            }
+            if (command.kind == synth::ui::DrawCommand::Kind::FillEllipse) {
+                laneSawPlayhead = true;
+            }
+        }
+        REQUIRE_TRUE(laneSawPolyline);
+        REQUIRE_TRUE(laneSawPlayhead);
+    }
+}
+
 }  // namespace
 
 int main() {

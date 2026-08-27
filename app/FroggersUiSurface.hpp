@@ -1753,16 +1753,20 @@ private:
     // exactly that), so this file already satisfies that requirement and did
     // not need to change to do so.
     //
-    // A disconnected cell in the modulation view still holds its place in
-    // the grid (Braid4UI.hpp's own EmitEncoderCell idiom, `hidden` below):
-    // in the old fixed-pixel-index layout a `continue`-skip left the cell's
-    // designated position blank; in this weight-resolved grid, omitting the
-    // node entirely would let its siblings' weights redistribute and shift
-    // position, silently RESEQUENCING the remaining cells on every drill-in
-    // change. Always emitting the node with empty draw commands (and no
-    // action/drag) when hidden keeps the grid geometry stable and is the
+    // A disconnected cell still holds its place in the grid (Braid4UI.hpp's
+    // own EmitEncoderCell idiom): in the old fixed-pixel-index layout a
+    // `continue`-skip left the cell's designated position blank; in this
+    // weight-resolved grid, omitting the node entirely would let its
+    // siblings' weights redistribute and shift position, silently
+    // RESEQUENCING the remaining cells on every drill-in change. Always
+    // emitting the node keeps the grid geometry stable and is the
     // established Sheaf idiom this surface's own header comment points at
-    // (Braid4UI.hpp:154-160).
+    // (Braid4UI.hpp:154-160). What that node draws is a separate question: a
+    // disconnected cell now draws a dimmed, disabled encoder (below) rather
+    // than nothing, so an unavailable source reads as present-but-inert
+    // instead of a blank gap in the grid. It stays unreachable either way --
+    // no press/drag action, no visualizer underlay -- while a disconnected
+    // source has no signal to press, drag, or underlay.
     // REMOVED 2026-08-09 (operator, fourth session on the same complaint):
     // the drill-level indicator briefly lived here as a "BACK L<N>" badge
     // painted on the Target/Back cell (2026-08-08). Operator: "i
@@ -1794,8 +1798,23 @@ private:
                 visualizer = slotState.cells[ix].visualizer.load(std::memory_order_relaxed);
             }
         }
-        const bool hidden = showingModulationView && !state.connected;
-        state.hasVisualizerUnderlay = !hidden && visualizer != nullptr && visualizer->Visible();
+        // The old single `hidden` flag conflated two effects: what this cell
+        // draws, and what it can be reached by (press/drag/underlay). Only
+        // the drawing half changes below -- a disconnected cell now draws a
+        // dimmed disabled encoder instead of nothing -- so the two get
+        // separate names. `unreachableWhileDisconnected` keeps `hidden`'s
+        // exact old condition and exact old effect on reachability: a
+        // disconnected source has no signal, so it stays unreachable and
+        // underlay-free whether or not it is being drilled into.
+        // `disabledCell` names the (now independent) drawing decision --
+        // true for every disconnected cell, in or out of the modulation
+        // view, since `BuildEncoderDrawCommands` itself early-returns `{}`
+        // for `!connected` (EncoderDraw.hpp:653-656) and this app now
+        // overrides that with a dimmed render instead.
+        const bool unreachableWhileDisconnected = showingModulationView && !state.connected;
+        const bool disabledCell = !state.connected;
+        state.hasVisualizerUnderlay =
+            !unreachableWhileDisconnected && visualizer != nullptr && visualizer->Visible();
 
         // Operator screenshot (2026-08-07): the parameter card's frame
         // outline visibly crossed the encoder's own modulation ring. Both the
@@ -1823,7 +1842,7 @@ private:
         state.wantsFrame = false;
 
         const std::string encoderId = FroggersNodeIds::Encoder(ix);
-        if (!hidden && visualizer != nullptr && visualizer->Visible()) {
+        if (!unreachableWhileDisconnected && visualizer != nullptr && visualizer->Visible()) {
             // Bump/comb transfer-function underlays and
             // modulation-source underlays render here automatically. The
             // underlay is deferred to the resolved bounds of its SIBLING
@@ -1845,8 +1864,10 @@ private:
         // dispatches from
         // `ControlStyle::action` (plain click) and the drag from the
         // separate `pointerDragAction` field -- no conflict, no post-Build()
-        // patch. Neither is set while hidden: a disconnected cell in the
-        // modulation view is inert as well as invisible.
+        // patch. Neither is set while unreachableWhileDisconnected: a
+        // disconnected cell in the modulation view is inert -- it still
+        // draws, as a dimmed disabled encoder (below), but has no signal
+        // to press, drag, or underlay.
         // `Draw` has no case in `metrics::IntrinsicFor`
         // (PortableUIMetrics.hpp:36-53, `default: {0,0,0,0}`) -- an in-flow
         // Draw node needs an explicit `layout.main` or it resolves to zero
@@ -1857,7 +1878,7 @@ private:
         // row's height).
         synth::ui::ControlStyle cellStyle{};
         cellStyle.layout.main = synth::ui::Extent::Weight(1.0f);
-        if (!hidden) {
+        if (!unreachableWhileDisconnected) {
             cellStyle.action = synth::ui::Action::WithValue(FroggersActions::kEncoderPress, std::to_string(ix));
             cellStyle.pointerDragAction =
                 synth::ui::Action::WithValue(FroggersActions::kEncoderDrag, FormatFroggersEncoderDrag(ix, 0.0f));
@@ -1880,11 +1901,7 @@ private:
         const std::size_t bankIx = CurrentBankIndex();
         builder.Draw(
             encoderId,
-            [state, hidden, bankIx, ix, showingModulationView](synth::ui::Bounds extent) {
-                if (hidden) {
-                    return std::vector<synth::ui::DrawCommand>{};
-                }
-
+            [state, disabledCell, bankIx, ix, showingModulationView](synth::ui::Bounds extent) {
                 // `extent` is THIS cell's full resolved bounds, now
                 // `FroggersEncoderGridLayout::kLabelBandHeight` px TALLER
                 // than the ring alone needs (that constant is exactly how
@@ -1904,20 +1921,16 @@ private:
                 // byte-identically. At other window sizes the ring still
                 // scales with the window, just `kLabelBandHeight` narrower
                 // than the full cell -- the SAME resize behaviour as before
-                // the label band was added, offset by a constant.
+                // the label band was added, offset by a constant. Both the
+                // disabled and connected branches below share this same
+                // sub-extent -- a disabled cell's ring occupies the same
+                // geometry, just dimmer.
                 const synth::ui::Bounds ringExtent{
                     0.0f,
                     0.0f,
                     extent.width,
                     std::max(0.0f, extent.height - FroggersEncoderGridLayout::kLabelBandHeight),
                 };
-                std::vector<synth::ui::DrawCommand> commands = synth::ui::BuildEncoderDrawCommands(state, ringExtent);
-                if (!state.connected) {
-                    // BuildEncoderDrawCommands returns {} immediately for a
-                    // disconnected cell (EncoderDraw.hpp:653-656) -- there
-                    // is no trailing label block to strip or replace.
-                    return commands;
-                }
 
                 // Sheaf's trailing block size is exactly
                 // kSheafLabelCommandsPerChar (15: 14 AppendCharacter
@@ -1927,16 +1940,80 @@ private:
                 // plus 1 unconditional decimal-point FillEllipse,
                 // EncoderDraw.hpp:528-531) times kSheafLabelDefaultChars
                 // (4, BuildFourteenSegmentCommands's own numChars default,
-                // EncoderDraw.hpp:540) = 60 commands, always, for a
-                // connected cell. Guarded (size >= that) so a cell that
-                // somehow emitted fewer commands can never underflow --
-                // the `!state.connected` branch above already covers the
-                // one case (a disconnected cell) that legitimately returns
-                // fewer/none.
+                // EncoderDraw.hpp:540) = 60 commands, always, whenever
+                // `BuildEncoderDrawCommands` is handed a `connected` state
+                // -- both branches below force `connected` true (the
+                // connected branch already has it; the disabled branch
+                // forces it on a copy, see below), so both strip this same
+                // trailing block by the same exact, guarded size. Guarded
+                // (size >= that) so a cell that somehow emitted fewer
+                // commands can never underflow.
                 constexpr std::size_t kSheafLabelCommandsPerChar = 15;
                 constexpr std::size_t kSheafLabelDefaultChars = 4;
                 constexpr std::size_t kSheafLabelCommandCount =
                     kSheafLabelCommandsPerChar * kSheafLabelDefaultChars;
+
+                if (disabledCell) {
+                    // A disconnected source is inert and has nothing to
+                    // report. Build a dimmed COPY of `state` -- never
+                    // mutate the captured original, since it is not
+                    // reused after this branch returns -- with `connected`
+                    // forced true so `BuildEncoderDrawCommands` draws the
+                    // ring instead of early-returning `{}`
+                    // (EncoderDraw.hpp:653-656). `AdjustBrightness` is this
+                    // app's existing dimming idiom
+                    // (FroggersModulation.hpp:604 et al.). An unavailable
+                    // source cannot be affecting anything, so both
+                    // indicator bitmasks AND the colour vectors they index
+                    // into are cleared together -- leaving stale colours
+                    // published while clearing only the masks would still
+                    // satisfy `BuildEncoderDrawCommands`'s own bounds
+                    // assert (EncoderDraw.hpp:702), but a disabled source
+                    // must not still look wired to specific modulators or
+                    // gestures.
+                    // A disconnected source has no colour to dim. The slate
+                    // publishes `Color::Off` for it (Rgb(0,0,0)), and
+                    // `AdjustBrightness` darkens toward black, so scaling it
+                    // is a no-op and the cell would render identically to a
+                    // connected one. The disabled cell therefore carries an
+                    // explicit muted grey: the body stroke is drawn from
+                    // `baseColor` (EncoderDraw.hpp's own
+                    // `ScaleAlpha(state.baseColor, 0.9f)`), so this is what
+                    // makes it visible as a control and flat enough to read
+                    // as unavailable.
+                    // Deliberately NOT `pagestyle::kDisabledText` or
+                    // `kDisabledButton` (RuntimePageStyle.hpp:14,20). Those
+                    // are the runtime chrome's palette for configuration
+                    // pages; the encoder grid is a separate visual system
+                    // coloured per modulation source, and this surface
+                    // references that palette nowhere else. Reusing one of
+                    // them here would couple the grid to the config pages'
+                    // colour language to avoid repeating a grey. If the two
+                    // ever should agree, that is a palette decision made
+                    // once for both, not an include added here.
+                    const synth::Color kDisabledCellColor = synth::Color::Rgb(90, 96, 100);
+                    synth::ui::EncoderDrawState disabledState = state;
+                    disabledState.connected = true;
+                    disabledState.baseColor = kDisabledCellColor;
+                    disabledState.modulatorsAffectingMask = 0;
+                    disabledState.gesturesAffectingMask = 0;
+                    disabledState.modulatorColors.clear();
+                    disabledState.gestureColors.clear();
+
+                    std::vector<synth::ui::DrawCommand> commands =
+                        synth::ui::BuildEncoderDrawCommands(disabledState, ringExtent);
+                    // No value readout on a disabled cell: strip Sheaf's
+                    // trailing label block by the same exact, guarded size
+                    // the connected branch strips below, and append
+                    // nothing in its place -- an unavailable source has no
+                    // value or label to show.
+                    if (commands.size() >= kSheafLabelCommandCount) {
+                        commands.resize(commands.size() - kSheafLabelCommandCount);
+                    }
+                    return commands;
+                }
+
+                std::vector<synth::ui::DrawCommand> commands = synth::ui::BuildEncoderDrawCommands(state, ringExtent);
                 if (commands.size() >= kSheafLabelCommandCount) {
                     commands.resize(commands.size() - kSheafLabelCommandCount);
                 }

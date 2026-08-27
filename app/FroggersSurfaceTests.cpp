@@ -1480,10 +1480,13 @@ TEST_CASE(encoder_cell_never_emits_a_frame_draw_command) {
 
     // Positive control: prove this cell is genuinely connected and
     // populated (body + ring commands actually present) so the "no frame"
-    // assertion below cannot pass by accident against an empty/disconnected
-    // command list -- AppendEncoderCell's own `hidden` branch DOES
-    // legitimately emit an empty command vector for a disconnected cell in
-    // the modulation view, and this test must not be confused with that case.
+    // assertion below cannot pass by accident against an empty command
+    // list. This encoder is a top-level bank parameter (never a
+    // disconnected modulation-source cell), so it was always connected and
+    // populated regardless -- but see
+    // disconnected_modulation_source_draws_a_dimmed_disabled_cell_not_a_blank_one
+    // below for the now-populated disconnected case (AppendEncoderCell no
+    // longer emits an empty command vector for a disconnected cell either).
     std::cout << "[OBSERVED] encoder(0) drawCommands: " << encoder->drawCommands.size()
               << ", body(FillEllipse) seen=" << sawBody << ", ring(Arc) seen=" << sawRing
               << ", badge outline(s) seen=" << sawBadgeOutline << "\n";
@@ -1504,6 +1507,146 @@ TEST_CASE(encoder_cell_never_emits_a_frame_draw_command) {
     // The actual fix: no CELL-SPANNING stroke-rounded-rect (the card frame)
     // reaches the rendered encoder cell.
     REQUIRE_TRUE(!sawFrame);
+}
+
+// --- Disconnected modulation-source cells draw disabled, not blank ------
+
+// SynthRig never wires a real host input-routing signal (AppContext::
+// inputRoutingSignal stays null the whole run -- grep confirms nothing
+// under tests/support sets it), so `ExternalAudioConnected()` stays false
+// for this rig's entire lifetime with no way for a test to flip it
+// (FroggersModulation.hpp's own comment: "External audio pair registered
+// `connected = false` initially ... immediately overwritten once
+// FroggersAppCore::Init() reads the host's actual routed-input state" --
+// that host state never arrives here). That makes the External Audio
+// modulation source (kModSlotExternalAudio) a reliably, permanently
+// disconnected REAL cell once drilled into a page parameter's modulation
+// view -- exactly the case AppendEncoderCell's `disabledCell` branch
+// (FroggersUiSurface.hpp) now draws instead of leaving blank.
+TEST_CASE(disconnected_modulation_source_draws_a_dimmed_disabled_cell_not_a_blank_one) {
+    synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
+        /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("disconnected_source_disabled_cell"));
+    rig.RunBlocks(4);
+
+    synth::ui::Surface& surface = rig.Application().PortableSurface();
+    // Drill into page parameter 0's modulation view -- same bridge/sequence
+    // drill_in_swaps_grid_in_place_scope_and_chrome_stay_put and
+    // modulation_header_sits_below_bank_row_and_above_parameter_cells above
+    // already use.
+    surface.DispatchAction(
+        synth::ui::Action::WithValue(synth_froggers::FroggersActions::kEncoderPress, "0"));
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 1);  // genuinely drilled in, not assumed
+
+    synth::ParameterManager::UIState& uiState = rig.UIState();  // forces a synchronous publish
+
+    // Positive control: the source really is disconnected, not merely
+    // assumed to be -- everything below would pass vacuously against a
+    // cell that happened to already be connected.
+    const synth::Parameter::UIState& externalAudioCell =
+        uiState.slots[0].cells[synth_froggers::kModSlotExternalAudio];
+    const synth::ui::EncoderDrawState externalAudioState =
+        synth::ui::EncoderDrawStateFromParameter(externalAudioCell);
+    REQUIRE_TRUE(!externalAudioState.connected);
+
+    const synth::ui::NodeTree tree = surface.BuildTree();
+    const std::string disconnectedId =
+        synth_froggers::FroggersNodeIds::Encoder(static_cast<std::size_t>(synth_froggers::kModSlotExternalAudio));
+    const synth::ui::Node* disconnectedNode = FindNodeById(tree, disconnectedId);
+    REQUIRE_TRUE(disconnectedNode != nullptr);
+
+    bool sawBody = false;
+    bool sawRing = false;
+    bool sawValueGlyph = false;
+    for (const synth::ui::DrawCommand& command : disconnectedNode->drawCommands) {
+        if (command.kind == synth::ui::DrawCommand::Kind::FillEllipse) {
+            sawBody = true;
+        }
+        if (command.kind == synth::ui::DrawCommand::Kind::Arc) {
+            sawRing = true;
+        }
+        // The 14-segment label glyphs are the ONLY FillPolygon commands
+        // BuildEncoderDrawCommands ever emits (FourteenSegment::
+        // AppendCharacter, EncoderDraw.hpp:488-531) -- every other layer
+        // (body, ring, badges, frame) uses a different DrawCommand kind, so
+        // this is a direct, count-independent test of "no readout drawn"
+        // rather than an inference from a command total.
+        if (command.kind == synth::ui::DrawCommand::Kind::FillPolygon) {
+            sawValueGlyph = true;
+        }
+    }
+    // (a) Real draw commands, not an empty vector.
+    REQUIRE_TRUE(!disconnectedNode->drawCommands.empty());
+    REQUIRE_TRUE(sawBody);
+    // No value arc, and that is correct rather than missing: every Arc
+    // BuildEncoderDrawCommands emits comes from a per-voice layer
+    // (EncoderDraw.hpp:736-760, indexing state.voices), and a disconnected
+    // source publishes no voices. A disabled cell shows the knob body and
+    // frame with no value drawn on it. Do not "fix" this by synthesising a
+    // voice: an arc on an unavailable source would be reporting a value it
+    // does not have.
+    REQUIRE_TRUE(!sawRing);
+    // (c) No value readout.
+    REQUIRE_TRUE(!sawValueGlyph);
+
+    // (d) Still unreachable: no press or drag action reaches a source with
+    // no signal.
+    REQUIRE_TRUE(!disconnectedNode->action.has_value());
+    REQUIRE_TRUE(!disconnectedNode->pointerDragAction.has_value());
+
+    // (b) Visibly de-emphasised against a CONNECTED cell in the same view,
+    // compared by COLOUR rather than by command count. The reference has to
+    // be a real connected source: building one from this cell's own state
+    // with `connected` forced true is degenerate, because the slate
+    // publishes `Color::Off` for a disconnected source, so that "connected"
+    // reference is black and nothing can read as dimmer than it.
+    // The body outline (StrokeEllipse, `ScaleAlpha(state.baseColor, 0.9f)`,
+    // EncoderDraw.hpp:687) is a pure function of `baseColor`, so it isolates
+    // colour from geometry.
+    const std::string connectedId =
+        synth_froggers::FroggersNodeIds::Encoder(static_cast<std::size_t>(synth_froggers::kModSlotVco1Audio));
+    const synth::ui::Node* connectedNode = FindNodeById(tree, connectedId);
+    REQUIRE_TRUE(connectedNode != nullptr);
+
+    const auto FindBodyStrokeColor =
+        [](const std::vector<synth::ui::DrawCommand>& commands) -> std::optional<synth::Color> {
+        for (const synth::ui::DrawCommand& command : commands) {
+            if (command.kind == synth::ui::DrawCommand::Kind::StrokeEllipse) {
+                return command.color;
+            }
+        }
+        return std::nullopt;
+    };
+    const std::optional<synth::Color> disabledStroke = FindBodyStrokeColor(disconnectedNode->drawCommands);
+    const std::optional<synth::Color> connectedStroke = FindBodyStrokeColor(connectedNode->drawCommands);
+    REQUIRE_TRUE(disabledStroke.has_value());
+    REQUIRE_TRUE(connectedStroke.has_value());
+    REQUIRE_TRUE(!(*disabledStroke == *connectedStroke));
+    // Drawn at all: a disconnected source publishes `Color::Off`, so an
+    // outline still at zero would mean the disabled colour never applied.
+    REQUIRE_TRUE(disabledStroke->r > 0 || disabledStroke->g > 0 || disabledStroke->b > 0);
+    // Drained of colour, which is what reads as unavailable: the disabled
+    // outline is neutral, while a connected source carries its own hue.
+    const auto Chroma = [](const synth::Color& color) {
+        const int hi = std::max({color.r, color.g, color.b});
+        const int lo = std::min({color.r, color.g, color.b});
+        return hi - lo;
+    };
+    constexpr int kNeutralTolerance = 16;
+    REQUIRE_TRUE(Chroma(*disabledStroke) <= kNeutralTolerance);
+
+    // (e) Other cells in the same view are unaffected: a genuinely
+    // connected source in the same drilled-in grid keeps its action/drag
+    // reachability and still draws its own value readout.
+    REQUIRE_TRUE(connectedNode->action.has_value());
+    REQUIRE_TRUE(connectedNode->pointerDragAction.has_value());
+    bool connectedSawValueGlyph = false;
+    for (const synth::ui::DrawCommand& command : connectedNode->drawCommands) {
+        if (command.kind == synth::ui::DrawCommand::Kind::FillPolygon) {
+            connectedSawValueGlyph = true;
+        }
+    }
+    REQUIRE_TRUE(connectedSawValueGlyph);
 }
 
 // --- Single-row labels, ------

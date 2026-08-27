@@ -227,7 +227,7 @@ public:
           },
           noiseProcessor_(/*voiceCount=*/1),
           noiseVisualizer_(synth::Color::White),
-          source6Visualizer_(gangedRandomLfo6_.UiState()),
+          source6Visualizer_(gangedRandomLfo6_.UiState(), /*drawBackground=*/false),
           // The five X-style sources' own Visualizer, one per lane, each
           // bound to this instance's own
           // randomShLaneUiStates_[i] (populated each block by
