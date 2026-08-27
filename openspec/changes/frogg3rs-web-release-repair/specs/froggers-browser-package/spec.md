@@ -7,11 +7,18 @@ MIDI access. Nothing said the boot path owed those, so nothing caught it.
 
 ## ADDED Requirements
 
-### Requirement: The browser boot supplies the runtime's activation resources
+### Requirement: The browser boot supplies the audio context capture requires
 
-The site's boot path SHALL supply an activation lease to the Sheaf launcher, so
-that the runtime receives the launch-owned `AudioContext` and MIDI access it can
-obtain no other way.
+The site's boot path SHALL supply the runtime with an `AudioContext`, so that
+microphone capture has a context to attach to.
+
+It SHALL supply that context WITHOUT asserting that audio activation has
+already happened. An activation lease is not the means: a lease resumes its
+context and requests MIDI when it is acquired, and a launcher that receives one
+starts audio and capture immediately, because a lease records a user gesture
+that has already occurred. A page with no launch gesture that acquires one
+either stalls on a resume the browser will not complete or starts capture no
+operator asked for.
 
 A boot that omits the lease SHALL be treated as a broken build rather than as a
 build without microphone support. Without it the audio bridge rejects every
@@ -35,8 +42,8 @@ to pass today.
   permission
 - **THEN** the Input device control offers at least one device besides No Input
 
-#### Scenario: MIDI access is carried by the same lease
+#### Scenario: Supplying the context does not start audio
 
-- **WHEN** the site boots
-- **THEN** the runtime receives the MIDI access the lease provides, on the same
-  path as the audio context
+- **WHEN** the site boots and the operator does nothing
+- **THEN** no audio is running and no capture has been requested
+- **AND** activation still happens on the first in-app action, as before

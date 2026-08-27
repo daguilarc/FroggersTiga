@@ -68,6 +68,75 @@ The same `resources` object also carries `midiAccess` (`main.ts:347`), so browse
 MIDI is unreachable for the same reason, unnoticed because nothing has asked for
 it yet.
 
+### REFUTED IN EXECUTION — the lease is an activation token, not a context supplier
+
+Implementation ran and disproved the fix above. Both the mechanism and the
+remedy were traced wrong, and the original header comment was closer to right
+than this section credited.
+
+`ActivationLease.acquire()` (`activation.ts:45-51`) does two things immediately,
+at the moment of acquisition:
+
+    const audioContext = options.audioContextFactory?.() ?? new AudioContext();
+    audioReady = Promise.resolve(audioContext.resume());
+    midiAccess = ... navigator.requestMIDIAccess({ sysex: true }) ...
+
+and `consume()` (`:65-77`) awaits `Promise.all([audioReady, midiAccess])`. So a
+lease RESUMES a context and REQUESTS MIDI on creation. Under Chromium's autoplay
+policy neither settles for a context built without a user gesture.
+
+Downstream, `main.ts:211-219` gates on the lease's own product:
+
+    if (this.options.midiAccess) {
+      this.activationStarted = true;
+      const [audio, midi] = await Promise.all([
+        this.audio.startFromUserActivation(),
+        this.midi.startWithAccess(this.options.midiAccess),
+      ]);
+      if (!audio.started) throw new Error(...);
+      this.renderStatus({ type: "status", status: "audio:online; midi:online" });
+    }
+
+Any resolved lease therefore asserts THAT ACTIVATION HAS ALREADY HAPPENED and
+starts audio and MIDI inside `start()`, before `boot()` returns. That is correct
+for `SheafPatchLauncher`, whose lease is created inside its Launch click. This
+page has no such click.
+
+MEASURED, with a live instrument: `desktop-layout.spec.mjs` against the shipped
+`dist/` passed 6/6; with the lease wired in, all 6 failed, every one timing out
+in `waitForSurfaceReady` — the surface never renders, because boot deadlocks
+inside `consume()`. The site does not merely fail to reach a microphone; it does
+not start.
+
+So section 1's premise — "supplying the lease makes capture reachable and
+nothing else" — is false, and its own non-goal about the consent default is
+unreachable by this route: a resolved lease starts capture with no operator
+action at all. The comment at `site-boot.mjs:13-22` was not a justification
+covering the easy half of a claim. It was load-bearing.
+
+**What this section proved instead:** the lease is the wrong instrument, not the
+missing one. There IS a way to supply an `AudioContext` without asserting
+activation, and the launcher already has it — `audioOptions.audioContext`
+(`audio.ts:19`, `main.ts:40`), one of the eight fields
+`launchCatalogApplication` passes (`:413`) and one of the three this boot path
+was omitting. With no lease present, `main.ts:343` forwards it unchanged and
+`midiAccess` stays undefined, so the activation branch never runs.
+
+The site therefore constructs its own suspended `AudioContext` and passes it.
+Constructing is not starting: a fresh context is suspended, and
+`startAudioWorklet` resumes the one it is given (`:130`) inside the first in-app
+action, exactly where activation already belonged. No Sheaf change, no lease,
+consent default intact.
+
+The correction to section 1's own reasoning is worth keeping: the omission that
+mattered was never `activationLease`. It was `audioOptions`, which this section
+dismissed as one of the three that "carry nothing" because it is undefined at
+Sheaf's default call site. Undefined by default is not the same as inert, and
+reading the default call site is not reading the field.
+
+Browser MIDI does NOT come along. It arrives only with a lease and stays
+unreachable; the claim above that it is fixed by the same path is withdrawn.
+
 ## 2. The external-audio modulation cells render as nothing. The SPEC is wrong.
 
 The cells are blank, and the code is doing exactly what the spec tells it to
@@ -80,7 +149,21 @@ The cells are blank, and the code is doing exactly what the spec tells it to
 `FroggersUiSurface.hpp:1797` implements it (`hidden = showingModulationView &&
 !state.connected`), and Sheaf enforces it underneath —
 `BuildEncoderDrawCommands` returns `{}` immediately for a disconnected state
-(`EncoderDraw.hpp:652-656`).
+(`EncoderDraw.hpp:653-656`).
+
+There are TWO sites that blank the cell, and only one of them is the one the
+operator is looking at. The draw lambda returns `{}` on `hidden` at
+`FroggersUiSurface.hpp:1884`, BEFORE it ever calls `BuildEncoderDrawCommands`
+(`:1913`) and before the `!state.connected` branch at `:1915`. Since `hidden` is
+`showingModulationView && !state.connected`, line 1915 is reachable only OUTSIDE
+the modulation view. In the modulation view — the reported case — 1884 returns
+first and Sheaf's own early return is never reached. A fix applied only at 1915
+changes nothing on screen.
+
+`hidden` also gates two other things that must NOT follow the drawing: the
+visualizer underlay (`:1798`, `:1826`) and the press/drag actions (`:1860`).
+Inertness lives on that second gate, so the flag has to split — one condition
+for what is drawn, one for what is reachable.
 
 **The operator has ruled that requirement wrong: greyed out is correct.** A blank
 cell in a 4x4 grid reads as an empty slot or a rendering fault and gives no hint
@@ -118,9 +201,32 @@ hundred pixels wide for a two-word label. It is not browser-only: `Toggle()` IS
 it obvious.
 
 The operator has accepted that the button EXISTS — it is Sheaf's, gated on
-`showInputRetry`, and sru-3 makes it browser-only ("only a host whose capture is
-offline offers the user a way back... JUCE reopens devices itself"). The width is
+`showInputRetry` (`RuntimePages.hpp:215,901`, set in
+`browser/BrowserAudioDevices.hpp:200`). sru-3 is "Audio page: interface
+selection" (`External/Sheaf/openspec/specs/synth-runtime-ui/spec.md:57`); the
+browser-only retry is one clause inside it — "expose `Retry Input` while browser
+capture is offline" — not the requirement's subject. The width is
 what changes.
+
+### DEFERRED — the width is not sayable in this layout model
+
+Not implemented, and its requirement has been moved out of this change's
+`froggers-sheaf-runtime-app` delta into `form-control-width-deferred.md` so
+that nothing ships claiming to satisfy it.
+
+The section above assumed the fix was a matter of where to put it — the grid
+honouring a declared extent, or the button declaring one. Both assume a
+captioned control CAN declare a width. It cannot. `Builder::FinishControl`
+(`PortableUIBuilders.hpp:438-480`) sends the author's `style.layout` to the
+`.row` wrapper, where `.main` is the row's height in the vertical form column,
+and builds the control node a fresh `LayoutOptions` with
+`.main = Extent::Weight(1.0f)` hardcoded (`:465-467`), where `.main` is its
+width inside the horizontal row. One field name, two axes, and the author's
+declaration never reaches the second. So `FormButton` and `Field` arrive at
+`ApplyFormGrid` indistinguishable, and the choice this section framed does not
+exist.
+
+That is a new layout-model capability, not the repair this change scoped.
 
 ## 4. A black box behind Random S&H 6 only. Ours, one argument.
 
@@ -245,10 +351,12 @@ of `arm-none-eabi`.
 
 ## Non-goals
 
+Note: the rolling window's length was a non-goal in the draft this supersedes,
+on the grounds that nothing had measured eight seconds to be wrong. Section 5
+measured it, so the window is now the fix and the non-goal is withdrawn rather
+than left standing against the section that contradicts it.
+
 - The DSP's cost on a phone. There are no dropouts to chase.
-- The rolling window's length behind the CPU readout. sru-2 fixes no number, so
-  shortening it is available, but nothing has measured that eight seconds is
-  wrong and it is a separate question from the label lying.
 - External audio's consent default. Staying off until an operator selects an
   input is deliberate and specified (`froggers-modulation-slate`, and the
   archived `frogg3rs-external-audio-consent-repair`); a present microphone is
@@ -259,9 +367,33 @@ of `arm-none-eabi`.
 
 ## Impact
 
-- `app/browser/site/site-boot.mjs`, `app/FroggersModulation.hpp`, `README.md`.
-- Sheaf, on the `fix-out-of-tree-app-gaps` branch `jvictor0/Sheaf#9` tracks: the
-  form-grid width and the readout label. The pin moves with this change.
-- Affected specs: `froggers-browser-package` (the boot path's obligations),
-  `froggers-sheaf-runtime-app` (the readout), `field-operator-doc-parity` (who
-  the docs are for).
+This repo:
+
+- `app/browser/site/site-boot.mjs` (the lease) and its e2e specs under
+  `app/browser/e2e/`.
+- `app/FroggersUiSurface.hpp` (the disconnected cell's drawing, and the split of
+  `hidden`) and `app/FroggersModulation.hpp` (the Random S&H 6 background).
+- `README.md`, `MANUAL.md`, and `DAISY_MANUAL.md`, which receives the firmware
+  material the README gives up.
+
+Sheaf, on the `fix-out-of-tree-app-gaps` branch that `jvictor0/Sheaf#9` tracks —
+the pin moves with this change:
+
+- `PortableUILayout.hpp` (`ApplyFormGrid`'s unconditional control width).
+- `MidiConfigViewModel.hpp` (`RollingMax256`), `RuntimeMainComponent.hpp` and
+  `RuntimePages.hpp` (`FormatDeadlineText`) for the readout's window and
+  precision. NOT the readout's label: the relabelling to "CPU max" was dropped
+  in section 5's redesign, and this line said otherwise while it stood.
+- Sheaf's own `openspec/specs/synth-runtime-ui` is where sru-2 lives, so the
+  window and precision change is specified there, not only here.
+
+Affected specs: `froggers-browser-package` (the boot path's obligations),
+`froggers-modulation-slate` (the disconnected cell), `froggers-sheaf-runtime-app`
+(the readout, the form controls, who the docs are for).
+
+NOT `field-operator-doc-parity`, which an earlier draft of this line named. That
+capability governs the external-mix signal flow and the FUEG/Crispy glosses in
+`DAISY_MANUAL.md` and `QUICK_DICT.md`
+(`openspec/specs/field-operator-doc-parity/spec.md:9,29,42`). Section 6 adds
+toolchain and flashing material to `DAISY_MANUAL.md` and touches none of those
+requirements.

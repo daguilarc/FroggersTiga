@@ -21,9 +21,20 @@ randomization while unavailable.
 
 **A disconnected source SHALL render as a disabled control, not as nothing.**
 While not connected, the two external-audio cells SHALL hold their grid
-positions and SHALL draw a visibly de-emphasised encoder — dimmed against a
-connected cell, carrying no value readout and no modulation or gesture
-indicators, so it reads as present and unavailable rather than as adjustable.
+positions and SHALL draw a visibly de-emphasised encoder — carrying no value
+readout and no modulation or gesture indicators, so it reads as present and
+unavailable rather than as adjustable.
+
+The de-emphasis SHALL be an explicit neutral colour rather than a dimming of
+the source's own. A disconnected source publishes no colour, so there is
+nothing to dim: scaling its published value leaves the cell drawn exactly as a
+connected one would be. The disabled cell is drained of hue while a connected
+cell carries its source's, which is what distinguishes them on screen.
+
+A disabled cell draws no value arc, and that is not an omission: the arc is a
+per-voice layer and a disconnected source publishes no voices. It SHALL NOT be
+given a synthesised voice to draw one, which would report a value it does not
+have.
 
 They SHALL carry no press or drag action and no depth parameter while
 disconnected, so there is no edit to accept. Visibility is a rendering choice and
@@ -43,7 +54,8 @@ appearance.
 #### Scenario: A disconnected cell is drawn, and drawn as unavailable
 - **WHEN** the modulation view shows a source that is not connected
 - **THEN** that cell emits draw commands rather than none
-- **AND** it is visibly de-emphasised against a connected cell in the same view
+- **AND** it is visibly de-emphasised against a connected cell in the same view,
+  drawn in a neutral colour where the connected cell carries its source's
 - **AND** it shows no value readout
 
 #### Scenario: Drawing it does not make it reachable

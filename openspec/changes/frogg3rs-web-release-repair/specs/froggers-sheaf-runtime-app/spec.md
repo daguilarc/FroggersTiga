@@ -48,29 +48,6 @@ take, including three digits.
 - **WHEN** the load readout renders
 - **THEN** it shows whole percent
 
-### Requirement: Form controls are sized to what they contain
-
-A button in a runtime configuration page SHALL be sized to its own label rather
-than stretched to the width of the page's control column. A two-word button
-rendered several hundred pixels wide reads as a mistake, and invites the reader
-to look for the rest of it.
-
-This SHALL hold on every host. The defect is in the shared form-grid layout, not
-in one backend: a combo box hides it because the browser draws a `select` at its
-own width regardless of its box, while a button fills whatever box it is given.
-
-Controls that genuinely want the column's width — a text field, a device
-selector — SHALL keep it. The requirement is that filling the column is a choice
-a control makes, not the only thing the grid can do.
-
-#### Scenario: A captioned form button is label-width
-- **WHEN** a configuration page renders a captioned button
-- **THEN** its width is close to its label's width rather than the column's
-
-#### Scenario: The controls that want the column keep it
-- **WHEN** the same page renders its device selectors
-- **THEN** their cells still span the control column as before
-
 ### Requirement: The shipped documentation addresses someone learning the instrument
 
 `README.md` and `MANUAL.md` SHALL be written for a reader finding out what this
