@@ -393,8 +393,9 @@ it up makes Drive pull Shape's harmonic character along with it; turning it down
 **Fold** (`Fold`, slot 11) — divisor inside the sine-fold stage (1×–16×). A lower divisor folds harder;
 a higher divisor folds more gently.
 
-**Tone** (`Tone`, slot 12) — a low-pass filter at the end of the Drive chain. Fully open at the top of
-travel (the default), progressively darker and more muffled as it is turned down.
+**Tone** (`Tone`, slot 12) — a low-pass filter at the end of the Drive chain, on the driven signal that
+Blend mixes against the dry. Fully open at the top of travel (the default), and progressively darker as
+it is turned down, to roughly an 800 Hz cutoff at the bottom.
 
 **Waveshaper offset** (`Bias`, slot 13) — shifts the waveshaper's input by a small DC offset (up to
 ±0.02) before shaping, then removes the same offset from the output afterward. This biases the shaping

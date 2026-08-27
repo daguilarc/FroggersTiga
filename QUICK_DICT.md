@@ -63,7 +63,7 @@ Phase (slot 8) — Allpass on the wet signal before Blend; silent effect at Blen
 Anti-alias brightness (slot 9) — Oversampler anti-alias filter cutoff trim.
 Link (slot 10) — How strongly Drive amount skews Shape's coefficients.
 Fold (slot 11) — Sine-fold divisor, 1×–16×; lower folds harder.
-Tone (slot 12) — Low-pass at the end of the chain; bypass at default.
+Tone (slot 12) — Low-pass at the end of the chain, ~800 Hz to bypass; bypass at default.
 Waveshaper offset (slot 13, `Bias`) — Small DC offset (±0.02) into the waveshaper, removed after; zero at default.
 
 ## Delay

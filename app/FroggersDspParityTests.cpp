@@ -3884,6 +3884,64 @@ TEST_CASE(frog_block_default_knob_values_reproduce_original_output_exactly) {
     }
 }
 
+TEST_CASE(drive_tone_stays_geometric_and_never_reaches_the_inaudible_end) {
+    // Tone closes the drive chain (dsp/Drive.hpp, the last stage of
+    // FrogBlock::Process) and its knob maps straight onto a one-pole's own
+    // coefficient (dsp/DspMath.hpp: `out = alpha*in + (1-alpha)*out`), so a
+    // smaller alpha is a darker signal.
+    dsp::FrogBlock block;
+
+    block.SetTone(0.0f);
+    const float floorAlpha = block.tone.alpha;
+    block.SetTone(1.0f);
+    const float ceilingAlpha = block.tone.alpha;
+    block.SetTone(0.5f);
+    const float midAlpha = block.tone.alpha;
+
+    // GEOMETRIC across the whole travel. A mapping quietly changed to linear
+    // would keep both ends right and move everything between them --
+    // including the value that decides what half of all randomized patches
+    // sound like, since randomization draws uniformly across the knob.
+    REQUIRE_NEAR(midAlpha, std::sqrt(floorAlpha * ceilingAlpha), 1e-6);
+    // DOWN IS DARKER.
+    REQUIRE_TRUE(floorAlpha < midAlpha);
+    REQUIRE_TRUE(midAlpha < ceilingAlpha);
+    // The top is EXACTLY 1, which is what makes the default an identity
+    // rather than an almost-identity.
+    REQUIRE_NEAR(ceilingAlpha, 1.0f, 1e-9);
+
+    // THE FLOOR IS A TONE, NOT A MUTE. At the ported 0.02 the darkest
+    // setting was a 154 Hz low-pass on the driven signal, and half of every
+    // uniform draw landed below the range's geometric mean of 0.141, about
+    // 1165 Hz.
+    const float sr = 48000.0f;
+    const auto cutoffHz = [sr](float alpha) {
+        return -sr * std::log(1.0f - alpha) / (2.0f * 3.14159265358979323846f);
+    };
+    REQUIRE_TRUE(cutoffHz(floorAlpha) > 500.0f);
+
+    std::cout << "  [drive tone]";
+    for (const float knob : {0.0f, 0.25f, 0.5f, 0.75f}) {
+        block.SetTone(knob);
+        std::cout << " knob " << knob << " -> " << cutoffHz(block.tone.alpha) << " Hz;";
+    }
+    std::cout << " knob 1.0 -> bypass (at " << sr << " Hz)\n";
+}
+
+TEST_CASE(drive_tone_default_knob_passes_its_input_unchanged) {
+    // The range's top being exactly 1 is only worth anything if it makes the
+    // stage an identity in practice. Two blocks, one that never touches
+    // SetTone and one set to the default knob, must agree sample for sample.
+    dsp::FrogBlock untouched;
+    dsp::FrogBlock atDefault;
+    atDefault.SetTone(1.0f);
+
+    for (int step = 0; step < 64; ++step) {
+        const float input = std::sin(0.17f * static_cast<float>(step));
+        REQUIRE_NEAR(atDefault.Process(input), untouched.Process(input), 1e-9);
+    }
+}
+
 TEST_CASE(stereo_delay_feedback_tone_default_knob_is_exact_bypass_alpha) {
     dsp::StereoDelay delay;
     delay.SetFeedbackTone(1.0f);  // D7 default knob.
