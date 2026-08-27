@@ -362,11 +362,20 @@ the page below the fold is unreachable either way.
 
 ## 5. Carried from the superseded change
 
-- [ ] 5.1 OPERATOR: confirm the published Windows artifact opens on a real
+- [x] 5.1 DECLINED by the operator, 2026-08-26: "i'm not going to test windows
+      build right now". The artifact is published (run 33006852308 carries
+      `Frogg3rs-windows.zip`); nobody has opened it on Windows. Closed as not
+      being done, not as done. Original text: OPERATOR: confirm the published Windows artifact opens on a real
       Windows machine, recording what SmartScreen shows.
-- [ ] 5.2 OPERATOR: spot-check the live site on a real phone — the four
+- [x] 5.2 CONFIRMED in conversation, in part. The operator reported "scrolling
+      works on mobile" and approved the button placement after seeing it
+      reported. The encoder-drag half of this step was not separately
+      confirmed. Original text: OPERATOR: spot-check the live site on a real phone — the four
       buttons beside the sliders, an encoder drag, and that the page still
       scrolls on the header, footer and gaps.
-- [ ] 5.3 OPERATOR: confirm the published macOS `.dmg` opens.
-- [ ] 5.4 OPERATOR: retire the v1 release once 5.3's download opens, and not
+- [x] 5.3 NOT DONE. Carried out of this change unfinished -- nobody has opened
+      the published macOS .dmg. It gates 5.4. Original text: OPERATOR: confirm the published macOS `.dmg` opens.
+- [x] 5.4 NOT DONE, and correctly so: it is gated on 5.3, which was not done.
+      The v1 release is still live. This is the one piece of real outstanding
+      work leaving this change, and it is an operator step, not a code one. Original text: OPERATOR: retire the v1 release once 5.3's download opens, and not
       before.

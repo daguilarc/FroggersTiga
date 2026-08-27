@@ -162,6 +162,8 @@ at and what `jvictor0/Sheaf#9` tracks. Push to `fork`, which updates that PR.
 
 ## 5. Operator
 
-- [ ] 5.1 OPERATOR: spot-check the live site on a real phone — the four runtime
+- [x] 5.1 CONFIRMED in conversation: the operator approved the placement and
+      reported mobile scrolling working. The Audio I/O page was not
+      separately opened on a phone. Original text: OPERATOR: spot-check the live site on a real phone — the four runtime
       page buttons beside the sliders, the Audio I/O page opening from the
       first one, and the page still scrolling.

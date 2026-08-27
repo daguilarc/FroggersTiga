@@ -87,7 +87,10 @@ lines currently do not have, and the doc that describes them incorrectly.
       and 1.0, in the test's own output, so the operator can judge the floor
       by a number as well as by ear. The formula is
       `fc = -fs * ln(1 - alpha) / (2 * pi)`.
-- [ ] 2.4 OPERATOR JUDGEMENT, and the reason this change exists: press
+- [x] 2.4 SETTLED by the operator, 2026-08-26: "approved" after hearing the
+      change described with its numbers. 0.02 stands. If it later reads as
+      too dark or not dark enough, 0.01 and 0.05 are the neighbours and it is
+      the same one-line edit. Original text: OPERATOR JUDGEMENT, and the reason this change exists: press
       Randomize All several times with the Reverb bank audible and say whether
       0.02 is too high (a dark setting worth keeping has gone) or still too
       low (mud still wins). 0.01 is the next value down if it is too high.

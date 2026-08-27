@@ -7,26 +7,44 @@ weights, so the requirement is widened to cover them — and to say that a
 narrow table which merely reorders rows is not, on its own, evidence the
 requirement is met.
 
+**Rebased before archiving.** This delta was written against the spec as it
+stood before `frogg3rs-runtime-pages-beside-the-sliders`, which touched the same
+requirement and archived first. Re-applying the original text would have
+reverted that change's runtime-block clauses. The MODIFIED block below is
+therefore the CURRENT requirement plus the one clause this change adds to it --
+the container half of the no-duplicates scenario, which the sibling change
+dropped when it restated that scenario. "The page scrolls, and a test proves
+it" moves to ADDED, which is what it always was: it is a new requirement, not a
+modification of an existing one, and declaring it MODIFIED is what made the
+first archive attempt abort.
+
 ## MODIFIED Requirements
 
 ### Requirement: The surface owns its own mobile topology
+
 
 A mobile-only difference in what the surface emits SHALL be expressed as data
 consumed by the surface's existing emission code — a row table, a block
 weight, or a nested arrangement — selected by a flag that defaults to false,
 rather than as a shell-side CSS or DOM rearrangement. A shell that moves,
-clips, or duplicates emitted controls makes the rendered tree disagree with
-the surface that produced it, and the surface's own tests can no longer tell
-what a viewer sees.
+clips, or duplicates controls THIS SURFACE emits makes the rendered tree
+disagree with the surface that produced it, and the surface's own tests can no
+longer tell what a viewer sees.
+
+Blocks emitted by the RUNTIME rather than by this surface — Sheaf's sidebar is
+the only one — are the shell's to place, because this surface's tree cannot
+contain them. Where the shell places such a block relative to this surface's own
+blocks, it SHALL derive the position from a box this surface emits, read live,
+rather than from a hardcoded offset or a specific control's node id. A surface
+that wants to reserve space for a runtime block SHALL do so by declaring the
+extent of one of its own nodes, so the arrangement stays readable from the
+surface's tree.
 
 The narrow topology SHALL be free to differ in the OUTER split weights and in
 a block's internal arrangement, not only in the order of rows within one
 block. Where the shell derives a single scale from one block, a narrow
 topology that leaves another SURFACE-EMITTED block narrower than the viewport
-SHALL be treated as an incomplete topology rather than as a shell defect. This
-covers the blocks this surface emits. Sheaf's own runtime sidebar is stacked by
-the same shell but emitted by Sheaf, so this surface has no weight to declare
-for it and it is out of scope here.
+SHALL be treated as an incomplete topology rather than as a shell defect.
 
 The flag SHALL be set only by the browser host. No desktop, standalone, or
 plugin path SHALL set it.
@@ -50,6 +68,14 @@ plugin path SHALL set it.
 - **WHEN** the browser host sets the narrow-viewport flag
 - **THEN** every block this surface emits renders at substantially the full
   viewport width under the shell's shared scale
+
+#### Scenario: The runtime sidebar is placed from a surface-emitted box
+
+- **WHEN** the shell places Sheaf's runtime sidebar at a phone-width viewport
+- **THEN** its position is derived from the live rendered box of the surface's
+  own narrow button column, not from a fixed offset
+
+## ADDED Requirements
 
 ### Requirement: The page scrolls, and a test proves it
 
