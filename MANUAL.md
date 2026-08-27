@@ -29,11 +29,12 @@ The VST3 and Audio Unit plugin releases for macOS only.
 
 ### Opening a downloaded build
 
-macOS builds here are ad-hoc signed. The signature covers the bundle's contents and is applied
-after the bundle is fully assembled, so it matches what ships, but it carries no Developer ID.
-Gatekeeper has no identity to check it against, so it treats the app as unidentified and asks you to
-confirm before opening it. Windows builds are not signed, and SmartScreen asks the same kind of
-question. Both let you through once you say so explicitly. The steps are below.
+The first time you open Frogg3rs, your computer will refuse and warn you it cannot check the app for
+malware. That is expected, and there is nothing wrong with the download. These builds are not
+registered with Apple or Microsoft, so neither one recognises them.
+
+You have to say yes once, and then it opens normally from then on. The steps are different on each
+system.
 
 **macOS.** Double-clicking shows **"Frogg3rs" Not Opened** — "Apple could not verify Frogg3rs is free
 of malware..." — with a single **Done** button. That dialog will never offer a way to continue, no
