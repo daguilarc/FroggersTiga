@@ -95,8 +95,10 @@ echo's status, not make's. Capture `NAME_EXIT=$?` and read it, and count
 ## 4. MIDI in the browser
 
 The premise that this needs new plumbing was false. The path exists
-(`main.ts:178`, `midi.ts:112-115`, `main.ts:267-276`); what is missing is any
-evidence it works.
+(`main.ts:178`, `midi.ts:112-115`, `main.ts:267-276`), and the operator
+confirms browser MIDI works — Sheaf handles it well. So the expected outcome of
+this section is an assertion and a correction, not a repair. Treat a finding of
+"broken" as surprising and trace it hard before believing it.
 
 - [ ] 4.1 Assert the `midi:` half of the status string. `startUserActivation`
       renders `audio:<...>; midi:<status>` into `data-synth-status`
