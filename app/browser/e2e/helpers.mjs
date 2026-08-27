@@ -28,6 +28,19 @@ export const RANDOMIZE_RESET_SELECTORS = [
 // FroggersNodeIds::kBpm -- the lowest of the chrome block's two sliders,
 // and the one the narrow button column has to sit to the right of.
 export const BPM_SELECTOR = '[data-synth-node-id="froggers.bpm"]';
+// FroggersNodeIds::kLeftButtons -- the narrow chrome block's Randomize/Reset
+// column, whose box is what the shell places Sheaf's sidebar under.
+export const NARROW_BUTTON_COLUMN_SELECTOR = '[data-synth-node-id="froggers.layout.left.buttons"]';
+// Sheaf's own runtime page buttons (RuntimePages.hpp:37-41), in the order the
+// sidebar stacks them. The first one's LABEL is the app's own
+// (RuntimeConfig::audioPageTitle); its node id is the runtime's and does not
+// change with the rename.
+export const SIDEBAR_BUTTON_SELECTORS = [
+  "runtime.sidebar.audio",
+  "runtime.sidebar.controllers",
+  "runtime.sidebar.sync",
+  "runtime.sidebar.file",
+].map((id) => `[data-synth-node-id="${id}"]`);
 export const SURFACE_ROOT_SELECTOR = '[data-synth-node-id="froggers.root"]';
 // RuntimePages.hpp:34 `NodeIds::kSidebarRoot` -- Sheaf's own generic
 // runtime-chrome sidebar (Audio/Controllers/Sync/File + CPU meter), a

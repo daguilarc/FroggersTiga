@@ -127,6 +127,9 @@ test.describe("desktop layout sanity", () => {
       .toBe(true);
     const gridNarrow = await page.locator(RIGHT_BLOCK_SELECTOR).boundingBox();
     const sidebarNarrow = await page.locator(SIDEBAR_SELECTOR).boundingBox();
+    // Never beside the grid, at either placement: it used to stack under the
+    // grid and now sits in the chrome block above it, and zero vertical
+    // overlap is what both have in common.
     expect(verticalOverlapPx(sidebarNarrow, gridNarrow)).toBe(0);
     // The sidebar shares the grid's scale rather than being independently
     // stretched to full width too (see mobile-stack.mjs's

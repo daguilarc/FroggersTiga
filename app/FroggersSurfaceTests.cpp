@@ -2352,11 +2352,37 @@ TEST_CASE(randomize_reset_sit_beside_the_sliders_in_a_narrow_viewport) {
         REQUIRE_TRUE(occurrences == 1);
     }
 
+    // The column's own box has to END at its last button, not run to the
+    // bottom of the block. The browser shell reads exactly this box to find
+    // where the space beside the sliders begins, and places Sheaf's runtime
+    // sidebar there -- a block this surface cannot contain. A column that
+    // filled the block would put that sidebar off the bottom of the chrome
+    // block, where the mount's own clipping would hide it rather than show
+    // it in the wrong place.
+    const synth::ui::Bounds buttonColumn =
+        AbsoluteBounds(narrow, synth_froggers::FroggersNodeIds::kLeftButtons);
+    const synth::ui::Bounds lastButton = AbsoluteBounds(
+        narrow, synth_froggers::FroggersCellMap::kRandomizeResetButtons.back().id);
+    REQUIRE_TRUE(buttonColumn.height > 0.0f && lastButton.height > 0.0f);
+    REQUIRE_TRUE(std::fabs((buttonColumn.y + buttonColumn.height) -
+                           (lastButton.y + lastButton.height)) < 0.01f);
+    // Four buttons and the three gaps between them, and nothing else.
+    const float expectedColumnHeight =
+        4.0f * lastButton.height + 3.0f * synth_froggers::FroggersPageLayout::kGap;
+    REQUIRE_TRUE(std::fabs(buttonColumn.height - expectedColumnHeight) < 0.01f);
+    // And it leaves room under it, inside the block, for what the shell puts
+    // there. Compared against the chrome block rather than against a number,
+    // so this stays meaningful if either extent is ever re-declared.
+    REQUIRE_TRUE(buttonColumn.y + buttonColumn.height < chrome.y + chrome.height);
+
     const synth::ui::Bounds randomizePage =
         AbsoluteBounds(narrow, synth_froggers::FroggersNodeIds::kRandomizePage);
     std::cout << "  [narrow chrome] chrome width " << wideChrome.width << " -> " << chrome.width
               << " (grid " << wideGrid.width << " -> " << grid.width << "), Randomize Page "
-              << randomizePage.width << "x" << randomizePage.height << " at x=" << randomizePage.x << "\n";
+              << randomizePage.width << "x" << randomizePage.height << " at x=" << randomizePage.x
+              << ", button column " << buttonColumn.height << " tall leaving "
+              << (chrome.y + chrome.height) - (buttonColumn.y + buttonColumn.height)
+              << " under it\n";
 }
 
 TEST_CASE(reset_all_clears_values_and_neutralises_depths_end_to_end) {

@@ -1,8 +1,10 @@
 // Shell-side per-block transforms for the mobile stacked layout
 // (froggers-web-host spec.md "Mobile viewport stacks around a full-width
 // encoder grid": chrome block above, encoder-grid block below, spanning the
-// full viewport width, with everything else -- Sheaf's own generic sidebar
-// included -- also placed above or below, never beside). The grid is what
+// full viewport width, with everything else placed above or below, never
+// beside). Sheaf's own generic sidebar is placed rather than stacked: it
+// goes inside the chrome block's footprint, under the Randomize/Reset
+// column, where there is room for it beside the sliders. The grid is what
 // spans the full viewport width; every other block shares ITS scale (see
 // applyMobileStack's own comment) rather than being independently
 // stretched to full width, so how wide a block renders is decided by the
@@ -61,11 +63,25 @@ const GRID_BLOCK_SELECTOR = '[data-synth-node-id="froggers.layout.right"]';
 // + Layout::kSidebarWidth, appRootHeight}`, `root.children = {contentTree
 // ...front().id, sidebarTree...front().id}`). It is "everything else" for
 // the "chrome above, grid full-width, everything else above or
-// below" rule -- stacked here as a third block, below the grid.
+// below" rule. It is not a Froggers node and never can be, so the surface
+// cannot place it -- placing it is this shell's job, and where it goes is
+// PLACED_BELOW_SELECTOR's own comment below.
 const SIDEBAR_SELECTOR = '[data-synth-node-id="runtime.sidebar.root"]';
+// FroggersNodeIds::kLeftButtons -- the narrow chrome block's Randomize/Reset
+// column. `AppendNarrowButtonColumn` declares it `Extent::Intrinsic()` on
+// both axes specifically so this box ends where its last button ends, which
+// makes it the surface's own statement of where the free space beside the
+// sliders begins. Read live, never as an offset copied into this file.
+const PLACED_BELOW_SELECTOR = '[data-synth-node-id="froggers.layout.left.buttons"]';
 
-// Stacked top to bottom, in this order.
-const STACK_SELECTORS = [CHROME_BLOCK_SELECTOR, GRID_BLOCK_SELECTOR, SIDEBAR_SELECTOR];
+// The two blocks that stack, top to bottom, in this order. The sidebar is
+// NOT one of them: it is measured with them (so a frame is still all-or-
+// nothing across every block this file touches) but positioned relative to
+// a box inside the first, not appended under the last.
+const STACK_SELECTORS = [CHROME_BLOCK_SELECTOR, GRID_BLOCK_SELECTOR];
+// Every block this file transforms, stacked or placed -- what a frame has to
+// measure successfully before any of it is committed.
+const MANAGED_SELECTORS = [...STACK_SELECTORS, SIDEBAR_SELECTOR];
 
 function isNarrow(mount) {
   return mount.clientWidth > 0 && mount.clientWidth <= NARROW_MAX_WIDTH;
@@ -119,8 +135,8 @@ function wireExtent(element) {
 // surface -- e.g. Sheaf's sidebar, rendered by its own, separate
 // SidebarSurface -- can transiently report a degenerate extent mid-resize,
 // so this write can turn out to have been for nothing); applyMobileStack
-// is responsible for making the OVERALL operation atomic across all three
-// blocks despite that -- see its own comment for how and why.
+// is responsible for making the OVERALL operation atomic across every
+// block it manages despite that -- see its own comment for how and why.
 //
 // IMPORTANT: this does NOT assume any particular ancestor is the element
 // fitSurface() scales, and does not try to neutralize any ancestor's
@@ -204,9 +220,10 @@ const lastGoodTransform = new Map();
  * Sheaf's own unmodified fitSurface/updateNode output is exactly what
  * reaches the screen (matches "wide viewports: hands off").
  *
- * Applies ATOMICALLY across the three stacked blocks: measures all three
- * first (measureBlock), and only commits a NEW transform to any of them if
- * EVERY block measured successfully. If even one is transiently
+ * Applies ATOMICALLY across every block it manages -- the two stacked
+ * blocks and the placed sidebar alike: measures all of them first
+ * (measureBlock), and only commits a NEW transform to any of them if EVERY
+ * one measured successfully. If even one is transiently
  * unmeasurable (e.g. Sheaf's sidebar surface mid-rebuild reporting a
  * momentary zero-extent bounds during a resize -- observed in practice,
  * and forced deterministically in the e2e regression test for this),
@@ -263,7 +280,7 @@ export function applyMobileStack() {
     return;
   }
 
-  const elements = STACK_SELECTORS.map((selector) => document.querySelector(selector));
+  const elements = MANAGED_SELECTORS.map((selector) => document.querySelector(selector));
   if (elements.some((element) => !element)) return; // not all rendered yet
 
   const measurements = elements.map(measureBlock);
@@ -273,7 +290,7 @@ export function applyMobileStack() {
     // nothing better to fall back to). The mount's reservation is left
     // exactly as the previous frame set it -- see lastGoodTransform's own
     // comment for why the mount needs no cache of its own.
-    STACK_SELECTORS.forEach((selector, index) => {
+    MANAGED_SELECTORS.forEach((selector, index) => {
       const cached = lastGoodTransform.get(selector);
       if (!cached) return;
       elements[index].style.transformOrigin = cached.transformOrigin;
@@ -298,34 +315,77 @@ export function applyMobileStack() {
   // kViewportNarrow action this file dispatches) and therefore renders the
   // same width, while Sheaf's own sidebar, which has no narrow variant,
   // renders at its own smaller, design-proportional size.
-  const gridIndex = STACK_SELECTORS.indexOf(GRID_BLOCK_SELECTOR);
+  const gridIndex = MANAGED_SELECTORS.indexOf(GRID_BLOCK_SELECTOR);
   const sharedScale = viewportWidth / measurements[gridIndex].extent.width;
 
   let top = mountRect.top;
   let totalHeight = 0;
-  measurements.forEach((measurement, index) => {
+  STACK_SELECTORS.forEach((selector, index) => {
     // Left-aligned (not centered): every block starts at the same left
-    // edge as the mount/grid, including chrome and the sidebar even
-    // though they now render narrower than the viewport -- simpler,
-    // predictable, and keeps everything flush against one shared edge
-    // rather than each block needing its own centering offset.
+    // edge as the mount/grid, including chrome even though it renders at
+    // its own declared width -- simpler, predictable, and keeps everything
+    // flush against one shared edge rather than each block needing its own
+    // centering offset.
+    const measurement = measurements[index];
     const scaledHeight = applyStackedTransform(measurement, sharedScale, mountRect.left, top);
-    lastGoodTransform.set(STACK_SELECTORS[index], {
+    lastGoodTransform.set(selector, {
       transform: measurement.element.style.transform,
       transformOrigin: measurement.element.style.transformOrigin,
     });
     top += scaledHeight + STACK_GAP_PX;
     totalHeight += scaledHeight + STACK_GAP_PX;
   });
-  totalHeight -= STACK_GAP_PX; // no trailing gap after the last block
+  totalHeight -= STACK_GAP_PX; // no trailing gap after the last stacked block
+
+  // Sheaf's sidebar goes in the free space beside the sliders, under the
+  // chrome block's Randomize/Reset column, instead of under the grid where
+  // it was a whole page-scroll away from everything else.
+  //
+  // READ ORDER IS THE WHOLE TRICK HERE. That column is a DESCENDANT of the
+  // chrome block, so its rendered rect only means anything once the chrome
+  // block's own transform is applied -- which the loop above has just
+  // done. Reading it during the measurement pass would give the
+  // untransformed position instead, because measureBlock deliberately
+  // clears each block's transform before measuring. Still one synchronous
+  // pass, so the all-or-nothing guarantee above is untouched.
+  const sidebar = measurements[MANAGED_SELECTORS.indexOf(SIDEBAR_SELECTOR)];
+  const placedBelow = document.querySelector(PLACED_BELOW_SELECTOR);
+  const sidebarHeight = sharedScale * sidebar.extent.height;
+  // Fits only if it lands inside the chrome block. The mount clips
+  // (`overflow: hidden` below), so a sidebar hanging past the block's
+  // bottom edge would be CUT OFF rather than visibly overflowing, which is
+  // the kind of failure nobody notices until a control is missing. Both
+  // heights are live: Sheaf sizes the sidebar at 40px per row and grows it
+  // by a row if the app ever registers a page of its own
+  // (RuntimePages.hpp's SidebarRootBounds), so this is checked rather than
+  // settled once by arithmetic.
+  const chromeBottom = mountRect.top + sharedScale * measurements[0].extent.height;
+  const anchor = placedBelow === null ? null : placedBelow.getBoundingClientRect();
+  const placedTop = anchor === null ? 0 : anchor.bottom + STACK_GAP_PX;
+  if (anchor !== null && placedTop + sidebarHeight <= chromeBottom) {
+    applyStackedTransform(sidebar, sharedScale, anchor.left, placedTop);
+  } else {
+    // Either the narrow column is not in the tree yet -- the wide topology
+    // rendering at a narrow mount, for the one frame after a resize before
+    // the surface emits its narrow tree -- or it is there but the sidebar
+    // no longer fits beside the sliders. Stack it under the grid, where
+    // this shell always used to put it: a longer page, but nothing clipped
+    // away.
+    applyStackedTransform(sidebar, sharedScale, mountRect.left, top);
+    totalHeight += STACK_GAP_PX + sidebarHeight;
+  }
+  lastGoodTransform.set(SIDEBAR_SELECTOR, {
+    transform: sidebar.element.style.transform,
+    transformOrigin: sidebar.element.style.transformOrigin,
+  });
 
   // fitSurface's own mount height (sized for its own, un-stacked scale) no
-  // longer applies; reserve exactly the stacked content's own extent
-  // (chrome + grid + sidebar, all three now stacked -- "everything else"
-  // per the stacking rule, not just the two Froggers blocks) so the
-  // shell's own footer chrome sits right below the sidebar, and clip
-  // whatever of Sheaf's own composite tree (e.g. its own outer margin)
-  // would otherwise peek out under `overflow: visible`.
+  // longer applies; reserve exactly the stacked content's own extent so the
+  // shell's own footer chrome sits right below it, and clip whatever of
+  // Sheaf's own composite tree (e.g. its own outer margin) would otherwise
+  // peek out under `overflow: visible`. That extent is chrome plus grid
+  // while the sidebar sits inside the chrome block, and gains the sidebar
+  // on the frames where it falls back to being stacked under the grid.
   //
   // Reserved as `min-height`, NOT as `height`, and that choice is what
   // makes the page scrollable. fitSurface writes the mount's `height` at

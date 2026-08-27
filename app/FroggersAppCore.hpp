@@ -195,6 +195,13 @@ public:
     static synth::RuntimeConfig Config() {
         synth::RuntimeConfig config;
         config.appName = "Frogg3rs Synth";
+        // The runtime's own first sidebar page is called "Audio", and so is
+        // this instrument's first parameter bank, so the two buttons read as
+        // the same thing on screen and are not. The page selects the output
+        // device AND the input device, so it is named for both rather than
+        // for the input alone. Set for every host: the bank is called Audio
+        // in the standalone as much as in the browser.
+        config.audioPageTitle = "Audio I/O";
         // One input channel is requested. That alone never means an input is
         // actually available to the operator: requesting any nonzero count
         // also opens a platform-default input device at launch, before any

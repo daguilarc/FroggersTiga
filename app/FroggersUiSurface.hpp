@@ -1065,7 +1065,20 @@ private:
         // Intrinsic along the parent Row's main axis: the column is exactly
         // as wide as its widest button, leaving everything else to the stack.
         columnLayout.main = synth::ui::Extent::Intrinsic();
-        columnLayout.cross = synth::ui::Extent::Weight(1.0f);
+        // Intrinsic on the cross axis too, so the column's own box ENDS where
+        // its last button ends rather than running to the bottom of the
+        // block. The browser shell reads that box to find where the space
+        // below these buttons begins, and places Sheaf's runtime sidebar
+        // there (app/browser/site/mobile-stack.mjs) -- a block this surface
+        // cannot contain, since Sheaf emits it as a separate tree. Declaring
+        // the extent here is what keeps that arrangement readable from this
+        // surface instead of living as an offset in the shell.
+        // The parent is a Row, so its cross axis is vertical, which is this
+        // Column's own MAIN axis -- and a container's intrinsic extent sums
+        // its children plus gaps only along its main axis
+        // (PortableUILayout.hpp's IntrinsicForNode). Those two axes coinciding
+        // is why this resolves to the four buttons plus three gaps.
+        columnLayout.cross = synth::ui::Extent::Intrinsic();
         columnLayout.padding = 0.0f;
         columnLayout.gap = FroggersPageLayout::kGap;
         builder.Column(FroggersNodeIds::kLeftButtons, columnLayout, [](synth::ui::Builder& b) {

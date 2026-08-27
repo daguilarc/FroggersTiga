@@ -10,12 +10,11 @@
 // CSS transforms sidestep that instead of fighting it: they compose with (rather than override) those wire-managed
 // properties, reasserted every render frame from the site shell
 // (app/browser/site/mobile-stack.mjs, hooked in site-boot.mjs) -- see that
-// file's own header comment for the full mechanism. The stack is
-// THREE blocks, not two: chrome above, grid full-width below it, and
-// Sheaf's own generic runtime sidebar (RIGHT_BLOCK_SELECTOR/
-// SIDEBAR_SELECTOR, helpers.mjs) below THAT -- everything
-// else above or below the grid includes the sidebar, so it is not
-// left beside anything either.
+// file's own header comment for the full mechanism. TWO blocks stack --
+// chrome above, grid full-width below it -- and Sheaf's own generic runtime
+// sidebar (SIDEBAR_SELECTOR, helpers.mjs) is PLACED rather than stacked:
+// inside the chrome block, under its Randomize/Reset column, beside the
+// sliders. It is still never left beside the grid.
 //
 // SHARED SCALE: only the GRID is stretched to fill the viewport width.
 // Every other stacked block renders at that SAME scale (mobile-stack.mjs's
@@ -24,15 +23,18 @@
 // far down the page). How wide a block ends up is therefore decided by its
 // own declared design width, in the surface. The chrome block declares
 // equal weight with the grid when narrow and so comes out the same width;
-// Sheaf's own generic sidebar has no narrow variant and comes out
-// narrower, left-aligned under the grid.
+// Sheaf's own generic sidebar has no narrow variant of its own -- this
+// surface cannot declare a weight for a tree Sheaf emits -- and so comes out
+// narrower, sitting in the chrome block's own free space.
 import { expect, test } from "@playwright/test";
 import {
   BPM_SELECTOR,
   ENCODER_ROW_SELECTORS,
   LEFT_BLOCK_SELECTOR,
+  NARROW_BUTTON_COLUMN_SELECTOR,
   RANDOMIZE_RESET_SELECTORS,
   RIGHT_BLOCK_SELECTOR,
+  SIDEBAR_BUTTON_SELECTORS,
   SIDEBAR_SELECTOR,
   encoderGridBoundingBox,
   expectedStackedWidth,
@@ -183,37 +185,78 @@ test.describe("mobile stacking (phone-width layout)", () => {
   });
 
   test("controls below the fold are reachable by scrolling", async ({ page }) => {
-    // The stacked layout is taller than a phone viewport by construction,
-    // so the sidebar -- the last stacked block -- starts below the fold.
-    // Bringing it into view is the end-to-end version of the scroll
-    // assertion above: it fails both if the page cannot scroll and if the
-    // mount clips the block away once it is scrolled to.
+    // The stacked layout is taller than a phone viewport by construction, so
+    // the last encoder row starts below the fold. Bringing it into view is
+    // the end-to-end version of the scroll assertion above: it fails both if
+    // the page cannot scroll and if the mount clips the row away once it is
+    // scrolled to.
+    // This used to use the sidebar, which was the last stacked block. The
+    // sidebar now sits inside the chrome block, above the fold, so it no
+    // longer proves anything here -- the last encoder row is what is
+    // genuinely below it.
     const viewport = page.viewportSize();
-    const before = await page.locator(SIDEBAR_SELECTOR).boundingBox();
+    const target = page.locator(ENCODER_ROW_SELECTORS[3]);
+    const before = await target.boundingBox();
     expect(before.y).toBeGreaterThan(viewport.height); // positive control: it really is below the fold
-    await page.locator(SIDEBAR_SELECTOR).scrollIntoViewIfNeeded();
-    await expect(page.locator(SIDEBAR_SELECTOR)).toBeInViewport({ timeout: 5_000 });
+    await target.scrollIntoViewIfNeeded();
+    await expect(target).toBeInViewport({ timeout: 5_000 });
   });
 
-  test("the sidebar stacks below the grid at the grid's shared scale, not full width", async ({ page }) => {
-    // Sheaf's own generic runtime sidebar is "everything else" for
-    // this stacking rule too -- verifies it must be part of
-    // the stack (directly below the grid, zero overlap with anything),
-    // not left at its native design position where it would otherwise
-    // sit beside the app's own content. It shares the grid's scale rather
-    // than being independently stretched to full width. It is the one
-    // stacked block that still comes out narrower than the viewport: it is
-    // Sheaf's own generic runtime chrome, emitted by SidebarSurface, so
-    // the frogg3rs surface's narrow topology has no weight to declare for
-    // it. Widening it would mean a Sheaf-side change, which this shell
-    // deliberately does not make.
+  test("the runtime page buttons sit beside the sliders, under Randomize/Reset", async ({ page }) => {
+    // This replaces "the sidebar stacks below the grid at the grid's shared
+    // scale, not full width", which asserted the placement this test's
+    // subject moved away from. Sheaf's sidebar used to be a third stacked
+    // block under the encoder grid, which put four runtime page buttons a
+    // whole page-scroll from everything else. It is now placed inside the
+    // chrome block, under the Randomize/Reset column, where the column's
+    // own intrinsic height leaves room for it beside the sliders.
+    //
+    // It is still Sheaf's block, with no narrow variant of its own -- the
+    // frogg3rs surface has no weight to declare for a tree it does not
+    // emit -- so the SHELL places it, and the shell derives the position
+    // from the surface's own button-column box rather than from an offset
+    // of its own. Hence the assertion against that box below.
+    const chromeBox = await page.locator(LEFT_BLOCK_SELECTOR).boundingBox();
+    const columnBox = await page.locator(NARROW_BUTTON_COLUMN_SELECTOR).boundingBox();
+    const bpmBox = await page.locator(BPM_SELECTOR).boundingBox();
+    const bpmCentre = bpmBox.x + bpmBox.width / 2;
+
+    for (const selector of SIDEBAR_BUTTON_SELECTORS) {
+      const box = await page.locator(selector).boundingBox();
+      expect(box, selector).not.toBeNull();
+      // Beside the sliders, not above or below them.
+      expect(box.x + box.width / 2, selector).toBeGreaterThan(bpmCentre);
+      // Under the Randomize/Reset column -- the clause that separates this
+      // placement from the old one, which also satisfied "inside the chrome
+      // block" for none of the right reasons.
+      expect(box.y, selector).toBeGreaterThanOrEqual(columnBox.y + columnBox.height);
+      // Inside the chrome block on both axes. The mount clips, so a button
+      // past the block's bottom edge would be cut off, not merely misplaced.
+      expect(box.x, selector).toBeGreaterThanOrEqual(chromeBox.x - 1);
+      expect(box.y + box.height, selector).toBeLessThanOrEqual(chromeBox.y + chromeBox.height + 1);
+    }
+  });
+
+  test("no runtime page button falls in or below the encoder grid", async ({ page }) => {
     const gridBox = await page.locator(RIGHT_BLOCK_SELECTOR).boundingBox();
-    const sidebarBox = await page.locator(SIDEBAR_SELECTOR).boundingBox();
 
-    expect(Math.abs(sidebarBox.width - (await expectedStackedWidth(page, SIDEBAR_SELECTOR)))).toBeLessThan(1.5);
-    expect(sidebarBox.y).toBeGreaterThanOrEqual(gridBox.y + gridBox.height);
-    expect(verticalOverlapPx(sidebarBox, gridBox)).toBe(0);
+    for (const selector of SIDEBAR_BUTTON_SELECTORS) {
+      const box = await page.locator(selector).boundingBox();
+      const overlapsHorizontally = box.x < gridBox.x + gridBox.width && box.x + box.width > gridBox.x;
+      expect(overlapsHorizontally && verticalOverlapPx(box, gridBox) > 0, selector).toBe(false);
+      expect(box.y, selector).toBeLessThan(gridBox.y);
+    }
   });
+
+  test("the audio page button is named for what the page does", async ({ page }) => {
+    // The only assertion that the app's RuntimeConfig::audioPageTitle is
+    // wired all the way through Sheaf to a rendered button, so it is the one
+    // that fails if the submodule pin is left behind. "Audio" alone would be
+    // this instrument's first parameter bank; the page selects the output
+    // device as well as the input, so it is named for both.
+    await expect(page.locator(SIDEBAR_BUTTON_SELECTORS[0])).toHaveText(/Audio I\/O/);
+  });
+
 
   test("a transient measurement failure on one block does not disturb the other two", async ({ page }) => {
     // Regression test for a real bug this suite caught during development:

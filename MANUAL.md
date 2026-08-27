@@ -182,8 +182,9 @@ parameter still happens.
 
 ### Standalone
 
-An **Audio** page (reached from the app's sidebar) offers **Output device** and **Input device**
-selectors listing the machine's own audio devices, plus a **Retry Input** button if capture fails. A
+An **Audio I/O** page (reached from the app's sidebar) offers **Output device** and **Input device**
+selectors listing the machine's own audio devices, plus a **Retry Input** button if capture fails. It is
+named Audio I/O rather than Audio so it is not read as the Audio parameter bank. A
 **Controllers** page maps an external MIDI controller's messages to this app's own controls: each mapping
 row targets a MIDI channel (0–15) and CC number (0–127), and can target an encoder, an analog/gesture
 input, or a system action. A **Sync** page lets the transport slave to incoming MIDI clock (**Receive
