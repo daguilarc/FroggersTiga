@@ -478,7 +478,12 @@ started, not that a controller is attached. Only 4.5 can show that.
       inside a full-suite run.
 - [x] 7.3 Sheaf pushed to `fork/fix-out-of-tree-app-gaps`,
       `80d9f4bb..5d95fcbe`, then the pin bumped as its own commit.
-- [ ] 7.4 Both trees clean and pushed.
+- [x] 7.4 Both trees clean and pushed. frogg3rs `6fe7085..e695ebb` on
+      `origin/main`; Sheaf `80d9f4bb..5d95fcbe` on
+      `fork/fix-out-of-tree-app-gaps`. Both report 0 dirty. Desktop app rebuilt
+      from the bumped pin (`app/build-launcher/Frogg3rs.app`, 37.7MB signed
+      binary — not the 16KB stub `make` alone produces) and the browser wasm
+      rebuilt, so the layout fix is testable on both hosts.
 - [x] 7.5 Done — `postflight.md`. Divergences reported strictly, and §7 re-run
       against the diff on every new symbol.
       ORIGINAL TEXT: POSTFLIGHT §13: re-run §7 against the DIFF, not the proposal. Every
