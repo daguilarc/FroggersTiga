@@ -66,6 +66,27 @@ if (typeof window === "undefined") {
   // supports service workers at all.
   if (window.crossOriginIsolated === false && "serviceWorker" in navigator) {
     const scriptUrl = document.currentScript.src;
+
+    // Published synchronously, before register() is even called, as the
+    // ONE object both painters read: index.html's inline backstop runs
+    // synchronously (it cannot await anything) and needs `pending`
+    // readable on the spot; site-boot.mjs is async and awaits `settled`
+    // instead. Both fields are driven by the single settle() function
+    // below so they can never disagree about whether an isolation attempt
+    // is still owed. Absent entirely when this branch does not run at all
+    // (the server already sent real isolation headers) -- both consumers
+    // treat "global absent" as "no attempt owed".
+    let resolveSettled;
+    const settled = new Promise((resolve) => {
+      resolveSettled = resolve;
+    });
+    const attempt = { pending: true, settled };
+    function settle() {
+      attempt.pending = false;
+      resolveSettled();
+    }
+    window.frogg3rsCoiAttempt = attempt;
+
     // One-shot reload guard (same idiom as the upstream
     // https://github.com/gzuidhof/coi-serviceworker this shim is modeled
     // on): registration resolving does not guarantee the NEXT load is
@@ -77,7 +98,10 @@ if (typeof window === "undefined") {
     // tab/window, so this allows at most one reload attempt per tab
     // session; a second attempt fails visibly (logged here, and
     // site-boot.mjs's own boot-error panel surfaces the resulting
-    // SharedArrayBuffer failure) instead of looping.
+    // SharedArrayBuffer failure) instead of looping. Returns whether a
+    // reload was actually initiated, so the caller can settle() the
+    // attempt above when it was declined instead (no reload means no
+    // event is ever coming that would otherwise settle it).
     const RELOAD_GUARD_KEY = "frogg3rs-coi-reloaded";
     const reloadOnce = () => {
       if (sessionStorage.getItem(RELOAD_GUARD_KEY)) {
@@ -87,19 +111,31 @@ if (typeof window === "undefined") {
           "reloading forever (blocked storage, private browsing, and a scope mismatch " +
           "can all cause this).",
         );
-        return;
+        return false;
       }
       sessionStorage.setItem(RELOAD_GUARD_KEY, "1");
       window.location.reload();
+      return true;
     };
     navigator.serviceWorker.register(scriptUrl).then(() => {
-      // Already controlled: the worker's fetch handler covers this
-      // navigation, isolation holds, nothing to do.
-      if (navigator.serviceWorker.controller) {
-        return;
-      }
-      // Otherwise reload once the worker is active, so its fetch handler
-      // covers the navigation itself.
+      // NO `controller` CHECK HERE, DELIBERATELY. Being controlled is not
+      // the same as being isolated, and conflating them is what made a
+      // first visit fail. This worker calls skipWaiting() on install and
+      // clients.claim() on activate (see the service-worker branch at the
+      // top of this file), so on a first visit it frequently claims THIS
+      // document before register() even resolves -- but this document's
+      // own navigation response was already served without the isolation
+      // headers, so it is controlled and still not isolated. A
+      // controller-keyed check reads that as "isolation holds, nothing to
+      // do" and never reloads, leaving the page permanently un-isolated
+      // until someone reloads it by hand. That is the actual first-visit
+      // failure, not merely a slow reload: the busier the machine, the
+      // more often claim wins that race.
+      //
+      // `crossOriginIsolated` is fixed for a document's lifetime, and this
+      // whole branch only runs when it is already false, so this document
+      // can NEVER become isolated in place. Once a worker is active to
+      // serve the headers, the only remedy is a fresh navigation.
       //
       // Keyed on navigator.serviceWorker.ready rather than an `updatefound`
       // listener: register() resolves only AFTER registration.installing is
@@ -113,12 +149,18 @@ if (typeof window === "undefined") {
       // fresh-install and already-active cases alike, and reloadOnce's
       // sessionStorage guard still bounds this to one attempt per tab.
       navigator.serviceWorker.ready.then(() => {
-        if (!navigator.serviceWorker.controller) {
-          reloadOnce();
-        }
+        // reloadOnce() returning false means the guard had already fired
+        // -- no reload is coming this time, so settle instead of leaving
+        // the attempt owed forever, and let the boot path surface
+        // whatever real failure follows. When it returns true the page is
+        // being replaced; do not settle, there is no one left to observe
+        // it.
+        if (!reloadOnce()) settle();
       });
     }).catch((error) => {
       console.error("cross-origin-isolation service worker registration failed", error);
+      // Registration itself failed -- no reload will ever be scheduled.
+      settle();
     });
   }
 }

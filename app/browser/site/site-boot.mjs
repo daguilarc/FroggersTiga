@@ -34,8 +34,14 @@
 // attaches to it specifically: `acquireInput` releases with
 // `audioContextUnavailable` when `audioOptions.audioContext` is unset, so
 // without this the Input device list is empty and Retry Input cannot help.
-// Browser MIDI still has no path in -- it arrives only with a lease -- and
-// remains unreachable here.
+// Browser MIDI does not need a lease either: main.ts constructs
+// `BrowserMidiManager` unconditionally in its constructor (main.ts:178),
+// and its own dispatch wiring calls `startUserActivation()` after every
+// dispatched UI action (main.ts:174-177, :267-276), which reaches
+// `startFromUserActivation()` -> `navigator.requestMIDIAccess({ sysex:
+// true })` (midi.ts:108-120) the same way it reaches audio. So MIDI is
+// reachable here too, from the app's own first in-app action, without
+// this page ever acquiring a lease.
 //
 // `launchCatalogApplication` also passes `runtimeClientFactory` and
 // `frameIntervalMs`. Both are optional pass-throughs left undefined at
@@ -134,30 +140,46 @@ const BENIGN_WINDOW_ERROR_MESSAGES = new Set([
 
 const root = document.querySelector("#synth-root");
 if (root) {
-  void boot(root).catch((error) => fail(root, error));
+  // coi-serviceworker.js's page branch (loaded before this module,
+  // classic script) may still owe an isolation attempt that ends in a
+  // page reload -- see that file's own header comment. Booting, or
+  // wiring up this module's own error backstop, before that attempt
+  // settles is exactly the race that used to surface a false
+  // "SharedArrayBuffer transfer requires self.crossOriginIsolated"
+  // failure on a perfectly capable browser: the pthread pool would start
+  // (and throw) before the reload it needed had a chance to land. When
+  // the shim never ran at all (the server already sent real isolation
+  // headers), `window.frogg3rsCoiAttempt` is never created, and awaiting
+  // `undefined` resolves on the next microtask -- i.e. behaves exactly as
+  // today.
+  void (async () => {
+    await window.frogg3rsCoiAttempt?.settled;
 
-  // Backstop for failures OUTSIDE boot()'s own promise chain (e.g. an
-  // uncaught error from code that runs later, on its own timer/rAF/event
-  // callback, never awaited by boot() itself). Does NOT double-fire for
-  // boot()'s own errors: a promise with an attached .catch() (above) is
-  // "handled" and never also raises `unhandledrejection`.
-  //
-  // Does NOT, and structurally cannot, catch a static import failure of
-  // this module's OWN `./sheaf-runtime/*.js` imports at the top of this
-  // file: per ES module semantics, a module's top-level code (including
-  // these two addEventListener calls) never runs at all if any of its own
-  // static imports fails to resolve, no matter where in the file a
-  // listener is registered -- so a handler living in this file cannot be
-  // the backstop for THIS file's own import failing. That specific case
-  // (the exact scenario that produces a silent blank page) needs a
-  // handler that does not depend on this module having loaded in the
-  // first place; see index.html's own early inline <script>, registered
-  // before this module's <script type="module"> tag, for that layer.
-  window.addEventListener("error", (event) => {
-    if (BENIGN_WINDOW_ERROR_MESSAGES.has(event.message)) return;
-    fail(root, event.error instanceof Error ? event.error : new Error(event.message || "frogg3rs failed to start"));
-  });
-  window.addEventListener("unhandledrejection", (event) => {
-    fail(root, event.reason);
-  });
+    void boot(root).catch((error) => fail(root, error));
+
+    // Backstop for failures OUTSIDE boot()'s own promise chain (e.g. an
+    // uncaught error from code that runs later, on its own timer/rAF/event
+    // callback, never awaited by boot() itself). Does NOT double-fire for
+    // boot()'s own errors: a promise with an attached .catch() (above) is
+    // "handled" and never also raises `unhandledrejection`.
+    //
+    // Does NOT, and structurally cannot, catch a static import failure of
+    // this module's OWN `./sheaf-runtime/*.js` imports at the top of this
+    // file: per ES module semantics, a module's top-level code (including
+    // these two addEventListener calls) never runs at all if any of its own
+    // static imports fails to resolve, no matter where in the file a
+    // listener is registered -- so a handler living in this file cannot be
+    // the backstop for THIS file's own import failing. That specific case
+    // (the exact scenario that produces a silent blank page) needs a
+    // handler that does not depend on this module having loaded in the
+    // first place; see index.html's own early inline <script>, registered
+    // before this module's <script type="module"> tag, for that layer.
+    window.addEventListener("error", (event) => {
+      if (BENIGN_WINDOW_ERROR_MESSAGES.has(event.message)) return;
+      fail(root, event.error instanceof Error ? event.error : new Error(event.message || "frogg3rs failed to start"));
+    });
+    window.addEventListener("unhandledrejection", (event) => {
+      fail(root, event.reason);
+    });
+  })();
 }

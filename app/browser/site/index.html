@@ -118,6 +118,17 @@
           "ResizeObserver loop limit exceeded": true,
         };
         function renderBootError(message) {
+          // coi-serviceworker.js's page branch may still owe an isolation
+          // attempt that ends in a page reload (see that file's own header
+          // comment, and site-boot.mjs's mirrored check on the async
+          // `settled` half of the same object). This script is a
+          // synchronous classic script and cannot await anything, so it
+          // reads the synchronous `pending` flag instead: while an attempt
+          // is owed, paint nothing -- a reload may still be coming, and an
+          // error surfacing during that window is not a real boot
+          // failure. Absent entirely (real isolation headers already
+          // held) behaves exactly as before.
+          if (window.frogg3rsCoiAttempt && window.frogg3rsCoiAttempt.pending) return;
           if (shown) return; // keep the FIRST failure visible, not a later cascade
           var root = document.querySelector("#synth-root");
           if (!root) return;

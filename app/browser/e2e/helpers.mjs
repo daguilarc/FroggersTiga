@@ -76,6 +76,13 @@ export const ENCODER_CANVAS_SELECTORS = [0, 4, 8, 12].map(
 // has a current diagnostic to show (RuntimePages.hpp's own `if
 // (!snapshot.statusLineText.empty())` guard around this node).
 export const AUDIO_STATUS_LINE_SELECTOR = '[data-synth-node-id="runtime.audio.status_line"]';
+// The boot-error panel's own detail paragraph, painted by either
+// site-boot.mjs's `fail()` or index.html's inline `renderBootError()`
+// (both use the same `.boot-error-detail` class -- see those files' own
+// header comments). Its presence/absence is the shared "did the app show
+// a boot failure" predicate for both the first-visit race regression and
+// its negative control.
+export const BOOT_ERROR_DETAIL_SELECTOR = ".boot-error-detail";
 
 /**
  * Waits for the app to have rendered at least one real UI frame (proof the
