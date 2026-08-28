@@ -21,21 +21,21 @@ not `RuntimePages.hpp`).
 
 ## 0. Supersede bookkeeping
 
-- [ ] 0.1 Delete `openspec/changes/frogg3rs-cpu-readout-says-it-is-a-peak`.
+- [x] 0.1 Delete `openspec/changes/frogg3rs-cpu-readout-says-it-is-a-peak`.
       Confirm nothing else references it by name first.
       PREFLIGHT FOUND IT ALREADY GONE: the directory does not exist, and the
       only mentions of the name anywhere in either repo are this change's own
       proposal and tasks. Record that rather than perform a deletion; the point
       of the item — that two changes are not both repairing the browser chrome —
       holds.
-- [ ] 0.2 The superseded change is already archived and its deltas are already
+- [x] 0.2 The superseded change is already archived and its deltas are already
       in the live specs, so nothing is stranded — verify that rather than
       assume it, by checking `openspec/specs/frogg3rs-web-mobile-ux` still
       carries the requirements it landed.
 
 ## 1. The activation lease
 
-- [ ] 1.1 Read `launchCatalogApplication` and enumerate EVERYTHING it passes
+- [x] 1.1 Read `launchCatalogApplication` and enumerate EVERYTHING it passes
       that `site-boot.mjs` does not. The lease is the one that bit; report
       whether it is the only omission rather than fixing the one already found.
       This is the whole lesson of the defect — a subset copied by hand, with
@@ -53,7 +53,7 @@ not `RuntimePages.hpp`).
       `launchCatalogApplication` builds a real lease at `main.ts:381`. Pass the
       lease; leave the other three omitted, and say in the comment that they are
       omissions that carry nothing.
-- [ ] 1.2 Build an `ActivationLease` in `site-boot.mjs` and pass it. Its
+- [x] 1.2 Build an `ActivationLease` in `site-boot.mjs` and pass it. Its
       constructor is PRIVATE (`browser/src/activation.ts:33-37`) — the factory
       is `ActivationLease.acquire(options)` (`:45`), taking
       `{ audioContextFactory?, requestMIDIAccess? }` (`:8-11`). `consume()`
@@ -68,7 +68,7 @@ not `RuntimePages.hpp`).
       part, that this page anchors activation to the first in-app action rather
       than to a Launch button. Deleting it would lose the reasoning and invite
       someone to remove the lease again on the same grounds.
-- [ ] 1.3 MIND THE GESTURE. A browser `AudioContext` starts suspended without a
+- [x] 1.3 MIND THE GESTURE. A browser `AudioContext` starts suspended without a
       user gesture, and `getUserMedia` needs one too. Establish where the
       existing site gets its gesture from — the app already starts audio from a
       UI action (`desktop-layout.spec.mjs`'s "no audio starts on load" pins
@@ -91,11 +91,11 @@ not `RuntimePages.hpp`).
       consent. This task makes the choice REACHABLE, nothing else. Assert that:
       after boot with no operator action, the external-audio sources are still
       disconnected.
-- [ ] 1.5 An e2e assertion that the status line no longer reports
+- [x] 1.5 An e2e assertion that the status line no longer reports
       `microphone requires the launch-owned AudioContext`.
       POSITIVE CONTROL: show it present against the current build first — it is
       in the operator's screenshot, so it is reproducible today.
-- [ ] 1.6 Headless browsers do not prompt for a microphone. Decide what the e2e
+- [x] 1.6 Headless browsers do not prompt for a microphone. Decide what the e2e
       suite can honestly assert — that the context exists and the status is no
       longer `audioContextUnavailable` is testable; a granted-permission device
       list may not be. Say which, rather than writing a test that passes for the
@@ -172,10 +172,10 @@ it.
 
 ## 2. Disconnected sources render greyed
 
-- [ ] 2.1 The spec delta is the change here; the code follows it. Apply the
+- [x] 2.1 The spec delta is the change here; the code follows it. Apply the
       MODIFIED requirement first so the implementation has something to be
       correct against.
-- [ ] 2.2 THE SITE THIS TASK ORIGINALLY NAMED WAS THE WRONG ONE. Preflight
+- [x] 2.2 THE SITE THIS TASK ORIGINALLY NAMED WAS THE WRONG ONE. Preflight
       traced it: the draw lambda returns `{}` on `hidden` at
       `FroggersUiSurface.hpp:1884`, before it calls `BuildEncoderDrawCommands`
       (`:1913`) and before the `!state.connected` branch at `:1915`. Because
@@ -192,7 +192,7 @@ it.
       Do not touch Sheaf's `BuildEncoderDrawCommands`: this is one
       application's presentation choice and every other Sheaf app's
       disconnected cells must be unaffected.
-- [ ] 2.2b SPLIT `hidden`. It currently means both "draw nothing" and "reach
+- [x] 2.2b SPLIT `hidden`. It currently means both "draw nothing" and "reach
       nothing": it gates the visualizer underlay (`:1798`, `:1826`) and the
       press/drag actions (`:1860`) as well as the drawing (`:1884`). Only the
       drawing changes. Give the two meanings two names so the next reader cannot
@@ -201,17 +201,17 @@ it.
       suppressed: a disconnected source has no signal to visualize, and drawing
       one would claim it does.
 
-- [ ] 2.3 No value readout on a disabled cell. The connected path strips and
+- [x] 2.3 No value readout on a disabled cell. The connected path strips and
       replaces Sheaf's trailing 60-command label block; the disabled path should
       not emit one at all. Verify the command count rather than assuming which
       branch produced what.
-- [ ] 2.4 Clear the modulation and gesture indicator masks on the copy. An
+- [x] 2.4 Clear the modulation and gesture indicator masks on the copy. An
       unavailable source showing modulation arcs would be claiming something.
-- [ ] 2.5 Actions and depth parameters are untouched, and asserted so: a
+- [x] 2.5 Actions and depth parameters are untouched, and asserted so: a
       disconnected cell still dispatches nothing on press or drag, and still
       creates no depth parameter. This is the half of the old requirement that
       survives, and drawing the cell is exactly what puts it at risk.
-- [ ] 2.6 Assert it is VISIBLY different from a connected cell, not merely
+- [x] 2.6 Assert it is VISIBLY different from a connected cell, not merely
       non-empty — compare the emitted commands' colours against the connected
       case rather than counting commands.
 
@@ -256,15 +256,15 @@ and is NOT satisfied — that is a known gap, stated rather than quietly dropped
 
 ## 4. The Random S&H 6 background
 
-- [ ] 4.1 `app/FroggersModulation.hpp:230`, construct `source6Visualizer_` with
+- [x] 4.1 `app/FroggersModulation.hpp:230`, construct `source6Visualizer_` with
       `drawBackground = false`. Sheaf already takes the argument
       (`GangedRandomLfoVisualizer.hpp:260`); no Sheaf change.
-- [ ] 4.2 Assert lane 6 emits no full-node background fill, so the six lanes are
+- [x] 4.2 Assert lane 6 emits no full-node background fill, so the six lanes are
       consistent. The fill is `Color::Rgb(12, 14, 16)` over the whole node
       (`GangedRandomLfoVisualizer.hpp:63-64`) — assert on that, not on a command
       count.
       POSITIVE CONTROL: red against the default-constructed visualizer.
-- [ ] 4.3 Check the other five lanes were never affected, and that lane 6 still
+- [x] 4.3 Check the other five lanes were never affected, and that lane 6 still
       draws its trace and dot.
 
 ## 5. The CPU readout (absorbed, redesigned)
@@ -301,7 +301,7 @@ and is NOT satisfied — that is a known gap, stated rather than quietly dropped
       section if it shows sustained windows above 100%, in which case the cause
       is DSP cost and the readout is not the fix. Say which it found.
 
-- [ ] 5.1 Shorten the hold. `RollingMax256` is defined at
+- [x] 5.1 Shorten the hold. `RollingMax256` is defined at
       `MidiConfigViewModel.hpp:37-61` (`kCapacity = 256`; `Write`, `Max`) and
       referenced in four files, re-counted at preflight: its definition,
       `RuntimeMainComponent.hpp:283-284,671`, `runtime/Runtime.hpp:475,477`
@@ -311,11 +311,11 @@ and is NOT satisfied — that is a known gap, stated rather than quietly dropped
       between a smaller capacity, a parameterised capacity, and a time-based
       window; `uiFrameHz` is per-application, so a frame count is a different
       hold on different hosts and time is the honest unit.
-- [ ] 5.2 About one second (30 frames at the default 30Hz). Justify the number
+- [x] 5.2 About one second (30 frames at the default 30Hz). Justify the number
       against what it has to catch: a spike must still be readable by eye.
       Record the figure and the reasoning, since this is a judgement not a
       derivation.
-- [ ] 5.3 Whole percent, not tenths. The format string is `"CPU %.1f%%"`
+- [x] 5.3 Whole percent, not tenths. The format string is `"CPU %.1f%%"`
       (`RuntimePages.hpp:353`, in `FormatDeadlineText` at `:350-354`); the
       sidebar column is `kSidebarWidth = 96.0f` (`:320`) and `"Controllers"`
       (`:709`) is the label that already overflows the intrinsic figure and
@@ -324,11 +324,11 @@ and is NOT satisfied — that is a known gap, stated rather than quietly dropped
       96px column — verify the fit by RENDERING, not by `TextWidth` arithmetic:
       `"Controllers"` computes to 111px against a 96px column and ships looking
       correct, so the intrinsic figure is not what clips.
-- [ ] 5.4 The label stays `"CPU"`. The relabelling to `"CPU max"` is dropped —
+- [x] 5.4 The label stays `"CPU"`. The relabelling to `"CPU max"` is dropped —
       it explained a misleading number instead of fixing it. Say so where the
       decision lives, so the next reader does not re-derive the discarded
       option.
-- [ ] 5.5 Enumerate the consumers of the readout's TEXT before changing the
+- [x] 5.5 Enumerate the consumers of the readout's TEXT before changing the
       format, by the format string and by the node id, not by the function
       name.
       PREFLIGHT RE-RAN THIS ENUMERATION and confirms FOUND 4 + 1, matching the
@@ -341,24 +341,24 @@ and is NOT satisfied — that is a known gap, stated rather than quietly dropped
       asserted `not.toBe("CPU 0.0%")` at `:850`). Every one of them changes.
       Note two of them assert `"CPU 12.5%"` — exactly the `.5` boundary task
       5.6 warns about.
-- [ ] 5.6 `%.0f` rounds half to even: 12.5 renders 12, not 13. Do not pick test
+- [x] 5.6 `%.0f` rounds half to even: 12.5 renders 12, not 13. Do not pick test
       values on a `.5` boundary, or the test asserts the rounding mode as much
       as the format.
-- [ ] 5.7 sru-2 still holds; preflight re-read it and the reading is right. It
+- [x] 5.7 sru-2 still holds; preflight re-read it and the reading is right. It
       does NOT live in this repo — it is
       `External/Sheaf/openspec/specs/synth-runtime-ui/spec.md:30`, and it
       requires "the maximum audio callback load percentage over a rolling window
       of recent UI frames, updated on the UI timer". No number is fixed, so a
       shorter window satisfies it.
 
-- [ ] 5.9 BECAUSE sru-2 IS SHEAF'S, THE SPEC CHANGE IS SHEAF'S TOO. This change
+- [x] 5.9 BECAUSE sru-2 IS SHEAF'S, THE SPEC CHANGE IS SHEAF'S TOO. This change
       alters behaviour that Sheaf's own `synth-runtime-ui` capability specifies
       — the window's unit and length, and the displayed precision — and this
       change's `froggers-sheaf-runtime-app` delta cannot specify another repo's
       capability. Write the corresponding delta in Sheaf's own OpenSpec on the
       PR #9 branch, or record why the frogg3rs-side requirement is sufficient.
       Do not leave Sheaf's spec describing a readout Sheaf no longer has.
-- [ ] 5.8 A test that the sidebar's deadline node carries the new text, through
+- [x] 5.8 A test that the sidebar's deadline node carries the new text, through
       `BuildSidebarTree` rather than `FormatDeadlineText` alone, and a test that
       the shortened window drops a stale peak within its own span.
       POSITIVE CONTROL for the window: a spike must still be visible one frame
@@ -366,7 +366,7 @@ and is NOT satisfied — that is a known gap, stated rather than quietly dropped
 
 ## 6. Docs for a reader, not a builder
 
-- [ ] 6.1 `README.md`: the 229-line Daisy firmware build section (lines 78-306,
+- [x] 6.1 `README.md`: the 229-line Daisy firmware build section (lines 78-306,
       measured) leaves the README. Preflight established the gap, so this is a
       MOVE and not a delete: `DAISY_MANUAL.md` (331 lines) already covers the
       DFU procedure and address (`:304-317`, `0x08000000`) and mentions the
@@ -374,17 +374,17 @@ and is NOT satisfied — that is a known gap, stated rather than quietly dropped
       linker scripts, the `APP_TYPE` policy, or the vendored bootloader binary
       filenames (`README.md:32-36,62,148-195,233`). Those four topics are what
       has to land in `DAISY_MANUAL.md` before the README section goes.
-- [ ] 6.2 The "Local Planning And Hygiene" section goes: OpenSpec artifact
+- [x] 6.2 The "Local Planning And Hygiene" section goes: OpenSpec artifact
       locations, agent git conventions and where shared source belongs are
       working process, not operator documentation.
-- [ ] 6.3 What survives leads with the instrument and reaches the parameter
+- [x] 6.3 What survives leads with the instrument and reaches the parameter
       reference without passing through build instructions. Build commands stay
       — someone has to be able to build it — but as a short section, not the
       body.
-- [ ] 6.4 `MANUAL.md` re-read end to end against the same test: it was rewritten
+- [x] 6.4 `MANUAL.md` re-read end to end against the same test: it was rewritten
       once already this session for tone, but not audited for whether a learner
       can follow it. Report what is still addressed to a developer.
-- [ ] 6.5 Every link and path in both files resolves. Preflight swept both:
+- [x] 6.5 Every link and path in both files resolves. Preflight swept both:
       `MANUAL.md` is clean, and `README.md` has two dangling paths, both unbuilt
       artifacts — `External/DaisySP/build/libdaisysp.a` (`:146`) and
       `External/DaisySP/DaisySP-LGPL/build/libdaisysp-lgpl.a` (`:148`). Both sit
@@ -417,7 +417,7 @@ and is NOT satisfied — that is a known gap, stated rather than quietly dropped
       STILL WORTH SOMEONE'S ATTENTION, because it is the published
       configuration and a first visit is the failing case: a real visitor on a
       slow device is the same shape as a loaded CI machine. Not fixed here.
-- [ ] 7.5 Pin bump for the Sheaf work, as its own step, after PR #9's head moves.
+- [x] 7.5 Pin bump for the Sheaf work, as its own step, after PR #9's head moves.
 - [ ] 7.6 Both trees clean and pushed.
 
 ## SUPERSEDED FOR WHAT REMAINS

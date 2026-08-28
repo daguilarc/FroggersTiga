@@ -106,16 +106,48 @@ SHALL treat any input device name it finds as unset and start declined, because
 a name recorded when there was no way to say no is not evidence that anyone
 said yes. Stored output device selections are unaffected.
 
-**A disconnected source SHALL present no control.** While not connected, the
-two external-audio cells SHALL hold their grid positions while drawing no
-encoder, and SHALL carry no press or drag action, so that there is no edit to
-accept and nothing that reads as adjustable.
+**A disconnected source SHALL render as a disabled control, not as nothing.**
+While not connected, the two external-audio cells SHALL hold their grid
+positions and SHALL draw a visibly de-emphasised encoder — carrying no value
+readout and no modulation or gesture indicators, so it reads as present and
+unavailable rather than as adjustable.
+
+The de-emphasis SHALL be an explicit neutral colour rather than a dimming of
+the source's own. A disconnected source publishes no colour, so there is
+nothing to dim: scaling its published value leaves the cell drawn exactly as a
+connected one would be. The disabled cell is drained of hue while a connected
+cell carries its source's, which is what distinguishes them on screen.
+
+A disabled cell draws no value arc, and that is not an omission: the arc is a
+per-voice layer and a disconnected source publishes no voices. It SHALL NOT be
+given a synthesised voice to draw one, which would report a value it does not
+have.
+
+They SHALL carry no press or drag action and no depth parameter while
+disconnected, so there is no edit to accept. Visibility is a rendering choice
+and SHALL NOT make a disconnected source reachable: nothing about the disabled
+rendering may create an action, a parameter, or a randomization candidate.
+
+The rendering SHALL be the surface's own choice rather than a change to the
+shared encoder drawing, so that no other application's disconnected cells
+change appearance.
 
 #### Scenario: Disconnection is the inert state, not a removal
 - **WHEN** no input is routed
 - **THEN** both sources are marked not connected
 - **THEN** their grid cells are still present, carrying no depth parameter
-- **THEN** those cells draw no encoder and carry no press or drag action
+- **THEN** those cells carry no press or drag action
+
+#### Scenario: A disconnected cell is drawn, and drawn as unavailable
+- **WHEN** the modulation view shows a source that is not connected
+- **THEN** that cell emits draw commands rather than none
+- **AND** it is visibly de-emphasised against a connected cell in the same view,
+  drawn in a neutral colour where the connected cell carries its source's
+- **AND** it shows no value readout
+
+#### Scenario: Drawing it does not make it reachable
+- **WHEN** a disconnected cell is pressed or dragged
+- **THEN** no action is dispatched and no depth parameter is created
 
 #### Scenario: A host-opened default device does not count as routed
 - **WHEN** the host has opened a platform-default input device without any operator selection
@@ -185,4 +217,29 @@ set of deliberate choices rather than as everything touched at once.
 #### Scenario: Wide draws stay rare
 - **WHEN** modulation depths are randomized repeatedly
 - **THEN** four or more sources are affected on about one call in sixteen
+
+### Requirement: The encoder grid owns its own colour language
+
+The encoder grid SHALL define its own colours, including the colour that marks
+a cell unavailable, rather than drawing them from the runtime configuration
+pages' palette.
+
+The two are separate visual systems addressed to different readers. A
+configuration page is a form, read as text against a panel. The encoder grid is
+an instrument surface, read as a field of illuminated cells at a glance. A
+colour that reads as correctly de-emphasised in one is not the colour that reads
+that way in the other, and a shared constant would make one of them wrong to
+serve consistency no viewer experiences.
+
+Where the two SHOULD agree, that is a palette decision taken once for both and
+applied deliberately — not an import added at whichever site was being edited
+when the mismatch was noticed.
+
+#### Scenario: A disabled cell is not bound to the page palette
+- **WHEN** the configuration pages' disabled colours change
+- **THEN** the encoder grid's disabled cell colour is unaffected
+
+#### Scenario: Neither palette is the other's source
+- **WHEN** either surface's disabled colour is chosen
+- **THEN** it is chosen for that surface's own reading conditions
 

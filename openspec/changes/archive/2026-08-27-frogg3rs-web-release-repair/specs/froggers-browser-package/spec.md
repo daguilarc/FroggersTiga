@@ -2,8 +2,12 @@
 
 The site's boot path is a hand-rolled equivalent of Sheaf's
 `launchCatalogApplication` with the app picker removed. Removing the picker also
-removed the activation lease, and the lease is what carries the audio context and
-MIDI access. Nothing said the boot path owed those, so nothing caught it.
+removed the activation lease, and the lease is what carries the audio context.
+Nothing said the boot path owed it, so nothing caught it. MIDI access is not
+lease-exclusive: `BrowserUiBackend`'s dispatch wiring requests it directly on
+the same first-in-app-action path audio activation already uses
+(`startUserActivation`, `main.ts:267-276`; `midi.ts:112-115`), independent of
+whether a lease was ever acquired.
 
 ## ADDED Requirements
 
@@ -20,8 +24,8 @@ that has already occurred. A page with no launch gesture that acquires one
 either stalls on a resume the browser will not complete or starts capture no
 operator asked for.
 
-A boot that omits the lease SHALL be treated as a broken build rather than as a
-build without microphone support. Without it the audio bridge rejects every
+A boot that omits the context SHALL be treated as a broken build rather than as
+a build without microphone support. Without it the audio bridge rejects every
 capture request before reaching the browser's permission prompt, so the operator
 is offered no input device, no permission dialog, and no way to change either —
 the failure presents as an empty dropdown rather than as a missing capability.
