@@ -108,11 +108,6 @@ to pass today.
 - **THEN** the runtime's audio options carry a launch-owned `AudioContext`
 - **AND** the input status never reports that the microphone requires one
 
-#### Scenario: An input device can be chosen
-
-- **WHEN** the operator opens the Audio I/O page after granting microphone
-  permission
-- **THEN** the Input device control offers at least one device besides No Input
 
 #### Scenario: Supplying the context does not start audio
 
