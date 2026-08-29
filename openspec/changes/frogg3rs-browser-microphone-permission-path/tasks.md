@@ -102,12 +102,16 @@ checked.
 - [ ] 4c.2 Cap the mapped mix with `kMaxDelayWetMix`, mirroring
       `kMaxReverbWetMix`'s placement and idiom. Cap the MAPPED value, not the
       knob range, so the control keeps its full sweep.
-- [ ] 4c.3 With Send at zero, Wet mix has no effect and the output is the dry
-      signal. `ToReverbMono` takes `dmix` but not `dsnd`, so decide where the
-      gate lives and say why.
-- [ ] 4c.4 Settle the discontinuity: hard threshold, or Wet mix authority
-      scaling with Send. State the choice and what an operator hears sweeping
-      Send from zero upward with Wet mix at maximum.
+- [ ] 4c.3 Wet mix's authority scales with Send: at Send zero the knob is inert
+      and the output is dry, and the knob earns its full travel as Send rises.
+      `ToReverbMono` takes `dmix` but not `dsnd`, so decide where the scaling
+      lives and say why. No hard threshold, no step.
+- [ ] 4c.4 Settle what authority follows. Send scales what is written into the
+      line; feedback accumulates on top, so a low-Send high-Feedback patch can
+      be loud while its Send is small. Choose between scaling off Send and
+      scaling off the wet path's measured level, state the choice, and say what
+      an operator hears sweeping Feedback up with Send low and Wet mix at
+      maximum. Assert that case, whichever way it goes.
 - [ ] 4c.5 §7, FORWARD: `kMaxDelayWetMix` is a new named concept. Enumerate
       every other wet/dry crossfade in the DSP by operand and report which have
       a cap and which do not. Reverb was capped alone and Delay was left for two

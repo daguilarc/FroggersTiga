@@ -148,18 +148,24 @@ RULING, 2026-08-29, both halves:
 
 - CAP: `kMaxDelayWetMix` on the mapped value, mirroring `kMaxReverbWetMix`, so
   no knob position removes the dry signal entirely.
-- INERT WHEN UNFED: with Send at zero, Wet mix has no effect and the output
-  stays dry. The knob stops being able to attenuate a signal it cannot replace.
+- AUTHORITY SCALES WITH SEND: Wet mix's ability to remove dry signal is
+  proportional to how much signal is being sent into the line. At Send zero the
+  knob is inert and the output is dry; as Send rises the knob earns its full
+  travel, up to the cap. No hard threshold and no step: the knob cannot
+  attenuate a signal it has nothing to replace with, and the two ends join
+  smoothly.
 
 Send's default is NOT changed. A fresh instrument still ships with no echo; what
 changes is that reaching for Wet mix no longer costs the operator their sound.
 
-One consequence to settle while building, named here so it is chosen rather than
-inherited: this gate is discontinuous. At Send exactly zero the knob is inert;
-just above the existing `p.dsnd <= 0.0001f` threshold it attenuates dry nearly
-fully while adding a nearly inaudible wet. Both ends behave correctly and the
-step between them is abrupt. Decide whether the gate stays a hard threshold or
-whether Wet mix's authority scales with Send, and say which.
+One interaction to settle while building, named so it is chosen rather than
+inherited: Send scales what is WRITTEN into the line, but feedback accumulates
+on top of it. A patch with low Send and high Feedback can hold a genuinely loud
+wet signal, and authority scaled off Send alone would hold the mix back on
+exactly the patch whose echo is loudest. Scaling off the wet path's measured
+level would track that instead, at the cost of an adaptive stage that can pump.
+Decide which quantity authority follows, and say what an operator hears sweeping
+Feedback up with Send low and Wet mix at maximum.
 
 ## Non-goals
 

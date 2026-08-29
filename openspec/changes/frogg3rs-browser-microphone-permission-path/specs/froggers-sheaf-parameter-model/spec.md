@@ -14,9 +14,11 @@ reported. The Reverb bank's wet mix carries this cap already; the Delay bank's
 wet mix is the same expression and SHALL carry it too.
 
 A wet/dry control SHALL NOT attenuate the dry signal in exchange for a processed
-signal that cannot exist. Where the processed path holds no signal because
-nothing feeds it, the control SHALL have no effect rather than fading the
-instrument toward silence.
+signal that cannot exist. Its authority to remove dry signal SHALL scale with
+how much signal reaches the processed path: where nothing feeds that path the
+control SHALL have no effect, and it SHALL earn its full travel as the path is
+fed. The relationship SHALL be continuous, so that no setting of the feed
+produces a step in what the control does.
 
 #### Scenario: The wettest setting is still audible
 - **WHEN** a wet/dry control is at its maximum and its processed path is fed
@@ -25,6 +27,11 @@ instrument toward silence.
 #### Scenario: An unfed processed path makes the control inert
 - **WHEN** the Delay bank's Send is at zero and Wet mix is swept to maximum
 - **THEN** the output is the dry signal and does not fall silent
+
+#### Scenario: Authority grows with the feed rather than stepping
+- **WHEN** the Delay bank's Send is swept upward with Wet mix at maximum
+- **THEN** the amount of dry signal removed grows with Send
+- **AND** no position of Send produces a step in the output level
 
 #### Scenario: The patch the instrument ships with stays audible
 - **WHEN** the default patch is played with Wet mix at maximum
