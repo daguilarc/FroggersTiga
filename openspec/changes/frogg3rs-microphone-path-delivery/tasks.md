@@ -151,25 +151,32 @@ re-derived.
 
 ## 5. Delivery
 
-- [ ] 5.1 Branch first. frogg3rs is on `main` and the predecessor's work is
+- [x] 5.1 DONE. Branched to `frogg3rs-microphone-path-delivery` before staging anything; `main` was left where it was. Original text: Branch first. frogg3rs is on `main` and the predecessor's work is
       uncommitted there.
-- [ ] 5.2 Commit ONLY this work. The tree also carries
+- [x] 5.2 DONE. 30 entries staged by explicit path, never `-A`. Everything left behind is the guitar change: `DAISY_MANUAL.md`, `src/FroggersSolo/`, `src/FroggersGuitar/`, `src/common/`, `src/core/`, `test/firmware/`, and its own openspec directory. `.gitignore` DID ship here, and the reason is traced rather than arbitrary: its only edit ignores `openspec/changes/archive/`, and archiving the predecessor writes into that directory, so the rule is load-bearing for this change and inert for the guitar one. Original text: Commit ONLY this work. The tree also carries
       `frogg3rs-guitar-and-solo-variants` (`src/`, `test/firmware/`, its own
       openspec directory, `DAISY_MANUAL.md`). Those are not this change's and
       must not be swept in. `.gitignore`'s only edit is the archive-ignore rule,
       which belongs to neither feature; it ships with whichever commit lands
       first, stated rather than assumed.
-- [ ] 5.3 The commit carries the deletion of
+- [x] 5.3 DONE. The three deletions are in the commit. Git recorded the distribution delta as a rename into the predecessor rather than a delete plus an add, which is what the fold actually was. Original text: The commit carries the deletion of
       `openspec/changes/frogg3rs-version-single-source-and-windows-vst` (three
       tracked files), whose delta is folded into the predecessor's.
-- [ ] 5.4 Sheaf pushed to `fork/fix-out-of-tree-app-gaps` first, then the
+- [x] 5.4 DONE, in that order. Sheaf committed and pushed to `fork/fix-out-of-tree-app-gaps` (e1add4ab -> 22c2ffd7), then the pin bumped as its own commit. Verified all three agree: the pin recorded in `HEAD`, Sheaf's own `HEAD`, and `fork/fix-out-of-tree-app-gaps` are all 22c2ffd7. Both trees clean of this change's work. Original text: Sheaf pushed to `fork/fix-out-of-tree-app-gaps` first, then the
       submodule pin bumped as its own commit. Verify both trees clean after.
-- [ ] 5.5 POSTFLIGHT: every SHALL in the predecessor's three deltas has a task
+- [x] 5.5 DONE -- `postflight.md`. Every promoted scenario mapped to a check or marked not yet delivered; the enumeration re-run against the diff; each operator item given a named code path; divergence from the proposal stated. Original text: POSTFLIGHT: every SHALL in the predecessor's three deltas has a task
       AND a check that runs; every operator item has a named code path; the
       forward enumeration re-run against the DIFF.
-- [ ] 5.6 Archive `frogg3rs-browser-microphone-permission-path` once its
-      delivery items close, applying its three deltas to `openspec/specs/`.
-- [ ] 5.7 `openspec validate` both changes.
+- [ ] 5.6 NOT DONE, and deliberately. Archiving applies the three deltas to
+      `openspec/specs/`, which asserts the system does what they say. Four
+      scenarios under `frogg3rs-distribution` are not delivered yet -- the
+      release carrying both platforms, the Audio Unit not being attempted off
+      macOS, documentation shipping on the Windows format, and the release body
+      matching what shipped. None can be observed until the new CI job runs
+      once. Its own operator items are open for the same reason. Archiving now
+      would commit the promotion defect this change was written to stop.
+      Archive after the CI job runs green and the operator items close.
+- [x] 5.7 DONE. Both changes validate `--strict`. Reported not fixed: `frogg3rs-guitar-and-solo-variants` does NOT validate -- `external-ring-mod-mix/spec.md`'s MODIFIED requirement "External gate selects VCO-only vs ring mod" contains no SHALL or MUST. Not this change's to touch. Original text: `openspec validate` both changes.
 - [ ] 5.8 Pages and releases are OPERATOR-GATED and are not triggered by this
       change without an explicit go. Say plainly what is needed to make the
       work testable and stop there.
