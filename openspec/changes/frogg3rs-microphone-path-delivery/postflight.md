@@ -99,3 +99,66 @@ edit. Seven blocking preflight findings changed that: sections 1 and 4a of the
 task list are work the proposal did not anticipate, all of it duplication or
 overclaim already in the tree. The `audio.ts` edit itself needed no change — it
 passed on first run.
+
+## Reactive fix: source importing build output
+
+Found by the Pages build going red after delivery, not by any gate here. Too
+small for its own change; recorded under the same discipline.
+
+**What it was.** `src/static-server.mjs` imported `../dist/src/protocol.js` --
+source reaching into build output. That inversion makes the module's behaviour
+depend on which tree it is loaded from, and it is loaded from two: `src/`, where
+Playwright launches it, and `dist/src/`, the compiled copy frogg3rs's
+`serve-site.mjs` imports for `contentTypeForPath`. From the second, the
+specifier resolves one directory too deep.
+
+**Why nobody saw it.** A stale `dist/dist/src/protocol.js` existed locally --
+debris from tsc having once compiled its own output. It answered exactly the
+wrong lookup. `dist/` is gitignored, correctly, so CI checks out clean and the
+lookup 404s. Local passed with and without the defect; only CI could tell the
+truth.
+
+**Why preflight missed it.** The comment above that import enumerated the
+consumers loading it from `src/` and concluded the file "RUNS from src/".
+Preflight verified that claim instead of asking who else loads it and from
+where. A reference resolves where it is EVALUATED; one of two evaluation sites
+was checked and treated as all of them.
+
+**The fix.** The three version literals moved to `src/protocol-versions.js`;
+`protocol.ts` re-exports them, so every TypeScript consumer is unchanged and
+there is still one literal per version. `static-server.mjs` imports the sibling,
+which is copied into `dist/src/` beside it and resolves identically from either
+tree. The first attempt resolved the root by branching on directory depth --
+rejected: that branch existed only to accommodate the inversion, which is the
+signal that the constraint is suspect rather than the implementer.
+
+**What postflight caught that preflight did not**, both by running gates rather
+than reading:
+
+- Adding a module broke six Sheaf tests. `publish-site.mjs` carries a
+  hand-maintained `browserRuntimeModules` list and `publish-site.test.mjs`
+  asserts the published directory equals it exactly. That family's drift check
+  fired. Module added to the list.
+- Naming it `.mjs` broke all sixty frogg3rs e2e tests as 45-second timeouts.
+  `package-catalog.mjs` copies `dist/src/*.js` into the browser runtime and
+  deliberately drops `.mjs` as Node-only tooling. A browser-fetched module
+  cannot be one. Renamed to `.js`; the extension is load-bearing.
+
+**Checks added, each proven to fail by breaking it once:**
+
+- both copies of the static server load (fails if a path is wrong at either
+  depth)
+- the build has not compiled its own output into a nested dist
+- no browser-fetched module imports a Node-only `.mjs`
+
+**Runs voided along the way, recorded because each looked like a pass:** a
+positive control read off a stale binary; a green local smoke that owed its
+result to `dist/dist`; a four-test "failure" that was a stale published root;
+a `BUILD_EXIT=0` that was `tail`'s exit rather than tsc's; and two gate chains
+run concurrently over the same fixed loopback ports.
+
+**Gates after the fix**, all re-run clean and sequentially: Sheaf browser suite
+exit 0 (103 node tests, 225 playwright passed / 2 skipped); build-browser exit
+0; local smoke exit 0; frogg3rs e2e exit 0, 60 passed in 22.0s against 36
+minutes of timeouts while broken -- the runtime is the control that the app
+boots at all.
