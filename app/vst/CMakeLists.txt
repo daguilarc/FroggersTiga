@@ -65,19 +65,41 @@ set(SHEAF_LIB "${SHEAF_SYNTH_DIR}/build/libsynth.a")
 # execute_process did every configure -- it is Sheaf's own Makefile that
 # decides per invocation whether anything is actually stale, same
 # "every time, let Sheaf decide" contract as app/Makefile's SHEAF_LIB rule.)
-find_program(FROGGERS_NICE_EXE nice)
-if(FROGGERS_NICE_EXE)
-    set(FROGGERS_SHEAF_LIB_BUILD_COMMAND "${FROGGERS_NICE_EXE}" -n 10 make -j2 build)
+#
+# On Windows, none of the above applies and the archive cannot be used at all.
+# Sheaf's Makefile drives `CXX ?= clang++` with GCC-style flags, outside
+# CMake's compiler selection, so `make` there produces objects from a
+# different toolchain than the one linking them -- and MSVC's linker cannot
+# resolve MSVC-mangled references against them. The symbols are genuinely in
+# the archive and simply unusable, which surfaces as LNK2019 on every Sheaf
+# symbol the plugin needs. app/standalone/CMakeLists.txt hit exactly this and
+# compiles those sources into its own target instead; the same is done here,
+# so one compiler handles the whole link.
+#
+# Globbed, not listed: Sheaf's Makefile builds exactly src/*.cpp, so a
+# hand-copied list would be a second definition of that set and would drift
+# the day Sheaf gains a source -- macOS would keep working and Windows would
+# fail at the link again. CONFIGURE_DEPENDS makes a new source reconfigure.
+if(WIN32)
+    file(GLOB FROGGERS_SHEAF_SYNTH_SOURCES CONFIGURE_DEPENDS "${SHEAF_SYNTH_DIR}/src/*.cpp")
+    if(NOT FROGGERS_SHEAF_SYNTH_SOURCES)
+        message(FATAL_ERROR "no Sheaf synth sources found in ${SHEAF_SYNTH_DIR}/src")
+    endif()
 else()
-    set(FROGGERS_SHEAF_LIB_BUILD_COMMAND make -j2 build)
+    find_program(FROGGERS_NICE_EXE nice)
+    if(FROGGERS_NICE_EXE)
+        set(FROGGERS_SHEAF_LIB_BUILD_COMMAND "${FROGGERS_NICE_EXE}" -n 10 make -j2 build)
+    else()
+        set(FROGGERS_SHEAF_LIB_BUILD_COMMAND make -j2 build)
+    endif()
+    add_custom_target(FroggersSheafLibsynth ALL
+        COMMAND ${FROGGERS_SHEAF_LIB_BUILD_COMMAND}
+        WORKING_DIRECTORY "${SHEAF_SYNTH_DIR}"
+        BYPRODUCTS "${SHEAF_LIB}"
+        COMMENT "app/vst: building Sheaf's libsynth.a (nice make -j2 build in ${SHEAF_SYNTH_DIR})"
+        VERBATIM
+    )
 endif()
-add_custom_target(FroggersSheafLibsynth ALL
-    COMMAND ${FROGGERS_SHEAF_LIB_BUILD_COMMAND}
-    WORKING_DIRECTORY "${SHEAF_SYNTH_DIR}"
-    BYPRODUCTS "${SHEAF_LIB}"
-    COMMENT "app/vst: building Sheaf's libsynth.a (nice make -j2 build in ${SHEAF_SYNTH_DIR})"
-    VERBATIM
-)
 
 # Instrument/generator identity must stay IS_SYNTH TRUE. Named
 # FROGGERS_VST_PLUGIN_IS_SYNTH rather than FROGGERS_VST_IS_SYNTH so this
@@ -118,7 +140,9 @@ juce_add_plugin(FroggersVst
 # compiling until libsynth.a has been (re)built -- see
 # FroggersSheafLibsynth's own comment above for why this also keeps total
 # concurrent build parallelism at the -j2 cap.
-add_dependencies(FroggersVst FroggersSheafLibsynth)
+if(NOT WIN32)
+    add_dependencies(FroggersVst FroggersSheafLibsynth)
+endif()
 
 # Operator documentation ships with the plugin (froggers-sheaf-runtime-app
 # spec, "Operator documentation ships with the app"): the manual and quick
@@ -195,6 +219,8 @@ if(APPLE)
 endif()
 
 target_sources(FroggersVst PRIVATE
+    # Empty everywhere but Windows, where these replace the archive above.
+    ${FROGGERS_SHEAF_SYNTH_SOURCES}
     FroggersPluginProcessor.cpp
     # The real portable-surface editor. Needs
     # SHEAF_SYNTH_DIR/juce on the include path (below) for
@@ -225,10 +251,15 @@ target_link_libraries(FroggersVst
         juce::juce_audio_utils
         juce::juce_audio_processors
     PRIVATE
-        "${SHEAF_LIB}"
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags
 )
+
+# Not on Windows: there the sources above are compiled into the target and no
+# archive exists to link.
+if(NOT WIN32)
+    target_link_libraries(FroggersVst PRIVATE "${SHEAF_LIB}")
+endif()
 
 target_compile_definitions(FroggersVst PUBLIC
     JUCE_WEB_BROWSER=0
