@@ -209,17 +209,41 @@ This does NOT contribute to the reported quietness. The code's own comment
 records that the cross-feed "already keeps L and R close to each other in
 practice", so the fold is not losing level to decorrelation.
 
-Deciding it needs a scope this change does not have: either the chain after the
-delay becomes stereo, which is architectural, or the control is renamed to what
-it actually does to a mono sum. Whoever picks it up should establish which other
-stages are stereo-capable before assuming the first is possible.
+RULING, 2026-08-29: the signal SHALL NOT be collapsed to mono in the middle of
+the chain. Folding belongs at the output, and only where the device itself is
+mono — a phone speaker, a single-channel interface.
+
+Traced, so the cost is known rather than discovered:
+
+- Everything upstream of the delay is already scalar: `driveOut`, `filterOut`
+  (`FroggersAppCore.hpp:1637`, `:1777`). The source is mono and stays mono.
+- The delay is the first and only stereo stage, and `ToReverbMono` discards it.
+- `Reverb::Process` is `float Process(float …)` (`Reverb.hpp:417`) — mono by
+  signature. Carrying a pair means a genuine stereo topology or two instances,
+  and two instances double the reverb's per-sample cost.
+- `FroggersAppCore.hpp:1141-1143` writes the same sample to every output
+  channel, so the fold to N channels is a copy today and becomes a real
+  decision.
+
+What is gained is a stereo delay-and-reverb ambience over a mono source, which
+is the ordinary shape for a synth of this kind.
+
+The risk that decides sequencing: on the Daisy this doubling lands in an audio
+ISR that already recomputes six biquads per sample, which is a separate finding
+in `frogg3rs-guitar-and-solo-variants`. Desktop and browser have headroom; the
+firmware is where this could cost dropouts. Whoever executes this measures ISR
+headroom on the firmware BEFORE committing to two reverb instances, and reports
+the number.
+
+This is the largest item in this change and depends on none of the others.
+Sequence it last, or split it out the moment a second change is allowed to be
+open.
 
 ## Non-goals
 
 - Output routing, which works.
 - The VST, which never enumerates devices.
-- Making the signal path stereo, or renaming Stereo width. Recorded above,
-  not scoped here.
+
 - Changing what a granted, labelled device list offers.
 - Removing the empty-label filter. Unlabelled entries genuinely carry no
   identity; the defect is the absence of a way to earn labels, not the filter.
