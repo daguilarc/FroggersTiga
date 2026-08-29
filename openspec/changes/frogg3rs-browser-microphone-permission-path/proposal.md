@@ -85,21 +85,14 @@ not: the JUCE host enumerates through `deviceType->getDeviceNames(true)`
 microphone permission, and the empty-label filter exists only in
 `BrowserAudioDevices.hpp`. The VST owns no devices at all; the DAW does.
 
-But `NSMicrophoneUsageDescription` appears nowhere in this repository, and
-`app/Frogg3rs-Info.plist` — the plist `app/build-launcher.sh:42` bakes into the
-shipped bundle — declares only `CFBundle*` keys, `LSMinimumSystemVersion` and
-`NSHighResolutionCapable`. macOS requires that usage string before a process
-touches a microphone.
+What IS established: `NSMicrophoneUsageDescription` appears nowhere in this
+repository, and `app/Frogg3rs-Info.plist` — the plist `app/build-launcher.sh:42`
+bakes into the shipped bundle — declares only `CFBundle*` keys,
+`LSMinimumSystemVersion` and `NSHighResolutionCapable`.
 
-UNVERIFIED, and it must be verified before it is fixed: the documented
-consequence is that the system terminates the process rather than denying the
-request. Nobody has run it. Selecting an input device in the desktop app is
-therefore expected to kill it, which would mean the desktop host's input
-selection has never worked on macOS since it shipped.
-
-Establish it by running it, on a build from `app/build-launcher.sh`, before
-adding the key. A fix applied to a defect nobody reproduced is a guess that
-happens to compile.
+What happens when the desktop app opens an input device is an OPEN QUESTION,
+not a claim. Nobody has run it. It is answered by running it, and the answer
+decides whether there is anything here to fix at all.
 
 ## Delay's Wet mix fades the instrument to silence
 
@@ -110,7 +103,9 @@ Turning Delay's Wet mix up makes everything quieter, and at maximum the output
 is silent. Traced:
 
 - `Delay.hpp:136` — `float dsnd = 0.0f`. Send defaults to zero, and the Delay
-  bank's layout sets no override, so a fresh instrument has it at zero.
+  bank's layout sets no override (`FroggersParameters.hpp:91`, `defaultValue`
+  defaults to `0.0f`; the Delay entry at `:219-222` names its slots without
+  overriding Send's), so a fresh instrument has it at zero.
 - `inSignal = bumpIn * send` is the ONLY signal written into the delay line.
   With Send at zero the line is fed silence; `Delay.hpp:793` early-outs on
   `p.dsnd <= 0.0001f`, which `:570` describes as the path "most patches take,
@@ -121,7 +116,11 @@ is silent. Traced:
 So Wet mix crossfades the dry signal away against a wet path nothing feeds. At
 mix = 1 the output is exactly zero. It is not a quiet delay; it is a mute knob
 wearing a mix label, and it is what a new listener meets, because randomization
-draws Send uniformly and randomized patches therefore do feed the line.
+draws Send uniformly and randomized patches therefore do feed the line: page
+parameters are randomized through `RandomizeVisibleValue(scene,
+NextRandomValue())` (`ParameterModulation.cpp:2893`, depths at `:2931`), and
+`NextRandomValue` returns `std::generate_canonical<float, 24>` (`:3595-3599`),
+a uniform draw across the knob's whole range.
 
 ### The sibling control was already fixed, and Delay was left behind
 
@@ -226,7 +225,7 @@ Traced, so the cost is known rather than discovered:
 
 So carrying stereo to the output is PLUMBING, NOT COMPUTATION. Both stages
 already compute their pairs and discard them on the next line. No second reverb
-instance is needed and none should be built: the topology is stereo already.
+instance is needed: the topology is stereo already.
 
 ### Both Width controls are mathematically inert
 

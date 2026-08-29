@@ -81,15 +81,14 @@ checked.
 
 ## 4b. The desktop host, same subject
 
-- [ ] 4b.1 REPRODUCE FIRST. Build with `app/build-launcher.sh`, select an input
-      device, and record what happens. The expectation is that macOS terminates
-      the process for the missing usage string, but that is documentation plus
-      an absent key, not an observation.
-- [ ] 4b.2 If it dies: add `NSMicrophoneUsageDescription` to
-      `app/Frogg3rs-Info.plist` with a string that says what the app does with
-      the microphone, and confirm selection then reaches a prompt and audio.
-- [ ] 4b.3 If it does NOT die, say so and stop. The proposal's expectation was
-      wrong and the desktop host needs no change.
+- [ ] 4b.1 ANSWER THE QUESTION FIRST. Build with `app/build-launcher.sh`,
+      select an input device, and record exactly what happens. Nothing in this
+      section may be acted on before that result exists.
+- [ ] 4b.2 Act on the result, whichever it is: if input selection fails or the
+      process dies, establish the cause and fix it, adding
+      `NSMicrophoneUsageDescription` only if the observed cause is its absence.
+      If input selection works, record that and close this section — the absent
+      key is then a fact with no consequence and nothing is owed.
 - [ ] 4b.4 Check the VST bundle's own plist for the same omission before
       concluding it is unaffected — the DAW owns the device, but the plugin
       bundle still declares its own Info.plist.
