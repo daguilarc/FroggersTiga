@@ -50,10 +50,8 @@ Full parameter reference: [`MANUAL.md`](MANUAL.md).
 
 **Current development is the Sheaf-based app under [`app/`](app/README.md)** — see
 [Frogg3rs — Sheaf app](#frogg3rs--sheaf-app-current-development) below. The original **Daisy Field**
-hardware firmware under `src/` is **frozen** — kept in the tree and buildable, not under active
-development — while that work continues. The pre-Sheaf desktop and browser simulators are gone:
-`desktop/`, `desktop-v2/`, `sim/`, `wasm/`, and `web/` were deleted once the Sheaf app superseded
-them, and `vcv/` was never populated with tracked files.
+hardware firmware under `src/` is **frozen**: it stays in the tree and still builds, but takes no
+new work.
 
 - **Sheaf app docs:** [`app/README.md`](app/README.md) — build instructions, Sheaf submodule pin, status
 - **Manual:** [`MANUAL.md`](MANUAL.md) — global controls and all six parameter banks for the current
