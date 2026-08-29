@@ -148,24 +148,29 @@ RULING, 2026-08-29, both halves:
 
 - CAP: `kMaxDelayWetMix` on the mapped value, mirroring `kMaxReverbWetMix`, so
   no knob position removes the dry signal entirely.
-- AUTHORITY SCALES WITH SEND: Wet mix's ability to remove dry signal is
-  proportional to how much signal is being sent into the line. At Send zero the
-  knob is inert and the output is dry; as Send rises the knob earns its full
-  travel, up to the cap. No hard threshold and no step: the knob cannot
-  attenuate a signal it has nothing to replace with, and the two ends join
-  smoothly.
+- AUTHORITY SCALES WITH THE WET LEVEL: Wet mix's ability to remove dry signal
+  is proportional to how much signal the wet path actually holds, measured
+  rather than inferred. This is what makes a low-Send high-Feedback patch behave
+  — the echo is loud, so the knob earns its full travel even though little is
+  being written into the line.
+- WITH ONE DELIBERATE DISCONTINUITY: at Send exactly zero the knob is inert and
+  the output is dry, regardless of what the line still holds.
 
 Send's default is NOT changed. A fresh instrument still ships with no echo; what
 changes is that reaching for Wet mix no longer costs the operator their sound.
 
-One interaction to settle while building, named so it is chosen rather than
-inherited: Send scales what is WRITTEN into the line, but feedback accumulates
-on top of it. A patch with low Send and high Feedback can hold a genuinely loud
-wet signal, and authority scaled off Send alone would hold the mix back on
-exactly the patch whose echo is loudest. Scaling off the wet path's measured
-level would track that instead, at the cost of an adaptive stage that can pump.
-Decide which quantity authority follows, and say what an operator hears sweeping
-Feedback up with Send low and Wet mix at maximum.
+The discontinuity is deliberate and has an audible cost that must be built
+knowingly: a delay line holds a decaying tail after Send drops to zero. Under
+wet-level scaling alone the knob would keep its authority while that tail rings
+out; forcing it inert at Send zero means turning Send down CHOPS the tail rather
+than letting it decay. Whoever builds this decides how abrupt that is — an
+instant cut, or a short release on the authority itself so the tail is let go of
+rather than severed — and says what an operator hears turning Send to zero
+while echoes are still sounding.
+
+Measuring the wet level means an adaptive stage, which can pump. Its time
+constants are a decision: too fast and the knob's authority modulates with every
+echo, too slow and it lags a patch change. State them and say why.
 
 ## Non-goals
 

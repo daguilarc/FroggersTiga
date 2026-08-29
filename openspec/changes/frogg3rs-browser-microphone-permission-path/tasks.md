@@ -102,16 +102,19 @@ checked.
 - [ ] 4c.2 Cap the mapped mix with `kMaxDelayWetMix`, mirroring
       `kMaxReverbWetMix`'s placement and idiom. Cap the MAPPED value, not the
       knob range, so the control keeps its full sweep.
-- [ ] 4c.3 Wet mix's authority scales with Send: at Send zero the knob is inert
-      and the output is dry, and the knob earns its full travel as Send rises.
-      `ToReverbMono` takes `dmix` but not `dsnd`, so decide where the scaling
-      lives and say why. No hard threshold, no step.
-- [ ] 4c.4 Settle what authority follows. Send scales what is written into the
-      line; feedback accumulates on top, so a low-Send high-Feedback patch can
-      be loud while its Send is small. Choose between scaling off Send and
-      scaling off the wet path's measured level, state the choice, and say what
-      an operator hears sweeping Feedback up with Send low and Wet mix at
-      maximum. Assert that case, whichever way it goes.
+- [ ] 4c.3 Wet mix's authority scales with the wet path's MEASURED level, not
+      with Send. A low-Send high-Feedback patch holds a loud echo and the knob
+      must earn its full travel there. `ToReverbMono` receives `dmix` and the
+      wet pair but not the measurement, so decide where the measurement lives
+      and say why.
+- [ ] 4c.4 At Send exactly zero the knob is inert and the output is dry,
+      regardless of what the line still holds. This discontinuity is deliberate.
+      Its cost is that turning Send to zero cuts a ringing tail instead of
+      letting it decay: decide how abrupt that is, implement it, and say what an
+      operator hears turning Send down mid-echo.
+- [ ] 4c.4b State the measurement's time constants and why. Too fast and the
+      knob's authority modulates with every echo; too slow and it lags a patch
+      change. An adaptive stage that pumps is a defect, not a texture.
 - [ ] 4c.5 §7, FORWARD: `kMaxDelayWetMix` is a new named concept. Enumerate
       every other wet/dry crossfade in the DSP by operand and report which have
       a cap and which do not. Reverb was capped alone and Delay was left for two
