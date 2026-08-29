@@ -14,19 +14,47 @@
 // Why the permission is granted explicitly: the manager asks for
 // `requestMIDIAccess({ sysex: true })` (midi.ts:114), so Chromium requires the
 // `midi-sysex` permission, NOT `midi` alone -- granting only `midi` still
-// yields `midi:offline`. Headless grants no real devices either way, so
-// `online` here means the access was granted and the manager started, not that
-// a controller is attached. A physical controller against the published site
-// is the only proof of that, and remains an operator check.
+// yields `midi:offline`.
+//
+// The permission is necessary and not sufficient. Whether `requestMIDIAccess`
+// resolves at all depends on the host having a MIDI backend behind it: macOS
+// has CoreMIDI and resolves, a Linux CI runner has nothing and rejects, and the
+// grant is accepted identically either way. So the run measures that capability
+// in the page and asserts the outcome that is honest for the machine it is on,
+// rather than treating a missing backend as a broken code path.
+//
+// Neither outcome says a controller is attached. `online` means the access was
+// granted and the manager started; a physical controller against the published
+// site is the only proof of the rest, and remains an operator check.
 import { expect, test } from "@playwright/test";
 import { PLAY_SELECTOR, SYNTH_ROOT_SELECTOR, waitForSurfaceReady } from "./helpers.mjs";
 
-async function statusAfterFirstAction(page) {
+async function openSurface(page) {
   await page.goto("/");
   await waitForSurfaceReady(page);
+}
+
+// The first in-app action is what starts audio and MIDI together, so the status
+// is only meaningful after it.
+async function statusAfterFirstAction(page) {
   await page.locator(PLAY_SELECTOR).click();
   return expect
     .poll(async () => page.locator(SYNTH_ROOT_SELECTOR).getAttribute("data-synth-status"), { timeout: 20_000 });
+}
+
+// Does this browser have a MIDI backend behind the permission? Asked with the
+// same call and the same sysex option the manager uses, so a `true` here means
+// the manager's own request can resolve.
+async function webMidiResolves(page) {
+  return page.evaluate(async () => {
+    if (typeof navigator.requestMIDIAccess !== "function") return false;
+    try {
+      await navigator.requestMIDIAccess({ sysex: true });
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }
 
 test.describe("browser MIDI", () => {
@@ -35,11 +63,19 @@ test.describe("browser MIDI", () => {
     // that the path RUNS and reports at all -- a regression that removed the
     // MIDI half, or never reached `startFromUserActivation`, leaves no `midi:`
     // in the string and fails here.
+    await openSurface(page);
     await (await statusAfterFirstAction(page)).toContain("midi:");
   });
 
-  test("reaches midi:online once Web MIDI is permitted", async ({ page, context }) => {
+  test("reports the MIDI state its host can actually reach", async ({ page, context }) => {
     await context.grantPermissions(["midi", "midi-sysex"]);
-    await (await statusAfterFirstAction(page)).toContain("midi:online");
+    await openSurface(page);
+    const resolves = await webMidiResolves(page);
+    const status = await statusAfterFirstAction(page);
+    // Where access resolves, a granted permission must carry through to
+    // `online` -- a regression that drops the grant fails here. Where it does
+    // not resolve, `offline` is the correct report and claiming otherwise would
+    // be the defect.
+    await (resolves ? status.toContain("midi:online") : status.toContain("midi:offline"));
   });
 });

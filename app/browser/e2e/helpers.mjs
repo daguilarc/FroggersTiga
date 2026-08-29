@@ -76,6 +76,16 @@ export const ENCODER_CANVAS_SELECTORS = [0, 4, 8, 12].map(
 // has a current diagnostic to show (RuntimePages.hpp's own `if
 // (!snapshot.statusLineText.empty())` guard around this node).
 export const AUDIO_STATUS_LINE_SELECTOR = '[data-synth-node-id="runtime.audio.status_line"]';
+// RuntimePages.hpp:52 `NodeIds::kAudioInput` -- the Audio page's Input device
+// combo box. Only present once the app has requested at least one input
+// channel (`AudioPageSnapshot.showInputCombo`, BrowserAudioDevices.hpp's
+// `BuildBrowserAudioSnapshot`) and the Audio page has been opened
+// (SIDEBAR_BUTTON_SELECTORS[0]). ui.ts's ComboBox case nests a plain
+// `<select>` inside the node's own element and keeps its `<option>` list
+// synced to the native NodeTree's ComboBox options (ui.ts's `updateNode`), so
+// this reaches the `<select>` the operator actually chooses a device from,
+// not the wrapper element the node id alone would select.
+export const AUDIO_INPUT_SELECT_SELECTOR = '[data-synth-node-id="runtime.audio.input"] select';
 // The boot-error panel's own detail paragraph, painted by either
 // site-boot.mjs's `fail()` or index.html's inline `renderBootError()`
 // (both use the same `.boot-error-detail` class -- see those files' own

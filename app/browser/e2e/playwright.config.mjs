@@ -35,6 +35,17 @@ if (!process.env.CI) {
 const MOBILE_SPECS = [/link-roles\.spec\.mjs$/, /mobile-stacking\.spec\.mjs$/, /visibility\.spec\.mjs$/];
 const DESKTOP_SPECS = [/link-roles\.spec\.mjs$/, /desktop-layout\.spec\.mjs$/, /visibility\.spec\.mjs$/, /blank-frame\.spec\.mjs$/, /audio-activation\.spec\.mjs$/, /midi-activation\.spec\.mjs$/];
 const PAGES_SPECS = [/blank-frame\.spec\.mjs$/, /first-visit-race\.spec\.mjs$/];
+// Measured on this machine's Playwright Chromium (audio-devices.spec.mjs's
+// own header comment carries the numbers): a plain launch's
+// `enumerateDevices()` reports three placeholder entries with both `label`
+// and `deviceId` empty, and granting the `microphone` permission alone does
+// not change that. Only launching Chromium with `--use-fake-device-for-media-
+// stream` (`--use-fake-ui-for-media-stream` alongside it, for the one test
+// that would otherwise hit a permission prompt) yields populated entries. That
+// changes what every spec running under it measures, so it is scoped to this
+// project alone rather than added to `desktop`, which every other desktop spec
+// still runs under unchanged.
+const AUDIO_DEVICE_SPECS = [/audio-devices\.spec\.mjs$/];
 
 export default defineConfig({
   testDir: ".",
@@ -95,6 +106,19 @@ export default defineConfig({
         ...devices["Desktop Chrome"],
         viewport: { width: 1280, height: 800 },
         baseURL: `http://${host}:${pagesPort}`,
+      },
+    },
+    {
+      // Fake capture devices only for this project's own spec -- see
+      // AUDIO_DEVICE_SPECS above for why this cannot live on "desktop".
+      name: "audio-devices",
+      testMatch: AUDIO_DEVICE_SPECS,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1280, height: 800 },
+        launchOptions: {
+          args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"],
+        },
       },
     },
   ],
