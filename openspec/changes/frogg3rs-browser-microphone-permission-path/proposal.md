@@ -186,10 +186,40 @@ forced to zero, so authority decays at the same 100ms release — a fade rather
 than a cut, with no second envelope, no extra branch, and no new constant. The
 discontinuity lives in the target; what an operator hears is a fade.
 
+### Found while tracing: the stereo delay is mono by the time it is heard
+
+Not fixed here, recorded because it was found and because it is the same family
+as the rest.
+
+`StereoDelay` is genuinely stereo inside: two lines, a cross-feed, per-channel
+limiters. But `ToReverbMono` folds L and R together, and everything downstream
+is a single float — `delayOut` and `reverbOut` in `FroggersAppCore.hpp:1826` and
+`:1847` are both scalars. So no stereo image from this stage reaches the output.
+
+The consequence for the Delay bank's "Stereo width" control is that it cannot
+widen anything, and its cross-feed cancels exactly in a sum:
+
+    fbL + fbR = dL(1-cross) + dR·cross + dR(1-cross) + dL·cross = dL + dR
+
+independent of `cross`. Its only remaining influence is indirect, through how
+the feedback loop evolves. A control named for an image the signal path cannot
+carry.
+
+This does NOT contribute to the reported quietness. The code's own comment
+records that the cross-feed "already keeps L and R close to each other in
+practice", so the fold is not losing level to decorrelation.
+
+Deciding it needs a scope this change does not have: either the chain after the
+delay becomes stereo, which is architectural, or the control is renamed to what
+it actually does to a mono sum. Whoever picks it up should establish which other
+stages are stereo-capable before assuming the first is possible.
+
 ## Non-goals
 
 - Output routing, which works.
 - The VST, which never enumerates devices.
+- Making the signal path stereo, or renaming Stereo width. Recorded above,
+  not scoped here.
 - Changing what a granted, labelled device list offers.
 - Removing the empty-label filter. Unlabelled entries genuinely carry no
   identity; the defect is the absence of a way to earn labels, not the filter.
