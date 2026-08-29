@@ -159,18 +159,32 @@ RULING, 2026-08-29, both halves:
 Send's default is NOT changed. A fresh instrument still ships with no echo; what
 changes is that reaching for Wet mix no longer costs the operator their sound.
 
-The discontinuity is deliberate and has an audible cost that must be built
-knowingly: a delay line holds a decaying tail after Send drops to zero. Under
-wet-level scaling alone the knob would keep its authority while that tail rings
-out; forcing it inert at Send zero means turning Send down CHOPS the tail rather
-than letting it decay. Whoever builds this decides how abrupt that is — an
-instant cut, or a short release on the authority itself so the tail is let go of
-rather than severed — and says what an operator hears turning Send to zero
-while echoes are still sounding.
+### The measurement, derived for least added compute
 
-Measuring the wet level means an adaptive stage, which can pump. Its time
-constants are a decision: too fast and the knob's authority modulates with every
-echo, too slow and it lags a patch change. State them and say why.
+The wet limiter's envelope CANNOT serve as the measurement: `Limiter.hpp:146`
+defines it as "current gain multiplier; 1.0f == no reduction", so it reports
+limiting rather than level and sits at exactly 1.0 for any signal under
+threshold. A quiet echo and silence are the same value to it.
+
+Cheapest measurement that works, reusing what is already computed:
+
+- `ToReverbMono` already forms `monoWet = (wet.l + wet.r) * 0.5f`. Follow THAT,
+  so the measurement is one follower rather than one per channel, on a value
+  already in hand: one `fabs`, one compare to select the coefficient, one
+  multiply-add, one float of state. About three operations per sample.
+- RELEASE 100ms: `kSharedReleaseSeconds`, already in the tree, its comment
+  recording it as derived from measured residual decay and "confirmed correct
+  for delay and reverb too". The wet limiter already applies it to this exact
+  signal, so authority tracks at a rate this path is known not to pump at, and
+  no new constant is introduced.
+- ATTACK 10ms, matching `VcoEnvelopeFollowers`. Authority rising quickly is the
+  safe direction. The limiter's 1ms attack exists to catch peaks and would be
+  needlessly twitchy for a control's authority.
+
+The fadeoff costs nothing additional. With Send at zero the follower's TARGET is
+forced to zero, so authority decays at the same 100ms release — a fade rather
+than a cut, with no second envelope, no extra branch, and no new constant. The
+discontinuity lives in the target; what an operator hears is a fade.
 
 ## Non-goals
 

@@ -107,14 +107,18 @@ checked.
       must earn its full travel there. `ToReverbMono` receives `dmix` and the
       wet pair but not the measurement, so decide where the measurement lives
       and say why.
-- [ ] 4c.4 At Send exactly zero the knob is inert and the output is dry,
-      regardless of what the line still holds. This discontinuity is deliberate.
-      Its cost is that turning Send to zero cuts a ringing tail instead of
-      letting it decay: decide how abrupt that is, implement it, and say what an
-      operator hears turning Send down mid-echo.
-- [ ] 4c.4b State the measurement's time constants and why. Too fast and the
-      knob's authority modulates with every echo; too slow and it lags a patch
-      change. An adaptive stage that pumps is a defect, not a texture.
+- [ ] 4c.4 With Send at zero the follower's TARGET is forced to zero, so
+      authority fades at the release constant rather than cutting. No second
+      envelope and no extra branch: the fade is the follower doing its job.
+- [ ] 4c.4b Measurement: follow `monoWet`, which `ToReverbMono` already
+      computes, so one follower serves both channels. Attack 10ms, release
+      `kSharedReleaseSeconds` (100ms, already applied to this signal by the wet
+      limiter). Do NOT reuse the limiter's own envelope: it is a gain
+      multiplier that sits at 1.0 under threshold and cannot distinguish a
+      quiet echo from silence.
+- [ ] 4c.4c Measure the added cost rather than asserting it is small: report
+      the per-sample operation count and the ISR headroom before and after.
+      A wet/dry control's authority is not worth a measurable dropout risk.
 - [ ] 4c.5 §7, FORWARD: `kMaxDelayWetMix` is a new named concept. Enumerate
       every other wet/dry crossfade in the DSP by operand and report which have
       a cap and which do not. Reverb was capped alone and Delay was left for two
