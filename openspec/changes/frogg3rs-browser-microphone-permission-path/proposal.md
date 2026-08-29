@@ -218,25 +218,38 @@ Traced, so the cost is known rather than discovered:
 - Everything upstream of the delay is already scalar: `driveOut`, `filterOut`
   (`FroggersAppCore.hpp:1637`, `:1777`). The source is mono and stays mono.
 - The delay is the first and only stereo stage, and `ToReverbMono` discards it.
-- `Reverb::Process` is `float Process(float …)` (`Reverb.hpp:417`) — mono by
-  signature. Carrying a pair means a genuine stereo topology or two instances,
-  and two instances double the reverb's per-sample cost.
+- `Reverb` is ALREADY stereo inside. It carries `wetL`/`wetR` (`Reverb.hpp:225`),
+  a two-line tank, and a Width control, then folds at `:577`:
+  `const float wet = 0.5f * (wetL + wetR);`
 - `FroggersAppCore.hpp:1141-1143` writes the same sample to every output
-  channel, so the fold to N channels is a copy today and becomes a real
-  decision.
+  channel, so the fold to N channels is a copy today.
+
+So carrying stereo to the output is PLUMBING, NOT COMPUTATION. Both stages
+already compute their pairs and discard them on the next line. No second reverb
+instance is needed and none should be built: the topology is stereo already.
+
+### Both Width controls are mathematically inert
+
+The Reverb's Width cancels exactly, for the same reason the Delay's does. With
+`mid = 0.5(aOut + bOut)`:
+
+    wetL + wetR = 2·mid + width·((aOut − mid) + (bOut − mid))
+                = 2·mid + width·(aOut + bOut − 2·mid)
+                = 2·mid
+
+so `wet == mid` at every knob position. Reverb Width does nothing at all today,
+and Delay's Stereo width survives only through the feedback loop's evolution.
+Both become real controls the moment the fold moves to the device — which is the
+strongest argument for this work: it does not add a feature, it connects two that
+are already built and paid for.
 
 What is gained is a stereo delay-and-reverb ambience over a mono source, which
 is the ordinary shape for a synth of this kind.
 
-The Daisy firmware is NOT affected and must not be dragged in. It is a separate
-codebase: `src/FroggersSolo/Makefile` builds `FroggersSolo.cpp` against
-`src/core/`, which carries its own reverb (`FroggersEngine.hpp:501`), and
-nothing under `src/` includes `app/`. This work touches the desktop, VST and
-browser hosts only.
-
-The cost is therefore ordinary desktop and browser CPU, where a second reverb
-instance is affordable, and the decision is about topology rather than headroom:
-two instances, or one stereo reverb.
+The Daisy firmware is NOT affected. It is a separate codebase:
+`src/FroggersSolo/Makefile` builds `FroggersSolo.cpp` against `src/core/`, which
+carries its own reverb (`FroggersEngine.hpp:501`), and nothing under `src/`
+includes `app/`. This work touches the desktop, VST and browser hosts only.
 
 This is the largest item in this change and depends on none of the others.
 Sequence it last, or split it out the moment a second change is allowed to be
