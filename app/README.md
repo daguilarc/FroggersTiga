@@ -1,21 +1,9 @@
 # Froggers-on-Sheaf app
 
-## Sheaf pin
+## Sheaf
 
-`External/Sheaf` is a git submodule, pinned to a commit that carries Sheaf's
-out-of-tree app-registration hook for the `sheaf-patch` launcher, which lets
-an external app register itself with the launcher without editing anything
-inside the submodule.
-
-**No file inside `External/Sheaf` is edited by this project.** The gitlink is
-the only change to the submodule's presence in this repo — everything the
-hook needs is already upstream at the pinned commit.
-
-The pin must always name a commit that exists upstream. Pointing the gitlink
-at a branch that lives only on one machine makes it unresolvable from every
-other checkout and blocks the browser publish. A plain-click dispatch path for
-Draw nodes is held on a local `froggers-fork` branch for that reason, waiting
-to go upstream rather than being pinned here.
+The app is built on [Sheaf](https://github.com/jvictor0/Sheaf), a git submodule
+at `External/Sheaf`. Development tracks a fork of it rather than upstream.
 
 **Consequence you will notice:** encoder press and Play/Stop are **double-click**,
 because `Node::doubleClickAction` is the only action hook stock Sheaf dispatches
@@ -29,12 +17,12 @@ matching assertion in `FroggersSurfaceTests.cpp` back to `node.action`.
 ./app/build-launcher.sh
 ```
 
-Do not paste a hand-written `make` command. `EXTRA_APP_HEADERS` must list every
-header the app compiles — the sheaf-patch Makefile treats them as literal
-prerequisites (`Makefile:47-48`) and generates no `-MMD` dependency files, so an
-unlisted header is silently untracked and edits to it produce a build that
-succeeds while ignoring the change. A hand-written list once tracked 4 of 18
-headers, missing all of `app/dsp/`. The script globs so it cannot rot.
+Use the script rather than a hand-written `make` command. `EXTRA_APP_HEADERS`
+must list every header the app compiles: the sheaf-patch Makefile treats them as
+literal prerequisites (`Makefile:47-48`) and generates no `-MMD` dependency
+files, so a header left off the list is silently untracked and edits to it
+produce a build that succeeds while ignoring the change. The script globs, so
+the list cannot go stale.
 
 ## Status
 
