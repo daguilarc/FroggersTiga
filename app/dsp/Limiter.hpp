@@ -32,6 +32,8 @@
 // unchanged and bit-identical to before this extraction -- the existing
 // master-limiter tests (FroggersAudioRoutingTests.cpp) are the proof.
 
+#include "DspMath.hpp"
+
 #include <algorithm>
 #include <cmath>
 
@@ -227,13 +229,18 @@ struct OutputLimiter
     // value 1.0f with zero rounding error. So `envelope` never moves off
     // exactly 1.0f while the signal stays under threshold, and `x * 1.0f ==
     // x` bit for bit.
-    float Process(float x)
+    float Process(float x) { return x * NextGain(std::fabs(x)); }
+
+    // One envelope for both channels, driven by whichever is louder. Linking
+    // is the point: two independent envelopes would duck the channels by
+    // different amounts and swing the stereo image on every peak, which is a
+    // worse artefact than the gain reduction itself. With l == r this reduces
+    // EXACTLY to the mono call above -- same magnitude, same envelope, same
+    // multiply -- so a mono source through a stereo bus stays bit-identical.
+    StereoSample Process(StereoSample x)
     {
-        const float absX = std::fabs(x);
-        const float targetGain = absX > 0.0f ? DesiredMagnitude(absX) / absX : 1.0f;
-        const float coeff = targetGain < envelope ? attackCoeff : releaseCoeff;
-        envelope = coeff * envelope + (1.0f - coeff) * targetGain;
-        return x * envelope;
+        const float gain = NextGain(std::max(std::fabs(x.l), std::fabs(x.r)));
+        return {x.l * gain, x.r * gain};
     }
 
     // Per-unit recovery: unity gain is this unit's quiescent
@@ -245,6 +252,19 @@ struct OutputLimiter
     // `RecoverIfNonFinite<Unit>`'s template contract and defend against an
     // unforeseen path in.
     void Reset() { envelope = 1.0f; }
+
+private:
+    // The envelope update itself, in one place, so the mono and stereo entry
+    // points cannot drift into computing gain two slightly different ways.
+    float NextGain(float magnitude)
+    {
+        const float targetGain = magnitude > 0.0f ? DesiredMagnitude(magnitude) / magnitude : 1.0f;
+        const float coeff = targetGain < envelope ? attackCoeff : releaseCoeff;
+        envelope = coeff * envelope + (1.0f - coeff) * targetGain;
+        return envelope;
+    }
+
+public:
     bool StateFinite() const { return std::isfinite(envelope); }
 };
 

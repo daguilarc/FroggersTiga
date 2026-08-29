@@ -41,3 +41,22 @@ A denied request SHALL be reported to the operator.
 #### Scenario: The page still asks for nothing on its own
 - **WHEN** the page is opened and the operator does nothing
 - **THEN** no permission request has been raised
+
+### Requirement: A failure the bridge swallows is still reported
+
+The browser audio bridge SHALL report the reason a device enumeration or capture
+attempt failed, even where it degrades rather than propagating the failure.
+
+Degrading is correct: a browser that refuses to enumerate should leave the
+operator with a working instrument. But a swallowed failure reads exactly like a
+browser with no devices, and the two call for different responses. The
+degradation SHALL be kept and the reason SHALL be made observable alongside it.
+
+#### Scenario: An enumeration failure is distinguishable from an empty machine
+- **WHEN** device enumeration throws
+- **THEN** the instrument keeps running
+- **AND** the reason is reported rather than only the empty list
+
+#### Scenario: A machine with no input devices reports that, not a failure
+- **WHEN** enumeration succeeds and reports no input devices
+- **THEN** no failure is reported

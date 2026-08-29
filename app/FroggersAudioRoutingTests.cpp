@@ -2216,6 +2216,186 @@ TEST_CASE(free_running_modulation_source_holds_while_stopped_with_positive_contr
 // read -- through the ordinary ProcessBlock path, with the transport never
 // started at all (this rig's default state, per this file's own header
 // comment: "The rig's transport starts Stopped by default").
+// The Delay bank's Wet mix crossfades the dry signal against a wet path that
+// Send feeds, and Send defaults to zero (dsp/Delay.hpp's DelayParams). So at
+// Wet mix maximum the crossfade lands on a path carrying nothing and the
+// instrument disappears -- a mute knob wearing a mix label, and the first
+// thing a new listener meets, because the default patch is what ships.
+//
+// Measured at the output rather than at the mix value: the claim being made
+// is that the instrument is still audible, and a mix value cannot say that.
+// The ceiling half of the same requirement the Reverb bank already carries.
+// Read off what the DSP was handed, not off the constant it came from.
+// Both Width controls were mathematically inert before the fold moved to the
+// output, and provably so rather than approximately: the reverb summed
+// wetL+wetR, and with mid == 0.5(aOut+bOut) that sum is 2*mid at EVERY width,
+// so the knob could not change a single sample. The delay's cross-feed
+// cancels in a sum for the same reason. Carrying the pair is what turns both
+// into controls, so this is the test that says they now do something.
+//
+// Measured as a channel DIFFERENCE, not as a change in peak: a control that
+// only moved the level would pass a peak test while still producing no image.
+float ChannelDifference(const std::vector<Rig::OutputFrame>& frames) {
+    const std::vector<float> left = ExtractChannel(frames, 0);
+    const std::vector<float> right = ExtractChannel(frames, 1);
+    float worst = 0.0f;
+    const std::size_t n = std::min(left.size(), right.size());
+    for (std::size_t ix = 0; ix < n; ++ix) {
+        worst = std::max(worst, std::fabs(left[ix] - right[ix]));
+    }
+    return worst;
+}
+
+TEST_CASE(reverb_width_produces_a_stereo_image) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("reverb_width_image"));
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+    using synth_froggers::FroggersBankId;
+
+    // Fully wet, so the tank's own pair is what reaches the output, and Width
+    // pushed away from centre.
+    model.PageParameter(FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;  // Wet/dry.
+    model.PageParameter(FroggersBankId::Reverb, 5).SceneCenter(0) = 1.0f;  // Stereo width.
+    ApplyPatchNow(rig);
+    // StartAt(0), matching the default-patch audibility test above: the ASR
+    // gate follows the transport's quarter-note pulse, and starting further
+    // in leaves the window this samples silent -- in which case a zero
+    // channel difference would mean nothing at all.
+    rig.StartAt(0);
+    rig.RunBlocks(16);
+    rig.ClearOutput();
+    rig.RunBlocks(8);
+    REQUIRE_TRUE(!rig.SawNaN());
+    RequireFiniteStereo(rig.Output());
+    // The instrument must actually be sounding, or "the channels do not
+    // differ" is a statement about silence.
+    REQUIRE_TRUE(PeakAbs(rig.Output()) > 1.0e-4f);
+    const float wide = ChannelDifference(rig.Output());
+
+    // POSITIVE CONTROL: the same patch with Width at centre must NOT produce
+    // a difference. Without this, "the channels differ" could be true of a
+    // build that simply decorrelated them for some unrelated reason.
+    model.PageParameter(FroggersBankId::Reverb, 5).SceneCenter(0) = 0.0f;
+    ApplyPatchNow(rig);
+    rig.RunBlocks(16);
+    rig.ClearOutput();
+    rig.RunBlocks(8);
+    const float centred = ChannelDifference(rig.Output());
+
+    std::cout << "  [reverb width] width 1.0 -> channel diff " << wide
+              << ", width 0.0 -> " << centred << "\n";
+    constexpr float kAudibleDifference = 1.0e-4f;
+    REQUIRE_TRUE(wide > kAudibleDifference);
+    REQUIRE_TRUE(wide > centred);
+}
+
+TEST_CASE(delay_stereo_width_produces_a_stereo_image) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("delay_width_image"));
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+    using synth_froggers::FroggersBankId;
+
+    // Send must be up: the delay line is what carries the image, and it is
+    // fed only through Send, which defaults to zero.
+    model.PageParameter(FroggersBankId::Delay, 1).SceneCenter(0) = 0.8f;   // Send.
+    model.PageParameter(FroggersBankId::Delay, 2).SceneCenter(0) = 0.7f;   // Feedback.
+    model.PageParameter(FroggersBankId::Delay, 6).SceneCenter(0) = 1.0f;   // Wet mix.
+    model.PageParameter(FroggersBankId::Delay, 3).SceneCenter(0) = 1.0f;   // Stereo width.
+    ApplyPatchNow(rig);
+    // StartAt(0), matching the default-patch audibility test above: the ASR
+    // gate follows the transport's quarter-note pulse, and starting further
+    // in leaves the window this samples silent -- in which case a zero
+    // channel difference would mean nothing at all.
+    rig.StartAt(0);
+    rig.RunBlocks(16);
+    rig.ClearOutput();
+    rig.RunBlocks(8);
+    REQUIRE_TRUE(!rig.SawNaN());
+    RequireFiniteStereo(rig.Output());
+    // The instrument must actually be sounding, or "the channels do not
+    // differ" is a statement about silence.
+    REQUIRE_TRUE(PeakAbs(rig.Output()) > 1.0e-4f);
+    const float wide = ChannelDifference(rig.Output());
+
+    std::cout << "  [delay width] Send 0.8, width 1.0 -> channel diff " << wide << "\n";
+    constexpr float kAudibleDifference = 1.0e-4f;
+    REQUIRE_TRUE(wide > kAudibleDifference);
+}
+
+TEST_CASE(delay_wet_mix_ceiling_leaves_dry_signal_and_keeps_its_full_travel) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("delay_wet_ceiling"));
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+    using synth_froggers::FroggersBankId;
+
+    model.PageParameter(FroggersBankId::Delay, 6).SceneCenter(0) = 1.0f;  // Wet mix commanded MAX.
+    ApplyPatchNow(rig);
+    rig.StartAt(120.0);
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(!rig.SawNaN());
+
+    const float mixAtMax = rig.Application().TestLastDelayWetMixEffective();
+    const float dryShare = 1.0f - mixAtMax;
+    std::cout << "  [delay wet ceiling] knob 1.0 -> mix " << mixAtMax << ", dry share " << dryShare
+              << "\n";
+    // Same float-representation epsilon as the Reverb ceiling: 0.6 has no
+    // exact binary form, so `1 - mix` lands just under 0.40.
+    REQUIRE_TRUE(dryShare >= 0.40f - 1e-6f);
+
+    // The ceiling is on the mapped value, not the knob range, so half the
+    // knob is half the ceiling.
+    model.PageParameter(FroggersBankId::Delay, 6).SceneCenter(0) = 0.5f;
+    ApplyPatchNow(rig);
+    rig.RunBlocks(4);
+    const float mixAtHalf = rig.Application().TestLastDelayWetMixEffective();
+    REQUIRE_TRUE(std::fabs(mixAtHalf - mixAtMax * 0.5f) < 1e-5f);
+
+    // POSITIVE CONTROL: the knob really did move, so a high dry share is a
+    // ceiling doing its job rather than a control that never left zero.
+    REQUIRE_TRUE(mixAtMax > 0.0f);
+    model.PageParameter(FroggersBankId::Delay, 6).SceneCenter(0) = 0.0f;
+    ApplyPatchNow(rig);
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(rig.Application().TestLastDelayWetMixEffective() == 0.0f);
+}
+
+TEST_CASE(delay_wet_mix_at_maximum_leaves_the_default_patch_audible) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("delay_wet_audible"));
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+    using synth_froggers::FroggersBankId;
+
+    // Send is left at its default. That is the whole point: this is the patch
+    // the instrument ships with, not one contrived to have an empty delay line.
+    const synth::Parameter& send = model.PageParameter(FroggersBankId::Delay, 1);
+    const float sendDefault = send.SceneCenter(0);
+
+    model.PageParameter(FroggersBankId::Delay, 6).SceneCenter(0) = 1.0f;  // Wet mix commanded MAX.
+    ApplyPatchNow(rig);
+    rig.StartAt(0);
+    rig.RunBlocks(8);
+    rig.ClearOutput();
+    rig.RunBlocks(4);
+
+    REQUIRE_TRUE(!rig.SawNaN());
+    const auto& output = rig.Output();
+    RequireFiniteStereo(output);
+    constexpr float kEpsilon = 1.0e-4f;
+    const float peakAtMaxWet = PeakAbs(output);
+    std::cout << "  [delay wet mix] Send default " << sendDefault << ", Wet mix 1.0 -> peak "
+              << peakAtMaxWet << "\n";
+
+    // POSITIVE CONTROL: the same rig with Wet mix at zero must be audible, so
+    // a silent result above is the Wet mix removing the instrument rather
+    // than a rig that was never making sound in the first place.
+    model.PageParameter(FroggersBankId::Delay, 6).SceneCenter(0) = 0.0f;
+    ApplyPatchNow(rig);
+    rig.RunBlocks(8);
+    rig.ClearOutput();
+    rig.RunBlocks(4);
+    const float peakAtDry = PeakAbs(rig.Output());
+    std::cout << "  [delay wet mix] Wet mix 0.0 -> peak " << peakAtDry << "\n";
+    REQUIRE_TRUE(peakAtDry > kEpsilon);
+
+    REQUIRE_TRUE(peakAtMaxWet > kEpsilon);
+}
+
 TEST_CASE(reverb_wet_mix_always_leaves_at_least_forty_percent_dry) {
     // The property the wet ceiling exists to guarantee, read off what the DSP
     // was actually handed rather than off the constant it was computed from.
@@ -2224,7 +2404,7 @@ TEST_CASE(reverb_wet_mix_always_leaves_at_least_forty_percent_dry) {
     // reach 1.0 would remove the dry signal entirely, which reads as a drop
     // in level rather than as more reverb.
     //
-    // A test that asserted `kMaxReverbWetMix == 0.6f` would restate the edit
+    // A test that asserted `kMaxWetMix == 0.6f` would restate the edit
     // and would keep passing if the ceiling were later applied to the wrong
     // thing, or stopped being applied at all.
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("reverb_wet_ceiling"));

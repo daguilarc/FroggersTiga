@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- Bundle metadata for the direct-launch Frogg3rs app.
-     juce_build.mk:154 copies this file verbatim into
+     juce_build.mk:205 copies this file verbatim into
      Frogg3rs.app/Contents/Info.plist -- there is no templating, so
      CFBundleExecutable must match APP_NAME in app/build-launcher.sh exactly.
      If they disagree, LaunchServices looks for a binary that is not there and
@@ -15,7 +15,7 @@
      logo as the v1 build: v1's JUCE CMake build got its
      icon for free (desktop/CMakeLists.txt's ICON_BIG/ICON_SMALL generate both
      the .icns and this key automatically), but this Sheaf-bundle path has no
-     such step -- juce_build.mk:152-154 only copies the binary and this plist,
+     such step -- juce_build.mk:198-207 only copies the binary and this plist,
      verbatim, with no resource stage at all. So the same "copied verbatim,
      no templating" fact above applies here too: setting this key is not
      enough by itself. The icon file it names must actually exist at
@@ -48,6 +48,15 @@
   <string>1</string>
   <key>LSMinimumSystemVersion</key>
   <string>11.0</string>
+  <!-- macOS shows no microphone prompt without this key, and the app opens an
+       input device (FroggersAppCore.hpp's numAudioInputs is 1) for external
+       ring-mod. The Windows build declares the same thing through JUCE's
+       MICROPHONE_PERMISSION_TEXT (app/standalone/CMakeLists.txt), which
+       generates the key into a plist this bundle never uses: juce_build.mk
+       copies THIS file verbatim, so a declaration made there does not reach
+       the macOS artifact. Same sentence in both places, one app. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Frogg3rs needs audio input access for external ring-mod (mic, line-in, or interface).</string>
   <key>NSHighResolutionCapable</key>
   <true/>
 </dict>

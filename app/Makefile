@@ -155,6 +155,13 @@ $(APP): $(APP_SOURCES) $(SHEAF_LIB) | $(BUILD_DIR)
 check-no-frozen-deps:
 	@bash $(APP_DIR)/check_no_frozen_includes.sh "$(APP_DIR)"
 
+# --- microphone usage string drift guard -------------------------------------
+# The sentence is declared once per platform because the two build systems
+# share no substrate; this fails when they stop agreeing. See the script's own
+# header for why the duplication cannot be collapsed.
+check-microphone-usage:
+	@bash $(APP_DIR)/check_microphone_usage_strings.sh "$(APP_DIR)"
+
 # --- no-JUCE-in-app-core target ---------------------------------------------
 $(NO_JUCE_CHECK): $(NO_JUCE_CHECK_SRC) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) -I$(JUCE_DIR)/modules $(CXXFLAGS) $(NO_JUCE_CHECK_SRC) -o $@
@@ -214,7 +221,7 @@ $(DSP_TEST_BIN): $(DSP_TEST_SOURCES) $(DSP_HEADERS) | $(BUILD_DIR)
 $(SURFACE_BIN): $(SURFACE_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(APP_DIR)/FroggersParameters.hpp $(APP_DIR)/FroggersModulation.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)
 	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(SURFACE_SOURCES) $(SHEAF_LIB) -o $@
 
-test: check-no-juce check-no-frozen-deps $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN)
+test: check-no-juce check-no-frozen-deps check-microphone-usage $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN)
 	$(TEST_BIN)
 	$(MONO_VALIDATION_BIN)
 	$(DSP_TEST_BIN)

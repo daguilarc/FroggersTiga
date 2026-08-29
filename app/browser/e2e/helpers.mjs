@@ -86,6 +86,13 @@ export const AUDIO_STATUS_LINE_SELECTOR = '[data-synth-node-id="runtime.audio.st
 // this reaches the `<select>` the operator actually chooses a device from,
 // not the wrapper element the node id alone would select.
 export const AUDIO_INPUT_SELECT_SELECTOR = '[data-synth-node-id="runtime.audio.input"] select';
+// The `Allow Microphone` button (RuntimePages.hpp's kAudioInputPermission).
+// Rendered only when the page enumerates input devices it cannot name, which
+// is what a page holding no capture permission sees.
+// A Button node's own element IS the <button> (ui.ts renders NodeKind.Button
+// as one and stamps the id on it), so this addresses the control directly.
+export const AUDIO_INPUT_PERMISSION_SELECTOR =
+  '[data-synth-node-id="runtime.audio.input.permission"]';
 // The boot-error panel's own detail paragraph, painted by either
 // site-boot.mjs's `fail()` or index.html's inline `renderBootError()`
 // (both use the same `.boot-error-detail` class -- see those files' own

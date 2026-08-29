@@ -23,6 +23,16 @@
 
 namespace synth_froggers::dsp {
 
+// One sample of a two-channel signal. The delay and the reverb both compute a
+// pair internally and used to sum it on the next line; carrying this instead
+// is what lets a stereo image reach the device, and it is the same shape both
+// stages already had, not a new one.
+struct StereoSample
+{
+    float l = 0.0f;
+    float r = 0.0f;
+};
+
 // -- src/core/SDDSine.hpp, verbatim formula -------------------------------
 inline float Sine01(float phase)
 {

@@ -80,6 +80,26 @@ namespace dsp = synth_froggers::dsp;
 // 3.1 -- VCO (FroggersEngine.hpp:439-441,706-712,735-744; VcoWaveEval.hpp:7-23)
 // =========================================================================
 
+
+// dsp::Reverb carries a stereo pair now; the figures in this file were all
+// measured against its MONO SUM, which is what a mono device receives and
+// what a listener heard before the fold moved to the output. Folding here
+// keeps every assertion below about exactly the quantity it was written for,
+// rather than silently re-pointing it at one channel of a pair.
+//
+// Note this is NOT identical to the old code path in one respect, and
+// deliberately so: the wet limiter inside the stage is now driven by the
+// louder channel rather than by the sum, so it engages a little sooner on a
+// wide signal. That is the stereo bus bounding what each channel actually
+// sends, and where a figure below moves because of it, the test says so.
+template <typename... Args>
+float ReverbMono(synth_froggers::dsp::Reverb& rv, float input, Args... args)
+{
+    const synth_froggers::dsp::StereoSample out =
+        rv.Process(synth_froggers::dsp::StereoSample{input, input}, args...);
+    return 0.5f * (out.l + out.r);
+}
+
 TEST_CASE(vco_pitch_exp_map_matches_20hz_20khz_range) {
     const float sr = 48000.0f;
     // knob=0 -> 20 Hz, knob=1 -> 20000 Hz, expressed as phase increment.
@@ -2189,8 +2209,8 @@ TEST_CASE(reverb_wet_dry_mix_is_affine_in_mix_knob_at_fixed_history) {
     const float mixA = 0.25f;
     const float mixB = 0.75f;
 
-    const float outA = rvA.Process(input, mixA, 0.4f, 0.5f, 0.1f, 0.6f, 0.5f, 0.3f, sr);
-    const float outB = rvB.Process(input, mixB, 0.4f, 0.5f, 0.1f, 0.6f, 0.5f, 0.3f, sr);
+    const float outA = ReverbMono(rvA, input, mixA, 0.4f, 0.5f, 0.1f, 0.6f, 0.5f, 0.3f, sr);
+    const float outB = ReverbMono(rvB, input, mixB, 0.4f, 0.5f, 0.1f, 0.6f, 0.5f, 0.3f, sr);
 
     const float impliedWetMinusInputA = (outA - input) / mixA;
     const float impliedWetMinusInputB = (outB - input) / mixB;
@@ -2199,7 +2219,7 @@ TEST_CASE(reverb_wet_dry_mix_is_affine_in_mix_knob_at_fixed_history) {
     // mix == 0 must reproduce the dry input exactly, for any history.
     dsp::Reverb rvDry;
     for (int i = 0; i < 200; ++i) {
-        const float out = rvDry.Process(0.1f * static_cast<float>(i % 7), 0.0f,
+        const float out = ReverbMono(rvDry, 0.1f * static_cast<float>(i % 7), 0.0f,
                                           0.6f, 0.4f, 0.2f, 0.5f, 0.8f, 0.6f, sr);
         REQUIRE_NEAR(out, 0.1f * static_cast<float>(i % 7), 1e-6);
     }
@@ -2274,7 +2294,7 @@ TEST_CASE(reverb_process_matches_manual_tank_replica_at_neutral_mod_and_hold) {
         const float wet = 0.5f * (wetL + wetR);
         const float expected = (1.0f - mixKnob) * input + mixKnob * wet;
 
-        const float actual = rv.Process(input, mixKnob, sizeKnob, decayKnob, preKnob,
+        const float actual = ReverbMono(rv, input, mixKnob, sizeKnob, decayKnob, preKnob,
                                           dampKnob, widthKnob, diffusionKnob, sr,
                                           /*modDepthKnob01=*/0.0f, /*holdKnob01=*/0.0f);
         REQUIRE_NEAR(actual, expected, 1e-4);
@@ -2289,9 +2309,9 @@ TEST_CASE(reverb_authored_hold_lengthens_decay_but_stays_bounded_and_finite) {
     float maxAbsHold = 0.0f;
     for (int i = 0; i < 4000; ++i) {
         const float input = (i == 0) ? 1.0f : 0.0f;  // impulse
-        const float outHold = rvHold.Process(input, 1.0f, 0.6f, 0.5f, 0.1f, 0.5f, 0.5f, 0.4f, sr,
+        const float outHold = ReverbMono(rvHold, input, 1.0f, 0.6f, 0.5f, 0.1f, 0.5f, 0.5f, 0.4f, sr,
                                               /*modDepthKnob01=*/0.0f, /*holdKnob01=*/1.0f);
-        const float outNoHold = rvNoHold.Process(input, 1.0f, 0.6f, 0.5f, 0.1f, 0.5f, 0.5f, 0.4f, sr,
+        const float outNoHold = ReverbMono(rvNoHold, input, 1.0f, 0.6f, 0.5f, 0.1f, 0.5f, 0.5f, 0.4f, sr,
                                                   0.0f, 0.0f);
         REQUIRE_TRUE(std::isfinite(outHold));
         REQUIRE_TRUE(std::isfinite(outNoHold));
@@ -2312,9 +2332,9 @@ TEST_CASE(reverb_authored_mod_depth_alters_output_and_stays_finite) {
     // (well under a quarter of the LFO's own period) to guarantee that.
     for (int i = 0; i < 6000; ++i) {
         const float input = std::sin(0.05f * static_cast<float>(i));
-        const float outMod = rvMod.Process(input, 1.0f, 0.5f, 0.5f, 0.1f, 0.5f, 0.5f, 0.5f, sr,
+        const float outMod = ReverbMono(rvMod, input, 1.0f, 0.5f, 0.5f, 0.1f, 0.5f, 0.5f, 0.5f, sr,
                                             /*modDepthKnob01=*/1.0f, 0.0f);
-        const float outNoMod = rvNoMod.Process(input, 1.0f, 0.5f, 0.5f, 0.1f, 0.5f, 0.5f, 0.5f, sr,
+        const float outNoMod = ReverbMono(rvNoMod, input, 1.0f, 0.5f, 0.5f, 0.1f, 0.5f, 0.5f, 0.5f, sr,
                                                 0.0f, 0.0f);
         REQUIRE_TRUE(std::isfinite(outMod));
         if (std::fabs(outMod - outNoMod) > 1e-4f) {
@@ -2362,7 +2382,7 @@ TEST_CASE(reverb_wet_output_stays_at_or_below_limiter_ceiling_with_hold_at_max) 
     constexpr int kSamples = 20000;
     float maxAbs = 0.0f;
     for (int i = 0; i < kSamples; ++i) {
-        const float out = rv.Process(1.0f, /*mix=*/1.0f, /*size=*/0.0f, /*decay=*/1.0f, /*pre=*/0.1f,
+        const float out = ReverbMono(rv, 1.0f, /*mix=*/1.0f, /*size=*/0.0f, /*decay=*/1.0f, /*pre=*/0.1f,
                                       /*damp=*/0.5f, /*width=*/0.5f, /*diffusion=*/0.4f, sr,
                                       /*modDepth=*/0.0f, /*hold=*/1.0f);
         REQUIRE_TRUE(std::isfinite(out));
@@ -2400,7 +2420,7 @@ TEST_CASE(reverb_tilt_never_raises_the_post_limiter_peak_above_the_stage_ceiling
         dsp::Reverb rv;
         float maxAbs = 0.0f;
         for (int i = 0; i < kSamples; ++i) {
-            const float out = rv.Process(1.0f, /*mix=*/1.0f, /*size=*/0.0f, /*decay=*/1.0f, /*pre=*/0.1f,
+            const float out = ReverbMono(rv, 1.0f, /*mix=*/1.0f, /*size=*/0.0f, /*decay=*/1.0f, /*pre=*/0.1f,
                                           /*damp=*/0.5f, /*width=*/0.5f, /*diffusion=*/0.4f, sr,
                                           /*modDepth=*/0.0f, /*hold=*/1.0f,
                                           /*modRate=*/0.5f, /*tankDrive=*/0.5f, /*grit=*/0.0f,
@@ -2445,7 +2465,7 @@ TEST_CASE(reverb_tuned_sweeps_never_raise_the_peak_above_the_stage_ceiling) {
             float maxAbs = 0.0f;
             for (int i = 0; i < 20000; ++i) {
                 const float tuned = ((i / period) % 2 == 0) ? 0.0f : 1.0f;  // hard 0<->1 square sweep.
-                const float out = rv.Process(1.0f, /*mix=*/1.0f, size, /*decay=*/1.0f, /*pre=*/0.1f,
+                const float out = ReverbMono(rv, 1.0f, /*mix=*/1.0f, size, /*decay=*/1.0f, /*pre=*/0.1f,
                                               /*damp=*/0.5f, /*width=*/0.5f, /*diffusion=*/0.4f, sr,
                                               /*modDepth=*/0.0f, /*hold=*/1.0f,
                                               /*modRate=*/0.5f, /*tankDrive=*/0.5f, /*grit=*/0.0f,
@@ -2669,7 +2689,7 @@ TEST_CASE(reverb_tank_stays_bounded_under_sustained_overdrive_at_max_decay_and_h
     float maxRawMagnitude = 0.0f;
     float maxControlMagnitude = 0.0f;
     for (int i = 0; i < kSamples; ++i) {
-        const float out = rv.Process(kOverdriveInput, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob,
+        const float out = ReverbMono(rv, kOverdriveInput, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob,
                                       diffusionKnob, sr, /*modDepthKnob01=*/0.0f, holdKnob);
         REQUIRE_TRUE(std::isfinite(out));
         const float rawMagnitude = rv.StateMagnitude();
@@ -2727,7 +2747,7 @@ TEST_CASE(reverb_quiet_ordinary_level_tail_matches_unsaturated_control_at_max_ho
 
     constexpr int kExciteSamples = 4000;
     for (int i = 0; i < kExciteSamples; ++i) {
-        rv.Process(kOrdinaryInput, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr,
+        ReverbMono(rv, kOrdinaryInput, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr,
                    0.0f, holdKnob);
         control.Step(kOrdinaryInput, sizeKnob, decayKnob, preKnob, diffusionKnob, sr, holdKnob);
     }
@@ -2738,7 +2758,7 @@ TEST_CASE(reverb_quiet_ordinary_level_tail_matches_unsaturated_control_at_max_ho
     constexpr int kMeasureWindow = 200;
     float rawPeakAfterExcite = 0.0f, controlPeakAfterExcite = 0.0f;
     for (int i = 0; i < kMeasureWindow; ++i) {
-        const float out = rv.Process(0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob,
+        const float out = ReverbMono(rv, 0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob,
                                       diffusionKnob, sr, 0.0f, holdKnob);
         REQUIRE_TRUE(std::isfinite(out));
         rawPeakAfterExcite = std::max(rawPeakAfterExcite, rv.StateMagnitude());
@@ -2750,14 +2770,14 @@ TEST_CASE(reverb_quiet_ordinary_level_tail_matches_unsaturated_control_at_max_ho
 
     constexpr int kSilenceRunSamples = 10000;  // ~0.21s.
     for (int i = 0; i < kSilenceRunSamples; ++i) {
-        rv.Process(0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr, 0.0f,
+        ReverbMono(rv, 0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr, 0.0f,
                    holdKnob);
         control.Step(0.0f, sizeKnob, decayKnob, preKnob, diffusionKnob, sr, holdKnob);
     }
 
     float rawPeakAfterSilence = 0.0f, controlPeakAfterSilence = 0.0f;
     for (int i = 0; i < kMeasureWindow; ++i) {
-        const float out = rv.Process(0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob,
+        const float out = ReverbMono(rv, 0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob,
                                       diffusionKnob, sr, 0.0f, holdKnob);
         REQUIRE_TRUE(std::isfinite(out));
         rawPeakAfterSilence = std::max(rawPeakAfterSilence, rv.StateMagnitude());
@@ -2832,7 +2852,7 @@ TEST_CASE(reverb_hold_at_max_tail_stays_audible_and_decays_gradually_not_pinned)
     // single impulse), then silence.
     constexpr int kExciteSamples = 4000;
     for (int i = 0; i < kExciteSamples; ++i) {
-        rv.Process(1.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr, 0.0f,
+        ReverbMono(rv, 1.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr, 0.0f,
                    holdKnob);
         before.Step(1.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr, holdKnob);
     }
@@ -2840,14 +2860,14 @@ TEST_CASE(reverb_hold_at_max_tail_stays_audible_and_decays_gradually_not_pinned)
     constexpr int kMeasureWindow = 200;
     auto measurePeak = [&](int silenceSamplesFirst) {
         for (int i = 0; i < silenceSamplesFirst; ++i) {
-            rv.Process(0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr, 0.0f,
+            ReverbMono(rv, 0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr, 0.0f,
                        holdKnob);
             before.Step(0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr,
                         holdKnob);
         }
         float afterPeak = 0.0f, beforePeak = 0.0f;
         for (int i = 0; i < kMeasureWindow; ++i) {
-            const float afterOut = rv.Process(0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob,
+            const float afterOut = ReverbMono(rv, 0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob,
                                                diffusionKnob, sr, 0.0f, holdKnob);
             const float beforeOut = before.Step(0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob,
                                                  diffusionKnob, sr, holdKnob);
@@ -2941,12 +2961,12 @@ TEST_CASE(reverb_tank_grit_zero_lets_the_measured_pass_d_seed_decay_where_grit_0
 
     auto runArm = [&](float gritKnob) -> float {
         dsp::Reverb rv;
-        float out = rv.Process(kSeed, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr,
+        float out = ReverbMono(rv, kSeed, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr,
                                 modDepthKnob, holdKnob, modRateKnob, kStopUnityDriveKnob, gritKnob, tiltKnob,
                                 tunedKnob);
         REQUIRE_TRUE(std::isfinite(out));
         for (long n = 1; n < kSamples; ++n) {
-            out = rv.Process(0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr,
+            out = ReverbMono(rv, 0.0f, mixKnob, sizeKnob, decayKnob, preKnob, dampKnob, widthKnob, diffusionKnob, sr,
                               modDepthKnob, holdKnob, modRateKnob, kStopUnityDriveKnob, gritKnob, tiltKnob, tunedKnob);
         }
         REQUIRE_TRUE(std::isfinite(out));
@@ -3484,15 +3504,52 @@ TEST_CASE(stereo_delay_time_maps_via_expmap_0p001_to_2s) {
     }
 }
 
-TEST_CASE(stereo_delay_to_reverb_mono_matches_mix_formula) {
+// The crossfade is still the frozen source's `(1-mix)*dry + mix*wet`, but the
+// mix it applies is now scaled by how much signal the wet path actually holds:
+// Send feeds that path and defaults to zero, so the unscaled formula could
+// crossfade the instrument away against silence. Both halves are asserted --
+// the shape, where the path is loud, and the inertness, where it is empty.
+TEST_CASE(stereo_delay_to_reverb_mono_scales_the_mix_formula_by_wet_authority) {
     dsp::StereoDelay delay;
     delay.SetSampleRate(48000.0f);
     const dsp::DelayWetPair wet{0.4f, -0.2f};
+    const float bumpIn = 0.6f;
+    const float monoWet = (wet.l + wet.r) * 0.5f;
+
+    // A fresh unit has been fed nothing, so the control is inert and the
+    // output is dry at every knob position. This is the behaviour the
+    // unscaled formula got wrong: it returned monoWet at mix 1.0 whether or
+    // not anything had ever reached the delay line.
+    REQUIRE_NEAR(delay.WetAuthority(), 0.0f, 1e-6);
     for (float mix : {0.0f, 0.25f, 0.5f, 1.0f}) {
-        const float bumpIn = 0.6f;
-        const float monoWet = (wet.l + wet.r) * 0.5f;
-        const float expected = (1.0f - mix) * bumpIn + mix * monoWet;
-        REQUIRE_NEAR(delay.ToReverbMono(bumpIn, wet, mix), expected, 1e-6);
+        const dsp::StereoSample out = delay.ToStereo(bumpIn, wet, mix);
+        REQUIRE_NEAR(out.l, bumpIn, 1e-6);
+        REQUIRE_NEAR(out.r, bumpIn, 1e-6);
+    }
+
+    // Drive the line until the follower saturates, then the original formula
+    // is reproduced exactly. `dsnd` is what feeds the line at all, so this is
+    // also the positive control: without it the follower cannot move, and the
+    // assertions above would pass for a unit that simply never works.
+    dsp::DelayParams p{};
+    p.dtim = 0.0f;
+    p.dsnd = 1.0f;
+    p.dfbk = 0.9f;
+    for (int i = 0; i < 48000 && delay.WetAuthority() < 1.0f; ++i) {
+        delay.Process(1.0f, p);
+    }
+    REQUIRE_NEAR(delay.WetAuthority(), 1.0f, 1e-6);
+    for (float mix : {0.0f, 0.25f, 0.5f, 1.0f}) {
+        const dsp::StereoSample out = delay.ToStereo(bumpIn, wet, mix);
+        // Each channel crossfades the (mono) dry source against its OWN wet
+        // channel, so the pair carries the delay's image instead of a sum.
+        REQUIRE_NEAR(out.l, (1.0f - mix) * bumpIn + mix * wet.l, 1e-6);
+        REQUIRE_NEAR(out.r, (1.0f - mix) * bumpIn + mix * wet.r, 1e-6);
+        // And the mono fold of that pair is exactly what the old mono-only
+        // path produced -- the identity that makes a mono device's output
+        // unchanged by this stage becoming stereo.
+        const float expectedMono = (1.0f - mix) * bumpIn + mix * monoWet;
+        REQUIRE_NEAR(0.5f * (out.l + out.r), expectedMono, 1e-6);
     }
 }
 

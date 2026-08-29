@@ -128,6 +128,48 @@ static_assert(kDelayWetLimiterThreshold < kDelayWetLimiterCeiling,
 inline constexpr float kDelayWetLimiterAttackSeconds = 2.0e-6f;   // 2 microseconds -- see comment above.
 inline constexpr float kDelayWetLimiterReleaseSeconds = kSharedReleaseSeconds;  // shared; see Limiter.hpp.
 
+// Tuning for the wet-level follower `StereoDelay::wetAuthority` reads, which
+// decides how much of the dry signal Wet mix is allowed to remove. Send feeds
+// the delay line and defaults to zero, so the wet path can be silent while Wet
+// mix is at maximum; a crossfade against silence is a mute. Authority tracks
+// what the wet path actually HOLDS, so a low-Send high-Feedback patch -- a loud
+// echo fed by very little -- still earns the control its full travel.
+//
+// The wet limiter's own envelope cannot serve: it is a gain multiplier that
+// sits at exactly 1.0 for anything under threshold (Limiter.hpp), so a quiet
+// echo and silence read identically to it.
+//
+// Release is kSharedReleaseSeconds, which the wet limiter ALREADY applies to
+// this exact signal, so authority tracks at a rate this path is measured not
+// to pump at -- a genuinely shared value, not an analogy.
+//
+// Attack is 10ms, the same figure VcoEnvelopeFollowers uses, and that IS an
+// analogy: it has not been measured for this path. It is a deliberately
+// unshared literal for that reason. This file's own wet-limiter comment
+// records why -- its tuning was measured rather than taken from the master
+// limiter, because "analogy-picked constants have been measured wrong before
+// in this codebase" -- and Limiter.hpp:80 records the same judgement for the
+// per-stage thresholds, which did not collapse. Sharing one constant across
+// all three sites would assert a derivation that only the VCO followers have.
+// Rising quickly is the safe direction here, so being approximately right
+// costs little; the honest note is that it is approximate.
+inline constexpr float kDelayWetAuthorityAttackSeconds = 0.010f;
+inline constexpr float kDelayWetAuthorityReleaseSeconds = kSharedReleaseSeconds;
+// The level at or above which the wet path has earned the control its full
+// travel. This is an AUDIBILITY threshold, not a loudness one: the failure
+// being fixed is a crossfade against silence, so anything the operator can
+// plainly hear should give the knob its whole range, and only a path holding
+// essentially nothing should take it away.
+//
+// MEASURED, not chosen by eye. The wet limiter's own threshold (0.72) was
+// tried first and is wrong for this: a frozen delay line ringing at peak 0.37
+// -- unmistakably audible, and exactly the loud-echo-fed-by-little case the
+// scaling exists to serve -- would get only half its travel there. This value
+// sits an order of magnitude above the routing suite's own measured noise
+// floor for a self-sustaining ring (0.0063), so a path holding only numerical
+// residue still reads as empty.
+inline constexpr float kDelayFullAuthorityLevel = 0.05f;
+
 // the retired simulator's StereoDelay.hpp:10-19, plus three fields added later that
 // are not present in that frozen source -- see each field's own comment.
 struct DelayParams
@@ -150,12 +192,10 @@ struct DelayParams
                         // per-channel DelayDiffuser on the wet tap -- see StereoDelay::Process() below.
 };
 
-// the retired simulator's StereoDelay.hpp:21-25 (WetPair).
-struct DelayWetPair
-{
-    float l = 0.0f;
-    float r = 0.0f;
-};
+// the retired simulator's StereoDelay.hpp:21-25 (WetPair). The same shape the
+// rest of the chain now carries, so it is that type under its own name rather
+// than a second declaration of it.
+using DelayWetPair = StereoSample;
 
 // (Diffusion, Delay slot 8, this file's
 // DelayParams::ddif comment): one Schroeder allpass section with an
@@ -425,6 +465,13 @@ struct StereoDelay
     // is scoped to exactly the signal it bounds and nothing wider.
     OutputLimiter wetLimiterL;
     OutputLimiter wetLimiterR;
+    // One follower for both channels: it tracks `monoWet`, the value
+    // ToReverbMono already forms, so the measurement costs one fabs, one
+    // compare, one multiply-add and one float of state per sample rather than
+    // a pair of followers on a value nothing else needs.
+    float wetLevel = 0.0f;
+    float wetAuthorityAttackCoeff = 0.0f;
+    float wetAuthorityReleaseCoeff = 0.0f;
 
     // (Delay slot 9, "Feedback drive" / "FbDr"):
     // pre-gain on the ARGUMENT of Saturate only, see Process() below.
@@ -526,6 +573,10 @@ struct StereoDelay
         writePos = 0;
         lfoPhase = 0.0f;
         lastWet = {};
+        // Cleared with the line it measures: a recovered unit whose follower
+        // still held the level of the audio that faulted would grant Wet mix
+        // authority over a path that is now empty.
+        wetLevel = 0.0f;
         // The wet limiters carry their own per-sample `envelope` state
         // (dsp::OutputLimiter::Process), so a buffer clear -- whether the
         // Stop-transport reset or Tier 1 fault recovery via Reset() below --
@@ -573,7 +624,8 @@ struct StereoDelay
     // finiteness guard of their own), so it gets the same Tier 1 coverage.
     bool StateFinite() const
     {
-        if (!std::isfinite(lfoPhase) || !std::isfinite(lastWet.l) || !std::isfinite(lastWet.r))
+        if (!std::isfinite(lfoPhase) || !std::isfinite(lastWet.l) || !std::isfinite(lastWet.r) ||
+            !std::isfinite(wetLevel))
         {
             return false;
         }
@@ -697,6 +749,10 @@ struct StereoDelay
                                kDelayWetLimiterAttackSeconds, kDelayWetLimiterReleaseSeconds);
         wetLimiterR.Configure(sampleRate, kDelayWetLimiterThreshold, kDelayWetLimiterCeiling,
                                kDelayWetLimiterAttackSeconds, kDelayWetLimiterReleaseSeconds);
+        // Same reason as the limiters immediately above: this is the one place
+        // a real sample rate is known.
+        wetAuthorityAttackCoeff = std::exp(-1.0f / (kDelayWetAuthorityAttackSeconds * sampleRate));
+        wetAuthorityReleaseCoeff = std::exp(-1.0f / (kDelayWetAuthorityReleaseSeconds * sampleRate));
         // Section delay lengths (4.7ms/12.3ms/21.1ms) are converted
         // to samples here, the one place a real sample rate is known --
         // same rationale as the wetLimiter Configure calls just above.
@@ -793,6 +849,14 @@ struct StereoDelay
         if (p.dsnd <= 0.0001f || capacity == 0)
         {
             lastWet = {};
+            // Send is off, so Wet mix goes inert regardless of what the line
+            // still holds: the follower's TARGET drops at once rather than
+            // tracking the decaying tail. The follower itself keeps running,
+            // so what an operator hears is a fade at the release constant, not
+            // a cut. This is why the update is reached on this path at all --
+            // an early return that skipped it would freeze authority at
+            // whatever the last fed sample left behind.
+            AdvanceWetLevel(0.0f);
             return lastWet;
         }
 
@@ -976,17 +1040,51 @@ struct StereoDelay
 
         lastWet.l = wetLimiterL.Process(diffusedL);
         lastWet.r = wetLimiterR.Process(diffusedR);
+        // Follows the same `monoWet` ToReverbMono forms, so one follower
+        // serves both channels and measures the value the crossfade actually
+        // mixes in.
+        AdvanceWetLevel(std::fabs((lastWet.l + lastWet.r) * 0.5f));
         return lastWet;
+    }
+
+    // One-pole toward the measured level, faster up than down (see the
+    // authority constants). Called from both of Process()'s exits, which is
+    // what makes Send-off a target change rather than a frozen follower.
+    void AdvanceWetLevel(float target)
+    {
+        const float coeff = target > wetLevel ? wetAuthorityAttackCoeff : wetAuthorityReleaseCoeff;
+        wetLevel = target + coeff * (wetLevel - target);
+    }
+
+    // How much of Wet mix's travel the wet path has earned: proportional to
+    // the level it holds, saturating where this stage stops getting louder.
+    float WetAuthority() const
+    {
+        return std::min(wetLevel / kDelayFullAuthorityLevel, 1.0f);
     }
 
     DelayWetPair GetLastWet() const { return lastWet; }
 
     // :108-113 (toReverbMono).
-    float ToReverbMono(float bumpIn, DelayWetPair wet, float dmix) const
+    // Crossfades the dry signal against the wet PAIR and keeps the pair. This
+    // used to fold to mono here, which spent the whole stereo delay -- two
+    // lines, a cross-feed, per-channel limiters -- and threw the result away
+    // on the next line, leaving the Stereo width control unable to widen
+    // anything.
+    //
+    // Scaled by what the wet path actually holds, so the control cannot trade
+    // the instrument away for a processed signal that is not there. Reads
+    // follower state rather than updating it, which is what lets this stay
+    // const; Process() owns the update.
+    //
+    // The dry source is mono (everything upstream of this stage is a single
+    // float), so it feeds both channels equally and the image comes entirely
+    // from the wet pair.
+    StereoSample ToStereo(float bumpIn, DelayWetPair wet, float dmix) const
     {
-        const float mix = std::min(std::max(dmix, 0.0f), 1.0f);
-        const float monoWet = (wet.l + wet.r) * 0.5f;
-        return (1.0f - mix) * bumpIn + mix * monoWet;
+        const float mix = std::min(std::max(dmix, 0.0f), 1.0f) * WetAuthority();
+        const float dry = (1.0f - mix) * bumpIn;
+        return {dry + mix * wet.l, dry + mix * wet.r};
     }
 
 private:

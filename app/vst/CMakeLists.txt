@@ -89,13 +89,22 @@ if(NOT FROGGERS_VST_PLUGIN_IS_SYNTH)
     message(FATAL_ERROR "FroggersVst must build with IS_SYNTH TRUE -- it is an instrument/generator plugin, not an effect")
 endif()
 
+# VST3 is cross-platform; the Audio Unit exists only on macOS, so asking for it
+# anywhere else is a build that cannot succeed rather than a plugin that ships
+# one format fewer. The desktop application already builds for Windows, so the
+# plugin's macOS-only format list was a scoping decision, not a constraint.
+set(FROGGERS_VST_FORMATS VST3)
+if(APPLE)
+    list(APPEND FROGGERS_VST_FORMATS AU)
+endif()
+
 juce_add_plugin(FroggersVst
     PRODUCT_NAME "Frogg3rs"
     COMPANY_NAME "frogg3rs"
     BUNDLE_ID "dev.sheaf.Frogg3rs.vst"
     PLUGIN_MANUFACTURER_CODE Shef
     PLUGIN_CODE Fr3g
-    FORMATS VST3 AU
+    FORMATS ${FROGGERS_VST_FORMATS}
     IS_SYNTH TRUE
     # "a synth that declares MIDI input accepted is fine; no
     # note wiring" -- FroggersPluginProcessor::acceptsMidi() agrees (TRUE),
@@ -124,14 +133,33 @@ set(FROGGERS_DOC_SOURCES
     "${FROGGERS_REPO_ROOT}/MANUAL.md"
     "${FROGGERS_REPO_ROOT}/QUICK_DICT.md"
 )
-foreach(FROGGERS_VST_FORMAT VST3 AU)
+# Where "inside the plugin" is differs by platform, but the requirement does
+# not: operator documentation ships with the plugin everywhere. A macOS bundle
+# has Contents/Resources and CMake can name it directly. A Windows VST3 is also
+# a directory bundle -- Frogg3rs.vst3/Contents/x86_64-win/Frogg3rs.vst3 -- whose
+# sibling Contents/Resources is the same place in that layout, reached from the
+# binary's own directory because $<TARGET_BUNDLE_CONTENT_DIR> is a macOS-only
+# generator expression and expands to nothing off it.
+#
+# One definition, because the copy below and the check further down must name
+# the same directory. Computed twice they can drift, and the drift is silent:
+# the check passes against a directory the copy never wrote.
+function(froggers_vst_doc_dir OUT_VAR FORMAT)
+    if(APPLE)
+        set(${OUT_VAR} "$<TARGET_BUNDLE_CONTENT_DIR:FroggersVst_${FORMAT}>/Resources" PARENT_SCOPE)
+    else()
+        set(${OUT_VAR} "$<TARGET_FILE_DIR:FroggersVst_${FORMAT}>/../Resources" PARENT_SCOPE)
+    endif()
+endfunction()
+
+foreach(FROGGERS_VST_FORMAT ${FROGGERS_VST_FORMATS})
     if(TARGET FroggersVst_${FROGGERS_VST_FORMAT})
+        froggers_vst_doc_dir(FROGGERS_VST_DOC_DEST ${FROGGERS_VST_FORMAT})
         add_custom_command(TARGET FroggersVst_${FROGGERS_VST_FORMAT} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E make_directory
-                "$<TARGET_BUNDLE_CONTENT_DIR:FroggersVst_${FROGGERS_VST_FORMAT}>/Resources"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${FROGGERS_VST_DOC_DEST}"
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 ${FROGGERS_DOC_SOURCES}
-                "$<TARGET_BUNDLE_CONTENT_DIR:FroggersVst_${FROGGERS_VST_FORMAT}>/Resources"
+                "${FROGGERS_VST_DOC_DEST}"
             COMMENT "app/vst: bundling MANUAL.md/QUICK_DICT.md into ${FROGGERS_VST_FORMAT} Resources"
             VERBATIM
         )
@@ -149,16 +177,22 @@ endforeach()
 # Frogg3rs.component ships ad-hoc-linker-signed with no sealed resources.
 # Both are fixed the same way: sign again, last, after everything is in the
 # bundle, and verify before the build is allowed to succeed.
-foreach(FROGGERS_VST_FORMAT VST3 AU)
-    if(TARGET FroggersVst_${FROGGERS_VST_FORMAT})
-        add_custom_command(TARGET FroggersVst_${FROGGERS_VST_FORMAT} POST_BUILD
-            COMMAND codesign --force --deep --sign - "$<TARGET_BUNDLE_DIR:FroggersVst_${FROGGERS_VST_FORMAT}>"
-            COMMAND codesign --verify --deep --strict "$<TARGET_BUNDLE_DIR:FroggersVst_${FROGGERS_VST_FORMAT}>"
-            COMMENT "app/vst: signing and verifying ${FROGGERS_VST_FORMAT} bundle after assembly"
-            VERBATIM
-        )
-    endif()
-endforeach()
+# macOS only. `codesign` does not exist on Windows, and no Authenticode
+# certificate exists for this project, so the Windows VST3 ships unsigned
+# exactly as the Windows standalone already does. Inventing a signing step
+# here would be a business decision wearing an engineering one.
+if(APPLE)
+    foreach(FROGGERS_VST_FORMAT ${FROGGERS_VST_FORMATS})
+        if(TARGET FroggersVst_${FROGGERS_VST_FORMAT})
+            add_custom_command(TARGET FroggersVst_${FROGGERS_VST_FORMAT} POST_BUILD
+                COMMAND codesign --force --deep --sign - "$<TARGET_BUNDLE_DIR:FroggersVst_${FROGGERS_VST_FORMAT}>"
+                COMMAND codesign --verify --deep --strict "$<TARGET_BUNDLE_DIR:FroggersVst_${FROGGERS_VST_FORMAT}>"
+                COMMENT "app/vst: signing and verifying ${FROGGERS_VST_FORMAT} bundle after assembly"
+                VERBATIM
+            )
+        endif()
+    endforeach()
+endif()
 
 target_sources(FroggersVst PRIVATE
     FroggersPluginProcessor.cpp
@@ -210,6 +244,20 @@ target_compile_definitions(FroggersVst PUBLIC
 )
 
 # --- processBlock smoke test (CTest) -----------------------------------
+# The format list is a platform claim, so it is asserted at configure time
+# rather than left to a build failure on a runner nobody watches. VST3 exists
+# everywhere; AU exists only where JUCE can build it.
+if(APPLE)
+    if(NOT "AU" IN_LIST FROGGERS_VST_FORMATS)
+        message(FATAL_ERROR "the Audio Unit must be requested on macOS; FORMATS is '${FROGGERS_VST_FORMATS}'")
+    endif()
+elseif("AU" IN_LIST FROGGERS_VST_FORMATS)
+    message(FATAL_ERROR "the Audio Unit cannot build off macOS; FORMATS is '${FROGGERS_VST_FORMATS}'")
+endif()
+if(NOT "VST3" IN_LIST FROGGERS_VST_FORMATS)
+    message(FATAL_ERROR "VST3 ships on every platform; FORMATS is '${FROGGERS_VST_FORMATS}'")
+endif()
+
 enable_testing()
 
 add_executable(FroggersVstSmokeTest FroggersVstSmokeTest.cpp)
@@ -245,6 +293,21 @@ target_compile_features(FroggersVstHostTests PRIVATE cxx_std_20)
 target_link_libraries(FroggersVstHostTests PRIVATE FroggersVst)
 
 add_test(NAME FroggersVstHostTests COMMAND FroggersVstHostTests)
+
+# --- Operator documentation ships inside the plugin (CTest, every format) ---
+# The requirement is platform-neutral, so the check is too: the doc-copy loop
+# writes to a macOS bundle's Contents/Resources and to a Windows VST3's
+# sibling Resources directory, and only inspecting the BUILT artifact can say
+# whether either landed. Reading the CMake would only restate the edit.
+foreach(FROGGERS_VST_FORMAT ${FROGGERS_VST_FORMATS})
+    if(TARGET FroggersVst_${FROGGERS_VST_FORMAT})
+        froggers_vst_doc_dir(FROGGERS_VST_DOC_CHECK_DIR ${FROGGERS_VST_FORMAT})
+        add_test(NAME FroggersVstDocsBundled_${FROGGERS_VST_FORMAT}
+            COMMAND ${CMAKE_COMMAND}
+                -DFROGGERS_VST_DOC_DIR=${FROGGERS_VST_DOC_CHECK_DIR}
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/CheckBundledDocs.cmake")
+    endif()
+endforeach()
 
 # --- Editor construction/destruction (CTest, own binary) ---------------
 # Deliberately ISOLATED from FroggersVstHostTests above: this is the one

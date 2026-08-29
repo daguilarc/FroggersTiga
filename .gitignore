@@ -33,3 +33,7 @@ src/*/build/
 
 # Host-side firmware test build output (cmake -S test/firmware -B test/firmware/build)
 test/firmware/build/
+
+# Archived openspec changes stay local: they are a working record, not
+# something the published repo needs to carry.
+openspec/changes/archive/

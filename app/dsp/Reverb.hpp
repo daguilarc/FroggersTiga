@@ -221,6 +221,12 @@ struct Reverb
     // sample and desync the two reads.
     OnePoleLowPass tiltLowPass;
     OnePoleLowPass tiltHighPass;
+    // The tilt is the one post-mix stage that genuinely doubles for stereo:
+    // it is a filter, so it carries per-channel recursive state and cannot be
+    // shared the way the limiter's linked envelope can. Two extra one-poles
+    // per sample, and the honest reason the whole stereo path is not free.
+    OnePoleLowPass tiltLowPassR;
+    OnePoleLowPass tiltHighPassR;
 
     float wetL = 0.0f;
     float wetR = 0.0f;
@@ -298,6 +304,8 @@ struct Reverb
         // the tank this clear is meant to silence.
         tiltLowPass.output = 0.0f;
         tiltHighPass.output = 0.0f;
+        tiltLowPassR.output = 0.0f;
+        tiltHighPassR.output = 0.0f;
         wetL = 0.0f;
         wetR = 0.0f;
         modLfoPhase = 0.0f;
@@ -325,7 +333,8 @@ struct Reverb
     bool StateFinite() const
     {
         if (!std::isfinite(dampFilter.output) || !std::isfinite(wetL) || !std::isfinite(wetR) ||
-            !std::isfinite(modLfoPhase) || !std::isfinite(tiltLowPass.output) || !std::isfinite(tiltHighPass.output))
+            !std::isfinite(modLfoPhase) || !std::isfinite(tiltLowPass.output) || !std::isfinite(tiltHighPass.output) ||
+            !std::isfinite(tiltLowPassR.output) || !std::isfinite(tiltHighPassR.output))
         {
             return false;
         }
@@ -357,7 +366,8 @@ struct Reverb
     float StateMagnitude() const
     {
         float magnitude = std::max({std::fabs(dampFilter.output), std::fabs(wetL), std::fabs(wetR),
-                                     std::fabs(tiltLowPass.output), std::fabs(tiltHighPass.output)});
+                                     std::fabs(tiltLowPass.output), std::fabs(tiltHighPass.output),
+                                     std::fabs(tiltLowPassR.output), std::fabs(tiltHighPassR.output)});
         for (size_t i = 0; i < kSize; ++i)
         {
             magnitude = std::max({magnitude, std::fabs(lineA[i]), std::fabs(lineB[i]), std::fabs(preLine[i])});
@@ -414,7 +424,7 @@ struct Reverb
     // ApplyOutputFx's `(1.0f - rvMix) * output + rvMix * rvb` computes
     // (FroggersEngine.hpp:844-846), folding the Wet/dry knob (:455) in here
     // since this is the port's only consumer of that ported parameter.
-    float Process(float input,
+    StereoSample Process(StereoSample input,
                    float mixKnob01,
                    float sizeKnob01,
                    float decayKnob01,
@@ -445,7 +455,11 @@ struct Reverb
         {
             preDelay = kSize - 1;
         }
-        preLine[preIndex] = input;
+        // The tank's SEND is mono: it is one pre-delay line into a two-line
+        // network, and giving it two inputs would be a different reverb, not
+        // the same one plumbed through. Only the send folds -- the dry path
+        // below keeps its pair, and the tank's own output is already stereo.
+        preLine[preIndex] = 0.5f * (input.l + input.r);
         const size_t preRead = (preIndex + kSize - preDelay) % kSize;
         const float preOut = preLine[preRead];
         preIndex = (preIndex + 1) % kSize;
@@ -574,10 +588,13 @@ struct Reverb
         const float width = widthKnob01;  // :460, direct passthrough
         wetL = mid + width * (aOut - mid);
         wetR = mid + width * (bOut - mid);
-        const float wet = 0.5f * (wetL + wetR);
-
+        // wetL/wetR used to be summed here, which made the Width control above
+        // mathematically inert: with mid == 0.5(aOut+bOut), wetL + wetR is
+        // 2*mid at every width, so the knob could not change what was heard.
+        // Keeping the pair is what makes it a control.
         const float mix = mixKnob01;  // :455, direct passthrough
-        const float mixedOut = (1.0f - mix) * input + mix * wet;  // :846
+        const float mixedL = (1.0f - mix) * input.l + mix * wetL;  // :846
+        const float mixedR = (1.0f - mix) * input.r + mix * wetR;
 
         // (slot 12, Tilt): bipolar post-tank tone shave, applied to
         // mixedOut BEFORE wetLimiter.Process() below. tiltLowPass/
@@ -594,10 +611,15 @@ struct Reverb
         // no-op by a zero multiply" idiom modOffset/tunedOffset above use.
         tiltLowPass.SetAlphaFromNatFreq(kTiltCrossoverHz / sampleRate);
         tiltHighPass.SetAlphaFromNatFreq(kTiltCrossoverHz / sampleRate);
-        const float tiltLow = tiltLowPass.Process(mixedOut);
-        const float tiltHigh = mixedOut - tiltHighPass.Process(mixedOut);
+        tiltLowPassR.SetAlphaFromNatFreq(kTiltCrossoverHz / sampleRate);
+        tiltHighPassR.SetAlphaFromNatFreq(kTiltCrossoverHz / sampleRate);
         const float tiltAmount = tiltKnob01 - 0.5f;  // -0.5 (darkest) .. 0 (centre) .. 0.5 (brightest)
-        const float tilted = mixedOut + tiltAmount * (tiltHigh - tiltLow) * kTiltDepth;
+        const float tiltLowL = tiltLowPass.Process(mixedL);
+        const float tiltHighL = mixedL - tiltHighPass.Process(mixedL);
+        const float tiltedL = mixedL + tiltAmount * (tiltHighL - tiltLowL) * kTiltDepth;
+        const float tiltLowR = tiltLowPassR.Process(mixedR);
+        const float tiltHighR = mixedR - tiltHighPassR.Process(mixedR);
+        const float tiltedR = mixedR + tiltAmount * (tiltHighR - tiltLowR) * kTiltDepth;
 
         // Applied to the fully mixed dry/wet output, AFTER both
         // tanks (`lineA`/`lineB` already written above) and AFTER the mix
@@ -608,7 +630,7 @@ struct Reverb
         // measurement. Applied to `tilted` (== `mixedOut` exactly
         // at Tilt's centre default) rather than `mixedOut` directly --
         // MEASURED against the brightest Tilt setting.
-        return wetLimiter.Process(tilted);
+        return wetLimiter.Process(StereoSample{tiltedL, tiltedR});
     }
 };
 

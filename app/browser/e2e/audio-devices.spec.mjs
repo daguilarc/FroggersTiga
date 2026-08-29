@@ -17,6 +17,7 @@
 // audio arrives -- that stays an operator check against the published site.
 import { expect, test } from "@playwright/test";
 import {
+  AUDIO_INPUT_PERMISSION_SELECTOR,
   AUDIO_INPUT_SELECT_SELECTOR,
   AUDIO_STATUS_LINE_SELECTOR,
   PLAY_SELECTOR,
@@ -123,5 +124,148 @@ test.describe("audio device lists", () => {
     // the reviewed source, and the DOM exposes no more direct signal than
     // this line does.
     await expect(page.locator(AUDIO_STATUS_LINE_SELECTOR)).toContainText(CAPTURE_NOT_STARTED_TEXT);
+  });
+});
+
+// A page holding no capture permission enumerates its inputs with both
+// `deviceId` and `label` empty, so it can offer no device to select, and Retry
+// re-requests the empty selection and arms the release sentinel. Nothing in
+// that state reaches `getUserMedia`, which is the only call that can raise a
+// permission prompt -- so before this change there was no sequence of actions
+// that reached a microphone at all.
+//
+// Everything here drives a STUBBED `navigator.mediaDevices`. The project's own
+// `--use-fake-device-for-media-stream` flag hands the page labelled devices
+// without any permission grant, which deletes the exact condition under test;
+// stubbing is the only way into the state, and it also lets a grant, a denial
+// and an enumeration failure each be produced deterministically.
+function installUnpermittedMediaDevices(page, options = {}) {
+  return page.addInitScript((opts) => {
+    const state = { granted: false, getUserMediaCalls: 0, liveTracks: 0 };
+    window.__microphoneProbe = state;
+
+    const blankEntries = [
+      { deviceId: "", label: "", kind: "audioinput", groupId: "" },
+      { deviceId: "", label: "", kind: "audiooutput", groupId: "" },
+    ];
+    const namedEntries = [
+      { deviceId: "mic-1", label: "Probe Microphone", kind: "audioinput", groupId: "g1" },
+      { deviceId: "out-1", label: "Probe Speakers", kind: "audiooutput", groupId: "g1" },
+    ];
+
+    const mediaDevices = {
+      enumerateDevices: async () => {
+        if (opts.enumerationThrows) throw new Error("enumeration refused");
+        if (opts.noInputDevices) {
+          return [{ deviceId: "out-1", label: "Probe Speakers", kind: "audiooutput", groupId: "g1" }];
+        }
+        return state.granted ? namedEntries : blankEntries;
+      },
+      getUserMedia: async () => {
+        state.getUserMediaCalls += 1;
+        if (opts.denyPermission) {
+          const error = new Error("denied");
+          error.name = "NotAllowedError";
+          throw error;
+        }
+        state.granted = true;
+        // A real MediaStream cannot be fabricated, and the property under
+        // test is whether the bridge STOPS what it opened -- so the stub
+        // counts live tracks and watches them go to zero.
+        state.liveTracks += 1;
+        const track = {
+          kind: "audio",
+          readyState: "live",
+          onended: null,
+          stop() {
+            if (this.readyState === "live") {
+              this.readyState = "ended";
+              state.liveTracks -= 1;
+            }
+          },
+          getSettings: () => ({ channelCount: 1 }),
+        };
+        return { getTracks: () => [track], getAudioTracks: () => [track] };
+      },
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    };
+    Object.defineProperty(navigator, "mediaDevices", { value: mediaDevices, configurable: true });
+  }, options);
+}
+
+test.describe("reaching a microphone from an unpermitted page", () => {
+  test("an unpermitted page offers an action that results in a getUserMedia call", async ({ page }) => {
+    await installUnpermittedMediaDevices(page);
+    await openAudioPage(page);
+
+    // The list still presents no unnamed entry as a device -- that filter is
+    // correct and stays. What changes is that there is now a way out.
+    const inputSelect = page.locator(AUDIO_INPUT_SELECT_SELECTOR);
+    await expect(inputSelect).toBeVisible();
+    await expect(inputSelect.locator("option")).toHaveCount(1);
+
+    // POSITIVE CONTROL for the whole test: nothing so far may have prompted.
+    expect(await page.evaluate(() => window.__microphoneProbe.getUserMediaCalls)).toBe(0);
+
+    const allow = page.locator(AUDIO_INPUT_PERMISSION_SELECTOR);
+    await expect(allow).toBeVisible();
+    await allow.click();
+
+    await expect.poll(() => page.evaluate(() => window.__microphoneProbe.getUserMediaCalls))
+      .toBeGreaterThan(0);
+  });
+
+  test("granting fills the list, leaves the selection at No Input, and closes the stream", async ({ page }) => {
+    await installUnpermittedMediaDevices(page);
+    await openAudioPage(page);
+    await page.locator(AUDIO_INPUT_PERMISSION_SELECTOR).click();
+
+    // Labels populate only once permission is held, so the list growing IS
+    // the grant taking effect.
+    await expect.poll(async () => page.locator(AUDIO_INPUT_SELECT_SELECTOR).locator("option").count())
+      .toBeGreaterThan(1);
+    const labels = await page.locator(AUDIO_INPUT_SELECT_SELECTOR).locator("option").allTextContents();
+    expect(labels).toContain("Probe Microphone");
+
+    // Earning a label is not choosing a device.
+    await expect(page.locator(AUDIO_INPUT_SELECT_SELECTOR)).toHaveValue(NO_INPUT_OPTION_ID);
+    await expect(page.locator(AUDIO_STATUS_LINE_SELECTOR)).toContainText(CAPTURE_NOT_STARTED_TEXT);
+
+    // And the prompt left no device open.
+    await expect.poll(() => page.evaluate(() => window.__microphoneProbe.liveTracks)).toBe(0);
+  });
+
+  test("a denied request is reported rather than swallowed", async ({ page }) => {
+    await installUnpermittedMediaDevices(page, { denyPermission: true });
+    await openAudioPage(page);
+    await page.locator(AUDIO_INPUT_PERMISSION_SELECTOR).click();
+
+    await expect(page.locator(AUDIO_STATUS_LINE_SELECTOR)).not.toContainText(CAPTURE_NOT_STARTED_TEXT);
+    // The list stays as it was: a refusal earns no labels.
+    await expect(page.locator(AUDIO_INPUT_SELECT_SELECTOR).locator("option")).toHaveCount(1);
+  });
+
+  test("the page raises no permission request on its own", async ({ page }) => {
+    await installUnpermittedMediaDevices(page);
+    await openAudioPage(page);
+    await expect(page.locator(AUDIO_INPUT_SELECT_SELECTOR)).toBeVisible();
+    expect(await page.evaluate(() => window.__microphoneProbe.getUserMediaCalls)).toBe(0);
+  });
+
+  test("a machine with no input device is not invited to ask", async ({ page }) => {
+    await installUnpermittedMediaDevices(page, { noInputDevices: true });
+    await openAudioPage(page);
+    await expect(page.locator(AUDIO_INPUT_SELECT_SELECTOR)).toBeVisible();
+    await expect(page.locator(AUDIO_INPUT_PERMISSION_SELECTOR)).toHaveCount(0);
+  });
+
+  test("an enumeration failure is distinguishable from a machine with no devices", async ({ page }) => {
+    await installUnpermittedMediaDevices(page, { enumerationThrows: true });
+    await openAudioPage(page);
+    // Degradation is kept: the instrument still runs and the page renders.
+    await expect(page.locator(AUDIO_INPUT_SELECT_SELECTOR)).toBeVisible();
+    // But the reason is observable rather than looking like an empty machine.
+    await expect(page.locator(AUDIO_STATUS_LINE_SELECTOR)).not.toContainText(CAPTURE_NOT_STARTED_TEXT);
   });
 });

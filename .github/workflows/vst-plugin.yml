@@ -72,9 +72,9 @@ jobs:
           test -d app/vst/build/FroggersVst_artefacts/Release/AU/Frogg3rs.component
           echo "VST3 and AU bundles present"
 
-      # 19 ctest cases across FroggersVstSmokeTest, FroggersVstHostTests,
-      # and FroggersVstEditorTest (app/vst/CMakeLists.txt's own "5.2"/"6.4"/
-      # "8.2" sections) -- previously never run in CI at all.
+      # Five registered tests on macOS: FroggersVstSmokeTest,
+      # FroggersVstHostTests, FroggersVstEditorTest, and one
+      # FroggersVstDocsBundled per format. Previously never run in CI at all.
       - name: ctest
         run: ctest --test-dir app/vst/build --output-on-failure
 
@@ -97,12 +97,94 @@ jobs:
           path: app/vst/build/FroggersVst_artefacts/Release/*.zip
           if-no-files-found: error
 
+  # The Windows VST3. Mirrors desktop-release.yml's own windows-latest job,
+  # which is the only Windows build this repository has ever run green --
+  # every step below is either identical to one of its steps or is called out
+  # as a first attempt.
+  #
+  # FIRST ATTEMPTS, with no working equivalent anywhere in this repository:
+  # configuring app/vst on Windows (desktop-release.yml configures
+  # app/standalone there, a different CMakeLists), building the VST3 format
+  # target on Windows, the Resources layout the doc-copy writes into a Windows
+  # VST3 bundle, and running the ctest suite there -- these tests have only
+  # ever run on macOS. A failure in those four is expected discovery, not a
+  # surprise. Everything else -- the checkout, the JUCE clone, the
+  # Compress-Archive packaging, the artifact upload -- is copied from a job
+  # that already passes.
+  build-and-test-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Same submodule fix desktop-release.yml's Windows job carries
+          # (72700a9): app/vst links Sheaf's synth core.
+          submodules: recursive
+
+      - name: Fetch JUCE (pinned, matches the macOS job above)
+        run: git clone --branch 8.0.12 --depth 1 https://github.com/juce-framework/JUCE.git "$HOME/JUCE"
+
+      # No -DCMAKE_BUILD_TYPE juggling beyond the macOS job's: CMake's default
+      # Windows generator resolves to MSVC, which is what JUCE is tested
+      # against and what desktop-release.yml already relies on here.
+      - name: Configure
+        run: cmake -S app/vst -B app/vst/build -DCMAKE_BUILD_TYPE=Release
+
+      # --parallel 2, not `-- -j2`: everything after `--` goes to the native
+      # build tool, and this generator's is MSBuild, which spells it /m and
+      # fails with MSB1001 rather than ignoring it. Same line, same reason, as
+      # desktop-release.yml's Windows build step.
+      #
+      # Only VST3 is named. AU is not in FROGGERS_VST_FORMATS off macOS, so
+      # FroggersVst_AU does not exist as a target here and naming it would
+      # fail the build on a format the platform cannot produce.
+      - name: Build (VST3)
+        run: |
+          cmake --build app/vst/build --config Release --parallel 2
+          cmake --build app/vst/build --config Release --target FroggersVst_VST3 --parallel 2
+
+      # A Windows VST3 is a directory bundle, like the macOS one, so this is
+      # `test -d` exactly as the macOS job asserts -- but only VST3, since no
+      # .component is produced here.
+      - name: Assert plugin bundle was built
+        run: |
+          test -d app/vst/build/FroggersVst_artefacts/Release/VST3/Frogg3rs.vst3
+          echo "Windows VST3 bundle present"
+
+      # Three registered tests here, not the macOS job's five: no AU target
+      # means no FroggersVstDocsBundled_AU.
+      - name: ctest
+        run: ctest --test-dir app/vst/build --output-on-failure
+
+      # Compress-Archive, not ditto: ditto is macOS-only. Same packaging step
+      # desktop-release.yml's Windows job uses, pointed at a directory rather
+      # than a single .exe.
+      - name: Package plugin bundle
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path app/vst/build/FroggersVst_artefacts/Release/VST3/Frogg3rs.vst3 -DestinationPath dist/Frogg3rs-VST3-windows.zip
+
+      - name: Upload packaged bundle
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-bundles-windows
+          path: dist/Frogg3rs-VST3-windows.zip
+          if-no-files-found: error
+
   # Publishes only for the plugin tag, and only after build-and-test passed:
   # `needs` makes a failing suite block the release rather than shipping past
   # it. The per-commit check above keeps its read-only permissions; write
   # access is scoped to this job alone.
   release:
-    needs: build-and-test
+    # Both build jobs gate the release: it must not claim platform coverage it
+    # does not have, so a red Windows job blocks it exactly as a red macOS one
+    # would.
+    needs: [build-and-test, build-and-test-windows]
     if: startsWith(github.ref, 'refs/tags/frogg3rs_vst')
     runs-on: ubuntu-latest
     permissions:
@@ -113,6 +195,11 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: plugin-bundles
+          path: dist
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: plugin-bundles-windows
           path: dist
 
       # Release notes come from MANUAL.md's own "Release platforms" section,
@@ -126,12 +213,17 @@ jobs:
           {
             echo "Frogg3rs as an audio plugin — $GITHUB_REF_NAME"
             echo
-            echo "Contains VST3 and Audio Unit builds for macOS. Both are built on a"
-            echo "macOS runner, so this release carries no Windows VST3."
+            echo "Contains VST3 and Audio Unit builds for macOS, and a VST3 for Windows."
+            echo "The Audio Unit is macOS-only because the format is."
             echo
             echo "Install by unzipping into:"
-            echo "- VST3: ~/Library/Audio/Plug-Ins/VST3/"
-            echo "- AU:   ~/Library/Audio/Plug-Ins/Components/"
+            echo "- macOS VST3: ~/Library/Audio/Plug-Ins/VST3/"
+            echo "- macOS AU:   ~/Library/Audio/Plug-Ins/Components/"
+            echo "- Windows VST3: %ProgramFiles%\\Common Files\\VST3\\"
+            echo
+            echo "The Windows VST3 is unsigned -- no Authenticode certificate exists for"
+            echo "this project, exactly as for the Windows standalone. Windows may warn on"
+            echo "first load."
             echo
             cat platform-notes.md
           } > release-notes.md

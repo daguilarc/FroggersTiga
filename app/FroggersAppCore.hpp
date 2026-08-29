@@ -1112,25 +1112,29 @@ public:
 
             // Routes this sample's post-fuego, post-modulation
             // parameter values into the ported DSP chain and sums the (mono,
-            // per the kNumVoices==1 model) result to every output channel --
-            // matching FroggersEngine::ProcessSample's own float-in/float-out
-            // shape (FroggersEngine.hpp:850-874), which this app's own stereo
-            // bus duplicates identically on both channels.
-            const float sample = RouteAudioSample();
+            // The chain's own output is a pair. Folding to the device happens
+            // in the write loop below and only where the device is mono; the
+            // middle of the chain no longer collapses, which is what lets the
+            // delay's and the reverb's Width controls reach a listener.
+            const dsp::StereoSample sample = RouteAudioSample();
 
             // F3 DIAGNOSTIC (2026-08-07), OFF unless FROGG3RS_STOP_DIAG is set
             // in the environment -- see stopDiagBlocks_'s own comment. Tracks
             // this block's output peak only while the diagnostic window is
             // open, so a normal run pays one already-loaded bool test.
             if (stopDiagBlocks_ > 0) {
-                stopDiagPeak_ = std::max(stopDiagPeak_, std::fabs(sample));
+                stopDiagPeak_ = std::max(stopDiagPeak_,
+                                         std::max(std::fabs(sample.l), std::fabs(sample.r)));
             }
 
-            // T5.3a: capture hook -- post-limiter mono, what the operator hears.
+            // Capture hook -- post-limiter, and still a mono buffer. The chain
+            // is stereo now, so what is recorded is the same fold a mono
+            // device gets rather than one channel of a pair, which would
+            // silently drop half the signal from every recording.
             if (recordArmed_.load(std::memory_order_acquire) && transportRunningNow) {
                 const std::uint64_t recordedSoFar = recordFrames_.load(std::memory_order_acquire);
                 if (recordedSoFar < recordBuffer_.size()) {
-                    recordBuffer_[recordedSoFar] = sample;
+                    recordBuffer_[recordedSoFar] = 0.5f * (sample.l + sample.r);
                     recordFrames_.store(recordedSoFar + 1, std::memory_order_release);
                 } else {
                     recordTruncated_.store(true, std::memory_order_release);
@@ -1155,10 +1159,21 @@ public:
                 // codebase treating per-channel null as real is affirmative
                 // evidence, not just an unproven possibility -- so this check
                 // is real and stays, unlike the outer one above.
+                // One channel is a mono device, and folding is what it needs:
+                // the sum, not the left channel, or half the signal goes
+                // missing. Two or more channels alternate L/R, so a stereo
+                // device gets the image and a surround one gets the pair
+                // repeated across its pairs rather than silence past the
+                // second channel.
+                const float monoFold = block.numOutputChannels == 1
+                                           ? 0.5f * (sample.l + sample.r)
+                                           : 0.0f;
                 for (int channelIx = 0; channelIx < block.numOutputChannels; ++channelIx) {
                     float* const channel = block.outputs[static_cast<std::size_t>(channelIx)];
                     if (channel != nullptr) {
-                        channel[frame] = sample;
+                        channel[frame] = block.numOutputChannels == 1
+                                             ? monoFold
+                                             : (channelIx % 2 == 0 ? sample.l : sample.r);
                     }
                 }
             }
@@ -1365,6 +1380,11 @@ public:
     // restating the constant it was computed from.
     float TestLastReverbWetMixEffective() const { return lastReverbWetMixEffective_; }
 
+    // The mapped Delay wet mix actually handed to MapRowsToDelayParams, read
+    // the same way and for the same reason as the Reverb one above: a test
+    // that asserted the constant would restate the edit rather than check it.
+    float TestLastDelayWetMixEffective() const { return lastDelayWetMixEffective_; }
+
     // Test/inspection access to the actual `DelayParams::dfrzLatched`
     // value RouteAudioSample() (below) last handed to `delay_.Process()` --
     // same "TestXxx() convention" as the accessors above. `delayParams`
@@ -1436,7 +1456,7 @@ private:
     // were not achievable as structured, the fallback was to stop and report
     // rather than reading raw values, which is why this citation chain
     // exists.
-    float RouteAudioSample() {
+    dsp::StereoSample RouteAudioSample() {
         auto knob = [this](FroggersBankId bank, std::size_t ix) -> float {
             return parameters_.PageParameter(bank, ix).CachedKnobValue(0);
         };
@@ -1578,6 +1598,16 @@ private:
         constexpr float kStopUnityDriveKnob = 0.5f;  // ExpMapCompute(0.25,4,0.5) == 1.0 (unity) -- shared by all three drive pre-gains.
         constexpr float kStopFreezeKnob = 0.0f;
         constexpr float kStopGritKnob = 0.0f;  // Mangle(x,0,0) - Mangle(0,0,0) == x (dsp/Reverb.hpp:526-527) -- exact bit-identical bypass, same as Grit's own registered default.
+        // The floor on dry signal shared by every wet/dry crossfade -- Reverb's
+        // and Delay's are the same `(1-mix)*dry + mix*wet` expression, so they
+        // get the same ceiling from the same place rather than two constants
+        // that happen to agree. 0.6 leaves at least 40% dry at any knob
+        // position (operator 2026-07-29 "clamp the reverb wetness down, it's
+        // too fucking quiet", tightened again 2026-08-26), so turning a wet
+        // control up adds processed signal instead of trading away the source.
+        // Applied to the mapped value, not the knob range, so each control
+        // still sweeps its whole travel.
+        constexpr float kMaxWetMix = 0.6f;
         const auto stoppedKnob = [&](FroggersBankId bank, std::size_t slot, float stoppedValue) -> float {
             return TransportTeardownActive(wasTransportRunning_) ? stoppedValue : knob(bank, slot);
         };
@@ -1801,10 +1831,17 @@ private:
         // dfrzLatched comment, below).
         const float delayFreezeKnobEffective = stoppedKnob(FroggersBankId::Delay, 4, kStopFreezeKnob);
         lastDelayFreezeKnobEffective_ = delayFreezeKnobEffective;
+        // The same kMaxWetMix the Reverb bank uses; see its declaration.
+        // Delay needs a second protection Reverb does not: its wet path is fed
+        // only through Send, which defaults to zero, so ToReverbMono also
+        // scales the mix by what that path actually holds. The cap bounds a
+        // fed path; the authority handles an unfed one.
+        const float delayWetMixEffective = kMaxWetMix * knob(FroggersBankId::Delay, 6);
+        lastDelayWetMixEffective_ = delayWetMixEffective;
         dsp::DelayParams delayParams = dsp::MapRowsToDelayParams(
             knob(FroggersBankId::Delay, 0), knob(FroggersBankId::Delay, 1), knob(FroggersBankId::Delay, 2),
             knob(FroggersBankId::Delay, 3), delayFreezeKnobEffective, knob(FroggersBankId::Delay, 5),
-            knob(FroggersBankId::Delay, 6), knob(FroggersBankId::Delay, 7), knob(FroggersBankId::Delay, 8));
+            delayWetMixEffective, knob(FroggersBankId::Delay, 7), knob(FroggersBankId::Delay, 8));
         // The Freeze BUTTON's override, applied where the
         // freeze mapping resolves the encoder's value -- MapRowsToDelayParams
         // just above sets `dfrz` from the clamped (T3.1a) encoder alone and
@@ -1823,23 +1860,16 @@ private:
         delay_.SetWidthBalance(knob(FroggersBankId::Delay, 12));
         delay_.SetCrush(knob(FroggersBankId::Delay, 13));
         const dsp::DelayWetPair delayWet = delay_.Process(filterOut, delayParams);
-        const float delayOut = delay_.ToReverbMono(filterOut, delayWet, delayParams.dmix);
+        const dsp::StereoSample delayOut = delay_.ToStereo(filterOut, delayWet, delayParams.dmix);
 
         // -- Reverb bank -> dsp::Reverb --------------------------
         // Last stage, matching FroggersEngine.hpp:844-847's wet/dry blend
         // (folded into Reverb::Process's own return -- see that struct's
         // header comment).
-        // Wet/dry ceiling (operator 2026-07-29: "clamp the reverb wetness down
-        // to 70% of its current maximum, it's too fucking quiet", and again
-        // 2026-08-26, to 60%). Reverb's
-        // blend is `(1-mix)*dry + mix*wet` (dsp/Reverb.hpp), so mix == 1.0
-        // removes the dry signal ENTIRELY and leaves only the diffuse tail --
-        // which reads as a big drop in level, not as more reverb. Capping the
-        // mix at 0.6 keeps at least 40% dry in the output at every knob
-        // position, so turning the control up adds tail instead of trading
-        // away the source. Applied to the mapped value, not the knob range, so
-        // the control still sweeps its whole travel.
-        constexpr float kMaxReverbWetMix = 0.6f;
+        // The wet/dry ceiling is kMaxWetMix, shared with the Delay bank; see
+        // its declaration for why the value is what it is. Reverb's blend
+        // lives in dsp/Reverb.hpp, folded into Process's own return, so what
+        // is capped here is the mix handed to it.
         // T2.2: stoppedKnob overrides Tank drive (slot 10) to
         // kStopUnityDriveKnob while stopped, same idiom as the Filter comb
         // drive and Delay feedback drive above. Reverb::Process computes
@@ -1867,9 +1897,9 @@ private:
         // own established convention differs from dsp::StereoDelay's, which
         // does use separate setters -- see dsp/Reverb.hpp's own comment on
         // each of these five).
-        const float reverbWetMixEffective = kMaxReverbWetMix * knob(FroggersBankId::Reverb, 0);
+        const float reverbWetMixEffective = kMaxWetMix * knob(FroggersBankId::Reverb, 0);
         lastReverbWetMixEffective_ = reverbWetMixEffective;
-        const float reverbOut = reverb_.Process(
+        const dsp::StereoSample reverbOut = reverb_.Process(
             delayOut,
             reverbWetMixEffective,
             knob(FroggersBankId::Reverb, 1), knob(FroggersBankId::Reverb, 2),
@@ -1940,47 +1970,62 @@ private:
     // coefficient toward, but strictly below, 1.0, so both are ordinarily
     // bounded by construction -- the limiter is the safety net for when
     // "ordinarily" stops holding, not the primary defense (items 1/2 are).
-    float SanitizeOutputSample(float x) {
+    // Per-channel guards, then ONE linked limiter pass over the pair. The
+    // guards are per-channel because a non-finite or subnormal value is a
+    // property of the sample, not of the frame; the limiter is linked
+    // because two independent envelopes would duck the channels differently
+    // and swing the image. With l == r this is bit-identical to what the
+    // mono path produced.
+    dsp::StereoSample SanitizeOutputSample(dsp::StereoSample x) {
+        x.l = GuardOutputSample(x.l);
+        x.r = GuardOutputSample(x.r);
+        constexpr float kMakeUpGain = 1.0f / dsp::kStageCeiling;  // F2.2: 1.25x, +1.9 dB.
+        const dsp::StereoSample limited = outputLimiter_.Process(x);
+        return {std::clamp(limited.l * kMakeUpGain, -1.0f, 1.0f),
+                std::clamp(limited.r * kMakeUpGain, -1.0f, 1.0f)};
+    }
+
+    static float GuardOutputSample(float x) {
         if (!std::isfinite(x)) {
             return 0.0f;
         }
         if (x != 0.0f && std::fabs(x) < std::numeric_limits<float>::min()) {
             return 0.0f;  // flush subnormal/denormal to zero.
         }
-        // Limiter, then a hard bound: output is limited, then bounded.
-        // `outputLimiter_` is a
-        // feed-forward one-pole gain rider with no lookahead: its gain
-        // reduction is computed from the signal it has already passed, so
-        // it necessarily lags a fast-changing input and cannot itself
-        // guarantee a ceiling -- measured, not assumed: a steady 1.5x
-        // 200 Hz tone settled at a stable periodic peak of 1.027426 with
-        // the gain envelope already converged at 0.685245, and the
-        // self-oscillating-comb + near-unity-reverb-hold patch produced a
-        // raw 1.560059 with the envelope at 0.62-0.64. Lookahead would fix
-        // that lag but was rejected -- it adds latency to a live
-        // instrument. So gain reduction does the work here, and the
-        // std::clamp below only catches the residual overshoot the
-        // limiter's lag lets through -- typically a few percent, which is
-        // inaudible. This is NOT a reinstatement of the defect the old
-        // unconditional 8x-full-scale clamp above caused (that produced a
-        // guaranteed square wave); clamping a residual after gain
-        // reduction has already brought the signal near 1.0 is a
-        // different, harmless thing.
-        //
-        // F2.2 make-up gain: F2.1b narrowed every per-stage limiter's
-        // ceiling to dsp::kStageCeiling (0.80, dsp/Limiter.hpp) so the
-        // master stops riding continuously below unity -- which also means
-        // a fully-driven chain now arrives here around 0.80 instead of
-        // 1.0. Restore that headroom AFTER the master limiter -- its
-        // threshold/headroom math (DesiredMagnitude, dsp/Limiter.hpp) is
-        // calibrated in absolute terms, so scaling BEFORE it would
-        // silently retune every stage's budget -- and BEFORE the trailing
-        // std::clamp, which stays as the residual-overshoot net. Derived
-        // from kStageCeiling rather than hardcoded so the two constants
-        // cannot drift apart.
-        constexpr float kMakeUpGain = 1.0f / dsp::kStageCeiling;  // F2.2: 1.25x, +1.9 dB.
-        return std::clamp(outputLimiter_.Process(x) * kMakeUpGain, -1.0f, 1.0f);
+        return x;
     }
+
+    // Limiter, then a hard bound: output is limited, then bounded.
+    // `outputLimiter_` is a
+    // feed-forward one-pole gain rider with no lookahead: its gain
+    // reduction is computed from the signal it has already passed, so
+    // it necessarily lags a fast-changing input and cannot itself
+    // guarantee a ceiling -- measured, not assumed: a steady 1.5x
+    // 200 Hz tone settled at a stable periodic peak of 1.027426 with
+    // the gain envelope already converged at 0.685245, and the
+    // self-oscillating-comb + near-unity-reverb-hold patch produced a
+    // raw 1.560059 with the envelope at 0.62-0.64. Lookahead would fix
+    // that lag but was rejected -- it adds latency to a live
+    // instrument. So gain reduction does the work here, and the
+    // std::clamp below only catches the residual overshoot the
+    // limiter's lag lets through -- typically a few percent, which is
+    // inaudible. This is NOT a reinstatement of the defect the old
+    // unconditional 8x-full-scale clamp above caused (that produced a
+    // guaranteed square wave); clamping a residual after gain
+    // reduction has already brought the signal near 1.0 is a
+    // different, harmless thing.
+    //
+    // F2.2 make-up gain: F2.1b narrowed every per-stage limiter's
+    // ceiling to dsp::kStageCeiling (0.80, dsp/Limiter.hpp) so the
+    // master stops riding continuously below unity -- which also means
+    // a fully-driven chain now arrives here around 0.80 instead of
+    // 1.0. Restore that headroom AFTER the master limiter -- its
+    // threshold/headroom math (DesiredMagnitude, dsp/Limiter.hpp) is
+    // calibrated in absolute terms, so scaling BEFORE it would
+    // silently retune every stage's budget -- and BEFORE the trailing
+    // std::clamp, which stays as the residual-overshoot net. Derived
+    // from kStageCeiling rather than hardcoded so the two constants
+    // cannot drift apart.
 
     // The ceiling is DERIVED,
     // not measured, and re-derived here rather than re-tuned by feel.
@@ -2189,6 +2234,7 @@ private:
     float lastReverbTankDriveKnobEffective_ = 0.5f;
     float lastReverbGritKnobEffective_ = 0.0f;
     float lastReverbWetMixEffective_ = 0.0f;
+    float lastDelayWetMixEffective_ = 0.0f;
     // The output-stage limiter's own per-sample
     // gain-envelope state -- see the comment above `SanitizeOutputSample()`
     // for the full design rationale, and `dsp::OutputLimiter`'s own
