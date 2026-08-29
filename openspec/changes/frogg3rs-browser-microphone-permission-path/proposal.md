@@ -228,12 +228,15 @@ Traced, so the cost is known rather than discovered:
 What is gained is a stereo delay-and-reverb ambience over a mono source, which
 is the ordinary shape for a synth of this kind.
 
-The risk that decides sequencing: on the Daisy this doubling lands in an audio
-ISR that already recomputes six biquads per sample, which is a separate finding
-in `frogg3rs-guitar-and-solo-variants`. Desktop and browser have headroom; the
-firmware is where this could cost dropouts. Whoever executes this measures ISR
-headroom on the firmware BEFORE committing to two reverb instances, and reports
-the number.
+The Daisy firmware is NOT affected and must not be dragged in. It is a separate
+codebase: `src/FroggersSolo/Makefile` builds `FroggersSolo.cpp` against
+`src/core/`, which carries its own reverb (`FroggersEngine.hpp:501`), and
+nothing under `src/` includes `app/`. This work touches the desktop, VST and
+browser hosts only.
+
+The cost is therefore ordinary desktop and browser CPU, where a second reverb
+instance is affordable, and the decision is about topology rather than headroom:
+two instances, or one stereo reverb.
 
 This is the largest item in this change and depends on none of the others.
 Sequence it last, or split it out the moment a second change is allowed to be
