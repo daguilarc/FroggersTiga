@@ -31,20 +31,32 @@ one end of its travel than at the other, so the same modulation depth reads as a
 different amount of movement depending on where the knob is sitting.
 
 **Randomization is weighted to stay playable.** Randomize All draws new values
-and new modulation depths across the whole instrument. Randomize Page draws
-exactly what is on screen: a bank's values on a parameter page, or that view's
-depths inside a modulation view. The number of sources a parameter picks up is a
-weighted draw: two is the most common result, one parameter in five comes out
-with no modulation at all, and four or more is rare. A randomized patch comes out
-with some things moving and some holding still.
+across the whole instrument, along with one level of modulation depths.
+Randomize Page draws exactly what is on screen: a bank's values on a parameter
+page, or that view's depths inside a modulation view. The number of sources a
+parameter picks up is a weighted draw: two is the most common result, one
+parameter in five comes out with no modulation at all, and four or more is rare.
+A randomized patch comes out with some parameters moving and some holding still.
+
+Randomize All covers one level at a time. To randomize the level below, open a
+modulation view and press it again there. The limit is storage rather than
+arithmetic: each modulation depth is a real parameter that has to be
+materialized before it can hold a value, and the instrument provisions 915
+first-level depths plus 225 more for the one parameter whose modulation view is
+open.
+Randomizing every level everywhere would mean materializing thousands of depths
+per parameter, which is a memory ceiling, not a shortage of random numbers.
 
 You may fork this repo if you wish to bias the randomization differently. I
 weighted this after testing and adjusting to taste; your taste may differ.
 
-There is also a bit-scramble on two knobs named Crispy and Crunchy, which
-corrupts parameter values on their way to the DSP. At zero it does nothing.
-Turned up, knob moves stop being smooth and values snap between newly fried
-islands.
+There is also a bit-scramble on two knobs, Crunchy and Crispy, which corrupts
+parameter values on their way to the DSP. Crunchy is a single global knob shared
+by the whole instrument; each bank has its own Crispy, which scrambles only that
+bank's parameters. They cascade: Crunchy warps every value, Crunchy also warps
+the bank's Crispy knob itself, and that warped Crispy is then applied on top of
+the already-warped value. At zero both do nothing. Turned up, knob moves stop
+being smooth and values snap between newly fried islands.
 
 Full parameter reference: [`MANUAL.md`](MANUAL.md).
 

@@ -23,7 +23,7 @@ Terse one-line-per-parameter glossary for this app: [`QUICK_DICT.md`](QUICK_DICT
 The desktop application releases for macOS and Windows. Each desktop release carries both: a macOS
 disk image and a Windows zip holding the standalone executable.
 
-The VST3 and Audio Unit plugin releases for macOS only.
+The VST3 and Audio Unit plugins release for macOS only.
 
 ### Opening a downloaded build
 
