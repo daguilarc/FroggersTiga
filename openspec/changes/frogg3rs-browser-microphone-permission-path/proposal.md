@@ -101,6 +101,66 @@ Establish it by running it, on a build from `app/build-launcher.sh`, before
 adding the key. A fix applied to a defect nobody reproduced is a guess that
 happens to compile.
 
+## Delay's Wet mix fades the instrument to silence
+
+Carried here rather than opened as its own change, so one change is active at a
+time. It shares nothing with the microphone work except being shipped and wrong.
+
+Turning Delay's Wet mix up makes everything quieter, and at maximum the output
+is silent. Traced:
+
+- `Delay.hpp:136` — `float dsnd = 0.0f`. Send defaults to zero, and the Delay
+  bank's layout sets no override, so a fresh instrument has it at zero.
+- `inSignal = bumpIn * send` is the ONLY signal written into the delay line.
+  With Send at zero the line is fed silence; `Delay.hpp:793` early-outs on
+  `p.dsnd <= 0.0001f`, which `:570` describes as the path "most patches take,
+  since Send defaults to" zero.
+- `ToReverbMono` (`Delay.hpp:985-989`) is a crossfade:
+  `(1 - mix) * bumpIn + mix * monoWet`.
+
+So Wet mix crossfades the dry signal away against a wet path nothing feeds. At
+mix = 1 the output is exactly zero. It is not a quiet delay; it is a mute knob
+wearing a mix label, and it is what a new listener meets, because randomization
+draws Send uniformly and randomized patches therefore do feed the line.
+
+### The sibling control was already fixed, and Delay was left behind
+
+`2026-08-27-frogg3rs-reverb-wetness-and-damping-floor` capped Reverb's wet mix
+with `kMaxReverbWetMix`, at the MAPPED value rather than the knob range, so the
+control keeps its full sweep while the mapped maximum leaves dry signal behind.
+Its proposal states the cap is "exactly how little dry signal the knob can
+leave". Delay's Wet mix is the identical `(1 - mix) * dry + mix * wet`
+crossfade and never received one: a family capped one member at a time.
+
+Delay therefore takes the same treatment, `kMaxDelayWetMix` mirroring
+`kMaxReverbWetMix`, so no knob position can remove the dry signal entirely.
+
+### The cap alone is not sufficient here, and the difference matters
+
+Reverb's wet path is fed unconditionally — `ProcessReverb(output)` runs every
+sample — so capping its mix bounds a signal that exists. Delay's wet path is fed
+only through Send, which defaults to zero. A cap alone therefore converts
+"silent at maximum" into "quieter at maximum, still with no echo", which is an
+improvement to the failure mode and not a repair of it: the knob would still
+only ever attenuate on the patch the instrument ships with.
+
+RULING, 2026-08-29, both halves:
+
+- CAP: `kMaxDelayWetMix` on the mapped value, mirroring `kMaxReverbWetMix`, so
+  no knob position removes the dry signal entirely.
+- INERT WHEN UNFED: with Send at zero, Wet mix has no effect and the output
+  stays dry. The knob stops being able to attenuate a signal it cannot replace.
+
+Send's default is NOT changed. A fresh instrument still ships with no echo; what
+changes is that reaching for Wet mix no longer costs the operator their sound.
+
+One consequence to settle while building, named here so it is chosen rather than
+inherited: this gate is discontinuous. At Send exactly zero the knob is inert;
+just above the existing `p.dsnd <= 0.0001f` threshold it attenuates dry nearly
+fully while adding a nearly inaudible wet. Both ends behave correctly and the
+step between them is abrupt. Decide whether the gate stays a hard threshold or
+whether Wet mix's authority scales with Send, and say which.
+
 ## Non-goals
 
 - Output routing, which works.

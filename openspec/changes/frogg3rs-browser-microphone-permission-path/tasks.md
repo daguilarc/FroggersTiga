@@ -94,6 +94,27 @@ checked.
       concluding it is unaffected — the DAW owns the device, but the plugin
       bundle still declares its own Info.plist.
 
+## 4c. Delay's Wet mix
+
+- [ ] 4c.1 POSITIVE CONTROL FIRST: a test that FAILS today, showing Wet mix at
+      maximum with Send at its default produces silence. Record the failure text
+      before changing anything.
+- [ ] 4c.2 Cap the mapped mix with `kMaxDelayWetMix`, mirroring
+      `kMaxReverbWetMix`'s placement and idiom. Cap the MAPPED value, not the
+      knob range, so the control keeps its full sweep.
+- [ ] 4c.3 With Send at zero, Wet mix has no effect and the output is the dry
+      signal. `ToReverbMono` takes `dmix` but not `dsnd`, so decide where the
+      gate lives and say why.
+- [ ] 4c.4 Settle the discontinuity: hard threshold, or Wet mix authority
+      scaling with Send. State the choice and what an operator hears sweeping
+      Send from zero upward with Wet mix at maximum.
+- [ ] 4c.5 §7, FORWARD: `kMaxDelayWetMix` is a new named concept. Enumerate
+      every other wet/dry crossfade in the DSP by operand and report which have
+      a cap and which do not. Reverb was capped alone and Delay was left for two
+      days; do not repeat that by capping Delay alone.
+- [ ] 4c.6 Assert the default patch is audible with Wet mix at maximum. That is
+      the claim the operator made when reporting this.
+
 ## 5. Delivery
 
 - [ ] 5.1 Gates with counts. Sheaf browser suite, app suite, VST ctest, and the
