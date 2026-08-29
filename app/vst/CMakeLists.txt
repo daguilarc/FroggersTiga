@@ -243,6 +243,16 @@ target_compile_definitions(FroggersVst PUBLIC
     JUCE_VST3_CAN_REPLACE_VST2=0
 )
 
+# MSVC does not define M_PI unless _USE_MATH_DEFINES is set before <cmath>,
+# and the app's DSP headers use it in twenty-two places. Same fix
+# app/standalone/CMakeLists.txt already carries for the Windows standalone,
+# which is the only Windows build here that has ever gone green. PUBLIC rather
+# than that file's PRIVATE because the format targets and the three CTest
+# binaries all compile these same headers through this target.
+if(MSVC)
+    target_compile_definitions(FroggersVst PUBLIC _USE_MATH_DEFINES)
+endif()
+
 # --- processBlock smoke test (CTest) -----------------------------------
 # The format list is a platform claim, so it is asserted at configure time
 # rather than left to a build failure on a runner nobody watches. VST3 exists
