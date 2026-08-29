@@ -345,7 +345,7 @@ That flashes the bootloader itself to `0x08000000` with `:leave`.
 ## Troubleshooting
 
 - **`SW1` / `SW2` seem dead:** the tactile switch LEDs should light while each switch is held. If an LED lights but OLED page labels do not change (`V1VO` ↔ `PROB` ↔ `RVMX` …), the UI path is wrong; if neither LED lights, the switch or flash failed. Re-flash **`src/FroggersTiga`** (not dazed `src/Froggers`). Old dazed firmware blocks page switches while **`A1..A7`** mod-assign is held.  
-- **`SW1` stuck / always pressed (`r=1 p=1` on diag firmware):** Phase 1 (2026-06-26) confirmed hardware on `D30` for this unit — pin audit could not clear raw stuck state. See `openspec/changes/archive/2026-06-27-field-button-input-latency/phase1-findings.md`. Firmware suppression stops runaway page flips but cannot fix a stuck switch.  
+- **`SW1` stuck / always pressed (`r=1 p=1` on diag firmware):** a hardware fault on `D30`, not a firmware one — a pin audit cannot clear the raw stuck state. Firmware suppression stops runaway page flips but cannot fix a stuck switch.  
 - **Intermittent slowness on `SW2` / randomize (`B1`–`B4`):** FroggersTiga decouples control polling from OLED refresh (~30 FPS) and queues heavy **Rand All** (`B2`/`B4`) so the poll loop stays fast under audio load. Bootloader is not involved (`BOOT_NONE` @ `0x08000000`).  
 - **Weird knob behavior on a page:** check **`FUEG`** — high fuegoization is supposed to make small moves jumpy.  
 - **Modulation seems dead on CV:** confirm cable and that the input is above the auto-bypass threshold.  

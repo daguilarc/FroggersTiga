@@ -222,8 +222,7 @@ granted.
 Three independent oscillators. Each one's phase modulation and ring modulation run off its own
 internal carrier, so nothing in this bank reads another VCO's phase or output directly. Mixing is a
 three-way balance. Cross-oscillator routing lives in the modulation view, where each VCO's audio-rate
-output is a source (Modulation assignment, above). The Daisy Field firmware's dedicated cross-coupler
-([`DAISY_MANUAL.md`](DAISY_MANUAL.md)) has no counterpart here.
+output is a source (Modulation assignment, above).
 
 **VCO1 / VCO2 / VCO3** (`VCO1`/`VCO2`/`VCO3`, slots 0–2) — each VCO's pitch, mapped exponentially from
 20 Hz to 20 kHz. Default values land on 110 Hz, 220 Hz, and 330 Hz respectively, so a freshly launched app
