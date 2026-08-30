@@ -371,3 +371,22 @@ target_compile_features(FroggersVstEditorTest PRIVATE cxx_std_20)
 target_link_libraries(FroggersVstEditorTest PRIVATE FroggersVst)
 
 add_test(NAME FroggersVstEditorTest COMMAND FroggersVstEditorTest)
+
+# The three test binaries construct FroggersPluginProcessor as a local, and it
+# embeds synth::Engine<FroggersApp>: 1,204,864 bytes, measured. A Windows
+# thread gets 1 MB by default and macOS gives its main thread 8, so the same
+# object that is comfortable there overflows the stack on the first
+# construction -- all three exited 0xC00000FD, STATUS_STACK_OVERFLOW, before
+# reaching their own first write.
+#
+# The stack is raised rather than the fifty-five declarations rewritten: one
+# mechanism instead of fifty-five copies of one edit, and 8 MB is not a
+# tuned number but the size macOS already hands these same binaries. A host
+# never does this -- it allocates the processor itself -- so the fragility
+# stops at the test executables.
+if(MSVC)
+    foreach(FROGGERS_VST_TEST_BIN FroggersVstSmokeTest FroggersVstHostTests FroggersVstEditorTest)
+        target_link_options(${FROGGERS_VST_TEST_BIN} PRIVATE /STACK:8388608)
+    endforeach()
+endif()
+
