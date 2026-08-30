@@ -86,6 +86,14 @@
 #if JUCE_MAC
 // See PumpPendingCallAsync()'s own comment below for why this is needed.
 #include <CoreFoundation/CoreFoundation.h>
+#elif JUCE_WINDOWS
+// Same reason, other platform: the message pump primitive, reached directly.
+// NOMINMAX and WIN32_LEAN_AND_MEAN keep windows.h from defining min/max as
+// macros and from dragging in headers this file has no use for.
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <chrono>
 #endif
 
 #include <cmath>
@@ -190,14 +198,39 @@ const synth::ui::Node* FindNodeById(const synth::ui::NodeTree& tree, const std::
 // before the target message's own turn comes up. 2 seconds comfortably
 // exceeds the ~0.7s this took empirically in this environment; the loop
 // still returns as soon as the budget is spent, never blocking indefinitely.
+//
+// Windows reaches the same primitive from the other side. JUCE delivers
+// callAsync there by posting to the message-thread's own queue
+// (juce_events/native/juce_MessageManager_windows.cpp: a hidden window
+// created during doPlatformSpecificInitialisation, posted to with
+// PostMessage), so draining that thread's queue with PeekMessage/Dispatch is
+// what CFRunLoopRunInMode is on macOS. The same bounded-total-budget loop
+// shape is kept for the same reason: one drain is not enough when unrelated
+// messages are ready first, and the budget is what stops it blocking.
+//
+// FIRST ATTEMPT. The macOS half is verified by this suite having passed on
+// macOS for as long as it has existed; nothing has ever run this half, and it
+// cannot be exercised on the machine it was written on. A failure here is
+// expected discovery about JUCE's Windows message delivery, not a regression
+// in the wiring the test is actually about.
 void PumpPendingCallAsync() {
 #if JUCE_MAC
     const CFAbsoluteTime deadline = CFAbsoluteTimeGetCurrent() + 2.0;
     while (CFAbsoluteTimeGetCurrent() < deadline) {
         CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.05, true);
     }
+#elif JUCE_WINDOWS
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (std::chrono::steady_clock::now() < deadline) {
+        MSG message;
+        while (PeekMessage(&message, nullptr, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&message);
+            DispatchMessage(&message);
+        }
+        Sleep(5);
+    }
 #else
-    REQUIRE_TRUE(false && "PumpPendingCallAsync() is implemented for macOS only -- see its own comment");
+    REQUIRE_TRUE(false && "PumpPendingCallAsync() has no implementation for this platform -- see its own comment");
 #endif
 }
 
