@@ -164,6 +164,48 @@ jobs:
       - name: ctest
         run: ctest --test-dir app/vst/build --build-config Release --output-on-failure
 
+      # The three JUCE-linked binaries exit within a second while the
+      # pure-CMake docs check passes, and ctest prints nothing from them before
+      # they go -- which is what a process dying before it reaches its own
+      # first write looks like. Two families of cause fit that, and the exit
+      # code is the only thing here that separates them: 0xC0000005 is an
+      # access violation inside code that ran, 0xC0000135/0xC0000139 is an
+      # image whose dependencies never resolved, so nothing ran at all.
+      #
+      # Each is also run a second time from its own directory. Windows
+      # searches the executable's directory for DLLs before PATH, and ctest
+      # invokes these from the build root instead, so a difference between the
+      # two exit codes localises the fault to a missing sibling DLL rather
+      # than to the code.
+      - name: Diagnose the test binaries
+        if: always()
+        shell: pwsh
+        run: |
+          $names = @("FroggersVstSmokeTest", "FroggersVstHostTests", "FroggersVstEditorTest")
+          Write-Host "--- every exe produced by the build ---"
+          Get-ChildItem -Recurse -Filter *.exe app/vst/build |
+            ForEach-Object { Write-Host $_.FullName }
+          Write-Host "--- every dll produced by the build ---"
+          Get-ChildItem -Recurse -Filter *.dll app/vst/build |
+            ForEach-Object { Write-Host $_.FullName }
+          foreach ($name in $names) {
+            $exe = Get-ChildItem -Recurse -Filter "$name.exe" app/vst/build |
+              Select-Object -First 1
+            if (-not $exe) { Write-Host "=== $name : NOT BUILT ==="; continue }
+            Write-Host "=== $name ==="
+            Write-Host "path: $($exe.FullName)"
+            Write-Host "-- run from the build root, as ctest does --"
+            & $exe.FullName 2>&1 | Select-Object -First 25 | ForEach-Object { Write-Host $_ }
+            $fromRoot = $LASTEXITCODE
+            Write-Host ("exit: {0} (0x{1:X8})" -f $fromRoot, $fromRoot)
+            Write-Host "-- run from its own directory --"
+            Push-Location $exe.DirectoryName
+            & $exe.FullName 2>&1 | Select-Object -First 25 | ForEach-Object { Write-Host $_ }
+            $fromOwnDir = $LASTEXITCODE
+            Pop-Location
+            Write-Host ("exit: {0} (0x{1:X8})" -f $fromOwnDir, $fromOwnDir)
+          }
+
       # Compress-Archive, not ditto: ditto is macOS-only. Same packaging step
       # desktop-release.yml's Windows job uses, pointed at a directory rather
       # than a single .exe.
