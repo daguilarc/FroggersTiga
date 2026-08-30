@@ -1,34 +1,32 @@
 # Frogg3rs
 
-This is a synthesizer with three oscillators, an envelope per oscillator, a
-filter, a drive stage, a delay and a reverb. It runs as a desktop app, as a VST3
-or Audio Unit plugin, and in a browser. Every parameter is a knob on one of six
-banks of sixteen.
+This is a synthesizer designed for experimental noise; it probably won't make regular music super easily. It has three oscillators, an envelope per oscillator, a
+filter, a distortion stage, a delay and a reverb. It can be run as a desktop app, as a VST3
+or Audio Unit plugin in a Digital Audio Workstation (DAW), and in a browser. Personally, I recommend using the web browser version or the plugin versions in a DAW. Since I won't bother paying for an Apple Developer account, and I don't have a computer running Windows, the desktop versions will not appear as automatically "trusted" by Mac or Windows operating systems. Apple now makes you go into System Settings to give permission to this un-trusted software to run on your computer, rather than in a pop-up window, which is kind of annoying. The plugins run on DAW software that was made by professional software developers so you won't need to deal with this janky stuff. Reaper is a free DAW that works pretty darn well, no need to worry about breaking the bank with Ableton Live.
+
+Anyway, every parameter is an encoder knob on one of six
+banks of sixteen. Most parameter ranges are exponential, and you can attenuate the modulation depth by turning the knob, so even heavily modulated parameters are still audibly playable.
 
 These are some of the unique features in this digital synthesizer:
 
 **Modulation goes three levels deep.** Any parameter can be modulated by any of
-fifteen sources, and for the oscillators that includes themselves: VCO1's audio
-output can drive VCO1's own pitch. Six of the sources are random sample and
-hold lanes. The rest are taken from the instrument: each oscillator's raw
+fifteen sources, and for the oscillators that includes themselves, so all oscillators can control themselves and/or each other. Six of the sources are random sample &
+hold lanes, with the last one being slewed. The rest are taken from the instrument: each oscillator's raw
 audio-rate output, each oscillator's envelope follower, white noise, and
 external audio with its own envelope follower. The envelope followers run at
 10 ms attack and 50 ms release, so they move at a few Hz rather than at audio
 rate, and one oscillator can drive any parameter either at audio rate or at that
 slower envelope rate depending on which source you pick.
 
-Each modulation depth is itself a knob carrying those same fifteen sources, and
-so is the depth of that one. The amount by which one thing moves another is a
-thing you can move, and so is the amount by which that moves.
+Each modulation depth parameter can go down carrying those same fifteen sources, and
+so is the depth of that one. The amount by which one source modulates another can be modulated, and can that modulation.
 
-That compounds quickly. One parameter has fifteen depth knobs. Each of those
+This compounds exponentially. One parameter has fifteen depth knobs. Each of those
 fifteen has fifteen of its own, which is 225. Each of those 225 has fifteen
 more, which is 3,375. There is no fourth level, so a single parameter sits on
-top of 3,615 knobs.
+top of 3,615 knobs. 
 
-Most parameter ranges are exponential. A source pushes a parameter further at
-one end of its travel than at the other, so the same modulation depth reads as a
-different amount of movement depending on where the knob is sitting.
+
 
 **Randomization is weighted to stay playable.** Randomize All draws new values
 across the whole instrument, along with one level of modulation depths.
@@ -39,24 +37,22 @@ parameter in five comes out with no modulation at all, and four or more is rare.
 A randomized patch comes out with some parameters moving and some holding still.
 
 Randomize All covers one level at a time. To randomize the level below, open a
-modulation view and press it again there. The limit is storage rather than
-arithmetic: each modulation depth is a real parameter that has to be
+modulation view and press it again there. Because each modulation depth is a real parameter that has to be
 materialized before it can hold a value, and the instrument provisions 915
 first-level depths plus 225 more for the one parameter whose modulation view is
-open.
-Randomizing every level everywhere would mean materializing thousands of depths
-per parameter, which is a memory ceiling, not a shortage of random numbers.
+open, randomizing every level everywhere would mean materializing thousands of depths
+per parameter. I'd rather not try that on my laptop for now.
 
-You may fork this repo if you wish to bias the randomization differently. I
+You may fork this repo if you wish to bias the randomization differently, or do even more randomization all at once. I
 weighted this after testing and adjusting to taste; your taste may differ.
 
-There is also a bit-scramble on two knobs, Crunchy and Crispy, which corrupts
-parameter values on their way to the DSP. Crunchy is a single global knob shared
-by the whole instrument; each bank has its own Crispy, which scrambles only that
+**Crunchy and Crispy** knobs control a bit-scrambling function, which corrupts
+parameter values on their way to the DSP. **Crunchy ** is a single global knob shared
+by the whole instrument; each bank has its own local Most parameter ranges are exponential., which scrambles only that
 bank's parameters. They cascade: Crunchy warps every value, Crunchy also warps
 the bank's Crispy knob itself, and that warped Crispy is then applied on top of
 the already-warped value. At zero both do nothing. Turned up, knob moves stop
-being smooth and values snap between newly fried islands.
+being smooth and values snap between newly crispy-crunchy islands. This works on human knob-turning as well as parameters patched through modulation sources.
 
 Full parameter reference: [`MANUAL.md`](MANUAL.md).
 
