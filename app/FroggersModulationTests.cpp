@@ -835,13 +835,13 @@ TEST_CASE(randomize_page_mod_detail_moves_the_display_on_the_expected_fraction_o
             ++trialsWithDisplayMoved;
         }
     }
-    // P(count>=1) is 80% under the mode-2 table. At 500 trials the binomial
-    // standard error at p=0.8 is ~1.8 points, so a [65%, 95%] band (roughly
-    // 8 standard errors wide) leaves a wide, sample-size-appropriate margin
+    // P(count>=1) is 50% under the geometric draw. At 500 trials the binomial
+    // standard error at p=0.5 is ~2.2 points, so a [35%, 65%] band (roughly
+    // 6.7 standard errors wide) leaves a wide, sample-size-appropriate margin
     // while still catching the DISPLAY (not just the commanded value)
     // failing to track a real draw.
-    REQUIRE_TRUE(trialsWithDisplayMoved > kTrials * 0.65);
-    REQUIRE_TRUE(trialsWithDisplayMoved < kTrials * 0.95);
+    REQUIRE_TRUE(trialsWithDisplayMoved > kTrials * 0.35);
+    REQUIRE_TRUE(trialsWithDisplayMoved < kTrials * 0.65);
 }
 
 TEST_CASE(randomize_depth_helper_draws_distinct_sources_even_from_an_adversarial_index_feed) {
@@ -855,9 +855,9 @@ TEST_CASE(randomize_depth_helper_draws_distinct_sources_even_from_an_adversarial
     }
     synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
 
-    // Force count = 4 (a single NextRandomCoin() landing in the mode-2
-    // table's [0.936,0.984) bucket -- see FroggersModulation.hpp's own table
-    // comment) and feed an ADVERSARIAL NextRandomIndex that always returns
+    // Force count = 4: the geometric draw keeps going while the coin reads
+    // >= 0.5, so four such reads and then one below stops it there. Feeds an
+    // ADVERSARIAL NextRandomIndex that always returns
     // the LAST valid index of whatever range it's asked -- a "draw with
     // replacement, no exclusion" loop (Sheaf's own private
     // Bank::RandomizeModulationDepths) would pick a fixed relative position
@@ -865,9 +865,10 @@ TEST_CASE(randomize_depth_helper_draws_distinct_sources_even_from_an_adversarial
     // correct partial Fisher-Yates cannot, because each pick's search window
     // shrinks and is offset by the picks already made, so it is forced to
     // exercise real swaps here rather than degenerating to a no-op permutation.
+    int coinsDrawn = 0;
     fx.manager.SetRandomSource(
         []() { return 0.3f; },                                       // NextRandomValue (irrelevant to selection)
-        []() { return 0.95f; },                                      // NextRandomCoin -> count=4 (mode-2 table)
+        [&coinsDrawn]() { return coinsDrawn++ < 4 ? 0.9f : 0.1f; },  // NextRandomCoin -> count=4
         [](std::size_t exclusiveMax) { return exclusiveMax - 1; });  // NextRandomIndex: always top-of-range
 
     detail::RandomizeParameterModulationDepths(fx.manager, focused);
@@ -891,7 +892,7 @@ TEST_CASE(randomize_depth_helper_draws_distinct_sources_even_from_an_adversarial
 // is needed here for the same reason (contrast the no-op/display test above,
 // which needs it for `UIDisplayCenter`, not `SceneCenter`).
 //
-// Shared assertions for a count histogram against the mode-2 table -- reused
+// Shared assertions for a count histogram against the geometric draw -- reused
 // by the level-0 test and the level-1/level-2 regression pin below, so the
 // three properties (mode, rare 4+, zero rate) are pinned exactly once
 // rather than duplicated per level. Asserts on the resulting COUNT
@@ -899,14 +900,14 @@ TEST_CASE(randomize_depth_helper_draws_distinct_sources_even_from_an_adversarial
 // (median-based, one vector of samples) is the sixth green-while-wrong guard
 // on record for pinning the wrong layer; this one pins the actual observable
 // shape.
-void RequireModeTwoCountDistribution(const std::array<int, FroggersParameterModel::kNumModulators + 1>& histogram,
-                                      int trials, const char* label) {
-    // P(0) is 20% under the mode-2 table. A [10%, 30%] band is roughly 3.5
+void RequireGeometricCountDistribution(const std::array<int, FroggersParameterModel::kNumModulators + 1>& histogram,
+                                        int trials, const char* label) {
+    // P(0) is 50% under the geometric draw. A [38%, 62%] band is roughly 3.4
     // standard errors wide even at `trials` as low as 200, where the
-    // binomial standard error at p=0.20 is ~2.8 points -- a wide,
+    // binomial standard error at p=0.50 is ~3.5 points -- a wide,
     // sample-size-appropriate margin.
-    REQUIRE_TRUE(histogram[0] > trials * 0.10);
-    REQUIRE_TRUE(histogram[0] < trials * 0.30);
+    REQUIRE_TRUE(histogram[0] > trials * 0.38);
+    REQUIRE_TRUE(histogram[0] < trials * 0.62);
 
     std::size_t mode = 0;
     for (std::size_t count = 1; count < histogram.size(); ++count) {
@@ -914,7 +915,7 @@ void RequireModeTwoCountDistribution(const std::array<int, FroggersParameterMode
             mode = count;
         }
     }
-    REQUIRE_TRUE(mode == 2);  // 36.8% > 20.8% > 20% > 16% > 4.8% > 1.6%, strictly.
+    REQUIRE_TRUE(mode == 0);  // 50% > 25% > 12.5% > ..., strictly decreasing.
 
     int atLeastFour = 0;
     int atLeastSeven = 0;
@@ -928,17 +929,17 @@ void RequireModeTwoCountDistribution(const std::array<int, FroggersParameterMode
         }
         sum += static_cast<double>(count) * static_cast<double>(histogram[count]);
     }
-    // P(>=4) is 6.4% under the mode-2 table. "Materially below 13%" leaves a
-    // wide, sample-size-appropriate margin rather than one tightened until
-    // it happens to pass: even at `trials` as low as 200 the binomial
-    // standard error at p=0.064 is ~1.7 points, so 13% sits roughly 3.8
-    // standard errors above the true rate.
+    // P(>=4) is 6.25% under the geometric draw (0.5^4). "Materially below
+    // 13%" leaves a wide, sample-size-appropriate margin rather than one
+    // tightened until it happens to pass: even at `trials` as low as 200 the
+    // binomial standard error at p=0.0625 is ~1.7 points, so 13% sits
+    // roughly 4 standard errors above the true rate.
     REQUIRE_TRUE(atLeastFour < trials * 0.13);
 
     // [OBSERVED] -- not a pass condition (matches this file's own convention
     // for recording a measurement alongside its pass condition, e.g. the
     // level-three drill-in test's own peak-count print): the actual sampled
-    // shape, for a human to compare against the mode-2 table in
+    // shape, for a human to compare against the geometric draw in
     // FroggersModulation.hpp.
     std::cout << "[OBSERVED] " << label << " count histogram over " << trials << " trials:";
     for (std::size_t count = 0; count <= 4 && count < histogram.size(); ++count) {
@@ -969,7 +970,7 @@ TEST_CASE(randomize_depth_helper_level_zero_count_distribution_has_mode_two_acro
         ++histogram[static_cast<std::size_t>(nonNeutral)];
     }
 
-    RequireModeTwoCountDistribution(histogram, kTrials, "level-0");
+    RequireGeometricCountDistribution(histogram, kTrials, "level-0");
 }
 
 // "The same distribution must apply at EVERY level, not just level 0" -- a
@@ -1040,11 +1041,11 @@ TEST_CASE(randomize_all_level_one_press_gives_its_own_depths_and_each_depths_sub
     // than the histogram being near-empty from a wiring regression.
     REQUIRE_TRUE(level2Samples >= 200);
 
-    RequireModeTwoCountDistribution(level1Histogram, kTrials, "level-1");
-    RequireModeTwoCountDistribution(level2Histogram, level2Samples, "level-2");
+    RequireGeometricCountDistribution(level1Histogram, kTrials, "level-1");
+    RequireGeometricCountDistribution(level2Histogram, level2Samples, "level-2");
 }
 
-// Dedicated coverage for the zero bucket the mode-2 table now carries: a
+// Dedicated coverage for the zero bucket the geometric draw carries: a
 // fraction of RandomizeAll draws must leave a parameter with NO modulation
 // sources at all (count=0), not merely "rarely one source." This is
 // distinct from RequireModeTwoCountDistribution's zero-rate band above --
@@ -1052,7 +1053,7 @@ TEST_CASE(randomize_all_level_one_press_gives_its_own_depths_and_each_depths_sub
 // to state the zero and four-or-more rates as their own named properties,
 // plus a positive control that a broken always-zero randomizer could not
 // pass.
-TEST_CASE(randomize_depth_helper_zero_and_four_plus_rates_match_the_tuned_table_across_2000_trials) {
+TEST_CASE(randomize_depth_helper_zero_and_four_plus_rates_match_the_geometric_draw_across_2000_trials) {
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);  // 15 connected sources -- N for the tail
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));  // default: Level()==0
@@ -1081,13 +1082,14 @@ TEST_CASE(randomize_depth_helper_zero_and_four_plus_rates_match_the_tuned_table_
         }
     }
 
-    // P(0) is 20% under the tuned table. At 2000 trials the binomial
-    // standard error at p=0.20 is ~0.9 points, so a [15%, 25%] band (roughly
-    // 5.5 standard errors wide) is a wide, sample-size-appropriate margin.
-    REQUIRE_TRUE(zeroCount > kTrials * 0.15);
-    REQUIRE_TRUE(zeroCount < kTrials * 0.25);
+    // P(0) is 50% under the geometric draw. At 2000 trials the binomial
+    // standard error at p=0.50 is ~1.1 points, so a [44%, 56%] band (roughly
+    // 5.4 standard errors wide) is a wide, sample-size-appropriate margin.
+    REQUIRE_TRUE(zeroCount > kTrials * 0.44);
+    REQUIRE_TRUE(zeroCount < kTrials * 0.56);
 
-    // P(>=4) is 1-in-16 (6.25%) under the tuned table (4.8% + 1.6%). At 2000
+    // P(>=4) is 1-in-16 (6.25%) under the geometric draw (0.5^4) -- the same
+    // rate the tuned table it replaced happened to land on. At 2000
     // trials the binomial standard error at p=0.0625 is ~0.54 points, so a
     // [3.5%, 9.5%] band (roughly 5.5 standard errors wide either side) is a
     // wide, sample-size-appropriate margin.
@@ -1096,10 +1098,11 @@ TEST_CASE(randomize_depth_helper_zero_and_four_plus_rates_match_the_tuned_table_
 
     // POSITIVE CONTROL: a substantial fraction of draws must be non-zero --
     // a randomizer that regressed to always-zero would otherwise satisfy
-    // "some fraction is zero" trivially. P(count>=1) is 80% under the tuned
-    // table; requiring more than half rules out an always-zero (or
-    // mostly-zero) regression without pinning the exact rate twice.
-    REQUIRE_TRUE(nonZeroCount > kTrials * 0.5);
+    // "some fraction is zero" trivially. P(count>=1) is 50% under the
+    // geometric draw, so the threshold sits well clear of it: a third rules
+    // out an always-zero (or mostly-zero) regression without pinning the
+    // exact rate twice, which the band above already does.
+    REQUIRE_TRUE(nonZeroCount > kTrials * 0.33);
 
     std::cout << "[OBSERVED] zero-and-four-plus-rates count histogram over " << kTrials
               << " trials: P(0)=" << (100.0 * zeroCount / kTrials) << "%"
@@ -1729,7 +1732,7 @@ TEST_CASE(reset_depths_read_neutral_not_zero_the_trap_is_not_reintroduced) {
     REQUIRE_TRUE(drillIn.Level() == 1);
     synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
 
-    // RandomizePage draws 0 sources on 20% of calls (see
+    // RandomizePage draws 0 sources on 50% of calls (see
     // FroggersModulation.hpp's count table), so a single draw is not
     // guaranteed to leave a non-neutral depth to reset -- retry a bounded
     // number of times (P(20 straight no-ops) is astronomically small) until

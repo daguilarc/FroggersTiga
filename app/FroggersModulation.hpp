@@ -901,14 +901,11 @@ namespace detail {
 // (ParameterModulation.cpp:2790-2792) is ABOUT to fire for the next press:
 // `ParameterGroup::CanAllocate()` (public) is already false. Checking a
 // per-parameter "does every connected modulator have a materialized depth"
-// count instead would be wrong -- Sheaf's own geometric bias
-// (P(k)=0.5^(k+1), mean 1.0) is REPLACED on the app
-// side. The distribution actually in force is this file's own
-// RandomizeParameterModulationDepths draw below (mean 1.80 -- see that
-// draw's own comment for the exact
-// numbers) -- and that still means a HEALTHY randomize typically leaves
-// most of a parameter's 15 possible depths untouched; that is normal, not a
-// partial randomize. Only "no more storage was available to give" is.
+// count instead would be wrong -- the draw below is geometric
+// (P(k)=0.5^(k+1), mean 1.0), so a HEALTHY randomize leaves a parameter with
+// no depths at all half the time and most of its 15 possible depths
+// untouched nearly always; that is normal, not a partial randomize. Only
+// "no more storage was available to give" is.
 inline bool CapacityExhausted(const synth::ParameterGroup& group) {
     return !group.CanAllocate();
 }
@@ -1045,8 +1042,8 @@ inline void ZeroExistingModulationDepths(synth::Parameter& parameter) {
 // four RandomMod dispatch sites in this file (RandomizeBankLevel1Depths,
 // RandomizePage's drill-in branch, and both RandomizeAll drill-in branches).
 // Chooses a COUNT of `parameter`'s connected modulation sources using the
-// mode-2 table below (see the table's own comment, right above the draw, for
-// the exact numbers and their derivation), draws that many DISTINCT sources
+// geometric draw below (see its own comment, right above it), draws that
+// many DISTINCT sources
 // (partial Fisher-Yates -- Sheaf's
 // own private Bank::RandomizeModulationDepths loop can independently redraw
 // the same source twice, which this does not reproduce), and
@@ -1099,46 +1096,27 @@ inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager,
         return partial;
     }
 
-    // Mode-2
-    // table, tuned so the mode (2) clears the next count (3) by a wide
-    // margin rather than sitting on an even tie. Distinct-source draws --
-    // see this function's own header comment for why distinctness matters.
+    // How many sources this parameter gets: a plain geometric draw,
+    // P(k) = 0.5^(k+1) -- 50% none, 25% one, 12.5% two, and so on. Keep
+    // flipping while the coin says keep going; the count is how many times it
+    // said so.
     //
-    // count=0: 20% (u<0.20f)     count=1: 16% (u<0.36f)
-    // count=2: 36.8% (u<0.728f) <- the mode    count=3: 20.8% (u<0.936f)
-    // count=4: 4.8% (u<0.984f)
-    // count=5+: 1.6%, geometric r=0.30 (else branch below)
+    // This is Sheaf's own distribution rather than a table tuned on top of
+    // it. A hand-tuned ladder used to sit here, and the arithmetic justifying
+    // its six thresholds was longer than the code it explained. What the app
+    // still needs from this function is the DISTINCT-source draw below, which
+    // Sheaf's own loop does not give -- it can redraw one source twice, and a
+    // count means nothing if the draw can collapse it. The count itself needed
+    // no opinion of its own.
     //
-    // Derivation (recorded so a future retune
-    // starts from this arithmetic instead of re-deriving it):
-    //   P(>=4)                   = 4.8% + 1.6%             = 6.4%
-    //   P(count=7)               = 0.016 * 0.30^2 * 0.70    = 0.1008%
-    //   P(>=7)                   = 0.016 * 0.30^2           = 0.144%
-    //   E[params at 7+ / press]  = 16 * 0.00144            = 0.023  (across 16
-    //                               visible params -- roughly one press in 43, i.e.
-    //                               "essentially never")
-    //   mean = 0.20(0)+0.16(1)+0.368(2)+0.208(3)+0.048(4)+0.016(5+0.3/0.7) = 1.80
-    //   mode = 2, strictly (36.8% > 20.8% > 20% > 16% > 4.8% > 1.6%);
-    //   minimum is 0, drawn on 20% of calls
-    const float u = manager.NextRandomCoin();
-    std::size_t count;
-    if (u < 0.20f) {
-        count = 0;
-    } else if (u < 0.36f) {
-        count = 1;
-    } else if (u < 0.728f) {
-        count = 2;
-    } else if (u < 0.936f) {
-        count = 3;
-    } else if (u < 0.984f) {
-        count = 4;
-    } else {
-        count = 5;
-        while (count < eligible.size() && manager.NextRandomCoin() < 0.30f) {
-            ++count;
-        }
+    // Most parameters getting nothing is the point: at 84 parameters a
+    // Randomize All materializes about 84 depths rather than the ~151 the old
+    // mean of 1.80 produced, which is both sparser to listen to and half the
+    // pressure on the storage a partial randomize reports running out of.
+    std::size_t count = 0;
+    while (count < eligible.size() && manager.NextRandomCoin() >= 0.5f) {
+        ++count;
     }
-    count = std::min(count, eligible.size());
 
     // Partial Fisher-Yates over `eligible`: draws `count` DISTINCT source
     // indices (see this function's header comment on why "distinct" matters

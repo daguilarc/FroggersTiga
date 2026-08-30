@@ -158,19 +158,18 @@ count, and the draw is weighted:
 
 | sources attached | 0 | 1 | 2 | 3 | 4 | 5 or more |
 |---|---|---|---|---|---|---|
-| chance | 20% | 16% | 36.8% | 20.8% | 4.8% | 1.6% |
+| chance | 50% | 25% | 12.5% | 6.25% | 3.125% | 3.125% |
 
-Two sources is the most common result. About one parameter in five comes out carrying no modulation at
-all, and four or more sources lands on roughly one draw in sixteen. Whatever the count, the sources
-chosen are always distinct, and only sources that are currently connected are eligible — an
-unconnected External Audio source is never drawn.
+Each count is half as likely as the one before it. Half of all parameters come out carrying no
+modulation at all, a quarter get one source, and four or more lands on roughly one draw in sixteen.
+Whatever the count, the sources chosen are always distinct, and only sources that are currently
+connected are eligible — an unconnected External Audio source is never drawn.
 
 The weights are shaped this way because a parameter pushed by many sources at once tends to sit near
 its center — independent movements cancel each other out — and a patch where everything is modulated
-by everything sounds uniformly busy. Most parameters landing on one or two sources keeps each
-source's contribution audible, and the share of parameters that come out completely still gives a
-randomized patch some contrast. Wide draws stay in the table, so an occasional densely modulated
-parameter still happens.
+by everything sounds uniformly busy. Half the parameters staying still is what gives a randomized
+patch its contrast, and the ones that do move keep each source's contribution audible. The tail never
+closes, so an occasional densely modulated parameter still happens.
 
 ---
 

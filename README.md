@@ -32,8 +32,9 @@ top of 3,615 knobs.
 across the whole instrument, along with one level of modulation depths.
 Randomize Page draws exactly what is on screen: a bank's values on a parameter
 page, or that view's depths inside a modulation view. The number of sources a
-parameter picks up is a weighted draw: two is the most common result, one
-parameter in five comes out with no modulation at all, and four or more is rare.
+parameter picks up is a weighted draw, each count half as likely as the one
+before it: half of all parameters come out with no modulation at all, a quarter
+get one source, and four or more is rare.
 A randomized patch comes out with some parameters moving and some holding still.
 
 Randomize All covers one level at a time. To randomize the level below, open a
