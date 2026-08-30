@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Keep Field hardware operator documentation (`DAISY_MANUAL.md`) and its quick-dict Field glosses aligned with engine external-mix behavior and FUEG semantics.
+Keep Field hardware operator documentation (`DAISY_MANUAL.md`) aligned with engine external-mix behavior and FUEG semantics.
 
 ## Requirements
 
@@ -25,19 +25,6 @@ Keep Field hardware operator documentation (`DAISY_MANUAL.md`) and its quick-dic
 
 - **WHEN** reader opens Audio page knob table row 8
 - **THEN** FUEG is fuegoizer and PM3 depth only
-
-### Requirement: Quick dict states the Field glosses plainly
-
-`QUICK_DICT.md` — the single copy every host embeds at build time — SHALL use these glosses:
-
-- **Crispy** / **FUEG**: scramble knobs 1–7 (mod first); moddable; does not control external ring-mod mix.
-- **Ext. In.**: optional line/mic; parallel ring mod when gate open; VCO-only when off/silent.
-- Field-specific language is free of app-side mix-topology terms and vice versa.
-
-#### Scenario: Crispy gloss is topology-free
-
-- **WHEN** reader opens `QUICK_DICT.md`'s Global section
-- **THEN** the Crispy/FUEG gloss has no external ring-mod topology or blend language
 
 ### Requirement: Field manual documents button responsiveness expectations
 
