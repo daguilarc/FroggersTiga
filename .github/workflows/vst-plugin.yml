@@ -153,10 +153,16 @@ jobs:
           test -d app/vst/build/FroggersVst_artefacts/Release/VST3/Frogg3rs.vst3
           echo "Windows VST3 bundle present"
 
-      # Three registered tests here, not the macOS job's five: no AU target
+      # -C Release, unlike the macOS job: this generator is multi-config, so
+      # ctest cannot tell which configuration to run and reports every test as
+      # "Not Run -- Test not available without configuration". The macOS job's
+      # generator is single-config and takes the configuration from the build
+      # directory itself.
+      #
+      # Four registered tests here, not the macOS job's five: no AU target
       # means no FroggersVstDocsBundled_AU.
       - name: ctest
-        run: ctest --test-dir app/vst/build --output-on-failure
+        run: ctest --test-dir app/vst/build --build-config Release --output-on-failure
 
       # Compress-Archive, not ditto: ditto is macOS-only. Same packaging step
       # desktop-release.yml's Windows job uses, pointed at a directory rather
