@@ -199,10 +199,11 @@ The app SHALL provide exactly two randomize affordances: **Randomize All** (glob
 - **THEN** that bank's own Crispy control is randomized
 
 ### Requirement: Randomized source count is biased toward few, and depth storage is allocated once
-The randomizer SHALL affect zero modulation sources on about one call in five,
-and four or more sources only on about one call in sixteen. Depth storage for a
-given source SHALL be allocated once, on first use, rather than accumulating
-additional storage across repeated randomization presses.
+The randomizer SHALL draw its source count geometrically, each count half as
+likely as the one below it: zero sources on about half of all calls, and four or
+more on about one call in sixteen. Depth storage for a given source SHALL be
+allocated once, on first use, rather than accumulating additional storage across
+repeated randomization presses.
 
 A parameter the draw leaves at zero sources SHALL carry no modulation depth and
 SHALL therefore show no modulation badge, so that a randomized bank reads as a
@@ -210,7 +211,7 @@ set of deliberate choices rather than as everything touched at once.
 
 #### Scenario: Some parameters come out of a randomize untouched
 - **WHEN** Randomize All is pressed on a parameter page
-- **THEN** about one parameter in five carries no modulation depth
+- **THEN** about half the parameters carry no modulation depth
 - **AND** those parameters show no modulation badge
 - **AND** the remaining parameters carry at least one non-neutral depth
 
