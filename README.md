@@ -47,8 +47,8 @@ You may fork this repo if you wish to bias the randomization differently, or do 
 weighted this after testing and adjusting to taste; your taste may differ.
 
 **Crunchy and Crispy** knobs control a bit-scrambling function, which corrupts
-parameter values on their way to the DSP. **Crunchy ** is a single global knob shared
-by the whole instrument; each bank has its own local Most parameter ranges are exponential., which scrambles only that
+parameter values on their way to the DSP. **Crunchy** is a single global knob shared
+by the whole instrument; each bank has its own local **Crispy**. Most parameter ranges are exponential, which scrambles only that
 bank's parameters. They cascade: Crunchy warps every value, Crunchy also warps
 the bank's Crispy knob itself, and that warped Crispy is then applied on top of
 the already-warped value. At zero both do nothing. Turned up, knob moves stop
