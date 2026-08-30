@@ -124,8 +124,10 @@ re-derived.
       `NSMicrophoneUsageDescription` — prompt, silent denial, or termination.
       This is the only remaining behavioural unknown in the desktop half.
 - [ ] 4.6 OPERATOR: the Windows VST3 loads in a Windows DAW and makes sound.
-      Not checkable until the new CI job has run once. Running its ctest on
-      Windows is also a first attempt; the workflow's own list omits it.
+      UNBLOCKED: the job has now run green -- build, bundle, bundled
+      documentation, and all four Windows tests. Five failures were found and
+      fixed getting there; see postflight. The artifact still has to be opened
+      in a real DAW, which no check covers.
 - [ ] 4.7 OPERATOR: the unsigned Windows plugin's first-load warning matches
       what the release body says.
 

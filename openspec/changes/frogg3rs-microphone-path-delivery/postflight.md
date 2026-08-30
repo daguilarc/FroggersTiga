@@ -162,3 +162,76 @@ exit 0 (103 node tests, 225 playwright passed / 2 skipped); build-browser exit
 0; local smoke exit 0; frogg3rs e2e exit 0, 60 passed in 22.0s against 36
 minutes of timeouts while broken -- the runtime is the control that the app
 boots at all.
+
+## Windows plugin: five failures, each found by running it
+
+The predecessor marked the Windows VST3 job's steps first attempts. It had
+never run. This records what running it actually found, in order, because each
+failure was only reachable once the one before it was fixed.
+
+1. **Compile.** `M_PI` undeclared. MSVC does not define it in `<cmath>` without
+   `_USE_MATH_DEFINES`, and the DSP headers use it in twenty-two places.
+   `app/standalone/CMakeLists.txt` has carried that guard since the Windows
+   standalone shipped -- traced, then mirrored onto the plugin's shared-code
+   target, PUBLIC so the format targets and the CTest binaries get it too.
+2. **Link.** LNK2019 on every `MasterClock` and `ClockBlockPlan` symbol.
+   Sheaf's Makefile drives `CXX ?= clang++` outside CMake's compiler
+   selection, so `make` on that runner builds `libsynth.a` with a different
+   toolchain than the one linking it. The standalone hit this exact error and
+   solved it by compiling `src/*.cpp` into its own target on Windows; same
+   split here.
+3. **ctest ran nothing.** "Test not available without configuration." That
+   generator is multi-config, so the configuration comes from the ctest
+   invocation rather than the build directory. `--build-config Release`.
+   The step's own comment also claimed three tests where there are four.
+4. **Three binaries died instantly.** ctest called it SEGFAULT and printed
+   nothing. A diagnostic step captured the exit code, which is the only thing
+   that separates the two causes that fit: `0xC00000FD`, STATUS_STACK_OVERFLOW
+   -- not an access violation, not an unresolved image. They construct
+   `FroggersPluginProcessor` as a local; it embeds
+   `synth::Engine<FroggersApp>`, measured at 1,204,864 bytes, against a
+   Windows thread's 1 MB. macOS gives its main thread 8 MB, which is why the
+   same construction is comfortable there. `/STACK:8388608` on the three test
+   binaries -- the stack raised rather than fifty-five declarations rewritten,
+   one mechanism instead of fifty-five copies of one edit.
+5. **The editor test's own guard.** `PumpPendingCallAsync()` existed only for
+   macOS and hard-fails by design elsewhere. JUCE delivers `callAsync` on
+   Windows by posting to the message thread's queue, so the peek/dispatch loop
+   is what `CFRunLoopRunInMode` is on macOS, with the same bounded-budget shape
+   for the reason the macOS half documents.
+
+Result: build, bundle, documentation inside the bundle, and all four Windows
+tests pass. macOS was re-verified at 5/5 after every one of these, twice from a
+clean configure.
+
+## Process divergence, recorded rather than tidied away
+
+These five fixes were each committed and pushed to `main` as they were found,
+without a postflight between them. That is the pipeline inverted: six
+deliveries in a row driven by whatever CI said last. It worked only because
+each failure was unambiguous and the macOS gate was re-run every time. The
+honest cost is that no single gate result covered the whole set until this
+sweep.
+
+## Enumeration against the final diff
+
+- `FROGGERS_SHEAF_SYNTH_SOURCES`: FOUND 2 -- `app/standalone/CMakeLists.txt`
+  and now `app/vst/CMakeLists.txt`, the same twenty-line Windows glob in two
+  build files. CHANGED 0. This is a real duplication: Sheaf changing its build
+  shape needs both edited, and one will drift. NOT FIXED -- the fix is a shared
+  `.cmake` module both include, and both files are green as they stand, so it
+  is named here rather than done late.
+- `FROGGERS_VST_TEST_BIN`: 1 definition, loop-local to the stack block.
+- `froggers_vst_doc_dir`: 1 definition, 2 call sites, unchanged by this work.
+
+## Gates, and whether their inputs moved
+
+- VST ctest (macOS): re-run after every one of the five fixes, 5/5, twice from
+  a clean configure. Current.
+- Windows VST job: green on `b736008`, the current `main`.
+- GitHub Pages: green on `b736008`.
+- App suite, Sheaf synth suite, Sheaf browser suite, frogg3rs e2e: last run
+  before these five fixes. CARRIED FORWARD, and the reason is checked rather
+  than assumed -- every one of the five touched only `app/vst/` and
+  `.github/workflows/`, so nothing any of those four gates compiles or loads
+  has changed since they ran.
