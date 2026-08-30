@@ -10,7 +10,7 @@ banks of sixteen. Most parameter ranges are exponential, and you can attenuate t
 These are some of the unique features in this digital synthesizer:
 
 **Modulation goes three levels deep.** Any parameter can be modulated by any of
-fifteen sources, and for the oscillators that includes themselves, so all oscillators can control themselves and/or each other. Six of the sources are random sample &
+fifteen sources (the sixteenth slot in a modulation page is always the "back" button), and for the oscillators that includes themselves, so all oscillators can control themselves and/or each other. Six of the sources are random sample &
 hold lanes, with the last one being slewed. The rest are taken from the instrument: each oscillator's raw
 audio-rate output, each oscillator's envelope follower, white noise, and
 external audio with its own envelope follower. The envelope followers run at
