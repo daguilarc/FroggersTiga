@@ -726,11 +726,14 @@ public:
             // ApplyBankDefaultPatch -> EnsureModulationDepth), but never on a
             // scale where reporting a partial reset to the UI would be
             // meaningful -- see FroggersModulation.hpp's ResetPage/ResetAll.
+            bool resetRan = false;
             if (pendingResetAll_.exchange(false, std::memory_order_acq_rel)) {
                 ResetAll(*context_->parameterManager, *drillIn_, parameters_);
+                resetRan = true;
             }
             if (pendingResetPage_.exchange(false, std::memory_order_acq_rel)) {
                 ResetPage(*context_->parameterManager, *drillIn_, parameters_);
+                resetRan = true;
             }
             if (randomizeRan) {
                 // Surfaces a partial randomize -- observable to tests via
@@ -742,28 +745,45 @@ public:
                 // header comment), and any operator-visible logging must
                 // instead read this atomic from the UI thread.
                 lastRandomizePartial_.store(anyPartial, std::memory_order_release);
-                // The display-staleness fix. `Parameter::
-                // RandomizeVisibleValue` writes `sceneCenters_` (the commanded
-                // value) directly and immediately, but the drill-in knob
-                // reads `uiDisplayCenters_`, which a depth parameter only
-                // ever gets seeded into via a smoothed, one-shot nudge inside
-                // RandomizeVisibleValue itself (Sheaf, pinned) -- it is never
-                // touched again by the per-sample loop, because depth
-                // parameters are not in `topLevelParameters_`.
-                // `ComputeAllParameters()` (public,
-                // ParameterModulation.hpp:796) is the one call that reseeds
-                // it exactly, for every parameter including depth children
-                // (ComputeAtDepth's recursionDepth_>0 branch takes the
-                // instant snap-and-seed path, not the smoothed one). Called
-                // ONCE here, after both branches
-                // above have made every write for this frame's request(s),
-                // never per-parameter and never from the UI thread:
-                // ProcessFrame() itself only ever runs on the audio thread
-                // (this method's own header comment; `synth::Engine` invokes
-                // it once per block, after message drains and before
-                // ProcessBlock()), and `ComputeAllParameters()` is a full,
-                // non-lock-free graph traversal that `ParameterManager`
-                // requires to run there (ParameterModulation.hpp:484-485).
+            }
+            // ONE reseed covering both drains above, for two different reasons.
+            //
+            // Randomize: `Parameter::RandomizeVisibleValue` writes
+            // `sceneCenters_` (the commanded value) directly and immediately,
+            // but the drill-in knob reads `uiDisplayCenters_`, which a depth
+            // parameter only ever gets seeded into via a smoothed, one-shot
+            // nudge inside RandomizeVisibleValue itself (Sheaf, pinned). The
+            // per-sample loop never touches it again, because depth parameters
+            // are not in `topLevelParameters_`.
+            //
+            // Reset: it writes `sceneCenters_` and returns; the per-sample
+            // path then WALKS the computed values there over several blocks
+            // (~81% of the remaining distance per block -- see
+            // FroggersAudioRoutingTests.cpp's own note on that rate). During
+            // that walk the DSP is driven with values partway between what
+            // Randomize drew and what Reset commanded, so a reset landing on a
+            // later block than a randomize left the instrument audibly running
+            // on the outgoing patch after it had been told to stop. Measured at
+            // 84 parameters still differing at the reset block and converging
+            // by 8 blocks. `ComputeAllParameters()` snaps current to target
+            // outright, so the window never exists.
+            //
+            // Depth children make it permanent rather than merely slow: they
+            // are not in `topLevelParameters_`, so the per-sample path never
+            // reaches them at all and only this call ever reseeds them.
+            //
+            // Called ONCE here, after every branch above has made its writes
+            // for this frame, never per-parameter and never from the UI
+            // thread: ProcessFrame() only ever runs on the audio thread (this
+            // method's own header comment; `synth::Engine` invokes it once per
+            // block, after message drains and before ProcessBlock()), and
+            // `ComputeAllParameters()` (public, ParameterModulation.hpp:796)
+            // is a full, non-lock-free graph traversal that `ParameterManager`
+            // requires to run there (ParameterModulation.hpp:484-485). It
+            // reseeds every parameter including depth children -- ComputeAtDepth's
+            // recursionDepth_>0 branch takes the instant snap-and-seed path,
+            // not the smoothed one.
+            if (randomizeRan || resetRan) {
                 context_->parameterManager->ComputeAllParameters();
             }
         }

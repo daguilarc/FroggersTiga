@@ -37,8 +37,10 @@
 #include <filesystem>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -145,6 +147,17 @@ void RequireFiniteStereo(const std::vector<Rig::OutputFrame>& frames) {
     }
 }
 
+// The audible and inaudible fundamentals every band check in this file
+// contrasts, and the linear silence floor they are compared against. Shared
+// rather than re-typed per test: a band check that quietly drifts to a
+// different triple stops being comparable with the others, and a floor that
+// drifts stops matching ComputeSilenceSettleWindow's own
+// kBandSilenceFloorLinear (-60 dBFS), which ComputeSilenceSettleWindow below
+// returns as its own floor.
+inline constexpr std::array<double, 3> kAudibleFundamentalsHz{110.0, 220.0, 330.0};
+inline constexpr std::array<double, 3> kInaudibleFundamentalsHz{20.0, 40.0, 60.0};
+inline constexpr float kBandSilenceFloorLinear = 1.0e-3f;
+
 // Settle/check-
 // window silence-measurement scaffolding, extracted after it appeared a
 // third near-byte-identical time (the Grit stopped-state test) -- a
@@ -179,8 +192,7 @@ SilenceSettleWindow ComputeSilenceSettleWindow(double settleSeconds) {
     const auto settleLeadBlocks =
         static_cast<std::size_t>(std::ceil((settleSeconds * kSampleRateHz) / kBlockSizeSamples)) -
         checkWindowBlocks;
-    constexpr float kSilenceFloorLinear = 1.0e-3f;  // -60 dBFS.
-    return {settleLeadBlocks, checkWindowBlocks, kSilenceFloorLinear};
+    return {settleLeadBlocks, checkWindowBlocks, kBandSilenceFloorLinear};
 }
 
 // -----------------------------------------------------------------------
@@ -1318,7 +1330,7 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb) {
     // never read as silent regardless of how well the fix works).
     // (FroggersApp::Config() sets 48 kHz/256-sample blocks,
     // FroggersAppCore.hpp:196-197). -60 dBFS: 20*log10(x) = -60 -> x = 1.0e-3.
-    const auto [settleLeadBlocks, checkWindowBlocks, kSilenceFloorLinear] =
+    const auto [settleLeadBlocks, checkWindowBlocks, kBandSilenceFloorLinear] =
         ComputeSilenceSettleWindow(/*settleSeconds=*/0.25);
 
     rig.RunBlocks(settleLeadBlocks);
@@ -1331,7 +1343,7 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb) {
     const auto& settledOutput = rig.Output();
     RequireFiniteStereo(settledOutput);
     const float settledPeak = PeakAbs(settledOutput);
-    REQUIRE_TRUE(settledPeak < kSilenceFloorLinear);
+    REQUIRE_TRUE(settledPeak < kBandSilenceFloorLinear);
 
     // And it must STAY there -- not merely have decayed once. Run a further
     // stretch, then measure another short trailing window, confirming it's
@@ -1344,7 +1356,7 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb) {
     const auto& staysSilentOutput = rig.Output();
     RequireFiniteStereo(staysSilentOutput);
     const float staysSilentPeak = PeakAbs(staysSilentOutput);
-    REQUIRE_TRUE(staysSilentPeak < kSilenceFloorLinear);
+    REQUIRE_TRUE(staysSilentPeak < kBandSilenceFloorLinear);
 }
 
 // Post-just-landed-fix defect: the test above
@@ -1442,7 +1454,7 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
     // extracts).
     constexpr double kSampleRateHz = 48000.0;
     constexpr double kBlockSizeSamples = 256.0;
-    const auto [settleLeadBlocks, checkWindowBlocks, kSilenceFloorLinear] =
+    const auto [settleLeadBlocks, checkWindowBlocks, kBandSilenceFloorLinear] =
         ComputeSilenceSettleWindow(/*settleSeconds=*/10.5);
 
     // Clear-once-at-AllIdle, not clear-every-block: this is the
@@ -1492,7 +1504,7 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
     const auto& afterStopOutput = rig.Output();
     RequireFiniteStereo(afterStopOutput);
     const float afterStopPeak = PeakAbs(afterStopOutput);
-    REQUIRE_TRUE(afterStopPeak < kSilenceFloorLinear);
+    REQUIRE_TRUE(afterStopPeak < kBandSilenceFloorLinear);
 
     rig.RunBlocks(settleLeadBlocks);
     timestamp += settleLeadBlocks;
@@ -1504,7 +1516,7 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
     const auto& settledOutput = rig.Output();
     RequireFiniteStereo(settledOutput);
     const float settledPeak = PeakAbs(settledOutput);
-    REQUIRE_TRUE(settledPeak < kSilenceFloorLinear);
+    REQUIRE_TRUE(settledPeak < kBandSilenceFloorLinear);
 
     // And it must STAY there through the (short, near-unity-feedback-decay)
     // remainder -- not merely have decayed once right at the release's tail.
@@ -1516,7 +1528,7 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
     const auto& staysSilentLongReleaseOutput = rig.Output();
     RequireFiniteStereo(staysSilentLongReleaseOutput);
     const float staysSilentLongReleasePeak = PeakAbs(staysSilentLongReleaseOutput);
-    REQUIRE_TRUE(staysSilentLongReleasePeak < kSilenceFloorLinear);
+    REQUIRE_TRUE(staysSilentLongReleasePeak < kBandSilenceFloorLinear);
 }
 
 // =========================================================================
@@ -1812,9 +1824,9 @@ TEST_CASE(freeze_alone_holds_the_ring_above_an_audible_floor_and_stops_the_trans
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("freeze_alone_holds_ring_stops_transport"));
     BuildLatchedRingHeldAcrossStop(rig);
 
-    const auto [settleLeadBlocks, checkWindowBlocks, kSilenceFloorLinear] =
+    const auto [settleLeadBlocks, checkWindowBlocks, kBandSilenceFloorLinear] =
         ComputeSilenceSettleWindow(/*settleSeconds=*/0.25);
-    (void)kSilenceFloorLinear;  // Not the assertion here -- this test asserts the INVERSE.
+    (void)kBandSilenceFloorLinear;  // Not the assertion here -- this test asserts the INVERSE.
 
     rig.RunBlocks(settleLeadBlocks);
     // The Freeze-stops-the-transport fix: the Freeze press itself (inside
@@ -1855,7 +1867,7 @@ TEST_CASE(freeze_latch_release_while_stopped_silences_within_the_bound) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("freeze_latch_release_while_stopped_silences"));
     BuildLatchedRingHeldAcrossStop(rig);
 
-    const auto [settleLeadBlocks, checkWindowBlocks, kSilenceFloorLinear] =
+    const auto [settleLeadBlocks, checkWindowBlocks, kBandSilenceFloorLinear] =
         ComputeSilenceSettleWindow(/*settleSeconds=*/0.25);
 
     // Confirm the drone is genuinely still held immediately before
@@ -1878,7 +1890,7 @@ TEST_CASE(freeze_latch_release_while_stopped_silences_within_the_bound) {
     REQUIRE_TRUE(!rig.SawNaN());
     const auto& silencedOutput = rig.Output();
     RequireFiniteStereo(silencedOutput);
-    REQUIRE_TRUE(PeakAbs(silencedOutput) < kSilenceFloorLinear);
+    REQUIRE_TRUE(PeakAbs(silencedOutput) < kBandSilenceFloorLinear);
     REQUIRE_TRUE(!rig.Application().TransportRunning());  // release never starts the transport.
 }
 
@@ -1895,7 +1907,7 @@ TEST_CASE(stop_disarms_the_latch_and_silences_the_held_drone_within_the_bound) {
     Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("stop_disarms_latch_silences_drone"));
     BuildLatchedRingHeldAcrossStop(rig);
 
-    const auto [settleLeadBlocks, checkWindowBlocks, kSilenceFloorLinear] =
+    const auto [settleLeadBlocks, checkWindowBlocks, kBandSilenceFloorLinear] =
         ComputeSilenceSettleWindow(/*settleSeconds=*/0.25);
 
     // Positive control: the drone is genuinely live immediately before
@@ -1915,7 +1927,7 @@ TEST_CASE(stop_disarms_the_latch_and_silences_the_held_drone_within_the_bound) {
     REQUIRE_TRUE(!rig.SawNaN());
     const auto& silencedOutput = rig.Output();
     RequireFiniteStereo(silencedOutput);
-    REQUIRE_TRUE(PeakAbs(silencedOutput) < kSilenceFloorLinear);
+    REQUIRE_TRUE(PeakAbs(silencedOutput) < kBandSilenceFloorLinear);
     REQUIRE_TRUE(!rig.Application().FreezeLatched());  // Stop disarms the latch.
     REQUIRE_TRUE(!rig.Application().TransportRunning());
 }
@@ -1928,7 +1940,7 @@ TEST_CASE(stop_disarms_the_latch_and_silences_the_held_drone_within_the_bound) {
 // than reusing that helper, since two of the three sequences below need a
 // DIFFERENT press order than the helper's own "Freeze once" shape).
 void RequireSilentAfter(Rig& rig, const char* label) {
-    const auto [settleLeadBlocks, checkWindowBlocks, kSilenceFloorLinear] =
+    const auto [settleLeadBlocks, checkWindowBlocks, kBandSilenceFloorLinear] =
         ComputeSilenceSettleWindow(/*settleSeconds=*/0.25);
     rig.RunBlocks(settleLeadBlocks);
     rig.ClearOutput();
@@ -1938,7 +1950,7 @@ void RequireSilentAfter(Rig& rig, const char* label) {
     RequireFiniteStereo(output);
     const float peak = PeakAbs(output);
     std::cout << "Freeze/Stop sequence " << label << ": peak after final Stop=" << peak << "\n";
-    REQUIRE_TRUE(peak < kSilenceFloorLinear);
+    REQUIRE_TRUE(peak < kBandSilenceFloorLinear);
     REQUIRE_TRUE(!rig.Application().FreezeLatched());
     REQUIRE_TRUE(!rig.Application().TransportRunning());
 }
@@ -2066,9 +2078,9 @@ TEST_CASE(encoder_edit_while_frozen_changes_the_output_measurably) {
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
     using synth_froggers::FroggersBankId;
 
-    const auto [settleLeadBlocks, checkWindowBlocks, kSilenceFloorLinear] =
+    const auto [settleLeadBlocks, checkWindowBlocks, kBandSilenceFloorLinear] =
         ComputeSilenceSettleWindow(/*settleSeconds=*/0.25);
-    (void)kSilenceFloorLinear;
+    (void)kBandSilenceFloorLinear;
 
     rig.RunBlocks(settleLeadBlocks);
     rig.ClearOutput();
@@ -2477,6 +2489,659 @@ TEST_CASE(patch_change_still_reaches_dsp_while_transport_stopped) {
     REQUIRE_TRUE(std::fabs(before - kTarget) > 0.1f);
     REQUIRE_TRUE(std::fabs(after - kTarget) < 1.0e-4f);
 }
+
+// -----------------------------------------------------------------------
+// Where the held energy sits after randomize-then-reset.
+//
+// A pristine instrument decays to silence; one that has been randomized and
+// then reset holds a large level indefinitely. A single broadband number
+// cannot say whether that held level is a tone the envelope failed to
+// close, or a DC/subsonic offset latched somewhere downstream -- which is
+// the same reason this file mandates a band-limited check over RMS
+// (GoertzelPower above; a 20 Hz tone is inaudible and still nonzero-RMS,
+// per default_patch_has_audible_band_energy_above_150hz's own comment).
+// This splits the measurement into the audible fundamentals that test
+// asserts on (110/220/330 Hz) and the inaudible ones it contrasts against
+// (20/40/60 Hz), per window.
+//
+// Four operations, a fresh rig each so no arm inherits another's state:
+// nothing, randomize only, reset only, and randomize-then-reset. The last
+// runs twice, because both requests drain in a FIXED order inside one
+// ProcessFrame() -- RandomizeAll, then ResetAll, then
+// ComputeAllParameters() guarded by `if (randomizeRan)`
+// (FroggersAppCore.hpp) -- so issuing both before a single block runs
+// ComputeAllParameters() AFTER the reset, while issuing them a block apart
+// does not. Those are different experiments; only the split one is what
+// pressing two buttons produces.
+//
+// This test REPORTS; it does not assert a diagnosis. Its only pass
+// condition is the positive control: every arm must be audibly live in its
+// first window. An arm silent throughout would match a decayed pristine one
+// in the late windows while proving nothing.
+// -----------------------------------------------------------------------
+
+// GoertzelPower() returns a length-N DFT magnitude squared, which for a
+// sinusoid of amplitude A is (A*N/2)^2. Converting back to A keeps the
+// reported numbers on the same linear scale as this file's silence floor
+// (kBandSilenceFloorLinear, ComputeSilenceSettleWindow above) instead of an
+// N-dependent power the reader has to undo. Powers are summed before the
+// conversion (the same way default_patch_has_audible_band_energy_above_150hz
+// sums them), which makes the result the root-sum-square of the individual
+// component amplitudes.
+double BandAmplitude(const std::vector<float>& samples, const std::array<double, 3>& freqsHz,
+                     double sampleRateHz) {
+    double power = 0.0;
+    for (const double freqHz : freqsHz) {
+        power += std::max(GoertzelPower(samples, freqHz, sampleRateHz), 0.0);
+    }
+    return 2.0 * std::sqrt(power) / static_cast<double>(samples.size());
+}
+
+enum class EnvelopeArm { Nothing, RandomizeOnly, ResetOnly, RandomizeThenResetSplit, RandomizeThenResetSameBlock };
+
+struct EnvelopeWindow {
+    double audible;
+    double subsonic;
+};
+
+// One arm, start to finish. Settles the rig into a running steady state
+// first (the same 8 blocks randomize_all_storm_test_never_blows_out... uses
+// before its first draw), applies the operation, warms up, then measures.
+std::vector<EnvelopeWindow> MeasureEnvelopeArm(EnvelopeArm arm, const char* scratchName) {
+    constexpr double kSampleRateHz = 48000.0;
+    constexpr std::size_t kSettleBlocks = 8;
+    constexpr std::size_t kWarmUpBlocks = 24;
+    constexpr std::size_t kWindows = 12;
+    constexpr std::size_t kBlocksPerWindow = 4;
+
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths(scratchName));
+    rig.StartAt(0);
+    rig.RunBlocks(kSettleBlocks);
+
+    switch (arm) {
+        case EnvelopeArm::Nothing:
+            break;
+        case EnvelopeArm::RandomizeOnly:
+            rig.Application().RequestRandomizeAll();
+            rig.RunBlocks(1);
+            break;
+        case EnvelopeArm::ResetOnly:
+            rig.Application().RequestResetAll();
+            rig.RunBlocks(1);
+            break;
+        case EnvelopeArm::RandomizeThenResetSplit:
+            rig.Application().RequestRandomizeAll();
+            rig.RunBlocks(1);  // drains randomize alone, so the reset block has randomizeRan false.
+            rig.Application().RequestResetAll();
+            rig.RunBlocks(1);
+            break;
+        case EnvelopeArm::RandomizeThenResetSameBlock:
+            rig.Application().RequestRandomizeAll();
+            rig.Application().RequestResetAll();
+            rig.RunBlocks(1);  // both drain here, so ComputeAllParameters() runs after ResetAll.
+            break;
+    }
+
+    rig.RunBlocks(kWarmUpBlocks);
+
+    std::vector<EnvelopeWindow> windows;
+    windows.reserve(kWindows);
+    for (std::size_t window = 0; window < kWindows; ++window) {
+        rig.ClearOutput();
+        rig.RunBlocks(kBlocksPerWindow);
+        const std::vector<float> samples = ExtractChannel(rig.Output(), 0);
+        windows.push_back({BandAmplitude(samples, kAudibleFundamentalsHz, kSampleRateHz),
+                           BandAmplitude(samples, kInaudibleFundamentalsHz, kSampleRateHz)});
+    }
+    return windows;
+}
+
+TEST_CASE(randomize_then_reset_hold_is_reported_per_band_against_a_pristine_decay) {
+    const std::array<std::pair<EnvelopeArm, const char*>, 5> kArms{{
+        {EnvelopeArm::Nothing, "A_nothing"},
+        {EnvelopeArm::RandomizeOnly, "B_randomize_only"},
+        {EnvelopeArm::ResetOnly, "C_reset_only"},
+        {EnvelopeArm::RandomizeThenResetSplit, "D_split"},
+        {EnvelopeArm::RandomizeThenResetSameBlock, "D_same_block"},
+    }};
+
+    for (const auto& [arm, name] : kArms) {
+        const std::vector<EnvelopeWindow> windows = MeasureEnvelopeArm(arm, name);
+
+        std::cout << "  [envelope arm " << name << "] audible(110/220/330) | subsonic(20/40/60)\n";
+        for (std::size_t ix = 0; ix < windows.size(); ++ix) {
+            std::cout << "    w" << ix << " audible=" << windows[ix].audible
+                      << " subsonic=" << windows[ix].subsonic << "\n";
+        }
+
+        // Positive control: the instrument was live in this arm. Without it a
+        // permanently silent arm reads as a clean decay.
+        REQUIRE_TRUE(windows.front().audible > kBandSilenceFloorLinear);
+    }
+}
+
+
+// -----------------------------------------------------------------------
+// The single-draw result above (D_split holds, D_same_block decays) is one
+// randomize draw per arm, and Randomize All draws from an RNG -- so a single
+// pair cannot separate "the extra ComputeAllParameters() is what matters"
+// from "those two draws happened to differ". This repeats each arm over many
+// draws, fresh rig per draw so no draw inherits the last one's state, and
+// reports how many held.
+//
+// The measurement window is the LAST 4-block window of the same geometry the
+// per-band test above uses -- 24 warm-up blocks, then 11 windows discarded,
+// then one measured -- which is the point where the pristine arm there read
+// ~1e-11, ten orders under the floor. Window length is load-bearing: the ASR
+// gate follows the transport's quarter-note pulse, so a window long enough to
+// contain the next gate opening reads "still audible" for EVERY arm and the
+// comparison collapses. A 48-block single window does exactly that.
+//
+// Hence the pristine control arm below. It is not decoration: it is the only
+// thing that distinguishes "the split arm holds" from "this instrument cannot
+// report silence at all".
+// -----------------------------------------------------------------------
+enum class ResetDrawArm { Pristine, Split, SameBlock };
+
+TEST_CASE(pristine_and_reset_arms_compared_over_many_draws_with_a_silence_capable_instrument) {
+    constexpr double kSampleRateHz = 48000.0;
+    constexpr int kDraws = 12;
+    constexpr std::size_t kWarmUpBlocks = 24;
+    constexpr std::size_t kDiscardedWindows = 11;
+    constexpr std::size_t kBlocksPerWindow = 4;
+
+    const auto countHeldDraws = [&](ResetDrawArm arm, const char* scratchName) {
+        int held = 0;
+        for (int draw = 0; draw < kDraws; ++draw) {
+            Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths(scratchName));
+            rig.StartAt(0);
+            rig.RunBlocks(8);
+
+            if (arm != ResetDrawArm::Pristine) {
+                rig.Application().RequestRandomizeAll();
+                if (arm == ResetDrawArm::Split) {
+                    // Drains randomize alone, so the reset block sees
+                    // randomizeRan false and ComputeAllParameters() does not run.
+                    rig.RunBlocks(1);
+                }
+                rig.Application().RequestResetAll();
+                rig.RunBlocks(1);
+            }
+
+            rig.RunBlocks(kWarmUpBlocks + kDiscardedWindows * kBlocksPerWindow);
+            rig.ClearOutput();
+            rig.RunBlocks(kBlocksPerWindow);
+            const double audible = BandAmplitude(ExtractChannel(rig.Output(), 0), kAudibleFundamentalsHz, kSampleRateHz);
+            if (audible > kBandSilenceFloorLinear) {
+                ++held;
+            }
+        }
+        return held;
+    };
+
+    const int pristineHeld = countHeldDraws(ResetDrawArm::Pristine, "draws_pristine");
+    const int splitHeld = countHeldDraws(ResetDrawArm::Split, "draws_split");
+    const int sameHeld = countHeldDraws(ResetDrawArm::SameBlock, "draws_same_block");
+
+    std::cout << "  [reset draws] of " << kDraws << " draws, still audible in the final window: "
+              << "pristine=" << pristineHeld << "  split(no ComputeAllParameters after reset)=" << splitHeld
+              << "  same-block(with it)=" << sameHeld << "\n";
+
+    // The instrument can report silence. Without this, a nonzero count means
+    // nothing -- it is what a dead measurement returns. This arm involves no
+    // randomize and is bit-identical run to run, so it is safe to assert.
+    REQUIRE_TRUE(pristineHeld == 0);
+    // The randomize arms are NOT asserted, because their counts depend on the
+    // envelope mapping rather than on the reset defect. With Grace's pre-
+    // exponential linear map the split arm held 12 of 12; with the current
+    // mapping it reads 0 of 12 whether or not the reset reseeds, because the
+    // shorter holds decay inside the measurement window. Randomize itself is
+    // deterministic -- an earlier reading of these counts as run-to-run noise
+    // was withdrawn after ten controlled runs showed zero variance within a
+    // fixed build. The counts are printed as configuration-dependent context;
+    // the reset defect is asserted by the +0-block transient check instead,
+    // which no envelope mapping can mask.
+}
+
+
+// -----------------------------------------------------------------------
+// What "New" actually restores, and why it is not the default patch.
+//
+// New goes PatchManager::NewPatch() -> PatchMessageIn::RevertAllToDefault()
+// -> ParameterManager::RevertAllToDefaults() (PatchPersistence.cpp:546) ->
+// Parameter::RevertAllToDefault() per parameter, which sets each center to
+// its REGISTERED config_.defaultValue and zeroes every modulation depth
+// (ParameterModulation.cpp:1772 onward: currentDepths_/targetDepths_ filled
+// with 0, activeRouteCount_ = 0, recursing into modulationDepths_).
+//
+// The centers survive that unchanged, because ApplyBankDefaultPatch writes
+// the SAME registered layout.params[ix].defaultValue. What does not survive
+// is the Audio bank's overlay: ApplyBankDefaultPatch additionally calls
+// ApplyAudioBankOverlay, materializing the six cross-VCO pitch detents
+// (detail::kAudioPitchDetents) as modulation DEPTHS -- exactly what a revert
+// zeroes. No app-side hook re-applies the default patch afterwards, so the
+// three VCOs land in unison and the instrument audibly changes with no saved
+// patch anywhere on disk.
+//
+// Reset All does not have this problem: ResetBankToDefaultPatch clears the
+// depths and then re-applies ApplyBankDefaultPatch on top, so the overlay is
+// the last write (see that function's own comment). This test pins the
+// asymmetry -- New wipes the detents, Reset All restores them -- so a future
+// change to either path has to keep it or break a check.
+// -----------------------------------------------------------------------
+// A detent that is not materialized at all reads as nullopt, which is what
+// New actually leaves behind -- the depth PARAMETER is reclaimed, not merely
+// set back to neutral. Collapsing that into a float would hide the
+// difference between "zeroed" and "gone", which is the whole finding.
+std::array<std::optional<float>, 6> ReadAudioPitchDetents(synth_froggers::FroggersParameterModel& model) {
+    std::array<std::optional<float>, 6> centers{};
+    for (std::size_t ix = 0; ix < synth_froggers::detail::kAudioPitchDetents.size(); ++ix) {
+        const auto& spec = synth_froggers::detail::kAudioPitchDetents[ix];
+        const synth::Parameter& target =
+            model.PageParameter(synth_froggers::FroggersBankId::Audio, spec.targetParamIx);
+        const synth::Parameter* depth = target.ModulationDepthParameter(spec.modIx);
+        centers[ix] = (depth == nullptr) ? std::nullopt : std::optional<float>(depth->SceneCenter(0));
+    }
+    return centers;
+}
+
+void PrintDetents(const char* label, const std::array<std::optional<float>, 6>& centers) {
+    std::cout << "    " << label << ":";
+    for (const std::optional<float>& center : centers) {
+        if (center.has_value()) {
+            std::cout << " " << *center;
+        } else {
+            std::cout << " (not materialized)";
+        }
+    }
+    std::cout << "\n";
+}
+
+TEST_CASE(new_patch_wipes_the_cross_vco_pitch_detents_that_reset_all_restores) {
+    constexpr double kSampleRateHz = 48000.0;
+    constexpr float kNeutralDepth = 0.5f;
+    constexpr std::size_t kDrainBlocks = 16;
+    constexpr std::size_t kWindowBlocks = 4;
+
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("new_patch_detents"));
+    rig.StartAt(0);
+    rig.RunBlocks(8);
+
+    const auto measureAudible = [&]() {
+        rig.ClearOutput();
+        rig.RunBlocks(kWindowBlocks);
+        return BandAmplitude(ExtractChannel(rig.Output(), 0), kAudibleFundamentalsHz, kSampleRateHz);
+    };
+
+    auto& model = rig.Application().Parameters();
+
+    const std::array<std::optional<float>, 6> fresh = ReadAudioPitchDetents(model);
+    const double freshAudible = measureAudible();
+
+    // The real production path -- the same PatchManager call the File page's
+    // New button reaches (BrowserRuntimeMainServices.hpp's callbacks.newPatch).
+    rig.Engine().Patches().NewPatch();
+    rig.RunBlocks(kDrainBlocks);
+    const std::array<std::optional<float>, 6> afterNew = ReadAudioPitchDetents(model);
+    const double afterNewAudible = measureAudible();
+
+    rig.Application().RequestResetAll();
+    rig.RunBlocks(kDrainBlocks);
+    const std::array<std::optional<float>, 6> afterReset = ReadAudioPitchDetents(model);
+    const double afterResetAudible = measureAudible();
+
+    std::cout << "  [cross-VCO pitch detents] neutral is " << kNeutralDepth << "\n";
+    PrintDetents("fresh          ", fresh);
+    PrintDetents("after New      ", afterNew);
+    PrintDetents("after Reset All", afterReset);
+    // Printed, deliberately NOT compared: each of these is a 4-block window
+    // taken at whatever phase of the transport-driven ASR gate the preceding
+    // block count happens to land on, so the three are not measurements of
+    // the same thing. Comparing them would read a gate phase as a patch
+    // difference. The detent rows above are the finding; these are context.
+    std::cout << "    audible band at uncontrolled gate phase (not comparable): fresh=" << freshAudible
+              << "  afterNew=" << afterNewAudible << "  afterReset=" << afterResetAudible << "\n";
+
+    const auto materializedOffNeutral = [&](const std::array<std::optional<float>, 6>& centers) {
+        return std::all_of(centers.begin(), centers.end(), [&](const std::optional<float>& center) {
+            return center.has_value() && std::fabs(*center - kNeutralDepth) > 1.0e-6f;
+        });
+    };
+    const auto noneMaterialized = [&](const std::array<std::optional<float>, 6>& centers) {
+        return std::none_of(centers.begin(), centers.end(),
+                            [](const std::optional<float>& center) { return center.has_value(); });
+    };
+
+    // Positive control: a fresh launch really does carry all six detents off
+    // neutral, or "New wiped them" could not be told from "they never existed".
+    REQUIRE_TRUE(materializedOffNeutral(fresh));
+    // New reclaims the depth parameters outright -- the three VCOs land in
+    // unison and no depth remains to carry a detent.
+    REQUIRE_TRUE(noneMaterialized(afterNew));
+    // Reset All materializes and re-applies all six.
+    REQUIRE_TRUE(materializedOffNeutral(afterReset));
+}
+
+
+// -----------------------------------------------------------------------
+// Re-arming the reset reproduction against the landed Grace/Curve mapping.
+//
+// The reset defect is that a reset draining on a later block than the
+// randomize never reaches the ComputeAllParameters() reseed, which
+// ProcessFrame() runs only under `if (randomizeRan)` (FroggersAppCore.hpp).
+// With the older linear Grace map and unbounded Curve ramps that showed up as
+// a held level across the whole measurement window. The exponential Grace map
+// and the duration-linear Curve warp shorten the holds enough that an ordinary
+// randomize draw now decays inside that window, so the symptom stops
+// reproducing at the knob values a draw happens to pick.
+//
+// The defect is untouched by that. The INSTRUMENT stopped reaching it. This
+// sweeps Curve x Grace explicitly, set AFTER the operation, and reports which
+// combinations still separate a reset arm from a pristine one.
+//
+// Deliberately does NOT call ComputeAllParameters() after writing the knobs:
+// that is the very call whose absence is under test, and invoking it here
+// would reseed the state the measurement is trying to observe.
+//
+// Both halves are required at a usable grid point. An arm that holds while
+// pristine also holds proves nothing -- that is a knob setting that sustains
+// the instrument, not one that exposes the reset gap.
+// -----------------------------------------------------------------------
+TEST_CASE(reset_reproduction_re_armed_across_the_curve_and_grace_grid) {
+    constexpr double kSampleRateHz = 48000.0;
+    constexpr std::size_t kEnvelopeCurveSlot = 12;  // FroggersParameters.hpp's Envelope row.
+    constexpr std::size_t kEnvelopeGraceSlot = 13;
+    constexpr std::size_t kWarmUpBlocks = 24;
+    constexpr std::size_t kDiscardedWindows = 11;
+    constexpr std::size_t kBlocksPerWindow = 4;
+    const float kCurveGrid[] = {0.0f, 0.5f, 1.0f};
+    const float kGraceGrid[] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
+
+    const auto runOne = [&](bool doResetArm, float curve, float grace, const char* scratchName) {
+        Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths(scratchName));
+        rig.StartAt(0);
+        rig.RunBlocks(8);
+
+        if (doResetArm) {
+            rig.Application().RequestRandomizeAll();
+            rig.RunBlocks(1);  // randomize drains alone, so the reset block has randomizeRan false.
+            rig.Application().RequestResetAll();
+            rig.RunBlocks(1);
+        }
+
+        auto& model = rig.Application().Parameters();
+        for (std::size_t sceneIx = 0; sceneIx < synth_froggers::FroggersParameterModel::kNumScenes; ++sceneIx) {
+            model.PageParameter(synth_froggers::FroggersBankId::Envelope, kEnvelopeCurveSlot)
+                .SceneCenter(sceneIx) = curve;
+            model.PageParameter(synth_froggers::FroggersBankId::Envelope, kEnvelopeGraceSlot)
+                .SceneCenter(sceneIx) = grace;
+        }
+
+        rig.RunBlocks(kWarmUpBlocks + kDiscardedWindows * kBlocksPerWindow);
+        rig.ClearOutput();
+        rig.RunBlocks(kBlocksPerWindow);
+        return BandAmplitude(ExtractChannel(rig.Output(), 0), kAudibleFundamentalsHz, kSampleRateHz);
+    };
+
+    std::cout << "  [re-arm grid] curve/grace -> pristine | reset-split  (held = above "
+              << kBandSilenceFloorLinear << ")\n";
+    int usableGridPoints = 0;
+    for (const float curve : kCurveGrid) {
+        for (const float grace : kGraceGrid) {
+            const double pristine = runOne(/*doResetArm=*/false, curve, grace, "rearm_pristine");
+            const double resetArm = runOne(/*doResetArm=*/true, curve, grace, "rearm_reset");
+            const bool pristineHeld = pristine > kBandSilenceFloorLinear;
+            const bool resetHeld = resetArm > kBandSilenceFloorLinear;
+            const bool usable = resetHeld && !pristineHeld;
+            if (usable) {
+                ++usableGridPoints;
+            }
+            std::cout << "    curve=" << curve << " grace=" << grace
+                      << "  pristine=" << pristine << (pristineHeld ? " HELD" : " decayed")
+                      << "  reset=" << resetArm << (resetHeld ? " HELD" : " decayed")
+                      << (usable ? "   <-- USABLE" : "") << "\n";
+        }
+    }
+    std::cout << "  [re-arm grid] usable grid points: " << usableGridPoints << "\n";
+
+    // Reported, not asserted. Whether any grid point re-arms the reproduction is
+    // the finding this test exists to produce; asserting a count here would turn
+    // an open question into a requirement before it has been answered.
+}
+
+
+// -----------------------------------------------------------------------
+// What differs between a reset that reseeds and one that does not.
+//
+// The two arms are identical except for whether ComputeAllParameters() runs
+// after ResetAll: issuing both requests before one block drains them together
+// so `randomizeRan` is still true and the reseed fires (FroggersAppCore.hpp),
+// while a block in between leaves the reset block with randomizeRan false.
+// Measured with the pre-mapping envelope, the first decays like a pristine
+// instrument and the second holds indefinitely.
+//
+// Rather than guess which field carries that difference, this walks EVERY
+// parameter in both arms -- all six banks' page slots, each bank's Crispy, the
+// global Crunchy, and every modulation depth descendant recursively -- and
+// reports the fields that disagree. An earlier version of this test walked
+// only page slots against their own SceneCenter and found nothing, because it
+// enumerated 62 of the depths this walk reaches and compared an arm against
+// itself rather than against the other arm.
+// -----------------------------------------------------------------------
+// Every public observable on synth::Parameter, enumerated from its accessor
+// list rather than chosen. An earlier version of this walk captured only
+// SceneCenter/CurrentCenter/TargetCenter and reported "no difference" between
+// two arms that audibly differ -- the modulation-APPLICATION state below is
+// exactly what changes the DSP output without moving any center value.
+struct ParamSnapshot {
+    std::string path;
+    float sceneCenter;
+    float currentCenter;
+    float targetCenter;
+    std::size_t activeRoutes;
+    float currentCenterScale;
+    float targetCenterScale;
+    float currentNormalizationOffset;
+    float targetNormalizationOffset;
+    std::array<float, synth_froggers::FroggersParameterModel::kNumModulators> currentDepths;
+    std::array<float, synth_froggers::FroggersParameterModel::kNumModulators> targetDepths;
+};
+
+void SnapshotParameterTree(const synth::Parameter& param, const std::string& path,
+                           std::vector<ParamSnapshot>& out) {
+    ParamSnapshot snap{};
+    snap.path = path;
+    snap.sceneCenter = param.SceneCenter(0);
+    snap.currentCenter = param.CurrentCenter();
+    snap.targetCenter = param.TargetCenter();
+    snap.activeRoutes = param.ActiveRouteCount();
+    snap.currentCenterScale = param.CurrentCenterScale(0);   // monophonic: one voice.
+    snap.targetCenterScale = param.TargetCenterScale(0);
+    snap.currentNormalizationOffset = param.CurrentNormalizationOffset(0);
+    snap.targetNormalizationOffset = param.TargetNormalizationOffset(0);
+    for (std::size_t srcIx = 0; srcIx < synth_froggers::FroggersParameterModel::kNumModulators; ++srcIx) {
+        snap.currentDepths[srcIx] = param.CurrentDepthForSource(0, srcIx);
+        snap.targetDepths[srcIx] = param.TargetDepthForSource(0, srcIx);
+    }
+    out.push_back(snap);
+    for (std::size_t modIx = 0; modIx < synth_froggers::FroggersParameterModel::kNumModulators; ++modIx) {
+        const synth::Parameter* depth = param.ModulationDepthParameter(modIx);
+        if (depth != nullptr) {
+            SnapshotParameterTree(*depth, path + ".d" + std::to_string(modIx), out);
+        }
+    }
+}
+
+std::vector<ParamSnapshot> SnapshotWholeModel(synth_froggers::FroggersParameterModel& model) {
+    std::vector<ParamSnapshot> out;
+    for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+        const auto bank = static_cast<synth_froggers::FroggersBankId>(bankIx);
+        for (std::size_t slotIx = 0; slotIx < synth_froggers::kFroggersParamsPerBank; ++slotIx) {
+            SnapshotParameterTree(model.PageParameter(bank, slotIx),
+                                  "b" + std::to_string(bankIx) + ".s" + std::to_string(slotIx), out);
+        }
+        SnapshotParameterTree(model.Crispy(bank), "b" + std::to_string(bankIx) + ".crispy", out);
+    }
+    SnapshotParameterTree(model.Crunchy(), "crunchy", out);
+    return out;
+}
+
+TEST_CASE(reseeded_and_unreseeded_reset_are_compared_field_by_field) {
+    constexpr std::size_t kDrainBlocks = 32;
+    constexpr float kTolerance = 1.0e-4f;
+
+    const auto runArm = [&](bool sameBlock, const char* scratchName) {
+        Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths(scratchName));
+        rig.StartAt(0);
+        rig.RunBlocks(8);
+        rig.Application().RequestRandomizeAll();
+        if (!sameBlock) {
+            rig.RunBlocks(1);
+        }
+        rig.Application().RequestResetAll();
+        rig.RunBlocks(1);
+        rig.RunBlocks(kDrainBlocks);
+        return SnapshotWholeModel(rig.Application().Parameters());
+    };
+
+    const std::vector<ParamSnapshot> reseeded = runArm(/*sameBlock=*/true, "arm_reseeded");
+    const std::vector<ParamSnapshot> unreseeded = runArm(/*sameBlock=*/false, "arm_unreseeded");
+
+    std::cout << "  [reset arms] parameters walked: reseeded=" << reseeded.size()
+              << "  unreseeded=" << unreseeded.size() << "\n";
+
+    std::size_t differing = 0;
+    const std::size_t common = std::min(reseeded.size(), unreseeded.size());
+    for (std::size_t ix = 0; ix < common; ++ix) {
+        const ParamSnapshot& a = reseeded[ix];
+        const ParamSnapshot& b = unreseeded[ix];
+        if (a.path != b.path) {
+            std::cout << "    tree shape diverges at index " << ix << ": " << a.path << " vs " << b.path << "\n";
+            ++differing;
+            break;
+        }
+        std::string why;
+        const auto note = [&](const char* field, float lhs, float rhs) {
+            if (std::fabs(lhs - rhs) > kTolerance) {
+                why += std::string(" ") + field + "=" + std::to_string(lhs) + "/" + std::to_string(rhs);
+            }
+        };
+        note("scene", a.sceneCenter, b.sceneCenter);
+        note("current", a.currentCenter, b.currentCenter);
+        note("target", a.targetCenter, b.targetCenter);
+        note("ccScale", a.currentCenterScale, b.currentCenterScale);
+        note("tcScale", a.targetCenterScale, b.targetCenterScale);
+        note("cNorm", a.currentNormalizationOffset, b.currentNormalizationOffset);
+        note("tNorm", a.targetNormalizationOffset, b.targetNormalizationOffset);
+        if (a.activeRoutes != b.activeRoutes) {
+            why += " routes=" + std::to_string(a.activeRoutes) + "/" + std::to_string(b.activeRoutes);
+        }
+        for (std::size_t srcIx = 0; srcIx < a.currentDepths.size(); ++srcIx) {
+            note(("cDepth" + std::to_string(srcIx)).c_str(), a.currentDepths[srcIx], b.currentDepths[srcIx]);
+            note(("tDepth" + std::to_string(srcIx)).c_str(), a.targetDepths[srcIx], b.targetDepths[srcIx]);
+        }
+        if (!why.empty()) {
+            ++differing;
+            if (differing <= 12) {
+                std::cout << "    " << a.path << " " << why << "\n";
+            }
+        }
+    }
+    std::cout << "  [reset arms] fields differing (reseeded/unreseeded): " << differing
+              << (differing > 12 ? "  (first 12 shown)" : "") << "\n";
+
+    // Positive control: the walk actually reached parameters in both arms.
+    REQUIRE_TRUE(reseeded.size() > 100 && unreseeded.size() > 100);
+    // Reported, not asserted. Which fields differ is the finding; asserting a
+    // count would fix an answer before the mechanism is named.
+}
+
+
+// -----------------------------------------------------------------------
+// Does the un-reseeded reset differ TRANSIENTLY, before the smoothed path
+// converges?
+//
+// The full-surface walk above finds the two arms identical 32 blocks after the
+// reset -- every center, center scale, normalization offset, route count and
+// per-source depth. Yet with the pre-mapping envelope one arm holds audibly and
+// the other decays. If the end states match, the only remaining place for the
+// difference to live is the blocks in between: ComputeAllParameters() snaps
+// current to target immediately, while the per-sample path walks there over
+// several blocks, so an un-reseeded reset spends that walk still driving the
+// DSP with the values randomize drew.
+//
+// Samples the same observables immediately after the reset block and at +1,
+// +2, +4, +8 blocks, and reports the block at which the arms converge. A
+// nonzero count early that falls to zero later is the transient; zero
+// throughout would rule the parameter model out entirely and put the
+// difference in DSP unit state.
+// -----------------------------------------------------------------------
+TEST_CASE(the_two_reset_arms_are_compared_while_the_smoothed_path_is_still_walking) {
+    constexpr float kTolerance = 1.0e-4f;
+    const std::size_t kProbeBlocks[] = {0, 1, 2, 4, 8, 16};
+
+    const auto armAt = [&](bool sameBlock, std::size_t extraBlocks, const char* scratchName) {
+        Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths(scratchName));
+        rig.StartAt(0);
+        rig.RunBlocks(8);
+        rig.Application().RequestRandomizeAll();
+        if (!sameBlock) {
+            rig.RunBlocks(1);
+        }
+        rig.Application().RequestResetAll();
+        rig.RunBlocks(1);
+        if (extraBlocks > 0) {
+            rig.RunBlocks(extraBlocks);
+        }
+        return SnapshotWholeModel(rig.Application().Parameters());
+    };
+
+    std::size_t atResetBlock = 0;
+    std::size_t walkedPerArm = 0;
+    std::cout << "  [reset transient] blocks-after-reset -> fields differing between arms\n";
+    for (const std::size_t probe : kProbeBlocks) {
+        const std::vector<ParamSnapshot> a = armAt(true, probe, "transient_reseeded");
+        const std::vector<ParamSnapshot> b = armAt(false, probe, "transient_unreseeded");
+        std::size_t differing = 0;
+        float worst = 0.0f;
+        const std::size_t common = std::min(a.size(), b.size());
+        for (std::size_t ix = 0; ix < common; ++ix) {
+            float d = 0.0f;
+            d = std::max(d, std::fabs(a[ix].currentCenter - b[ix].currentCenter));
+            d = std::max(d, std::fabs(a[ix].currentCenterScale - b[ix].currentCenterScale));
+            d = std::max(d, std::fabs(a[ix].currentNormalizationOffset - b[ix].currentNormalizationOffset));
+            for (std::size_t srcIx = 0; srcIx < a[ix].currentDepths.size(); ++srcIx) {
+                d = std::max(d, std::fabs(a[ix].currentDepths[srcIx] - b[ix].currentDepths[srcIx]));
+            }
+            if (d > kTolerance) {
+                ++differing;
+                worst = std::max(worst, d);
+            }
+        }
+        std::cout << "    +" << probe << " blocks: differing=" << differing << "  worst=" << worst << "\n";
+        if (probe == 0) {
+            atResetBlock = differing;
+            walkedPerArm = std::min(a.size(), b.size());
+        }
+    }
+
+    // Positive control: the walk actually reached the model in both arms. Without
+    // it, `atResetBlock == 0` is also what an empty walk returns, and the check
+    // would pass by measuring nothing. Its sibling above carries the same guard.
+    REQUIRE_TRUE(walkedPerArm > 100);
+    // The reset block itself is the whole defect: a reset that has not reseeded
+    // leaves the computed values walking toward what it commanded while the DSP
+    // is still driven by the outgoing patch. Asserted at +0 rather than at a
+    // settled block because the arms converge either way by +8 -- a check taken
+    // after convergence passes whether or not the fix is present, which is how
+    // every existing parameter-level test missed this.
+    //
+    // Independent of the Grace/Curve mapping, unlike an audio-level check: that
+    // mapping governs how long any patch sustains and moves both arms together,
+    // so no knob setting separates them (see the re-arm grid above).
+    REQUIRE_TRUE(atResetBlock == 0);
+}
+
 
 }  // namespace
 
