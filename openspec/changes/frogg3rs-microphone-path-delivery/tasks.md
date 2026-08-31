@@ -169,15 +169,17 @@ re-derived.
 - [x] 5.5 DONE -- `postflight.md`. Every promoted scenario mapped to a check or marked not yet delivered; the enumeration re-run against the diff; each operator item given a named code path; divergence from the proposal stated. Original text: POSTFLIGHT: every SHALL in the predecessor's three deltas has a task
       AND a check that runs; every operator item has a named code path; the
       forward enumeration re-run against the DIFF.
-- [ ] 5.6 NOT DONE, and deliberately. Archiving applies the three deltas to
-      `openspec/specs/`, which asserts the system does what they say. Four
+- [x] 5.6 The predecessor's directory is in `openspec/changes/archive/`:
+      superseding it closed it, its remaining tasks having moved here, so
+      archiving is part of the supersession rather than a reward for finishing.
+      What stays gated is PROMOTION, not archiving: applying its three deltas
+      to `openspec/specs/` asserts the system does what they say, and four
       scenarios under `frogg3rs-distribution` are not delivered yet -- the
       release carrying both platforms, the Audio Unit not being attempted off
       macOS, documentation shipping on the Windows format, and the release body
       matching what shipped. None can be observed until the new CI job runs
-      once. Its own operator items are open for the same reason. Archiving now
-      would commit the promotion defect this change was written to stop.
-      Archive after the CI job runs green and the operator items close.
+      once. Promote the deltas, from the archive, after the CI job runs green
+      and the operator items close.
 - [x] 5.7 DONE. Both changes validate `--strict`. Reported not fixed: `frogg3rs-guitar-and-solo-variants` does NOT validate -- `external-ring-mod-mix/spec.md`'s MODIFIED requirement "External gate selects VCO-only vs ring mod" contains no SHALL or MUST. Not this change's to touch. Original text: `openspec validate` both changes.
 - [ ] 5.8 Pages and releases are OPERATOR-GATED and are not triggered by this
       change without an explicit go. Say plainly what is needed to make the

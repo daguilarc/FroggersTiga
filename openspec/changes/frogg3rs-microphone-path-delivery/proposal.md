@@ -106,8 +106,9 @@ In `External/Sheaf`: `projects/synth/browser/` with its `src/` and `tests/`,
 
 - Source changes are the preflight's blocking findings, the one unverified
   `audio.ts` edit, and whatever the remaining gates surface. Nothing else.
-- `openspec/changes/frogg3rs-browser-microphone-permission-path` is archived by
-  this change once its own delivery items close, which applies its three deltas
-  to `openspec/specs/` and moves the directory into the ignored archive.
+- `openspec/changes/frogg3rs-browser-microphone-permission-path` is ARCHIVED —
+  superseding it closed it, and closing it moved the directory into the
+  archive. Its three deltas remain authoritative there; promoting them into
+  `openspec/specs/` is a separate act that happens when this change closes.
 - `openspec/changes/frogg3rs-version-single-source-and-windows-vst` is deleted,
   its delta having already been folded into the predecessor's.
