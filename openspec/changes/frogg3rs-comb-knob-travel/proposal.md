@@ -50,8 +50,8 @@ The blend has the mirror problem: a linear crossfade holds the comb below
    is exactly 20^t — every equal knob step multiplies ring time by the same
    ratio. t=0 still gives 0 (center silent), t=1 still gives exactly
    0.95 (rails unchanged, so the launch value at knob 0 is bit-identical
-   and `comb_feedback_at_both_knob_extremes_decays_to_silence` pins the
-   same endpoints). Sign convention and bipolar shape unchanged.
+   and `comb_feedback_at_both_knob_extremes_decays_to_silence_once_input_stops`
+   (`FroggersDspParityTests.cpp:1476`) pins the same endpoints). Sign convention and bipolar shape unchanged.
 
 2. **Comb/Peak: equal-power crossfade.** `app/dsp/FilterFx.hpp:771` becomes
 

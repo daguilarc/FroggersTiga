@@ -27,9 +27,10 @@ single-path.
 ## 3. Enumerations, closed out in the same breath
 
 - Every `GetFeedback` caller: FOUND vs CHANGED, zeros included. The
-  visualizer reads `comb.feedback` state (`FilterFx.hpp:440`) — verify it
-  therefore tracks the new curve with no edit, by reading its input path,
-  and say so with the line read.
+  visualizer tracks the new curve with no edit because it reads the comb's
+  stored feedback state, never the knob (`PopulateUIState` stores at
+  `FilterFx.hpp:447`, `TransferFunctionValue` reads at `:373`) — re-verify
+  that chain at execution and say so with the lines read.
 - Every `ZeroedExpCompute` caller after the change, both trees' app-reachable
   code. If `GetFeedback` was its only user, report that and leave the helper
   in place only if another bank still calls it; otherwise flag it.
