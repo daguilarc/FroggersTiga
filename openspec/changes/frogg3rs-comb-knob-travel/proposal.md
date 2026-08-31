@@ -111,3 +111,17 @@ construction.
   operator's by-ear confirmation on the deployed site AFTER push — the
   feedback sweep should be interesting across its whole travel and the
   blend should present the comb by mid-knob.
+
+## Addendum — blend floor and ceiling (operator, 2026-08-31)
+
+The Comb/Peak knob SHALL traverse 0.05..0.95 of the crossfade rather than
+the full 0..1: the knob value is remapped `blend' = 0.05 + 0.90 * knob`
+before the equal-power law, so neither branch is ever fully absent. At
+knob 0 the comb holds sin(0.025π) ≈ 0.0785 of full scale (about −22 dB)
+under the peak; at knob 1 the peak holds the same floor under the comb.
+Operator-accepted consequence: the launch OUTPUT gains that low comb bed
+(launch KNOB VALUES are unchanged, and launch, Reset All, and New still
+agree with each other, since all three share the one mapping). The earlier
+bit-identical-extreme claims are superseded by this addendum: the extremes
+are now deliberate floors, not identities, and the cos(π/2) float-residual
+discussion is moot. Tests pinning the blend expression follow the remap.

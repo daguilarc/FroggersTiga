@@ -60,3 +60,15 @@ Commit on `main`, push. OPERATOR, on the deployed site, by ear: the
 feedback knob is interesting across its whole travel in both directions
 from center; the comb becomes clearly present by mid-blend; launch sound
 unchanged. Archive on the operator's confirmation.
+
+## 6. Addendum — blend floor and ceiling
+
+- In `FilterFxChain::Process`, remap the incoming blend before the
+  equal-power gains: `blend' = 0.05f + 0.90f * combPeakBlend`. The header
+  comment's extreme claims change to floors: each extreme holds the other
+  branch at about −22 dB, neither branch is ever fully absent.
+- Tests: the manual-blend parity test's expected expression carries the
+  same remap; add assertions that knob 0 and knob 1 leave the other
+  branch's gain at sin(0.025π) within tolerance, replacing any exactness
+  assertions at the extremes.
+- Re-run the gates of section 4 fresh (binaries deleted first).

@@ -9,11 +9,13 @@ audible change rather than crowding it into one end. Comb feedback maps each
 half of its bipolar travel so the feedback gap falls geometrically — equal
 knob steps multiply the loop's ring time by equal ratios — with the center
 still exactly zero and the rails still exactly the loop's maximum magnitude.
-The Comb/Peak blend crossfades with equal power, so the comb is clearly
-present by mid-travel while each extreme remains exactly the single
-unblended path. The default patch is unaffected: every default knob position
-maps to a value numerically identical to the previous curve's, and the comb
-remains inaudible at launch by routing, which is intended.
+The Comb/Peak blend crossfades with equal power across a floored range:
+the knob traverses 0.05 to 0.95 of the crossfade, so the comb is clearly
+present by mid-travel and neither branch is ever fully absent — each
+extreme holds the other branch near −22 dB. Launch knob positions are
+unchanged, and launch, Reset All, and New agree with each other through
+the one shared mapping; the launch output carries the comb at the blend
+floor, which is accepted.
 
 #### Scenario: Feedback travel is log-linear in ring time
 
@@ -29,12 +31,13 @@ remains inaudible at launch by routing, which is intended.
 - **WHEN** the Comb/Peak blend sits at the middle of its travel
 - **THEN** the comb branch contributes at equal power with the peak branch,
   not at half amplitude
-- **THEN** at the peak extreme the output is bit-identical to the peak
-  path alone, and at the comb extreme the other branch's residual sits at
-  or below the arithmetic's own noise floor, more than 140 dB down
+- **THEN** at either extreme the selected branch dominates while the other
+  branch stays present at the blend floor, near −22 dB, never fully absent
 
-#### Scenario: The launch patch is untouched
+#### Scenario: Launch, Reset All, and New stay in agreement
 
-- **WHEN** the instrument launches with the default patch
-- **THEN** every Filter-bank knob maps to a value numerically identical to
-  the one the previous curves produced, and the launch sound is unchanged
+- **WHEN** the instrument launches with the default patch, and the state is
+  also reached through Reset All and through New
+- **THEN** all three present the same knob values and the same output,
+  including the comb bed at the blend floor, because all three read the one
+  shared mapping
