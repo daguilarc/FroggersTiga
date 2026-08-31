@@ -78,25 +78,16 @@ ships. Record which was chosen and why.
 Check: extend `new_patch_wipes_the_cross_vco_pitch_detents_that_reset_all_restores`
 so New leaves all six detents materialised and off neutral. Must fail before.
 
-## 5. Settle Defect C — does the DSP latch, or was it only the transient?
+## 5. Settle Defect C — DONE, refuted
 
-One run, and it decides whether Defect A's fix is a cure or a mitigation.
+`a_fast_parameter_sweep_with_no_reset_does_not_latch_the_instrument`. Maximal
+sweep, restore through `ApplyFroggersDefaultPatch`, no reseed anywhere: decays
+to 9.39e-13 against a 1.0e-3 floor.
 
-Drive a deliberate fast parameter sweep with NO randomize and NO reset involved —
-write extreme values directly, run a few blocks, write defaults back — and
-measure whether the instrument decays.
-
-- **Decays** → there is no latch. The 8-block transient explanation is complete,
-  Defect A is cured, and Defect C is closed as refuted.
-- **Holds** → a DSP unit latches independently of the parameter path. Defect A's
-  fix is then a mitigation, every other fast-sweep path (patch load, New, scene
-  blend, host automation) is an unprotected trigger, and that becomes its own
-  change with a recovery path that does not require stopping the transport.
-
-Positive control: the same sweep on a pristine instrument must decay, or the rig
-cannot show a difference.
-
-Do not describe Defect C as a finding in any commit or spec until this runs.
+Carries both controls -- pristine decays (the measurement can report silence)
+and a Freeze-latched arm reads 0.509 (it can report a hold). The second was
+added after a first version passed with only the first, which is the same
+result a rig incapable of showing a hold would produce.
 
 ## 6. The Sheaf pull request
 

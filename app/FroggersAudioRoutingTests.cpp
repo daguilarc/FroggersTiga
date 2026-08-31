@@ -3143,6 +3143,95 @@ TEST_CASE(the_two_reset_arms_are_compared_while_the_smoothed_path_is_still_walki
 }
 
 
+// -----------------------------------------------------------------------
+// Does a fast parameter sweep latch the instrument, with no Randomize and no
+// Reset anywhere in it?
+//
+// Reseeding after Reset removes one TRIGGER: the window where the DSP is
+// driven with values partway between an outgoing patch and an incoming one.
+// It does not establish that such a window is the only way in. If a unit
+// latches -- the delay's near-unity feedback, the reverb's Hold, the
+// self-oscillating comb -- then every other fast sweep is an unprotected
+// trigger: patch load, New, a scene blend, host automation. None of those
+// pass through the reseed.
+//
+// This drives the sweep directly through SceneCenter writes, which no reseed
+// covers, so the smoothed path walks exactly as it did before the fix. If the
+// instrument decays afterwards, there is no latch and the transient
+// explanation is complete. If it holds while a pristine arm decays, the
+// reseed is a mitigation rather than a cure.
+// -----------------------------------------------------------------------
+TEST_CASE(a_fast_parameter_sweep_with_no_reset_does_not_latch_the_instrument) {
+    constexpr double kSampleRateHz = 48000.0;
+    constexpr std::size_t kSweepHeldBlocks = 8;   // the same order as the reset transient's walk.
+    constexpr std::size_t kWarmUpBlocks = 24;
+    constexpr std::size_t kDiscardedWindows = 11;
+    constexpr std::size_t kBlocksPerWindow = 4;
+
+    const auto run = [&](bool doSweep, const char* scratchName) {
+        Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths(scratchName));
+        rig.StartAt(0);
+        rig.RunBlocks(8);
+
+        if (doSweep) {
+            auto& model = rig.Application().Parameters();
+            // Every page parameter to its ceiling: a deliberately maximal
+            // excursion, so a negative result is not "the sweep was too gentle".
+            for (std::size_t bankIx = 0; bankIx < synth_froggers::kFroggersBankCount; ++bankIx) {
+                const auto bank = static_cast<synth_froggers::FroggersBankId>(bankIx);
+                for (std::size_t slotIx = 0; slotIx < synth_froggers::kFroggersParamsPerBank; ++slotIx) {
+                    for (std::size_t sceneIx = 0;
+                         sceneIx < synth_froggers::FroggersParameterModel::kNumScenes; ++sceneIx) {
+                        model.PageParameter(bank, slotIx).SceneCenter(sceneIx) = 1.0f;
+                    }
+                }
+            }
+            rig.RunBlocks(kSweepHeldBlocks);
+            // Back to the launch patch, through the same single definition
+            // launch itself uses. No Reset, so nothing reseeds.
+            synth_froggers::ApplyFroggersDefaultPatch(model);
+        }
+
+        rig.RunBlocks(kWarmUpBlocks + kDiscardedWindows * kBlocksPerWindow);
+        rig.ClearOutput();
+        rig.RunBlocks(kBlocksPerWindow);
+        return BandAmplitude(ExtractChannel(rig.Output(), 0), kAudibleFundamentalsHz, kSampleRateHz);
+    };
+
+    // The control that makes a quiet swept arm mean something: Freeze is a
+    // deliberate, documented hold, driven through the real UI action path. If
+    // this arm did NOT read as held, the rig or the measurement window could
+    // not report a hold at all, and "the sweep did not latch" would be a
+    // property of the instrument rather than of the instrument under test.
+    const auto runLatchedControl = [&]() {
+        Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("latch_control_frozen"));
+        rig.StartAt(0);
+        rig.RunBlocks(8);
+        PressFreeze(rig);
+        rig.RunBlocks(kWarmUpBlocks + kDiscardedWindows * kBlocksPerWindow);
+        rig.ClearOutput();
+        rig.RunBlocks(kBlocksPerWindow);
+        return BandAmplitude(ExtractChannel(rig.Output(), 0), kAudibleFundamentalsHz, kSampleRateHz);
+    };
+
+    const double pristine = run(/*doSweep=*/false, "latch_pristine");
+    const double swept = run(/*doSweep=*/true, "latch_swept");
+    const double frozen = runLatchedControl();
+
+    std::cout << "  [latch probe] pristine=" << pristine << "  after sweep+restore=" << swept
+              << "  frozen(control)=" << frozen << "  (floor " << kBandSilenceFloorLinear << ")\n";
+
+    // Can this measurement report silence?
+    REQUIRE_TRUE(pristine < kBandSilenceFloorLinear);
+    // Can it report a hold? Without this, the assertion below passes for a rig
+    // that could never have shown one.
+    REQUIRE_TRUE(frozen > kBandSilenceFloorLinear);
+    // The question: does a sweep the reseed never covers leave the instrument
+    // sounding after it has been returned to the launch patch?
+    REQUIRE_TRUE(swept < kBandSilenceFloorLinear);
+}
+
+
 }  // namespace
 
 int main() {

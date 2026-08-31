@@ -107,22 +107,38 @@ Reset All does not have this problem: `ResetBankToDefaultPatch` zeroes existing
 depths then re-applies `ApplyBankDefaultPatch` on top, so the overlay is the last
 write (`app/FroggersModulation.hpp:1409-1422`).
 
-## Defect C — the DSP may latch on a transient. UNVERIFIED, and separable.
+## Defect C — the DSP does not latch on a transient. REFUTED.
 
-The reseed removes a TRIGGER. It does not establish that an ~8-block transient
-cannot drive the instrument into a state that outlives it. Two readings fit
-every measurement taken so far and no experiment has separated them:
+Raised as a suspicion when Defect A's fix was applied: the reseed removes a
+TRIGGER, and it was not established that an ~8-block transient could not drive
+the instrument somewhere that outlives it. If a unit latched, every other fast
+sweep would be an unprotected trigger -- patch load, New, a scene blend, host
+automation -- since none of those pass through the reseed.
 
-1. A DSP unit latches — the instrument has legitimately self-sustaining paths
-   (delay feedback clamped at 0.98, reverb Hold, a self-oscillating comb), and
-   energy in a feedback buffer is independent of the parameter that filled it.
-   Then any fast parameter sweep is a candidate trigger — patch load, New, scene
-   blend, host automation — and none of those pass through the new reseed.
-2. There is no latch. The parameters drove the DSP for those 8 blocks and the
-   resulting tail simply decayed slower than the measurement window.
+Measured. Every page parameter in all six banks driven to its ceiling, held 8
+blocks (the same order as the reset transient's walk), then restored through
+`ApplyFroggersDefaultPatch` -- the same single definition launch uses. No
+Randomize and no Reset anywhere in it, so nothing reseeds and the smoothed path
+walks exactly as it did before the fix.
 
-The distinguishing experiment is one run and is written as Task 5. Until it
-runs, Defect C is a suspicion, not a finding, and must not be described as one.
+| arm | audible band |
+|---|---|
+| pristine | 5.73e-11 |
+| after sweep + restore | 9.39e-13 |
+| frozen (control) | 0.509 |
+| floor | 1.0e-3 |
+
+Both controls are required and both hold. The pristine arm proves the
+measurement can report silence; the Freeze arm -- a deliberate, documented hold
+driven through the real UI action path -- proves it can report a hold. Without
+the second, a quiet swept arm would be a property of the rig rather than of the
+instrument, and an earlier version of this probe recorded exactly that
+uninformative pass before the control was added.
+
+So the transient explanation is complete and Defect A's fix is a cure rather
+than a mitigation. An earlier write-up of this investigation described the
+latch as a live risk to patch load, New, scene blend and host automation; that
+framing rested on this unverified premise and does not survive the measurement.
 
 ## Grace/Curve
 
