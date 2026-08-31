@@ -68,16 +68,33 @@ Evidence chain, each step measured in the configuration where it means something
 | audible symptom gone, same reverted config | 12/12 -> 0/12, x3 runs |
 | nothing else broke | 320 passed, 0 failed |
 
-## Defect B — New does not restore the startup state. NOT FIXED.
+## Defect B — New did not restore the startup state. FIXED.
 
-Bit-identical across every run:
+Before, bit-identical across every run:
 
     fresh          : 0.51 0.51 0.49 0.49 0.51 0.51
     after New      : (not materialized) x6
     after Reset All: 0.51 0.51 0.49 0.49 0.51 0.51
 
-`New` reclaims the six cross-VCO pitch depth parameters outright, leaving the
-three oscillators in unison.
+`New` reclaimed the six cross-VCO pitch depth parameters outright, leaving the
+three oscillators in unison. After:
+
+    fresh          : 0.51 0.51 0.49 0.49 0.51 0.51
+    after New      : 0.51 0.51 0.49 0.49 0.51 0.51
+    after Reset All: 0.51 0.51 0.49 0.49 0.51 0.51
+
+Fix: Sheaf gains an optional `HasRestoreStartupState` hook, invoked when a patch
+message reverts the manager to registered defaults, through a single
+`ApplyPatchMessageAndNotifyApp()` wrapper so it cannot be wired at three of the
+four `ApplyPatchMessage` call sites and missed at the fourth. Frogg3rs
+implements it by re-invoking `ApplyFroggersDefaultPatch` and reseeding.
+
+The hook re-invokes the app's own definition rather than restoring a snapshot
+of what it produced. An earlier draft of this proposal preferred the snapshot
+shape on the grounds that it single-sources the default; that was backwards. A
+snapshot is a SECOND representation of the default patch and can drift from the
+function that produces it, while the hook makes launch, Reset All and New all
+reach the one definition, which is what the spec clause requires.
 
 Sheaf's entire configurable default surface is one scalar per parameter —
 `ParameterConfig` (`ParameterModulation.hpp:260-269`) carries a single

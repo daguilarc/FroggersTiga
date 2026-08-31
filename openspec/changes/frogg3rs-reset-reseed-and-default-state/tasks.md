@@ -56,27 +56,32 @@ Shown failing before the fix at 84 differing / worst 0.1879, and the audible
 symptom shown gone afterwards at 12/12 -> 0/12 across three runs with Grace/Curve
 reverted. Suite: 320 passed, 0 failed.
 
-## 4. Fix Defect B — Sheaf restores the real startup default
+## 4. Fix Defect B — DONE
 
-Two candidate shapes, both traced:
+Sheaf: `HasRestoreStartupState` (`AppConcepts.hpp`) plus
+`ApplyPatchMessageAndNotifyApp()` (`Engine.hpp`), one wrapper covering all four
+`ApplyPatchMessage` call sites including the arena-exhaustion retry.
 
-- **(a) Capture the real default.** Extend `DefaultControlState`
-  (`ParameterModulation.hpp:906-914`) to snapshot post-`Init` parameter state —
-  centers and materialised depths — and have `RevertAllToDefaults()` restore from
-  that snapshot rather than from `config_.defaultValue`. The capture point exists
-  and already fires at the right moment (`Engine.hpp:260`, after `app_.Init()` at
-  `:231`); it snapshots too little.
-- **(b) Add an optional app hook.** A `HasRevertToDefault` alongside
-  `HasPrepareToPlay`/`HasProcessFrame` (`AppConcepts.hpp:27-42`), so Frogg3rs
-  re-applies `ApplyFroggersDefaultPatch` after a revert.
+Frogg3rs: `FroggersAppCore::RestoreStartupState()` re-invokes
+`ApplyFroggersDefaultPatch` and reseeds.
 
-(a) is preferred: it single-sources the definition of default rather than leaving
-two aligned only by each app's diligence. It is also the wider blast radius —
-every Sheaf app changes behaviour — so it needs Task 7's drift check before it
-ships. Record which was chosen and why.
+Chose the hook over extending `DefaultControlState` to snapshot post-`Init`
+state. The earlier preference for the snapshot was wrong on its own criterion:
+a snapshot is a second representation of the default patch and can drift from
+the function producing it, whereas the hook makes launch, Reset All and New all
+reach the single definition. The snapshot shape would also have had to
+re-materialise depth parameters during a revert, on the audio thread.
 
-Check: extend `new_patch_wipes_the_cross_vco_pitch_detents_that_reset_all_restores`
-so New leaves all six detents materialised and off neutral. Must fail before.
+Check: `new_and_reset_all_both_restore_the_cross_vco_pitch_detents`, renamed
+from `new_patch_wipes_...`, which would now misdescribe what it asserts.
+
+Named `RestoreStartupState` rather than `RevertToDefault`: postflight found
+`Parameter::RevertToDefault(SceneState)` already carries that name for a
+different concept (`ParameterModulation.hpp:495`), and two concepts under one
+name are not greppable. Postflight also folded `kExpectedFundamentalsHz`
+(`app/FroggersAudioRoutingTests.cpp:330`) into the shared
+`kAudibleFundamentalsHz` this change introduced -- it was defensible as a
+separate test's local until this change put the same triple in the same file.
 
 ## 5. Settle Defect C — DONE, refuted
 
@@ -89,21 +94,33 @@ and a Freeze-latched arm reads 0.509 (it can report a hold). The second was
 added after a first version passed with only the first, which is the same
 result a rig incapable of showing a hold would produce.
 
-## 6. The Sheaf pull request
+## 6. The Sheaf pull request — commit landed, PR still owed
 
-Scope: Task 4's fix, its tests, nothing else.
+`External/Sheaf` commit `9132967e` on `fix-out-of-tree-app-gaps`.
 
-- Sheaf's gate does not build the runtime shell, so a green `projects/synth test`
-  does not cover `Runtime.hpp`. Name what the gate did and did not compile.
-- The two 96 kHz deadline tests fail deterministically on this machine and are
-  pre-existing. State them as carried forward.
+Gate: 918 pass, 2 fail. The two are
+`braid4_meets_96000hz_256_frame_deadline_and_continuity` and
+`braid4_sparse_modulation_meets_96000hz_256_frame_deadline`, both on the timing
+bound `averageSeconds <= blockSeconds * 0.60`
+(`tests/braid4_deadline_tests.cpp:231`). Deterministic on this machine,
+unrelated to this change, carried forward.
 
-## 7. The drift check
+What the gate did NOT compile: the runtime shell. `Runtime.hpp` appears nowhere
+in its output, so this change's `Engine.hpp` edit is covered only by the
+Frogg3rs app suite instantiating it (321 pass), not by Sheaf's own gate.
 
-Launch, Reset All, and New are three paths to one state, spanning an
-app/submodule boundary that no single definition can collapse. The deliverable is
-a check that FAILS when any one drifts, proven by breaking each once — not three
-tests that happen to agree today.
+## 7. The drift check — DONE, partially proven
+
+`new_and_reset_all_both_restore_the_cross_vco_pitch_detents` asserts the three
+states are EQUAL element-wise, not merely that each is materialised and off
+neutral. Three paths agreeing a detent exists is not three paths agreeing what
+it is, and the weaker form would pass if New restored 0.52 where launch gives
+0.51.
+
+Proven to fail for New: the same test recorded `(not materialized) x6` across
+several runs before the hook existed. NOT proven for launch or Reset All —
+breaking each deliberately is still owed, and until it is done this check is
+demonstrated in one direction of three.
 
 ## 8. Sequence against `frogg3rs-microphone-path-delivery`
 

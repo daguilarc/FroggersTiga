@@ -327,11 +327,11 @@ TEST_CASE(default_patch_has_audible_band_energy_above_150hz) {
     // collapses to without the fix) and asserts the expected fundamentals
     // dominate by a ratio, not an absolute threshold -- true regardless of
     // exactly how much total energy either patch config carries.
-    constexpr std::array<double, 3> kExpectedFundamentalsHz = {110.0, 220.0, 330.0};
+
     constexpr std::array<double, 3> kBrokenFundamentalsHz = {20.0, 40.0, 60.0};
 
     double expectedPower = 0.0;
-    for (const double freqHz : kExpectedFundamentalsHz) {
+    for (const double freqHz : kAudibleFundamentalsHz) {
         expectedPower += GoertzelPower(left, freqHz, kSampleRateHz);
     }
     double brokenPower = 0.0;
@@ -2757,7 +2757,7 @@ void PrintDetents(const char* label, const std::array<std::optional<float>, 6>& 
     std::cout << "\n";
 }
 
-TEST_CASE(new_patch_wipes_the_cross_vco_pitch_detents_that_reset_all_restores) {
+TEST_CASE(new_and_reset_all_both_restore_the_cross_vco_pitch_detents) {
     constexpr double kSampleRateHz = 48000.0;
     constexpr float kNeutralDepth = 0.5f;
     constexpr std::size_t kDrainBlocks = 16;
@@ -2813,11 +2813,33 @@ TEST_CASE(new_patch_wipes_the_cross_vco_pitch_detents_that_reset_all_restores) {
     };
 
     // Positive control: a fresh launch really does carry all six detents off
-    // neutral, or "New wiped them" could not be told from "they never existed".
+    // neutral, or "New restored them" could not be told from "they were never
+    // disturbed".
     REQUIRE_TRUE(materializedOffNeutral(fresh));
-    // New reclaims the depth parameters outright -- the three VCOs land in
-    // unison and no depth remains to carry a detent.
-    REQUIRE_TRUE(noneMaterialized(afterNew));
+
+    // The drift check the "single definition shared by launch, reset and New"
+    // clause actually needs. Asserting only that each state is materialized and
+    // off neutral would pass if New restored 0.52 where launch gives 0.51 --
+    // three paths agreeing that a detent EXISTS is not the same as three paths
+    // agreeing what it IS. Equality is what fails when any one of them drifts.
+    const auto sameAsFresh = [&](const std::array<std::optional<float>, 6>& other) {
+        for (std::size_t ix = 0; ix < fresh.size(); ++ix) {
+            if (fresh[ix].has_value() != other[ix].has_value()) {
+                return false;
+            }
+            if (fresh[ix].has_value() && std::fabs(*fresh[ix] - *other[ix]) > 1.0e-6f) {
+                return false;
+            }
+        }
+        return true;
+    };
+    REQUIRE_TRUE(sameAsFresh(afterNew));
+    REQUIRE_TRUE(sameAsFresh(afterReset));
+    // New reverts every parameter to its registered default, which cannot
+    // express a depth -- so the app's own revert hook re-applies the default
+    // patch and the detents come back. Before that hook existed, all six were
+    // reclaimed outright and the three oscillators landed in unison.
+    REQUIRE_TRUE(materializedOffNeutral(afterNew));
     // Reset All materializes and re-applies all six.
     REQUIRE_TRUE(materializedOffNeutral(afterReset));
 }

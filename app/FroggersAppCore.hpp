@@ -638,6 +638,33 @@ public:
     // after message drains and before ProcessBlock() (AppConcepts.hpp's own
     // comment on the hook's placement) -- exactly the audio-thread window
     // the pending-request atomics above need to be applied in.
+    // Sheaf's optional revert hook (AppConcepts.hpp's HasRestoreStartupState),
+    // invoked right after a patch revert has rebuilt every parameter from its
+    // REGISTERED default.
+    //
+    // That rebuild is correct for everything registration can express, and
+    // registration cannot express a modulation depth. This app's startup state
+    // is not only registered defaults: ApplyFroggersDefaultPatch materializes
+    // the Audio bank's cross-VCO pitch detents as real modulation depths
+    // (FroggersModulation.hpp's ApplyAudioBankOverlay), and a revert zeroes
+    // every depth and then reclaims the neutral ones, so those six parameters
+    // stop existing and the three oscillators land in unison.
+    //
+    // Re-applies the SAME function a fresh launch runs, not a snapshot of what
+    // it produced, so launch, Reset All and New cannot drift apart -- the one
+    // definition each of them reaches is ApplyFroggersDefaultPatch.
+    //
+    // Reseeds afterwards for the reason the reset drain below documents: a
+    // patch write leaves the computed values walking toward it over several
+    // blocks, and depth children are never reached by the per-sample path at
+    // all.
+    void RestoreStartupState() {
+        ApplyFroggersDefaultPatch(parameters_);
+        if (context_ != nullptr && context_->parameterManager != nullptr) {
+            context_->parameterManager->ComputeAllParameters();
+        }
+    }
+
     void ProcessFrame() {
         if (!drillIn_.has_value()) {
             drillIn_.emplace(parameters_.BankAt(activeBankIx_));
