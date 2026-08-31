@@ -66,14 +66,19 @@ rebuilt artifact was deleted first and checked for a fresh mtime afterward.
 
 ## Standing gate debt (upstream, not this change's)
 
-Two known soft spots in the Sheaf gates, both pre-existing and both living in
-the submodule where per-change sweeps here do not reach; noted on
-jvictor0/Sheaf#10 for upstream:
+Both known Sheaf soft spots were re-tested on the pinned commit before being
+reported anywhere:
 
-1. The miniapp test binary segfaults before emitting results, so nine checks
-   never run while the gate reads green — a dead instrument inside a passing
-   gate.
+1. The miniapp segfault DID NOT REPRODUCE: `runtime_shell_session_tests` —
+   the exact binary recorded segfaulting in `CheckZeroInputApplication` on
+   Sheaf `c63783df` — now runs to completion with exit 0 on pin `3ef36f67`,
+   its input-routing checks visibly executing, and the whole
+   `make -C projects/synth/apps/miniapp test` target exits 0. Fixed
+   upstream; nothing to report. The target still sits outside the standard
+   gate list, so it stays a run-explicitly item for runtime/juce changes.
 2. The two braid4 96 kHz deadline tests fail deterministically on this
-   8-core machine; local runs are read as "green except these two" by
-   convention. They should skip by environment with a printed reason
-   instead of being memorized around.
+   8-core machine — both miss `averageSeconds <= blockSeconds * 0.60` while
+   the 44.1/48 kHz variants pass — so local runs are read as "green except
+   these two" by convention, which trains reading past failures. Reported on
+   jvictor0/Sheaf#10 with an offer to gate them by environment with a
+   printed skip reason.
