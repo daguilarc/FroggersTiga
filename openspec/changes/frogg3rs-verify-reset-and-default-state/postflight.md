@@ -14,7 +14,9 @@ rebuilt artifact was deleted first and checked for a fresh mtime afterward.
   mtime, not by the log, which contained no error; the foreground rerun
   succeeded. Four pre-existing `-Wswitch` warnings on
   `ParamSetAbsoluteOnBank` in Sheaf's MIDI config sources, no errors.
-  The by-ear confirmation is the operator's, after push.
+  The operator confirmed on 2026-08-31, against the published browser
+  build, that Reset and New now restore the launch state; on that
+  confirmation both release tags were re-cut at `f15cd4a`.
 - **Task 2 — browser target: BUILDS, test OK.** Fresh
   `frogg3rs.wasm`/`frogg3rs.js`. The `test` target asserts only that both
   outputs exist non-empty; the real claim carried is that the two changed
