@@ -1442,7 +1442,12 @@ TEST_CASE(resonant_bump_min_knob_settles_at_unity_no_boost) {
 // close enough to unity to ring for a long, musical time, but no longer
 // able to sustain forever. This is intentionally NOT what the frozen
 // firmware does; parity was explicitly deprioritized here in favor of a
-// loop that actually decays.
+// loop that actually decays. The curve shape itself changed too: the
+// feedback gap (one minus the magnitude) now falls geometrically across
+// each half of the knob's travel via ExpMapCompute, replacing the old
+// ZeroedExpCompute-scaled curve -- both curves agree exactly at the
+// center and both rails, so this is a shape change only, not a new
+// ceiling.
 TEST_CASE(comb_get_delay_samples_and_asymmetric_feedback) {
     REQUIRE_NEAR(dsp::Comb::GetDelaySamples(100.0f), 1.0f / 100.0f, 1e-9);
 
@@ -1450,8 +1455,8 @@ TEST_CASE(comb_get_delay_samples_and_asymmetric_feedback) {
     const float fbHigh = dsp::Comb::GetFeedback(0.75f);  // > 0.5 -> positive
     REQUIRE_TRUE(fbLow < 0.0f);
     REQUIRE_TRUE(fbHigh > 0.0f);
-    REQUIRE_NEAR(fbLow, -0.95f * dsp::ZeroedExpCompute(0.25f, 2.0f * (0.5f - 0.25f)), 1e-6);
-    REQUIRE_NEAR(fbHigh, 0.95f * dsp::ZeroedExpCompute(0.25f, 2.0f * (0.75f - 0.5f)), 1e-6);
+    REQUIRE_NEAR(fbLow, -(1.0f - dsp::ExpMapCompute(1.0f, 1.0f - 0.95f, 2.0f * (0.5f - 0.25f))), 1e-6);
+    REQUIRE_NEAR(fbHigh, 1.0f - dsp::ExpMapCompute(1.0f, 1.0f - 0.95f, 2.0f * (0.75f - 0.5f)), 1e-6);
     // No endpoint may reach or exceed unity magnitude -- that is the whole
     // point of item 1 (a sub-unity loop gain is what makes the comb decay).
     REQUIRE_TRUE(std::fabs(fbLow) < 1.0f);
@@ -1498,6 +1503,63 @@ TEST_CASE(comb_feedback_at_both_knob_extremes_decays_to_silence_once_input_stops
         REQUIRE_TRUE(std::isfinite(lastMagnitude));
         REQUIRE_TRUE(lastMagnitude < kSilenceFloor);
     }
+}
+
+// -----------------------------------------------------------------------
+// The feedback gap (one minus the magnitude) is an exactly geometric
+// function of GetFeedback's knob-derived travel within each half
+// (FilterFx.hpp), so equal knob steps should scale how long the comb
+// rings by equal ratios, not equal amounts. Reuses the test above's
+// drive-then-silence idiom (square-wave excitation, then feed silence and
+// watch the output decay), timing the first sample whose magnitude drops
+// below the same silence floor rather than only checking a fixed
+// window's final sample.
+//
+// Measured (scratch, not checked in): at knobs 0.8/0.875/0.95 the
+// post-fix curve's two successive ring-time ratios differ by ~0.5%,
+// while the pre-fix ZeroedExpCompute-scaled curve's differ by ~17% at
+// the same three knobs. The 8% tolerance below sits between the two --
+// loose enough to absorb the sample-level uncertainty in exactly when a
+// continuously-decaying signal crosses a fixed floor, tight enough to
+// still fail on the pre-fix curve's shape.
+// -----------------------------------------------------------------------
+TEST_CASE(comb_feedback_ring_time_scales_geometrically_across_equal_knob_steps) {
+    constexpr float kSilenceFloor = 1.0e-4f;
+    constexpr int kDrivenSamples = 4000;
+    constexpr long kMaxSearchSamples = 200000;
+
+    auto ringTimeSamples = [](float knob) -> long {
+        dsp::Comb comb;
+        comb.delaySamples = 37;
+        comb.SetFeedback(dsp::Comb::GetFeedback(knob));
+        comb.SetCutoffAlpha(1.0f);  // identity lowpass -- isolates the feedback loop gain itself.
+        for (int i = 0; i < kDrivenSamples; ++i) {
+            comb.Process((i / 2) % 2 == 0 ? 1.0f : -1.0f);
+        }
+        for (long i = 0; i < kMaxSearchSamples; ++i) {
+            if (std::fabs(comb.Process(0.0f)) < kSilenceFloor) {
+                return i + 1;
+            }
+        }
+        return kMaxSearchSamples;
+    };
+
+    const float knobs[3] = {0.8f, 0.875f, 0.95f};  // three equal 0.15 steps in GetFeedback's t argument.
+    const long ringTimes[3] = {ringTimeSamples(knobs[0]), ringTimeSamples(knobs[1]), ringTimeSamples(knobs[2])};
+    REQUIRE_TRUE(ringTimes[0] < kMaxSearchSamples);
+    REQUIRE_TRUE(ringTimes[1] < kMaxSearchSamples);
+    REQUIRE_TRUE(ringTimes[2] < kMaxSearchSamples);
+
+    const double ratio01 = static_cast<double>(ringTimes[1]) / static_cast<double>(ringTimes[0]);
+    const double ratio12 = static_cast<double>(ringTimes[2]) / static_cast<double>(ringTimes[1]);
+    constexpr double kRatioTolerance = 0.08;
+    REQUIRE_TRUE(std::fabs(ratio01 - ratio12) / ratio12 < kRatioTolerance);
+
+    // The center and both rails are bit-identical to the values the
+    // pre-fix curve produced.
+    REQUIRE_TRUE(dsp::Comb::GetFeedback(0.0f) == -0.95f);
+    REQUIRE_TRUE(dsp::Comb::GetFeedback(0.5f) == 0.0f);
+    REQUIRE_TRUE(dsp::Comb::GetFeedback(1.0f) == 0.95f);
 }
 
 TEST_CASE(comb_process_matches_in_plus_fb_sat_lp_delay_formula) {
@@ -1647,7 +1709,8 @@ TEST_CASE(filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend) {
         const float peakTrimState = refPeakTrimSmoother.Process(rawPeakTrim);
         const float peakTrimmed = peakRaw * peakTrimState;
         const float peakPath = refPeakLimiter.Process(peakTrimmed);
-        const float mixed = peakPath * (1.0f - combPeakBlend) + combPath * combPeakBlend;
+        const float halfPi = 0.5f * static_cast<float>(M_PI);
+        const float mixed = peakPath * std::cos(combPeakBlend * halfPi) + combPath * std::sin(combPeakBlend * halfPi);
         const float scooped = refScoop.Process(mixed);
         const float expected = mixed * (1.0f - scoopMix) + scooped * scoopMix;
 
@@ -1706,9 +1769,11 @@ TEST_CASE(filter_fx_chain_zero_scoop_mix_is_unaffected_by_scoop_notch_settings) 
 // exact worst case the trim was designed to normalize to 1.0. The bound is
 // COMPUTED from A and fb, never a hardcoded literal -- a pin asserts the
 // property that broke, not a typed-in number. combPeakBlend=1.0/scoopMix=0.0 isolate the comb branch through
-// the real FilterFxChain::Process code path: mixed = peakPath*(1-1) +
-// combPath*1 == combPath, and the return is mixed*(1-0) + scooped*0 ==
-// mixed -- so chain.Process's return value IS combPath. A settle period
+// the real FilterFxChain::Process code path: at combPeakBlend==1 the
+// equal-power blend (FilterFx.hpp) leaves only float's cos(pi/2) residual
+// of peakPath mixed into combPath -- far below this test's own 1e-4
+// slack -- and the return is mixed*(1-0) + scooped*0 == mixed, so
+// chain.Process's return value is combPath to within that residual. A settle period
 // precedes the assertion window: the trim smoother starts at unity
 // (matching feedback's own default of 0) and glides toward its new,
 // lower target over several time constants once feedback jumps to its

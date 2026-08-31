@@ -499,7 +499,7 @@ struct Comb
     static float GetDelaySamples(float freq) { return 1.0f / freq; }
 
     // src/core/Comb.hpp:66-76 (GetFeedback): asymmetric feedback, magnitude
-    // scaled by ZeroedExpCompute's 0..1 curve.
+    // scaled by a 0..1 curve built from ExpMapCompute.
     //
     // DELIBERATE PARITY DIVERGENCE (same treatment as Fuegoize.hpp's own
     // divergence note): the frozen firmware scales by +-1.1. This port
@@ -521,15 +521,18 @@ struct Comb
     // 0.95 keeps that decay slow enough to still ring for a long, musical
     // time while guaranteeing it eventually reaches silence. Parity was
     // explicitly deprioritized here -- this is the intended outcome, not a
-    // defect -- do not restore 1.1.
+    // defect -- do not restore 1.1. The feedback gap -- one minus the
+    // magnitude -- falls geometrically across each half, so equal knob
+    // steps multiply ring time by equal ratios, and the center and both
+    // rails map to exactly the values the previous curve produced.
     static float GetFeedback(float knob)
     {
         constexpr float kMaxFeedbackMagnitude = 0.95f;
         if (knob < 0.5f)
         {
-            return -kMaxFeedbackMagnitude * ZeroedExpCompute(0.25f, 2.0f * (0.5f - knob));
+            return -(1.0f - ExpMapCompute(1.0f, 1.0f - kMaxFeedbackMagnitude, 2.0f * (0.5f - knob)));
         }
-        return kMaxFeedbackMagnitude * ZeroedExpCompute(0.25f, 2.0f * (knob - 0.5f));
+        return 1.0f - ExpMapCompute(1.0f, 1.0f - kMaxFeedbackMagnitude, 2.0f * (knob - 0.5f));
     }
 };
 
@@ -721,7 +724,12 @@ struct FilterFxChain
     // call exactly -- so this is a strict superset, not a behaviour change,
     // at the default topology. Every stateful unit (comb, peak, pureDelay,
     // combTrimSmoother, peakTrimSmoother, peakLimiter) is still processed
-    // exactly once per sample, in the same order as before.
+    // exactly once per sample, in the same order as before. The Comb/Peak
+    // blend below is equal-power rather than linear: at `combPeakBlend ==
+    // 0` the result is bit-identical to the peak path alone, while at
+    // `combPeakBlend == 1` it carries only float's `cos(pi/2)` residual of
+    // the peak branch on top of the comb path, a value below the
+    // arithmetic's own noise floor.
     float Process(float input, float topology, float combPeakBlend, float scoopMix)
     {
         const float combRaw = comb.Process(pureDelay.Process(input));
@@ -768,7 +776,8 @@ struct FilterFxChain
         // trim leaves behind, not instead of the trim (the trim stays;
         // this is additive).
         const float peakPath = peakLimiter.Process(peakTrimmed);
-        const float mixed = peakPath * (1.0f - combPeakBlend) + combPath * combPeakBlend;
+        const float halfPi = 0.5f * static_cast<float>(M_PI);
+        const float mixed = peakPath * std::cos(combPeakBlend * halfPi) + combPath * std::sin(combPeakBlend * halfPi);
         const float scooped = scoopNotch.Process(mixed);
         return mixed * (1.0f - scoopMix) + scooped * scoopMix;
     }
