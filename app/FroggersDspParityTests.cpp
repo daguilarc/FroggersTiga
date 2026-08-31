@@ -876,11 +876,13 @@ TEST_CASE(grace_active_pending_release_reaches_release_within_bounded_completion
     constexpr float sustainKnob = 0.6f;
     constexpr float releaseKnob = 0.3f;
 
-    // mapGrace's own formula (VoiceEnvelope.hpp): plain clamp*kMaxGraceSeconds.
+    // Read from the mapping itself rather than restated here: this test used
+    // to carry its own copy of the formula, which is what pinned it to the
+    // linear map and made it fail when the map became exponential.
     const float graceKnobs[] = {0.3f, 0.5f, 0.7f, 1.0f};
     const float curves[] = {0.0f, 0.5f, 0.9f, 1.0f};
     for (float graceKnob : graceKnobs) {
-        const float graceSeconds = std::min(std::max(graceKnob, 0.0f), 1.0f) * dsp::VcoAdsrState::kMaxGraceSeconds;
+        const float graceSeconds = dsp::VcoAdsrState::GraceSecondsForKnob(graceKnob);
         const double graceSamples = static_cast<double>(graceSeconds) * kSampleRate;
 
         for (float curve : curves) {
@@ -955,7 +957,7 @@ TEST_CASE(grace_countdown_with_float_inexact_values_expires_within_grace_plus_a_
     // count -- exactly the class of knob the pre-fix guard hung forever on.
     const float graceKnobs[] = {0.3f, 0.7f};
     for (float graceKnob : graceKnobs) {
-        const float graceSeconds = std::min(std::max(graceKnob, 0.0f), 1.0f) * dsp::VcoAdsrState::kMaxGraceSeconds;
+        const float graceSeconds = dsp::VcoAdsrState::GraceSecondsForKnob(graceKnob);
         const double graceSamples = static_cast<double>(graceSeconds) * kSampleRate;
 
         dsp::VcoAdsrState adsr;

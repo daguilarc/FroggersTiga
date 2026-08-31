@@ -119,8 +119,15 @@ exponentially, matching every other time and frequency control in the
 instrument, so that equal movements of the control produce equal ratios of
 time rather than equal differences. Their minimum positions SHALL sit at a
 short but non-zero time, so that a control at minimum is fast rather than
-instantaneous. The Grace control SHALL remain linear from zero, because no
-minimum hold is a real setting that an exponential mapping cannot reach.
+instantaneous. The Grace control SHALL map exponentially too, through a
+mapping that reaches exact zero at its minimum, because no minimum hold is a
+real setting: it needs the exponential travel AND the true zero, not a choice
+between them. (Amended: this required Grace to stay LINEAR, on the ground that
+an exponential mapping cannot reach zero. That holds for the floored mapping
+the other three use, not for exponential mappings generally -- a zeroed
+exponential is exact at both ends, and the instrument already used one for the
+sample-rate reducers. Linear spent the bottom twentieth of Grace's travel on
+its entire useful short-hold range.)
 
 #### Scenario: Equal movements give equal ratios
 - **WHEN** the attack control is moved from its minimum to its midpoint, and

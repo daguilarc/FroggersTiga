@@ -147,6 +147,19 @@ struct VcoAdsrState
     // change, so it stays 1.0f on its own judgment, matching decay alone.
     static constexpr float kMaxGraceSeconds = 1.0f;
 
+    static constexpr float kGraceCurveBase = 25.0f;
+
+    // Public and static because the parity tests need the same number this
+    // maps to, and they used to restate the formula instead -- which is what
+    // silently pinned them to the old linear map. One definition, both
+    // callers.
+    static float GraceSecondsForKnob(float knob)
+    {
+        const float clamped = std::min(std::max(knob, 0.0f), 1.0f);
+        return ZeroedExpCompute(kGraceCurveBase, clamped) * kMaxGraceSeconds;
+    }
+
+
     // Grace (Envelope slot 13) countdown sentinel. Named rather than
     // repeated: this was a bare -1.0f literal written/compared at 5
     // sites -- the comment further below explains why the 5th site, the
@@ -378,20 +391,24 @@ private:
         return ExpMapCompute(kMinDecaySeconds, kMaxDecaySeconds, clamped);
     }
 
-    // Grace (Envelope slot 13). Deliberately NOT the mapAttack/mapRelease/
-    // mapDecay shape, and deliberately left LINEAR even though those three
-    // moved to ExpMapCompute: those floor at a small positive time so a
-    // modulated knob can never drive a ramp to a degenerate zero-length step.
-    // Grace is the opposite: knob==0 (the registered default,
-    // FroggersParameters.hpp) must map to EXACTLY 0.0f seconds, because the
-    // "Grace at default is a no-op" requirement depends on this being
-    // bit-exact zero, not a small floor -- and an exponential map, by
-    // construction, cannot reach zero at any finite knob value.
-    float mapGrace(float knob) const
-    {
-        const float clamped = std::min(std::max(knob, 0.0f), 1.0f);
-        return clamped * kMaxGraceSeconds;
-    }
+    // Grace (Envelope slot 13). Exponential like Attack/Decay/Release, but
+    // through ZeroedExpCompute rather than ExpMapCompute. Those two differ in
+    // exactly the way that matters here: ExpMapCompute floors at a small
+    // positive time, so a modulated knob can never drive a ramp to a
+    // degenerate zero-length step, while Grace needs the opposite -- knob==0
+    // (the registered default, FroggersParameters.hpp) must map to EXACTLY
+    // 0.0f seconds, because the "Grace at default is a no-op" requirement
+    // depends on bit-exact zero rather than a small floor.
+    //
+    // This was linear for that reason. Linear spends the whole bottom
+    // twentieth of the knob on 0-50ms and the rest on holds long enough to
+    // be a different control, which is unusable where the short holds live.
+    // ZeroedExpCompute gives the exponential travel AND the exact zero.
+    // Base 25 across the knob's travel. ZeroedExpCompute returns EXACTLY 0
+    // at knob 0 and EXACTLY 1 at knob 1 -- (base^0-1)/(base-1) and
+    // (base^1-1)/(base-1) -- so the bit-exact zero the no-op requirement
+    // rests on survives, which a floored ExpMapCompute could not give.
+    float mapGrace(float knob) const { return GraceSecondsForKnob(knob); }
 
     // Curve (Envelope slot 12), applied to Attack/Decay/Release alike (all
     // three share this one idiom -- reused 3x, isolates the shape decision
@@ -401,6 +418,31 @@ private:
     // curve arithmetic is even evaluated, so the default is bit-identical
     // to the pre-Curve ramp by construction, not by a formula that merely
     // happens to reduce to it.
+    // Hoisted out of ComputeRampStep so mapCurve below can derive its own
+    // constant from it. The two are not independent -- the warp exists to
+    // land the knob's top end exactly on the bound this floor enforces --
+    // and two copies of 0.4f would drift the day either is retuned.
+    static constexpr float kCurveMinProgress = 0.4f;
+
+    // Curve (Envelope slot 12) as the operator turns it, warped so that RAMP
+    // DURATION is what moves linearly with the knob rather than the blend
+    // coefficient. Unwarped, duration scales as 1/(1-c): nearly flat across
+    // most of the travel, then unbounded at the top, where the floor above
+    // clamps it and the last part of the knob does nothing at all.
+    //
+    // duration(knob) = 1 + k*knob is achieved by c = k*knob / (1 + k*knob).
+    // k is derived, not tuned: the floor bounds the slowdown at
+    // 1/kCurveMinProgress, so k = 1/kCurveMinProgress - 1 puts knob==1
+    // exactly at that bound. At 0.4f that is k=1.5, giving 1.0x, 1.375x,
+    // 1.75x, 2.125x, 2.5x across the knob's quarters -- even steps, and the
+    // floor becomes the endpoint instead of a clamp eating the top third.
+    float mapCurve(float knob) const
+    {
+        const float clamped = std::min(std::max(knob, 0.0f), 1.0f);
+        constexpr float k = 1.0f / kCurveMinProgress - 1.0f;
+        return (k * clamped) / (1.0f + k * clamped);
+    }
+
     float ComputeRampStep(float from, float target, float stepMagnitude, float curveAmount) const
     {
         if (curveAmount <= 0.0f)
@@ -460,7 +502,6 @@ private:
         // slow-start shape). If this value is ever retuned by ear, re-check
         // it against that regression test's hard-coded 2.0s/2.5s bounds --
         // they are NOT independent of this constant.
-        constexpr float kCurveMinProgress = 0.4f;
         const float minProgressMagnitude = stepMagnitude * kCurveMinProgress;
         const float progress = blended - from;
         const float boundedProgress = (std::fabs(progress) < minProgressMagnitude)
@@ -491,7 +532,7 @@ private:
         // divide-by-mapped-time idiom.
         const float decayStep = (1.0f - sustainLevel) / std::max(mapDecay(decayKnob) * m_sampleRate, 1.0f);
         const float releaseStep = 1.0f / std::max(mapRelease(releaseKnob) * m_sampleRate, 1.0f);
-        const float curveAmount = std::min(std::max(curveKnob, 0.0f), 1.0f);
+        const float curveAmount = mapCurve(curveKnob);
 
         // Grace: resolve any deferred gate-false transition BEFORE
         // the stage switch below, so the switch this same call already sees
