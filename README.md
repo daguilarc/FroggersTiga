@@ -48,14 +48,14 @@ You may fork this repo if you wish to bias the randomization differently, or do 
 weighted this after testing and adjusting to taste; your taste may differ.
 
 **Crispy and Crunchy** knobs control a bit-scrambling function, which corrupts
-parameter values on their way to the DSP. **Crunchy** is a single global knob shared
-by the whole instrument; each bank has its own local **Crispy**. Most parameter ranges are exponential, which scrambles only that
-bank's parameters. They cascade: Crunchy warps every value, Crunchy also warps
+parameter values on their way to the DSP. This is basically like applying distortion to all the knobs, not just sounds.
+**Crunchy** is a single global knob shared by the whole instrument; each bank has its own local **Crispy**. Most parameter ranges are exponential, which scrambles only that bank's parameters. They cascade: Crunchy warps every value, Crunchy also warps
 the bank's Crispy knob itself, and that warped Crispy is then applied on top of
-the already-warped value. At zero both do nothing. Turned up, knob moves stop
+the already-warped value. At zero (5 o'clock) both do nothing. Turned up, knob moves stop
 being smooth and values snap between newly crispy-crunchy islands. This works on human knob-turning as well as parameters patched through modulation sources.
 
-**Crispy and Crunchy** are excluded from randomization: only you can turn them and set their modulation depths. This might be disappointing at first, but the upside is that randomization doesn't move the knobs when they're turned all the way up, either. Surprisingly, I found the sound of repeated randomization to sound a fair bit spicier this way. You may also decide you want to this to work differently in your own version of frogg3rs, which you are welcome to create.
+**Crunchy** is excluded from randomization: only you can turn it and set its modulation depths. Because every **Crispy** knob is randomized by **Randomize All**,
+this is functionally the same outcome, without two bit-crushers pulling in different directions at the same time.
 
 Full parameter reference: [`MANUAL.md`](MANUAL.md).
 
