@@ -4,9 +4,9 @@
 
 ### Requirement: Docs-only pushes do not rebuild the deliverables
 
-A push to `main` that touches only documentation (`**.md`) or openspec
-artifacts (`openspec/**`) SHALL NOT start the site or VST builds. A push
-touching anything else SHALL start them as before. Tag pushes and manual
+A docs-only push to `main` SHALL NOT start the site or VST builds, where
+docs-only means every touched file is markdown or an openspec artifact. A
+push touching anything else SHALL start them as before. Tag pushes and manual
 dispatches are exempt from path filtering, so cutting a release is never
 blocked by what a push contains.
 
