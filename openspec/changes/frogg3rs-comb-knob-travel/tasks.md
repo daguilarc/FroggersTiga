@@ -34,9 +34,12 @@ single-path.
   code. If `GetFeedback` was its only user, report that and leave the helper
   in place only if another bank still calls it; otherwise flag it.
 - Every test naming `GetFeedback`, comb feedback values, or the blend mix:
-  extremes and center are bit-identical by construction and their pins must
-  NOT move; only mid-curve pins may change, each named with old vs new
-  value. The parity suite's deliberate-divergence note for `GetFeedback`
+  feedback rails/center and blend=0 are bit-identical by construction and
+  their pins must NOT move; blend=1 holds only to REQUIRE_NEAR tolerance
+  (float cos(π/2) residual); mid-curve pins change, each named with old vs
+  new value — the two known ones are
+  `comb_get_delay_samples_and_asymmetric_feedback` and
+  `filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend`. The parity suite's deliberate-divergence note for `GetFeedback`
   is extended, not weakened.
 
 ## 4. Gates

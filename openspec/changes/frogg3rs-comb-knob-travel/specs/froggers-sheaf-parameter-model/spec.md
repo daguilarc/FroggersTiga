@@ -29,8 +29,9 @@ remains inaudible at launch by routing, which is intended.
 - **WHEN** the Comb/Peak blend sits at the middle of its travel
 - **THEN** the comb branch contributes at equal power with the peak branch,
   not at half amplitude
-- **THEN** at either extreme the output is exactly the single selected
-  branch, bit-identical to the unblended path
+- **THEN** at the peak extreme the output is bit-identical to the peak
+  path alone, and at the comb extreme the other branch's residual sits at
+  or below the arithmetic's own noise floor, more than 140 dB down
 
 #### Scenario: The launch patch is untouched
 

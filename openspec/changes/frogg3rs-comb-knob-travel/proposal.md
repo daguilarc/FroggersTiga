@@ -15,9 +15,11 @@ The comb reaches the output through exactly two routes
     mixed    = peakPath·(1−blend) + combPath·blend         Comb/Peak, slot 7
 
 Both knobs arrive RAW — `app/FroggersAppCore.hpp:1855` passes
-`knob(Filter, 9)` and `knob(Filter, 7)` unmapped. Both defaults are 0
-(`app/FroggersParameters.hpp:185-186`), so at launch the comb is fully
-disconnected, which is intended and stays.
+`knob(Filter, 9)` and `knob(Filter, 7)` unmapped. Both are 0 at launch —
+Comb/Peak (slot 7) by the implicit default
+(`app/FroggersParameters.hpp:185-186`), Topology (slot 9) by an explicit
+`0.0f` (`:200`) — so at launch the comb is fully disconnected, which is
+intended and stays.
 
 Comb feedback (slot 5) maps through `Comb::GetFeedback`
 (`app/dsp/FilterFx.hpp:525-534`): bipolar about knob 0.5, each half sweeping
@@ -55,9 +57,13 @@ The blend has the mirror problem: a linear crossfade holds the comb below
 
        mixed = peakPath·cos(blend·π/2) + combPath·sin(blend·π/2)
 
-   Mid-knob puts the comb at −3 dB instead of −6; both extremes remain
-   exactly single-path (cos 0 = 1, sin 0 = 0), so blend=0 is bit-identical
-   to today, including the launch patch. The comb and peak paths are
+   Mid-knob puts the comb at −3 dB instead of −6. Blend=0 is BIT-IDENTICAL
+   to today — sin(0) is exactly 0 and cos(0) exactly 1 in float — which is
+   the end the launch patch sits on. Blend=1 is single-path to within
+   float's own cos(π/2) residual (−4.4e-8, about −147 dB of the peak
+   branch): inaudible and below the arithmetic's noise floor, but not
+   bit-exact, and tests at that extreme use the file's REQUIRE_NEAR
+   convention rather than equality. The comb and peak paths are
    decorrelated by the comb's delay line, which is the case equal-power
    crossfades exist for.
 
@@ -73,12 +79,22 @@ construction.
 
 ## Enumeration duties for execution
 
-- `GetFeedback` callers: the audio path (`FroggersAppCore.hpp:1826`), the
-  transfer-function visualizer path (which reads `comb.feedback` state at
-  `FilterFx.hpp:440` and so follows automatically — verify, do not assume),
-  and every test naming it. Report FOUND vs CHANGED, zeros included.
-- `ZeroedExpCompute` users after the change — if `GetFeedback` was its last
-  caller, say so and leave the helper (other banks may use it; enumerate).
+- `GetFeedback` callers: the audio path (`FroggersAppCore.hpp:1826`); the
+  transfer-function visualizer, which follows automatically because it
+  reads the comb's stored feedback state, never the knob —
+  `PopulateUIState` stores it (`FilterFx.hpp:447`) and
+  `TransferFunctionValue` reads it back (`FilterFx.hpp:373`), with zero
+  knob math anywhere in the plot path (preflight-traced); and every test
+  naming it. Known mid-curve pins needing updates:
+  `comb_get_delay_samples_and_asymmetric_feedback`
+  (`FroggersDspParityTests.cpp:1446`, knob 0.25/0.75 expectations) and
+  `filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend`
+  (`:1542`, hand-rolled linear mix at blend 0.4). Rail-pinning tests are
+  unaffected by construction. Report FOUND vs CHANGED, zeros included.
+- `ZeroedExpCompute` keeps five other callers (`Drive.hpp:112`,
+  `FroggersAppCore.hpp:1702,1704`, `Delay.hpp:841`,
+  `VoiceEnvelope.hpp:159`, preflight-enumerated) — the helper stays;
+  re-confirm the count at execution and report it.
 - Tests pinning mid-curve feedback or blend values (extremes are unchanged
   by construction; only mid-curve pins can move). The DSP parity suite
   already treats `GetFeedback` as a deliberate divergence from the frozen
