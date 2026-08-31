@@ -34,7 +34,8 @@ constexpr float kMaxScale = 2.0f;
 // margins a non-900:712 host window leaves around the uniformly-scaled
 // surface (see resized() below) read as intentional background rather than
 // a mismatched gap.
-const juce::Colour kBackgroundColour(18, 20, 22);
+const juce::Colour kBackgroundColour(synth::kSurfaceBackground.r, synth::kSurfaceBackground.g,
+                                      synth::kSurfaceBackground.b);
 
 }  // namespace
 

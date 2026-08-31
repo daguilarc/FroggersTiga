@@ -1674,11 +1674,12 @@ std::vector<synth::ui::DrawCommand> ExpectedEncoderLabelBandCommands(synth::Colo
     const synth::ui::Bounds rowBounds{plateLeft, bandTop, plateWidth, bandHeight};
 
     const synth::Color onColor = synth::Brighten(bankBaseColor, 0.45f);
-    const synth::Color offColor = synth::Color::Rgb(36, 40, 42);
+    const synth::Color offColor = synth::Color::Rgb(
+        synth::kSurfaceBackground.r + 4, synth::kSurfaceBackground.g + 6, synth::kSurfaceBackground.b + 6);
 
     std::vector<synth::ui::DrawCommand> expected;
     expected.push_back(
-        synth::ui::DrawCommand::FillRoundedRect(rowBounds, bandHeight * 0.15f, synth::Color::Rgb(32, 34, 36)));
+        synth::ui::DrawCommand::FillRoundedRect(rowBounds, bandHeight * 0.15f, synth::kSurfaceBackground));
     const std::vector<synth::ui::DrawCommand> row = synth_froggers::BuildEncoderLabelRowCommands(
         approvedLabel, rowBounds, onColor, offColor, synth_froggers::kApprovedLabelGridColumns);
     expected.insert(expected.end(), row.begin(), row.end());

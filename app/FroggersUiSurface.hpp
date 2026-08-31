@@ -2032,11 +2032,14 @@ private:
 
                 const synth::Color cellColor = state.baseColor;
                 const synth::Color onColor = synth::Brighten(cellColor, 0.45f);
-                const synth::Color offColor = synth::Color::Rgb(36, 40, 42);
-                // Same plate colour AppendBadge already uses for its own
-                // chip background (EncoderDraw.hpp:595) -- one opaque plate
-                // behind the row, drawn before it.
-                const synth::Color plateColor = synth::Color::Rgb(32, 34, 36);
+                const synth::Color offColor = synth::Color::Rgb(
+                    synth::kSurfaceBackground.r + 4, synth::kSurfaceBackground.g + 6,
+                    synth::kSurfaceBackground.b + 6);
+                // The plate matches the surface background so the label
+                // band reads as glyphs sitting directly on the surface,
+                // not a separate chip. It stays opaque because visualizer
+                // underlays cover the whole cell, label band included.
+                const synth::Color plateColor = synth::kSurfaceBackground;
                 commands.push_back(synth::ui::DrawCommand::FillRoundedRect(
                     rowBounds, bandHeight * 0.15f, plateColor));
 

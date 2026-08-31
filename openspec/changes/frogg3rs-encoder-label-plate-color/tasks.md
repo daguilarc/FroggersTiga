@@ -8,24 +8,29 @@ Sweep every directory the Impact section names — `app/`,
 `External/Sheaf/projects/synth/tests/` — and name each one swept. Also verify
 the tree is clean under `app/` and `External/Sheaf` before any evidence run.
 
-## 1. Operator mock, BEFORE building
+## 1. Operator look, BEFORE anything ships
 
 The governing requirement ("Encoder labels are legible, natural, and never
 obscure the encoder") makes the operator's on-screen confirmation the
-acceptance criterion, exercised on a mock BEFORE the change is built. Produce
-a mock of one encoder row with the plate at `Rgb(18,20,22)` and ghost
-segments at `Rgb(22,26,28)` — a doctored screenshot or a small rendered image
-is fine — and get the operator's yes. Include one cell over a visualizer
-underlay so the opacity purpose stays visible.
+acceptance criterion. It is satisfied with REAL pixels, never a mock
+(operator ruling 2026-08-31): execute the colour change locally, build the
+browser target, serve the built site on a local server, and have the
+operator look at it in a browser BEFORE any commit is pushed. Show plain
+cells and at least one cell over a visualizer underlay. Only after the
+operator's yes do the commits land on `main`; the operator then confirms
+again on the deployed site.
 
 ## 2. The Sheaf constant
 
 On a NEW standalone Sheaf branch off the pinned commit:
 
-- Add `inline constexpr Color kSurfaceBackground` (18, 20, 22) where
-  `EncoderDraw.hpp`, `PortableJuceBackend.hpp`, and the three tests can all
-  reach it. Read the include graph first and put it in the narrowest header
-  all five sites already reach; do not invent a new palette layer.
+- Add `inline constexpr Color kSurfaceBackground` (18, 20, 22) in
+  `synth/Color.hpp`, next to the `Color` type it constructs — the header
+  every consumer already reaches (preflight-verified; PortableJuceBackend
+  reaches it via `PortableUI.hpp:3`). Its comment names the CSS twin
+  (`browser/public/synth-browser.css` `#121416`, pinned by
+  `static-site.spec.ts:46`) so a future colour change greps it. Do not
+  invent a new palette layer.
 - Reference it at `PortableJuceBackend.hpp:266` and `:275`,
   `EncoderDraw.hpp:680` (both alpha variants share its r/g/b), and in the
   three tests that pin the value
@@ -36,7 +41,10 @@ On a NEW standalone Sheaf branch off the pinned commit:
 - Gates: Sheaf synth gate AND the miniapp target
   (`make -C projects/synth/apps/miniapp test`), counts reported. The two
   braid4 96 kHz deadline failures are known on this machine.
-- Push the branch, open the upstream PR (expected #11).
+- Commit on the branch locally. Push it and open the upstream PR (expected
+  #11) only AFTER the operator's local yes in task 1 — the local build can
+  point the submodule at the unpushed commit, so nothing needs to leave this
+  machine for the look.
 
 ## 3. The app plate
 
@@ -50,6 +58,10 @@ edit, but the build that produces evidence must use the bumped pin):
 - `app/FroggersSurfaceTests.cpp:1681`: the assertion pins the plate command
   to `synth::kSurfaceBackground`, and the off-segment assertion to the
   derived value.
+- `app/vst/FroggersPluginEditor.cpp:37`: `kBackgroundColour` is constructed
+  from `synth::kSurfaceBackground`'s components instead of literals (the
+  editor already links Sheaf's synth core). The paint at `:151` is
+  unchanged.
 
 ## 4. Pin bump
 

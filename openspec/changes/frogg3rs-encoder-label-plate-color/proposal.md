@@ -48,15 +48,20 @@ CAN collapse into one definition: this app already compiles Sheaf headers
 `FroggersUiSurface.hpp`), so a named constant in Sheaf is reachable by every
 site, and no cross-boundary drift check is needed once all of them read it.
 
-Plan: one `inline constexpr synth::Color kSurfaceBackground` in Sheaf
-(declared in `EncoderDraw.hpp`'s header region or a sibling the four sites
-can include), referenced by:
+Plan: one `inline constexpr Color kSurfaceBackground` in Sheaf's
+`synth/Color.hpp` — the header every consumer already reaches (four of five
+sites include it directly; `PortableJuceBackend.hpp` reaches it via
+`PortableUI.hpp:3`) — referenced by:
 
 - `PortableJuceBackend.hpp:266` and `:275` (via the existing
-  colour-conversion path),
+  `UiToJuceColour()` at `PortableJuceBackend.hpp:23`),
 - `EncoderDraw.hpp:680` (both the opaque and the translucent-underlay
   variant, which reuses the same r/g/b with alpha 150),
-- the app's plate at `FroggersUiSurface.hpp:2039`.
+- the app's plate at `FroggersUiSurface.hpp:2039`,
+- the VST editor's root fill at `app/vst/FroggersPluginEditor.cpp:37`
+  (`kBackgroundColour(18, 20, 22)`, painted at `:151`) — a second window
+  root fill the first enumeration missed; app/vst links Sheaf's synth core,
+  so it includes the same header and converts by components.
 
 The ghost segments keep their designed subtlety by derivation, not by a
 second literal: off = plate + (4, 6, 6), today `36,40,42` over `32,34,36`,
@@ -65,17 +70,32 @@ becoming `22,26,28` over `18,20,22`.
 The badge chip (`EncoderDraw.hpp:595`) stays `32,34,36` UNCHANGED — it sits
 on the knob, not on the root, and is deliberately a chip.
 
-## Enumeration (found vs to change)
+## Enumeration (found vs to change; corrected by preflight)
 
-- `Rgb(18,20,22)`: 6 real sites — backend `:266`, `:275`, `EncoderDraw:680`,
-  and three tests pinning it (`MiniAppJuceBackendParityTests.cpp:312`,
-  `PortableJuceBackendTests.cpp:1183`, `browser_command_buffer_tests.cpp:524`).
-  All 6 move to the constant (tests included — they then pin the constant's
-  use, not a copy of its value).
+- `Rgb(18,20,22)` in C++: 7 real sites — backend `:266`, `:275`,
+  `EncoderDraw:680`, the VST editor root fill
+  (`app/vst/FroggersPluginEditor.cpp:37`), and three tests pinning it
+  (`MiniAppJuceBackendParityTests.cpp:312`,
+  `PortableJuceBackendTests.cpp:1183`,
+  `browser_command_buffer_tests.cpp:524`). All 7 move to the constant
+  (tests included — they then pin the constant's use, not a copy of its
+  value).
+- The same colour as CSS: `#121416` ×3 in Sheaf's
+  `browser/public/synth-browser.css:3,10,33`, pinned by
+  `browser/tests/static-site.spec.ts:46`. A language boundary — CSS cannot
+  read the constant — so these stay literal; the constant's comment names
+  the CSS twin so a future colour change greps it, and the existing spec
+  test keeps the CSS side pinned.
 - `Rgb(32,34,36)`: 3 sites — badge chip (unchanged, deliberate), app plate
   (changes to the constant), app test `FroggersSurfaceTests.cpp:1681`
   (changes to assert the plate command carries the constant).
-- `Rgb(36,40,42)`: 1 site + its test assertion — becomes derived.
+- `Rgb(36,40,42)`: 3 sites — the app's off colour (becomes derived, with
+  its test assertion following), Sheaf's own readout ghost inside
+  `BuildEncoderDrawCommands` (`EncoderDraw.hpp:792`) which renders over the
+  CELL fill rather than a band on the root and is deliberately
+  higher-contrast there (unchanged; noted for upstream), and an arbitrary
+  colour input in `PortableDrawGeometryTests.cpp:285` (unchanged, not a
+  pin of this concept).
 
 ## Why the label mechanisms differ (asked during this investigation)
 
@@ -106,10 +126,17 @@ All frogg3rs commits land directly on `main` — no feature branch.
 
 ## Impact
 
-- `External/Sheaf`: `include/synth/EncoderDraw.hpp`,
-  `juce/PortableJuceBackend.hpp`, the three tests above. New branch + PR.
+- `External/Sheaf`: `include/synth/Color.hpp`,
+  `include/synth/EncoderDraw.hpp`, `juce/PortableJuceBackend.hpp`, the
+  three tests above. New branch + PR.
 - `app/`: `FroggersUiSurface.hpp` (plate + off colours),
   `FroggersSurfaceTests.cpp`.
+- `app/vst/FroggersPluginEditor.cpp` (root fill reads the constant).
 - Submodule pin bump, own commit.
 - Gates: app suite, Sheaf synth gate, miniapp target (runtime shell),
-  browser build, launcher build.
+  browser build, launcher build; the VST target builds in CI on the push
+  (`vst-plugin.yml` runs on every non-docs push to `main`).
+- Sequencing note: `frogg3rs-microphone-path-delivery`'s sweep scope names
+  `External/Sheaf/projects/synth/tests/`; no named-file collision exists,
+  and the tree is clean, but its operator items remain open while this
+  change edits one file in that directory.
