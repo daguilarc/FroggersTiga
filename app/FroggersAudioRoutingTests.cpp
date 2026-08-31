@@ -2844,6 +2844,51 @@ TEST_CASE(new_and_reset_all_both_restore_the_cross_vco_pitch_detents) {
     REQUIRE_TRUE(materializedOffNeutral(afterReset));
 }
 
+// Sensitivity check on the comparison above: perturbs one of the six
+// detents Reset All just restored, through the same SceneCenter write the
+// grid and sweep tests below use to set parameter state, by far more than
+// the comparison's own tolerance, then confirms the same element-wise
+// comparison reports the perturbed state as different from a fresh launch.
+TEST_CASE(perturbed_reset_detent_fails_the_launch_equality_check) {
+    constexpr std::size_t kDrainBlocks = 16;
+    constexpr float kPerturbationDelta = 0.05f;  // far above the 1.0e-6f tolerance below.
+
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("perturbed_reset_detent"));
+    rig.StartAt(0);
+    rig.RunBlocks(8);
+
+    auto& model = rig.Application().Parameters();
+    const std::array<std::optional<float>, 6> fresh = ReadAudioPitchDetents(model);
+
+    rig.Application().RequestResetAll();
+    rig.RunBlocks(kDrainBlocks);
+
+    const auto& perturbedSpec = synth_froggers::detail::kAudioPitchDetents[0];
+    synth::Parameter& perturbedTarget =
+        model.PageParameter(synth_froggers::FroggersBankId::Audio, perturbedSpec.targetParamIx);
+    synth::Parameter* perturbedDepth = perturbedTarget.ModulationDepthParameter(perturbedSpec.modIx);
+    REQUIRE_TRUE(perturbedDepth != nullptr);
+    perturbedDepth->SceneCenter(0) += kPerturbationDelta;
+
+    const std::array<std::optional<float>, 6> drifted = ReadAudioPitchDetents(model);
+
+    // Same element-wise comparison used above, applied here to the perturbed
+    // capture instead of the genuine one.
+    const auto sameAsFresh = [&](const std::array<std::optional<float>, 6>& other) {
+        for (std::size_t ix = 0; ix < fresh.size(); ++ix) {
+            if (fresh[ix].has_value() != other[ix].has_value()) {
+                return false;
+            }
+            if (fresh[ix].has_value() && std::fabs(*fresh[ix] - *other[ix]) > 1.0e-6f) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    REQUIRE_TRUE(!sameAsFresh(drifted));
+}
+
 
 // -----------------------------------------------------------------------
 // Re-arming the reset reproduction against the landed Grace/Curve mapping.
