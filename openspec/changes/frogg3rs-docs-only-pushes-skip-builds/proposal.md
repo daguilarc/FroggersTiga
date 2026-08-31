@@ -15,26 +15,25 @@ bury meaningful runs in noise.
 
 ## The fix
 
-Add `paths-ignore: ['openspec/**', '**.md']` to `pages.yml`'s `push`
+Add `paths-ignore: ['openspec/**', 'README.md']` to `pages.yml`'s `push`
 trigger and to `vst-plugin.yml`'s `push` and `pull_request` triggers.
 An ignore list is chosen over a `paths` allow list deliberately: a forgotten
 allow-list entry silently skips a real deploy, while a stale ignore merely
 wastes a build.
 
-## Why the ignore list is safe, checked per consumer
+The list is deliberately NARROW (operator ruling): an ignored path is a
+standing claim that the path can never be a build input, and only these two
+hold timelessly. `README.md` feeds nothing — the only mentions of it in any
+workflow or build script are these ignores. Broader candidates were checked
+and rejected: `MANUAL.md` and `QUICK_DICT.md` are bundled into the desktop
+app (`app/build-launcher.sh:72-73`) and `MANUAL.md` feeds the VST release
+notes (`vst-plugin.yml:253-260`) — those consumers do not run on ordinary
+branch pushes today, but ignoring the files would encode that wiring into
+the trigger, where nothing would catch it changing. They stay un-ignored,
+and their rare edits still rebuild.
 
-- No `.md` is an input to the Pages build: the site links to `MANUAL.md` on
-  GitHub (`app/browser/site/index.html:79`) rather than bundling it, and
-  `pages.yml` reads no markdown.
-- `vst-plugin.yml` reads `MANUAL.md` only in its release job
-  (`vst-plugin.yml:253-260`), which runs on the `frogg3rs_vst` tag — and
-  GitHub does not evaluate `paths`/`paths-ignore` for tag pushes, so the
-  release trigger cannot be filtered out.
-- `MANUAL.md` and `QUICK_DICT.md` are bundled into the desktop app
-  (`app/build-launcher.sh:72-73`), but that ships through
-  `desktop-release.yml`, which gains no filter.
-- `labels.md` is the authority for label TEXT by transcription into
-  `FroggersApprovedLabels()`; the build consumes the code, not the file.
+Tag pushes are exempt from path filtering by GitHub's own trigger semantics,
+so the `frogg3rs_vst` release trigger cannot be filtered out.
 
 ## Impact
 

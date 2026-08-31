@@ -4,10 +4,10 @@ on:
   push:
     branches: [main]
     tags: ['frogg3rs_vst']
-    paths-ignore: ['openspec/**', '**.md']
+    paths-ignore: ['openspec/**', 'README.md']
   pull_request:
     branches: [main]
-    paths-ignore: ['openspec/**', '**.md']
+    paths-ignore: ['openspec/**', 'README.md']
   workflow_dispatch:
 
 permissions:
