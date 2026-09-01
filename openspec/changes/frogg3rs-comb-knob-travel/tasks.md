@@ -72,3 +72,16 @@ unchanged. Archive on the operator's confirmation.
   branch's gain at sin(0.025π) within tolerance, replacing any exactness
   assertions at the extremes.
 - Re-run the gates of section 4 fresh (binaries deleted first).
+
+## 7. Addendum 2 — centered feedback default
+
+- `app/FroggersParameters.hpp`: the `{"Comb feedback", "CmbFb"}` entry gains
+  an explicit `0.5f` default, comment stating the knob is bipolar and its
+  center is zero feedback, matching the `VCO balance` entry's treatment.
+- Enumerate every test or capture pinning the old slot-5 default (grep by
+  operand: `CmbFb`, `Filter, 5`, slot-5 literals) — default-state suites
+  read the single definition and follow automatically; anything pinning the
+  literal old value changes, each hit closed out FOUND vs CHANGED.
+- Gates of section 4 fresh, and `gate_period_tracks_tempo_change` MUST pass
+  without its band being touched — if it does not, STOP and report; do not
+  retune it.

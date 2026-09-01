@@ -15,7 +15,9 @@ present by mid-travel and neither branch is ever fully absent — each
 extreme holds the other branch near −22 dB. Launch knob positions are
 unchanged, and launch, Reset All, and New agree with each other through
 the one shared mapping; the launch output carries the comb at the blend
-floor, which is accepted.
+floor, which is accepted. Comb feedback SHALL default to its center — the
+zero-feedback point of its bipolar travel — so the floored comb bed is a
+single short echo of the dry signal at startup, not a ring.
 
 #### Scenario: Feedback travel is log-linear in ring time
 
@@ -39,5 +41,5 @@ floor, which is accepted.
 - **WHEN** the instrument launches with the default patch, and the state is
   also reached through Reset All and through New
 - **THEN** all three present the same knob values and the same output,
-  including the comb bed at the blend floor, because all three read the one
-  shared mapping
+  including the floored comb bed — a single short echo, feedback at its
+  centered zero default — because all three read the one shared mapping

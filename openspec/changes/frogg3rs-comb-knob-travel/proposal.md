@@ -125,3 +125,22 @@ agree with each other, since all three share the one mapping). The earlier
 bit-identical-extreme claims are superseded by this addendum: the extremes
 are now deliberate floors, not identities, and the cos(π/2) float-residual
 discussion is moot. Tests pinning the blend expression follow the remap.
+
+## Addendum 2 — feedback defaults to its center (operator, 2026-08-31)
+
+`CmbFb` gains an explicit default of `0.5f` — the knob's center, which maps
+to zero feedback — following the same-table precedent of `VCO balance`
+(`FroggersParameters.hpp:175`), the other bipolar knob, whose entry already
+defaults to its center. The all-zeros convention had landed this bipolar
+knob on its −0.95 rail, an extreme, not a neutral.
+
+With the blend floor this resolves both startup tensions at once: the
+always-routed comb bed becomes 8% of a single short echo of the dry signal
+(feedback zero makes the comb a pass-through plus one tap), restoring a
+neutral-ish startup — and the floor abolishes the dead-travel objection to
+a centered default, because the comb path is always alive, so the feedback
+knob is immediately effective from its first movement off center. The
+tempo-gate test (`gate_period_tracks_tempo_change`), which the rail-default
+bed broke, is expected to pass UNRETUNED — execution verifies this rather
+than assuming it, and reports back instead of retuning if it does not.
+Launch, Reset All, and New keep agreeing through the one shared definition.
