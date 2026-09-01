@@ -1589,10 +1589,10 @@ private:
         // STOPPED, override effective knob values for the release knob
         // (releaseKnob, below -- already existed) PLUS the three drive
         // pre-gains (Delay slot 9 "Feedback drive", Reverb slot 10 "Tank
-        // drive", Filter slot 12 "Comb drive" -- each maps through the SAME
+        // drive", Filter slot 7 "Comb drive" -- each maps through the SAME
         // ExpMapCompute(0.25,4,knob) idiom, unity at knob==0.5, see each
         // unit's own SetFeedbackDrive()/TankDriveFromKnob()/this file's
-        // Filter-slot-12 comment for the citation) and Freeze (Delay slot
+        // Filter-slot-7 comment for the citation) and Freeze (Delay slot
         // 4, dsp::DelayParams::dfrz, resolves to 0.0f) -- WITHOUT writing to
         // the parameter model, exactly as kStopFadeReleaseKnob's release
         // override above never writes the Release knob. Play resumes
@@ -1720,14 +1720,14 @@ private:
         // Comb/Peak -> blend, Scoop -> scoopMix). The old `useParallel` bool
         // (which used to mirror `SetUseV2FilterParallel(UsesV2Fuego(hostKind))`,
         // always `true` for this app) has
-        // been replaced by the Filter slot-9 "Topology" knob, a continuous
+        // been replaced by the Filter slot-13 "Topology" knob, a continuous
         // morph -- see FilterFxChain::Process's own comment (FilterFx.hpp).
         // Clamped to `PureDelay::kSize` so a very high host sample rate
         // cannot push `SetDelaySeconds` past the ported unit's fixed-size
         // ring buffer (defensive; PureDelay itself is not
         // modified).
         const float combOffsetSeconds = std::min(
-            dsp::ExpMapCompute(0.001f, 0.1f, knob(FroggersBankId::Filter, 0)),
+            dsp::ExpMapCompute(0.001f, 0.1f, knob(FroggersBankId::Filter, 3)),
             static_cast<float>(dsp::PureDelay::kSize - 1) / sampleRate_);
         filterChain_.pureDelay.SetDelaySeconds(combOffsetSeconds, sampleRate_);
         // FroggersEngine.hpp:561-562: the scoop notch shares the peak bump's
@@ -1741,8 +1741,13 @@ private:
         // regularly, not only when an operator dials there. Moves the
         // bottom decile from about 40 Hz to about 170 Hz.
         const float bumpFreq =
-            dsp::ExpMapCompute(100.0f / sampleRate_, 20000.0f / sampleRate_, knob(FroggersBankId::Filter, 1));
-        const float bumpWidth = dsp::ExpMapCompute(0.1f, 10.0f, knob(FroggersBankId::Filter, 3));
+            dsp::ExpMapCompute(100.0f / sampleRate_, 20000.0f / sampleRate_, knob(FroggersBankId::Filter, 0));
+        // Floor raised from 0.1 to 0.4: at Q 0.4 the RBJ peaking biquad's
+        // bandwidth (ResonantBump::UpdateCoefficients's `alpha =
+        // sin(w0)/(2*Q)`, FilterFx.hpp) is about 3 octaves -- broad, but
+        // still a discernible peak, not the flat pass-through the old
+        // floor could sit at.
+        const float bumpWidth = dsp::ExpMapCompute(0.4f, 10.0f, knob(FroggersBankId::Filter, 2));
         filterChain_.peak.SetFreq(bumpFreq);
         // Ceiling lowered
         // from 10x (+20 dB) to 4x (+12 dB). An audible resonant peak does
@@ -1751,7 +1756,7 @@ private:
         // offender in the operator's blowout (multiplying the comb's
         // saturator-pinned output before the
         // limiter). scoopNotch (below) has its own independent freq/width
-        // knobs (Filter slots 10/11) but its own height is a DIP
+        // knobs (Filter slots 9/10) but its own height is a DIP
         // (max(0.05, 1-0.95*scoop)), not a gain, so it is unaffected and
         // untouched.
         // Ceiling 4.0f (+12 dB), NOT the frozen firmware's 10.0f
@@ -1777,7 +1782,7 @@ private:
         // that feeds it, not this ceiling -- past a point, lowering this just
         // makes the resonance inaudible.
         filterChain_.peak.SetHeight(
-            dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, knob(FroggersBankId::Filter, 2)));
+            dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, knob(FroggersBankId::Filter, 1)));
         filterChain_.peak.SetWidth(bumpWidth);
         // FroggersEngine.hpp:561-564, restored 2026-07-27. These three
         // setters were dropped in the port even though `FilterFxChain`
@@ -1792,7 +1797,7 @@ private:
         // processes unconditionally, so a poisoned state reaches the output
         // even at `scoopMix == 0` -- IEEE `NaN * 0` is `NaN`.
         // Height is a DIP, not a gain: max(0.05, 1 - 0.95 * scoop).
-        // Filter slots 10/11 ("Scoop freq"/"Scoop width",
+        // Filter slots 9/10 ("Scoop freq"/"Scoop width",
         // "ScFq"/"ScWd"): the scoop notch used to share the peak bump's
         // freq/width verbatim (bumpFreq/bumpWidth above); it now gets its
         // own independent knobs, mapped with the SAME shape (same
@@ -1803,12 +1808,20 @@ private:
         // failure). Moves the bottom decile from about 40 Hz to about
         // 170 Hz.
         const float scoopFreq =
-            dsp::ExpMapCompute(100.0f / sampleRate_, 20000.0f / sampleRate_, knob(FroggersBankId::Filter, 10));
-        const float scoopWidth = dsp::ExpMapCompute(0.1f, 10.0f, knob(FroggersBankId::Filter, 11));
+            dsp::ExpMapCompute(100.0f / sampleRate_, 20000.0f / sampleRate_, knob(FroggersBankId::Filter, 9));
+        // Same floor raise (0.1 -> 0.4) and reasoning as bumpWidth's own
+        // comment above.
+        const float scoopWidth = dsp::ExpMapCompute(0.4f, 10.0f, knob(FroggersBankId::Filter, 10));
         filterChain_.scoopNotch.SetFreq(scoopFreq);
         filterChain_.scoopNotch.SetWidth(scoopWidth);
+        // Deliberate decreasing exponential map (base 0.05 < 1 is
+        // well-defined): equal knob steps cut equal dB, running from an
+        // exact 1.0 (no dip) at the floor to an exact 0.05 at the ceiling.
+        // Scoop depth (Filter slot 11) drives the notch's own dip;
+        // how much of that dip reaches the output is Scoop (slot 8, the
+        // wet/dry blend below).
         filterChain_.scoopNotch.SetHeight(
-            std::max(0.05f, 1.0f - 0.95f * knob(FroggersBankId::Filter, 8)));
+            dsp::ExpMapCompute(1.0f, 0.05f, knob(FroggersBankId::Filter, 11)));
         // Floor raised from 20 Hz to 100 Hz, same inert-below-audibility
         // reasoning as bumpFreq/scoopFreq above. Ceiling here is 10 kHz, not
         // 20 kHz, so this moves the bottom decile from about 37 Hz to about
@@ -1820,40 +1833,46 @@ private:
         // coupling is not a surprise later.
         const float combFreq =
             dsp::ExpMapCompute(100.0f / sampleRate_, 10000.0f / sampleRate_, knob(FroggersBankId::Filter, 4));
-        filterChain_.comb.delaySamples = std::min<std::size_t>(
-            dsp::Comb::kSize - 1,
-            std::max<std::size_t>(1, static_cast<std::size_t>(dsp::Comb::GetDelaySamples(combFreq))));
+        // Fractional now (Comb::delaySamples, FilterFx.hpp) -- no truncating
+        // cast here; the clamp keeps the same [1, kSize-1] bounds as floats.
+        filterChain_.comb.delaySamples =
+            std::min(static_cast<float>(dsp::Comb::kSize - 1), std::max(1.0f, dsp::Comb::GetDelaySamples(combFreq)));
         filterChain_.comb.SetFeedback(dsp::Comb::GetFeedback(knob(FroggersBankId::Filter, 5)));
         // Comb low-pass floor derives from combFreq above (4x it), so it
         // moved too when combFreq's own floor was raised -- see combFreq's
-        // comment just above.
-        const float cmlp =
-            dsp::ExpMapCompute(4.0f * combFreq, 20000.0f / sampleRate_, knob(FroggersBankId::Filter, 6));
+        // comment just above. The low-pass runs from just above the comb's
+        // own pitch up to fully open, so the floor is clamped to the
+        // ceiling: once the comb sits high enough that 4x its frequency is
+        // already past fully open, the range degenerates to fully open --
+        // the knob goes inert there, it never reverses direction.
+        const float cmlpCeiling = 20000.0f / sampleRate_;
+        const float cmlp = dsp::ExpMapCompute(std::min(4.0f * combFreq, cmlpCeiling), cmlpCeiling,
+                                               knob(FroggersBankId::Filter, 6));
         // FroggersEngine.hpp:430-432 (Alpha): 1 - exp(-2*pi*natFreq).
         filterChain_.comb.SetCutoffAlpha(1.0f - std::exp(-2.0f * static_cast<float>(M_PI) * cmlp));
-        // Task C (Filter slot 12, "Comb drive", "CDrv"): knob-driven
+        // Task C (Filter slot 7, "Comb drive", "CDrv"): knob-driven
         // pre-gain on the comb saturator's argument (dsp::Comb::Process,
         // FilterFx.hpp), exponential map (dsp::ExpMapCompute, same shape
         // used throughout this method), range 0.25x-4.0x so unity (1.0x)
         // is reachable exactly at knob==0.5 -- ExpMapCompute(0.25, 4.0,
-        // 0.5) == 0.25 * sqrt(16) == 1.0. The Filter slot-12 default
+        // 0.5) == 0.25 * sqrt(16) == 1.0. The Filter slot-7 default
         // (FroggersParameters.hpp) is set to 0.5f for exactly this reason
         // (Task E).
         // T2.2: stoppedKnob (defined above, beside kStopFadeReleaseKnob)
         // overrides this to kStopUnityDriveKnob (0.5, i.e. unity post-map)
         // while the transport is stopped, regardless of the commanded knob.
         filterChain_.comb.SetDrive(
-            dsp::ExpMapCompute(0.25f, 4.0f, stoppedKnob(FroggersBankId::Filter, 12, kStopUnityDriveKnob)));
-        // Task A (Filter slot 9, "Topology", "Topo"): continuous morph
+            dsp::ExpMapCompute(0.25f, 4.0f, stoppedKnob(FroggersBankId::Filter, 7, kStopUnityDriveKnob)));
+        // Task A (Filter slot 13, "Topology", "Topo"): continuous morph
         // replacing the old `useParallel` bool -- see FilterFxChain::Process's
         // own comment (FilterFx.hpp) for why topology==0 is bit-identical to
         // the old always-true `useParallel` behaviour.
-        // Task D (Filter slot 13, "Scoop depth", "ScDp"): scoopMix now reads
-        // its own slot instead of re-reading slot 8 (SetHeight above still
-        // reads slot 8, unchanged).
+        // Scoop (Filter slot 8) is the notch's wet/dry blend into the
+        // output -- SetHeight above reads Scoop depth (slot 11) instead,
+        // the notch's own dip.
         const float filterOut =
-            filterChain_.Process(driveOut, knob(FroggersBankId::Filter, 9), knob(FroggersBankId::Filter, 7),
-                                  knob(FroggersBankId::Filter, 13));
+            filterChain_.Process(driveOut, knob(FroggersBankId::Filter, 13), knob(FroggersBankId::Filter, 12),
+                                  knob(FroggersBankId::Filter, 8));
 
         // -- Delay bank -> dsp::StereoDelay ---------------------
         // Positioned exactly where the frozen engine's `m_simFxInsert` hook

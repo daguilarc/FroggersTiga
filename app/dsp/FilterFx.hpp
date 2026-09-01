@@ -71,6 +71,19 @@ namespace transfer_function_detail {
 // division below, so every closed-form response this file computes is
 // finite and bounded by construction -- not by coincidence of where sample
 // points happen to land.
+//
+// This loop gain (`feedback * z^-N * Hlp(z)` in
+// ComputeLinearizedTransferFunctionValue below) carries no combDrive term,
+// and needs none at any combDrive setting: combDrive's compensation
+// (multiply Saturate's argument, divide its output by the same factor --
+// combDrive's own comment, below) keeps the saturator stage's small-signal
+// gain at exactly 1.0 regardless of combDrive (this file's own header
+// comment establishes Saturate's own derivative at 0 is 1.0; dividing by k
+// the output of an argument scaled by that same k leaves the derivative at
+// 0 unchanged: `d/dx[Saturate(k*x)/k]` at `x=0` is `Saturate'(0) == 1` for
+// every `k > 0`), so this closed form's implicit "saturator is unity gain"
+// treatment is exact at every drive setting, not only at combDrive's unity
+// default.
 inline std::complex<float> SafeDenominator(std::complex<float> denominator)
 {
     constexpr float kMinMagnitude = 1.0e-3f;  // bounds the worst-case response to 1/kMinMagnitude = 1000x.
@@ -87,7 +100,12 @@ inline std::complex<float> SafeDenominator(std::complex<float> denominator)
 
 // src/core/TanhSaturator.hpp:25-30. Despite the frozen struct's name, this
 // is a Pade rational approximation, not std::tanh -- pinned exactly,
-// including the clamp.
+// including the clamp. Compressive: `Saturate(y) <= y` for `y >= 0` (the
+// rational part is `y * ratio` with `ratio = (27+y^2)/(27+9y^2) <= 1` for
+// every real y, since `27+y^2 <= 27+9y^2` iff `0 <= 8y^2`; the clamp can
+// only move the result closer to 0 from there) -- relied on by
+// GetFeedback's own comment (below) and by combDrive's (Filter slot 7,
+// below).
 struct PadeSaturator
 {
     static float Saturate(float input)
@@ -112,10 +130,14 @@ struct PadeSaturator
 // asserting this value must read it from here, never retype it.
 //
 // Value history: 10.0 (frozen-firmware parity) -> 4.0 (gross overload) ->
-// 2.0 (still too harsh when modulated, very close to blowout territory).
+// 2.0 (still too harsh when modulated, very close to blowout territory) ->
+// 3.0 (2026-09-01: the pinned-comb launch state behind the 2.0 cap no
+// longer exists, and the candidate measurement showed the limiter holds
+// the worst case within 0.03 dB of the 2.0 ceiling's; ear-gated on the
+// deployed site).
 // See FroggersAppCore's own comment at the SetHeight
 // call for why modulation is the case that governs this number.
-inline constexpr float kMaxResonantBumpHeight = 2.0f;
+inline constexpr float kMaxResonantBumpHeight = 3.0f;
 
 // Tuning for
 // `FilterFxChain::peakLimiter` below, a SECOND, independently-configured
@@ -377,22 +399,55 @@ struct Comb
     OnePoleLowPass filter;
     float delayLine[kSize]{};
     size_t index = 0;
-    size_t delaySamples = 0;
+    // Fractional: Process() below reads between the two adjacent integer
+    // taps by this value's fractional part (PureDelay's own frac/idx0/idx1
+    // idiom, reused verbatim) -- an exact integer value still reads a
+    // single sample bit-identically, since the interpolation weight is
+    // zero exactly at an integer delay.
+    float delaySamples = 0.0f;
     float feedback = 0.0f;
     PadeSaturator saturator;
 
-    // (Filter slot 12, "Comb drive", "CDrv"): knob-driven pre-gain
-    // applied to the SATURATOR'S ARGUMENT only (see Process() below) --
-    // NOT a post-saturator multiply on `feedback * Saturate(...)`, which
-    // would break `rawCombTrim = 1/(1+|feedback|)` (FilterFxChain::Process)
-    // by widening the per-sample bound to `|input| + combDrive*|feedback|`.
-    // Placing it inside Saturate keeps that bound at `|input| + |feedback|`
-    // unconditionally: `PadeSaturator::Saturate` clamps to +-1 regardless
-    // of what its argument was scaled by, so `feedback * Saturate(anything)`
-    // is still bounded by `|feedback| * 1.0` no matter how hot `combDrive`
-    // drives the saturator's input. Default 1.0f (unity) -- see
-    // RouteAudioSample's own Filter slot 12 wiring for the knob mapping and
-    // default that reproduces this.
+    // (Filter slot 7, "Comb drive", "CDrv"): knob-driven saturation-depth
+    // control. `combDrive` multiplies the SATURATOR'S ARGUMENT, and the
+    // SAME factor divides its OUTPUT (see Process() below) -- COMPENSATED,
+    // not a bare pre-gain on the argument alone: an uncompensated pre-gain
+    // spends the knob's bottom half (combDrive < 1) merely weakening the
+    // loop before any saturation character appears, and only reaches the
+    // saturator's knee in its top half (combDrive > ~2) -- the "useless
+    // until the very end" behaviour this compensation replaces.
+    //
+    // NOT a post-saturator multiply with no matching divide either
+    // (`feedback * combDrive * Saturate(x)`): that widens the per-sample
+    // bound to `|input| + combDrive*|feedback|`, unboundedly worse at high
+    // drive, and never drives the saturator past its knee at all -- a pure
+    // post-gain, no saturation-character change, the opposite of what a
+    // drive control is for.
+    //
+    // Dividing the saturator's OUTPUT by the same `combDrive` that scaled
+    // its ARGUMENT does not reopen that same concern from the low-drive
+    // end (combDrive < 1, where an absolute `|feedback|/combDrive` ceiling
+    // alone would exceed the old `|feedback|` bound):
+    // `PadeSaturator::Saturate` is compressive, `Saturate(y) <= y` for
+    // `y >= 0` (Saturate's own comment, above; the same fact GetFeedback's
+    // comment below relies on), so `Saturate(combDrive*x)/combDrive <= x`
+    // for `x >= 0` (divide the compressive inequality through by
+    // combDrive > 0; the odd-symmetric case mirrors it for x < 0) -- the
+    // compensated fed-back term never exceeds `x`
+    // (`filter.Process(tapped)`, the delayed signal it is computed from),
+    // so the loop's per-pass decay stays governed by
+    // `feedback` alone, exactly as before, at EVERY combDrive setting: this
+    // is what keeps GetFeedback's geometric ring-time law (below) true
+    // across this knob's whole travel, not just at the unity default.
+    // combDrive is always > 0 (`ExpMapCompute(0.25, 4.0, knob)`,
+    // FroggersAppCore.hpp: a positive base raised to any real power stays
+    // positive), so the divide is always defined.
+    //
+    // At combDrive == 1.0 -- this field's own default, the knob's centre,
+    // and the transport-stopped override's target (RouteAudioSample's own
+    // Filter slot 7 wiring) -- `Saturate(x)/1.0f` reproduces the
+    // pre-compensation form bit-for-bit (IEEE divide-by-1.0 introduces no
+    // rounding for any finite operand).
     float combDrive = 1.0f;
 
     // Tier 2's per-unit sustained-over-
@@ -406,12 +461,28 @@ struct Comb
     void SetDrive(float drive) { combDrive = drive; }
 
     // src/core/Comb.hpp:54, verbatim: out = in + fb*sat(lp(delay[i-N])),
-    // with `combDrive` inserted on Saturate's ARGUMENT only (load-bearing
-    // placement -- see combDrive's own declaration comment above).
+    // with `combDrive` inserted on Saturate's ARGUMENT and dividing its
+    // OUTPUT -- the compensated form; see combDrive's own declaration
+    // comment above for why both placements are load-bearing.
     float Process(float input)
     {
-        const float tapped = delayLine[(index + kSize - delaySamples) % kSize];
-        const float output = input + feedback * PadeSaturator::Saturate(combDrive * filter.Process(tapped));
+        // PureDelay's own frac/idx0/idx1 idiom (FilterFx.hpp:598-608),
+        // reused verbatim: the two adjacent taps, linearly interpolated by
+        // delaySamples's fractional part. The weight is exactly zero at an
+        // integer delaySamples (lowExact is then an exact integer, so
+        // frac==0 and idx0 alone survives), so an integer delay reproduces
+        // the old single-tap read bit-for-bit. The lerp is a convex
+        // combination (both weights >= 0 and sum to 1), so the interpolated
+        // tap never leaves the range the two neighbor samples bound --
+        // every bound argument that relied on the old single-tap read
+        // still holds.
+        const float lowExact = static_cast<float>(index) + static_cast<float>(kSize) - delaySamples;
+        const float frac = lowExact - std::floor(lowExact);
+        const size_t idx0 = static_cast<size_t>(lowExact) % kSize;
+        const size_t idx1 = (idx0 + 1) % kSize;
+        const float tapped = delayLine[idx0] * (1.0f - frac) + delayLine[idx1] * frac;
+        const float x = filter.Process(tapped);
+        const float output = input + feedback * (PadeSaturator::Saturate(combDrive * x) / combDrive);
         delayLine[index] = output;
         index = (index + 1) % kSize;
         return output;
@@ -706,7 +777,7 @@ struct FilterFxChain
     // which is parameter-smoothing infrastructure, not a DSP unit in scope
     // here -- callers pass the already-smoothed 0..1 value).
     //
-    // `topology` (Filter slot 9, "Topology"/"Topo") replaces the old
+    // `topology` (Filter slot 13, "Topology"/"Topo") replaces the old
     // `bool useParallel`. The old `useParallel == false` branch (:834-839,
     // `pureDelay -> comb -> peak` with no trims/limiter/blend, ignoring
     // combPeakBlend and scoopMix entirely) was DEAD CODE -- the only

@@ -774,7 +774,7 @@ struct StereoDelay
     // ExpMapCompute range [0.25, 4.0] -- the SAME idiom already
     // established in this codebase for a "drive" pre-gain into a saturator
     // (FilterFxChain's Comb Drive, FroggersAppCore.hpp, Filter slot
-    // 12), reused rather than a fresh range invented for the same concept.
+    // 7), reused rather than a fresh range invented for the same concept.
     // Default knob 0.5f reproduces fbDrive == 1.0f exactly (unity):
     // ExpMapCompute(0.25,4,0.5) == 0.25*sqrt(16) == 1.0.
     void SetFeedbackDrive(float knob01) { fbDrive = ExpMapCompute(0.25f, 4.0f, knob01); }

@@ -1728,12 +1728,12 @@ bool TrailingCommandsMatch(const std::vector<synth::ui::DrawCommand>& actual,
 }
 
 // Envelope-bank cells emit exactly the single-row short-name
-// block; a truncation-class cell (Filter slot 0, "Comb offset") emits its
+// block; a truncation-class cell (Filter slot 3, "Comb offset") emits its
 // approved long label in full -- both checked by command count/geometry
 // (dpDotCount, and a full trailing-command match against
 // `ExpectedEncoderLabelBandCommands`) against the approved list, never by
 // inspecting pixels.
-TEST_CASE(envelope_short_forms_and_filter_slot0_long_label_render_single_row_verbatim) {
+TEST_CASE(envelope_short_forms_and_filter_slot3_long_label_render_single_row_verbatim) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
         /*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("label_row_content"));
     rig.RunBlocks(4);
@@ -1772,10 +1772,10 @@ TEST_CASE(envelope_short_forms_and_filter_slot0_long_label_render_single_row_ver
     // Envelope (bank 1) slot 0 -- canonical short form "A1" (operator
     // ruling: the short form IS the name here).
     checkCell(1, 0, "A1");
-    // Filter (bank 2) slot 0 -- the truncation-class long name "Comb
+    // Filter (bank 2) slot 3 -- the truncation-class long name "Comb
     // offset" (the exact site the predecessor's rejected work clipped to
     // "CMBO"), now required to render in full.
-    checkCell(2, 0, "Comb offset");
+    checkCell(2, 3, "Comb offset");
 }
 
 // No label draw command's bounds intersect the ring's drawn arc,
@@ -1928,8 +1928,8 @@ TEST_CASE(every_rendered_label_matches_the_approved_list_verbatim) {
             {{"VCO1", "VCO2", "VCO3", "Shape 1", "Shape 2", "Shape 3", "Ph.mod 1", "Ph.mod 2", "Ph.mod 3",
               "Ringmod 1", "Ringmod 2", "Ringmod 3", "PM rate", "VCO balance"}},
             {{"A1", "D1", "S1", "R1", "A2", "D2", "S2", "R2", "A3", "D3", "S3", "R3", "Curve", "Grace"}},
-            {{"Comb offset", "Peak freq", "Peak gain", "Peak Q", "Comb delay", "Comb FB", "Comb LP",
-              "Comb/Peak", "Scoop", "Topology", "Scoop freq", "Scoop width", "Comb drive", "Scoop depth"}},
+            {{"Peak freq", "Peak gain", "Peak Q", "Comb offset", "Comb delay", "Comb FB", "Comb LP",
+              "Comb drive", "Scoop", "Scoop freq", "Scoop width", "Scoop depth", "Comb/Peak", "Topology"}},
             {{"Drive", "Shape", "SRR 1", "SRR 2", "XOR", "Bit depth", "Fuzz", "Blend", "Phase", "Anti-alias",
               "Link", "Fold", "Tone", "Bias"}},
             {{"Delay time", "Send", "Feedback", "Stereo width", "Freeze", "Mod depth", "Wet mix", "Reverse",
