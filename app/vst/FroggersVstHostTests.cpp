@@ -846,6 +846,13 @@ TEST_CASE(host_write_produces_a_bounded_number_of_notifications_not_an_endless_l
     juce::AudioProcessorParameter* target = FindHostParamById(processor, "bank2.slot5");
     REQUIRE_TRUE(target != nullptr);
 
+    // Let the core's own startup convergence finish BEFORE attaching the
+    // listener: a parameter with a non-zero registered default slews from
+    // the smoother's zero start over the first blocks, and the bridge
+    // mirrors that movement as real notifications. The steady-state control
+    // below is about the settled state, whatever any parameter's default is.
+    pumpAndSettle();
+
     // setValueNotifyingHost() is the ONLY thing that fires
     // parameterValueChanged() (juce_AudioProcessorParameter.cpp: plain
     // setValue() -- what the test below calls to simulate the host's own
