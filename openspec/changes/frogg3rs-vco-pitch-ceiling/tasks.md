@@ -15,6 +15,14 @@ deliberately excludes the shrill-to-inaudible top the audibility-limit
 ceiling spent the knob on; extend the file's frozen-reference divergence
 idiom for the range change. No change/task references.
 
+## 1b. The recomputed defaults
+
+`app/FroggersParameters.hpp:142`: the three pitch defaults become
+`0.3087f/0.4343f/0.5077f`, each with the existing comment style updated to
+state the Hz it decodes to under the named range. The
+`kAudibleFundamentalsHz` tests stay untouched and must pass — they are the
+drift check on this recomputation.
+
 ## 2. Enumerations, closed out in the same breath
 
 - `PitchToPhaseIncrement` callers: FOUND vs CHANGED, zeros included.
@@ -23,6 +31,9 @@ idiom for the range change. No change/task references.
   where the file's idiom allows.
 - The `20000` family: confirm the three filter ceilings and the visualizer
   axis comment are untouched, with a one-line disposition each.
+- The default-patch pin family: `kAudibleFundamentalsHz` and its 7 sites
+  (`FroggersAudioRoutingTests.cpp:157,334,2593,2674,2773,2950,3265,3281`)
+  UNCHANGED and green; the stale comment at `:281` refreshed.
 
 ## 3. Gates
 
@@ -35,7 +46,7 @@ idiom for the range change. No change/task references.
 
 ## 4. Ship and confirm
 
-Commit on `main`, push. OPERATOR, deployed site, by ear: sweeping any VCO
-pitch knob to its top lands on a high but pitched, audible note rather than
-disappearing into the ultrasonic. Launch sound unchanged. Archive on
-confirmation.
+PUSH IS HELD by operator instruction. When lifted: commit on `main`, push;
+OPERATOR, deployed site, by ear: sweeping any VCO pitch knob to its top
+lands on a high but pitched, audible note; launch chord unchanged
+(110/220/330). Archive on confirmation.

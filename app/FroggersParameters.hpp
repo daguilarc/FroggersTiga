@@ -134,12 +134,13 @@ inline const std::array<FroggersBankLayout, kFroggersBankCount>& FroggersBankLay
         {FroggersBankId::Audio, "Audio", synth::Color::Red, {{
             // The ordinary 0.0f default maps (via
             // Vco::PitchToPhaseIncrement, app/dsp/Vco.hpp,
-            // f = 20 * 1000^knob) to 20 Hz -- inaudible on laptop speakers.
-            // 0.2468/0.3471/0.4058 = ln(f/20)/ln(1000) for f = 110/220/330 Hz
-            // (verified against
+            // f = kPitchMinHz * (kPitchMaxHz/kPitchMinHz)^knob) to
+            // kPitchMinHz Hz (20 Hz) -- inaudible on laptop speakers.
+            // 0.3087/0.4343/0.5077 = ln(f/kPitchMinHz)/ln(kPitchMaxHz/kPitchMinHz)
+            // for f = 109.97/220.02/329.96 Hz (verified against
             // PitchToPhaseIncrement above). Sustain specs below set the
             // precedent for a nonzero `defaultValue` at this same call site.
-            {"VCO1", "VCO1", 0.2468f}, {"VCO2", "VCO2", 0.3471f}, {"VCO3", "VCO3", 0.4058f},
+            {"VCO1", "VCO1", 0.3087f}, {"VCO2", "VCO2", 0.4343f}, {"VCO3", "VCO3", 0.5077f},
             {"Shape 1", "Shp1"}, {"Shape 2", "Shp2"}, {"Shape 3", "Shp3"},
             // Named "Ph.mod N", not "Phase mod N": three whitespace-separated
             // tokens don't compress
@@ -181,29 +182,33 @@ inline const std::array<FroggersBankLayout, kFroggersBankCount>& FroggersBankLay
             {"Curve", "Curv"}, {"Grace", "Grac"},
         }}},
         {FroggersBankId::Filter, "Filter", synth::Color::Blue, {{
-            {"Comb offset", "CmbOff"}, {"Peak freq", "PkFreq"}, {"Peak gain", "PkGain"},
-            {"Peak Q", "PkQ"}, {"Comb delay", "CmbDly"},
+            {"Peak freq", "PkFreq"}, {"Peak gain", "PkGain"}, {"Peak Q", "PkQ"},
+            {"Comb offset", "CmbOff"}, {"Comb delay", "CmbDly"},
             // 0.5f is this bipolar knob's centre: GetFeedback maps it to
             // exactly zero feedback (dsp/FilterFx.hpp), so a fresh
             // launch's comb passes signal through without ringing -- the
             // same centred-default treatment VCO balance has above.
             {"Comb feedback", "CmbFb", 0.5f},
-            {"Comb LP", "CmbLP"}, {"Comb/Peak", "Cmb/Pk"}, {"Scoop", "Scoop"},
-            // Filter slots 9-13 defaults, chosen so a
-            // fresh launch matches the always-parallel, unscooped signal path:
-            //   Topology 0.0f -> FilterFxChain::Process's topology==0,
-            //     bit-identical to the always-parallel behaviour.
+            {"Comb LP", "CmbLP"},
+            // Comb drive default 0.5f -> ExpMapCompute(0.25f, 4.0f, 0.5f)
+            // == 0.25f * sqrt(16.0f) == 1.0f, unity gain (see
+            // RouteAudioSample's own Filter slot 7 wiring) -- a fresh
+            // launch matches the always-parallel, unscooped signal path.
+            {"Comb drive", "CDrv", 0.5f}, {"Scoop", "Scoop"},
+            // Scoop freq/width/depth defaults, chosen so a fresh launch
+            // matches the always-parallel, unscooped signal path:
             //   Scoop freq/width 0.0f -> ExpMapCompute(min,max,0)==min,
-            //     the SAME min the Peak freq/width knobs (slots 1/3) reach
+            //     the SAME min the Peak freq/width knobs (slots 0/2) reach
             //     at their own current 0.0f defaults -- reproduces exactly
             //     what bumpFreq/bumpWidth give scoopNotch.
-            //   Comb drive 0.5f -> ExpMapCompute(0.25f, 4.0f, 0.5f) ==
-            //     0.25f * sqrt(16.0f) == 1.0f, unity gain (see
-            //     RouteAudioSample's own Filter slot 12 wiring).
             //   Scoop depth 0.0f -> same default the existing Scoop
             //     parameter (slot 8, above) already carries.
-            {"Topology", "Topo", 0.0f}, {"Scoop freq", "ScFq", 0.0f}, {"Scoop width", "ScWd", 0.0f},
-            {"Comb drive", "CDrv", 0.5f}, {"Scoop depth", "ScDp", 0.0f},
+            {"Scoop freq", "ScFq", 0.0f}, {"Scoop width", "ScWd", 0.0f}, {"Scoop depth", "ScDp", 0.0f},
+            {"Comb/Peak", "Cmb/Pk"},
+            // Topology default 0.0f -> FilterFxChain::Process's
+            // topology==0, bit-identical to the always-parallel behaviour
+            // a fresh launch matches.
+            {"Topology", "Topo", 0.0f},
         }}},
         {FroggersBankId::Drive, "Drive", synth::Color::Orange, {{
             {"Drive", "Drive"}, {"Shape", "Shape"}, {"SRR 1", "SRR1"},
@@ -387,18 +392,18 @@ public:
             for (std::size_t paramIx = 0; paramIx < kFroggersParamsPerBank; ++paramIx) {
                 const FroggersParamSpec& spec = layout.params[paramIx];
                 const std::string qualifiedName = std::string(layout.name) + " " + spec.name;
-                // Filter bank paramIx 1-3 are "Peak freq/Peak
+                // Filter bank paramIx 0-2 are "Peak freq/Peak
                 // gain/Peak Q" (this bank's ResonantBump) and paramIx 4-6
                 // are "Comb delay/Comb feedback/Comb LP" (this bank's Comb)
                 // -- see FroggersBankLayouts()'s own Filter row above. Comb
-                // offset (0, the PureDelay ahead of the comb -- a timing
+                // offset (3, the PureDelay ahead of the comb -- a timing
                 // control, not part of either curve's own shape),
-                // Comb/Peak (7, a blend) and Scoop (8, a second
+                // Comb/Peak (12, a blend) and Scoop (8, a second
                 // ResonantBump instance) deliberately
                 // get no transfer-function underlay here.
                 synth::ui::Visualizer* visualizer = nullptr;
                 if (layout.id == FroggersBankId::Filter) {
-                    if (paramIx >= 1 && paramIx <= 3) {
+                    if (paramIx <= 2) {
                         visualizer = peakVisualizer;
                     } else if (paramIx >= 4 && paramIx <= 6) {
                         visualizer = combVisualizer;

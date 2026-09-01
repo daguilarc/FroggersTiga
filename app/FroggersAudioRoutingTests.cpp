@@ -278,7 +278,7 @@ TEST_CASE(default_patch_produces_non_silent_finite_audio) {
 // not merely nonzero. If All three Audio-bank pitch knobs (Audio bank slots
 // 0-2) registered at the ordinary 0.0f default (FroggersParameters.hpp's own
 // FroggersBankLayouts(), Audio row), then, since
-// Vco::PitchToPhaseIncrement(0, sr) = ExpMapCompute(20/sr, 20000/sr, 0)
+// Vco::PitchToPhaseIncrement(0, sr) = ExpMapCompute(Vco::kPitchMinHz/sr, Vco::kPitchMaxHz/sr, 0)
 // (app/dsp/Vco.hpp), every VCO would free-run at 20 Hz --
 // inaudible on a MacBook Air, and NOT caught by a plain RMS/PeakAbs
 // check (a 20 Hz tone is nonzero-RMS). This test instead asserts Goertzel
@@ -377,7 +377,7 @@ TEST_CASE(non_default_patch_produces_non_silent_finite_audio) {
 
     vco1Pitch.SceneCenter(0) = 0.5f;  // nonzero VCO level.
     model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;    // nonzero Drive.
-    model.PageParameter(synth_froggers::FroggersBankId::Filter, 7).SceneCenter(0) = 0.5f;   // Comb/Peak blend.
+    model.PageParameter(synth_froggers::FroggersBankId::Filter, 12).SceneCenter(0) = 0.5f;   // Comb/Peak blend.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 0).SceneCenter(0) = 0.4f;   // Wet/dry.
     model.PageParameter(synth_froggers::FroggersBankId::Delay, 1).SceneCenter(0) = 0.4f;    // Send.
     model.PageParameter(synth_froggers::FroggersBankId::Delay, 6).SceneCenter(0) = 0.4f;    // Wet mix.
@@ -412,7 +412,7 @@ TEST_CASE(self_oscillating_comb_and_near_unity_reverb_hold_stays_finite_and_boun
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
 
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95.
-    model.PageParameter(synth_froggers::FroggersBankId::Filter, 7).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb.
+    model.PageParameter(synth_froggers::FroggersBankId::Filter, 12).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 8).SceneCenter(0) = 1.0f;  // Hold -> ceiling.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;  // Wet/dry fully wet.
     model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 1.0f;   // maximum Drive.
@@ -455,7 +455,7 @@ TEST_CASE(output_clamp_bounds_overdriven_patch_to_full_scale) {
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
 
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95.
-    model.PageParameter(synth_froggers::FroggersBankId::Filter, 7).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb.
+    model.PageParameter(synth_froggers::FroggersBankId::Filter, 12).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 8).SceneCenter(0) = 1.0f;  // Hold -> ceiling.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;  // Wet/dry fully wet.
     model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 1.0f;   // maximum Drive.
@@ -658,7 +658,7 @@ TEST_CASE(overdriven_patch_stays_bounded) {
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
 
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95.
-    model.PageParameter(synth_froggers::FroggersBankId::Filter, 7).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb.
+    model.PageParameter(synth_froggers::FroggersBankId::Filter, 12).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 8).SceneCenter(0) = 1.0f;  // Hold -> ceiling.
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;  // Wet/dry fully wet.
     model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 1.0f;   // maximum Drive.
@@ -694,7 +694,7 @@ TEST_CASE(master_limiter_stays_at_unity_across_hostile_patch) {
     // to engage the master at block 101, min envelope 0.809, so it is
     // known-hostile by measurement rather than by assumption.
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95
-    model.PageParameter(synth_froggers::FroggersBankId::Filter, 7).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb
+    model.PageParameter(synth_froggers::FroggersBankId::Filter, 12).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 8).SceneCenter(0) = 1.0f;  // Hold -> ceiling
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;  // fully wet
     model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 1.0f;   // maximum Drive
@@ -784,7 +784,7 @@ TEST_CASE(master_limiter_stays_at_unity_under_live_modulation) {
 
     // Identical hostile patch to master_limiter_stays_at_unity_across_hostile_patch.
     model.PageParameter(synth_froggers::FroggersBankId::Filter, 5).SceneCenter(0) = 1.0f;  // Comb feedback -> +0.95
-    model.PageParameter(synth_froggers::FroggersBankId::Filter, 7).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb
+    model.PageParameter(synth_froggers::FroggersBankId::Filter, 12).SceneCenter(0) = 1.0f;  // Comb/Peak -> all comb
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 8).SceneCenter(0) = 1.0f;  // Hold -> ceiling
     model.PageParameter(synth_froggers::FroggersBankId::Reverb, 0).SceneCenter(0) = 1.0f;  // fully wet
     model.PageParameter(synth_froggers::FroggersBankId::Drive, 0).SceneCenter(0) = 1.0f;   // maximum Drive
@@ -1535,7 +1535,7 @@ TEST_CASE(stopping_transport_silences_self_sustaining_delay_and_reverb_with_long
 // This test pins the stopped-transport override directly -- while the
 // transport is stopped, the
 // three drive pre-gains (Delay slot 9 "Feedback drive", Reverb slot 10
-// "Tank drive", Filter slot 12 "Comb drive") and Freeze (Delay slot 4)
+// "Tank drive", Filter slot 7 "Comb drive") and Freeze (Delay slot 4)
 // resolve to their unity/zero effective values regardless of the commanded
 // knob, WITHOUT writing to the parameter model, and resuming play restores
 // the commanded mapping bit-exactly. Commanded values are deliberately
@@ -1562,7 +1562,7 @@ TEST_CASE(stopped_transport_overrides_drive_and_freeze_to_unity_zero_and_resumes
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
     using synth_froggers::FroggersBankId;
 
-    model.PageParameter(FroggersBankId::Filter, 12).SceneCenter(0) = 1.0f;  // Comb drive commanded MAX.
+    model.PageParameter(FroggersBankId::Filter, 7).SceneCenter(0) = 1.0f;  // Comb drive commanded MAX.
     model.PageParameter(FroggersBankId::Delay, 9).SceneCenter(0) = 1.0f;    // Feedback drive commanded MAX.
     model.PageParameter(FroggersBankId::Reverb, 10).SceneCenter(0) = 1.0f;  // Tank drive commanded MAX.
     model.PageParameter(FroggersBankId::Delay, 4).SceneCenter(0) = 1.0f;    // Freeze commanded MAX.
@@ -1598,7 +1598,7 @@ TEST_CASE(stopped_transport_overrides_drive_and_freeze_to_unity_zero_and_resumes
     // WITHOUT writing to the parameter model: the commanded values set
     // above are exactly what was written, not silently rewritten to the
     // override's unity/zero.
-    REQUIRE_TRUE(model.PageParameter(FroggersBankId::Filter, 12).CachedKnobValue(0) == 1.0f);
+    REQUIRE_TRUE(model.PageParameter(FroggersBankId::Filter, 7).CachedKnobValue(0) == 1.0f);
     REQUIRE_TRUE(model.PageParameter(FroggersBankId::Delay, 9).CachedKnobValue(0) == 1.0f);
     REQUIRE_TRUE(model.PageParameter(FroggersBankId::Reverb, 10).CachedKnobValue(0) == 1.0f);
     REQUIRE_TRUE(model.PageParameter(FroggersBankId::Delay, 4).CachedKnobValue(0) == 1.0f);
@@ -1624,6 +1624,215 @@ TEST_CASE(stopped_transport_overrides_drive_and_freeze_to_unity_zero_and_resumes
     // so `stoppedKnob` just returns `knob(bank, slot)` unchanged the instant
     // `wasTransportRunning_` is true again, same as the other four.
     REQUIRE_TRUE(rig.Application().TestLastReverbGritKnobEffective() == 1.0f);
+}
+
+// =========================================================================
+// The Comb low-pass's floor tracks 4x the comb's own frequency (so the
+// low-pass never sits below the pitch it's filtering), clamped to the
+// low-pass's fixed ceiling once that floor would otherwise run past it.
+// Drives Comb delay across positions well below and at/past the point
+// where the clamp engages, and at each position sweeps the LP knob
+// end-to-end: the resulting low-pass alpha must never run backwards as
+// the LP knob rises, at any Comb delay position, and the floor this test
+// recomputes from the production combFreq formula must never exceed the
+// ceiling.
+// =========================================================================
+TEST_CASE(comb_lowpass_alpha_monotone_across_comb_delay_positions) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("comb_lp_monotone"));
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+    using synth_froggers::FroggersBankId;
+
+    constexpr float kSampleRateHz = 48000.0f;  // Rig()'s default (App::Config().preferredSampleRate).
+    constexpr std::array<float, 4> kCombDelayKnobs = {0.5f, 0.85f, 0.95f, 1.0f};
+    constexpr std::array<float, 3> kLowPassKnobs = {0.0f, 0.5f, 1.0f};
+    const float ceiling = 20000.0f / kSampleRateHz;
+
+    for (const float cmbDly : kCombDelayKnobs) {
+        // Same [100,10000]Hz map RouteAudioSample uses for combFreq
+        // (FroggersAppCore.hpp), recomputed here so this assertion cannot
+        // silently drift from the real mapping if that range is ever
+        // retuned.
+        const float combFreq = dsp::ExpMapCompute(100.0f / kSampleRateHz, 10000.0f / kSampleRateHz, cmbDly);
+        REQUIRE_TRUE(std::min(4.0f * combFreq, ceiling) <= ceiling);
+
+        float previousAlpha = -1.0f;
+        for (const float lp : kLowPassKnobs) {
+            model.PageParameter(FroggersBankId::Filter, 4).SceneCenter(0) = cmbDly;  // Comb delay.
+            model.PageParameter(FroggersBankId::Filter, 6).SceneCenter(0) = lp;      // Comb LP.
+            ApplyPatchNow(rig);
+            rig.RunBlocks(4);
+            REQUIRE_TRUE(!rig.SawNaN());
+
+            const float alpha = rig.Application().TestFilterComb().filter.alpha;
+            REQUIRE_TRUE(alpha >= previousAlpha);
+            previousAlpha = alpha;
+        }
+    }
+}
+
+// =========================================================================
+// Peak Q (Filter slot 2) and Scoop width (slot 10) share the same floor
+// raise (0.1 -> 0.4), recomputed here from the production
+// ExpMapCompute(0.4, 10.0, knob) call rather than typed-in decimals, so
+// this cannot silently drift from the real mapping if that range is ever
+// retuned.
+// =========================================================================
+TEST_CASE(filter_peak_q_and_scoop_width_floors_track_production_formula) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("filter_q_floors"));
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+    using synth_froggers::FroggersBankId;
+
+    for (const float knob : {0.0f, 1.0f}) {
+        model.PageParameter(FroggersBankId::Filter, 2).SceneCenter(0) = knob;   // Peak Q.
+        model.PageParameter(FroggersBankId::Filter, 10).SceneCenter(0) = knob;  // Scoop width.
+        ApplyPatchNow(rig);
+        rig.RunBlocks(4);
+        REQUIRE_TRUE(!rig.SawNaN());
+
+        const float expected = dsp::ExpMapCompute(0.4f, 10.0f, knob);
+        REQUIRE_TRUE(rig.Application().TestFilterPeak().width == expected);
+        REQUIRE_TRUE(rig.Application().TestFilterScoopNotch().width == expected);
+    }
+}
+
+// =========================================================================
+// Scoop depth (Filter slot 11) drives the notch's own height with a
+// deliberate decreasing exponential (ExpMapCompute(1.0, 0.05, knob)):
+// equal knob steps cut equal dB. Recomputes the expected height at each
+// step from the production formula (never a typed-in decimal), then
+// checks the resulting dB-per-quarter-step figure against the
+// preflight-computed -6.505 dB. Scoop (slot 8) stays at its default 0.0
+// throughout -- irrelevant to `.height`, which SetHeight sets directly
+// from slot 11 alone, but pinned here so the fixture reads unambiguously
+// as isolating this curve on its own.
+// =========================================================================
+TEST_CASE(filter_scoop_depth_curve_is_equal_db_per_quarter_with_exact_endpoints) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("filter_scoop_depth_curve"));
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+    using synth_froggers::FroggersBankId;
+
+    model.PageParameter(FroggersBankId::Filter, 8).SceneCenter(0) = 0.0f;  // Scoop -- default, irrelevant here.
+
+    constexpr std::array<float, 5> kKnobs = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
+    std::array<float, 5> heights{};
+    for (std::size_t i = 0; i < kKnobs.size(); ++i) {
+        model.PageParameter(FroggersBankId::Filter, 11).SceneCenter(0) = kKnobs[i];  // Scoop depth.
+        ApplyPatchNow(rig);
+        rig.RunBlocks(4);
+        REQUIRE_TRUE(!rig.SawNaN());
+        heights[i] = rig.Application().TestFilterScoopNotch().height;
+        REQUIRE_TRUE(heights[i] == dsp::ExpMapCompute(1.0f, 0.05f, kKnobs[i]));
+    }
+
+    REQUIRE_TRUE(heights[0] == 1.0f);   // exact bypass at the floor.
+    REQUIRE_TRUE(heights[4] == 0.05f);  // exact at the ceiling.
+
+    constexpr double kExpectedDbPerQuarter = -6.505;
+    constexpr double kToleranceDb = 0.01;
+    std::cout << "  [Scoop depth curve] heights at knob {0, .25, .5, .75, 1}: " << heights[0] << ", " << heights[1]
+               << ", " << heights[2] << ", " << heights[3] << ", " << heights[4] << "\n";
+    for (std::size_t i = 0; i + 1 < heights.size(); ++i) {
+        const double stepDb =
+            20.0 * std::log10(static_cast<double>(heights[i + 1]) / static_cast<double>(heights[i]));
+        std::cout << "  [Scoop depth curve] quarter " << i << " -> " << i + 1 << ": " << stepDb << " dB\n";
+        REQUIRE_TRUE(std::fabs(stepDb - kExpectedDbPerQuarter) < kToleranceDb);
+    }
+}
+
+// =========================================================================
+// The wiring swap: Scoop (Filter slot 8) drives the notch's wet/dry blend
+// (scoopMix); Scoop depth (slot 11) drives the notch's own dip (SetHeight,
+// pinned separately by the curve test above). Confirms the precondition
+// via the same TestFilterScoopNotch().height accessor (so a partially-
+// reverted swap -- this half right, the other wrong -- cannot slip past
+// silently), then proves Scoop actually moves the output: with a real,
+// confirmed dip in place, disabling the blend (Scoop at its floor) must
+// differ audibly from applying it in full (Scoop at its ceiling). Scoop
+// freq/width stay at their own defaults (100 Hz, Q 0.4 -- about a 3-octave
+// bandwidth), reaching well into the 110 Hz fundamental this measures.
+// =========================================================================
+TEST_CASE(filter_scoop_slot_drives_wet_dry_blend_of_scoop_depths_notch) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("filter_scoop_blend_swap"));
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+    using synth_froggers::FroggersBankId;
+
+    model.PageParameter(FroggersBankId::Filter, 11).SceneCenter(0) = 1.0f;  // Scoop depth ceiling -- a real dip.
+    ApplyPatchNow(rig);
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(!rig.SawNaN());
+    REQUIRE_TRUE(rig.Application().TestFilterScoopNotch().height == 0.05f);  // precondition: the dip landed.
+
+    rig.StartAt(0);
+
+    model.PageParameter(FroggersBankId::Filter, 8).SceneCenter(0) = 0.0f;  // Scoop floor -- blend disabled.
+    ApplyPatchNow(rig);
+    rig.RunBlocks(8);
+    rig.ClearOutput();
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(!rig.SawNaN());
+    const double powerAtFloor = GoertzelPower(ExtractChannel(rig.Output(), 0), kAudibleFundamentalsHz[0], 48000.0);
+
+    model.PageParameter(FroggersBankId::Filter, 8).SceneCenter(0) = 1.0f;  // Scoop ceiling -- blend fully applied.
+    ApplyPatchNow(rig);
+    rig.RunBlocks(8);
+    rig.ClearOutput();
+    rig.RunBlocks(4);
+    REQUIRE_TRUE(!rig.SawNaN());
+    const double powerAtCeiling = GoertzelPower(ExtractChannel(rig.Output(), 0), kAudibleFundamentalsHz[0], 48000.0);
+
+    REQUIRE_TRUE(powerAtCeiling < 0.5 * powerAtFloor);
+}
+
+// =========================================================================
+// Comb delay's tap is fractional now (Comb::Process, FilterFx.hpp): near
+// the top of the Comb delay knob (slot 4), where delaySamples is smallest
+// and a single whole-sample jump therefore swings pitch the most, adjacent
+// FINE knob steps must move the achieved pitch by a small, smooth amount --
+// not the old whole-sample stairstep. Recomputes combFreq from the
+// production formula (same map comb_lowpass_alpha_monotone_across_comb_
+// delay_positions above uses) and reads the actual routed delaySamples
+// back via TestFilterComb(), so this also confirms the caller's clamp
+// carries the float through without re-truncating it.
+// =========================================================================
+TEST_CASE(filter_comb_delay_fine_knob_steps_near_ceiling_avoid_whole_sample_pitch_jumps) {
+    Rig rig(/*patchPumpBudgetBlocks=*/64, UseScratchRuntimeDataPaths("comb_delay_fine_steps"));
+    synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
+    using synth_froggers::FroggersBankId;
+
+    auto delaySamplesAt = [&](float cmbDly) -> float {
+        model.PageParameter(FroggersBankId::Filter, 4).SceneCenter(0) = cmbDly;  // Comb delay.
+        ApplyPatchNow(rig);
+        rig.RunBlocks(4);
+        REQUIRE_TRUE(!rig.SawNaN());
+        return rig.Application().TestFilterComb().delaySamples;
+    };
+
+    constexpr float kFineStep = 1.0e-4f;
+    constexpr float kNearTop = 1.0f - 4.0f * kFineStep;
+    const float dLow = delaySamplesAt(kNearTop);
+    const float dHigh = delaySamplesAt(kNearTop + kFineStep);
+
+    // Confirms the readback is genuinely fractional (the caller's clamp no
+    // longer re-truncates it) directly, rather than only through the
+    // pitch-jump margin below -- a re-truncated caller could otherwise pass
+    // that margin trivially whenever these two particular knob values
+    // happen to truncate to the same integer.
+    REQUIRE_TRUE(dLow != std::floor(dLow));
+
+    const float pitchStep = std::fabs(1.0f / dHigh - 1.0f / dLow);
+
+    // The theoretical worst case the OLD truncating cast produced at this
+    // same (smallest, near-ceiling) delay length: the pitch delta a single
+    // WHOLE-sample change causes there.
+    const float dFloor = std::floor(dLow);
+    const float oldWholeSampleJump = std::fabs(1.0f / dFloor - 1.0f / (dFloor + 1.0f));
+
+    std::cout << "  [Comb delay fine steps] delaySamples: " << dLow << " -> " << dHigh
+              << "  fine-step pitch jump=" << pitchStep << "  old whole-sample jump=" << oldWholeSampleJump
+              << "  ratio=" << (pitchStep / oldWholeSampleJump) << "\n";
+
+    constexpr float kMarginFactor = 0.1f;  // measured well below this; see report.
+    REQUIRE_TRUE(pitchStep < kMarginFactor * oldWholeSampleJump);
 }
 
 // =========================================================================
@@ -1774,7 +1983,11 @@ std::uint64_t BuildLatchedRingHeldAcrossStop(Rig& rig) {
     synth_froggers::FroggersParameterModel& model = rig.Application().Parameters();
     using synth_froggers::FroggersBankId;
 
-    model.PageParameter(FroggersBankId::Audio, 0).SceneCenter(0) = 0.5f;
+    // Excites the ring at ~632 Hz regardless of where the pitch ceiling sits.
+    const float kRingExcitePitchKnob =
+        std::log(632.0f / dsp::Vco::kPitchMinHz) /
+        std::log(dsp::Vco::kPitchMaxHz / dsp::Vco::kPitchMinHz);
+    model.PageParameter(FroggersBankId::Audio, 0).SceneCenter(0) = kRingExcitePitchKnob;
     model.PageParameter(FroggersBankId::Drive, 0).SceneCenter(0) = 0.8f;
     model.PageParameter(FroggersBankId::Delay, 1).SceneCenter(0) = 1.0f;  // Send.
     model.PageParameter(FroggersBankId::Delay, 2).SceneCenter(0) = 1.0f;  // Feedback -> 0.98.

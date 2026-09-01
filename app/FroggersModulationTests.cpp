@@ -610,7 +610,7 @@ TEST_CASE(randomize_all_on_level_one_grid_materializes_that_parameters_own_level
     Fixture fx;
     fx.StepOnce(/*externalConnected=*/true);
     synth::Parameter& focused = fx.model.PageParameter(FroggersBankId::Reverb, 0);
-    synth::Parameter& other = fx.model.PageParameter(FroggersBankId::Filter, 0);  // untouched control
+    synth::Parameter& other = fx.model.PageParameter(FroggersBankId::Filter, 3);  // untouched control
 
     FroggersModulationDrillIn drillIn(fx.model.BankAt(FroggersBankId::Reverb));
     drillIn.PressEncoder(0);  // -> level 1 on `focused`
@@ -1958,10 +1958,10 @@ TEST_CASE(reset_all_drilled_into_audio_pitch_restores_its_default_patch_detent_n
 // `targetCenterScales_` (ParameterModulation.cpp:2257-2268's weightSum>=1.0
 // branch) -- i.e. the commanded center contributes NOTHING to
 // `TargetValue(0)`; it is driven entirely by the oscillating source. VCO1's
-// pitch is pinned near the top of its 20 Hz-20 kHz exponential map
-// (dsp/Vco.hpp's `PitchToPhaseIncrement`): at 48 kHz and pitch==1.0 that is
-// 20000/48000 ~= 0.417 cycles/sample, so a handful of `Step()` calls sweeps
-// the source's full excursion -- the same live-modulation shape the
+// pitch is pinned near the top of its kPitchMinHz-kPitchMaxHz exponential
+// map (dsp/Vco.hpp's `PitchToPhaseIncrement`): at 48 kHz and pitch==1.0 that
+// is kPitchMaxHz/48000 ~= 0.104 cycles/sample, so a handful of `Step()`
+// calls sweeps the source's full excursion -- the same live-modulation shape the
 // proposal's own repro used, built here from public API instead of the
 // whole running instrument. `fx.manager.ComputeAllParameters()` is the
 // immediate (non-smoothed) resync -- see that method's own comment -- so
@@ -1982,8 +1982,9 @@ TEST_CASE(randomize_lands_the_drawn_value_under_full_positive_audio_rate_modulat
     synth::Parameter& parameter = fx.model.PageParameter(FroggersBankId::Reverb, 0);
     AttachFullPositiveAudioRateModulation(fx, parameter);
 
-    // pitch=1.0 (near 20 kHz -- see the helper's own comment): audio-rate,
-    // fast enough to sweep the source's full excursion between presses.
+    // pitch=1.0 (near kPitchMaxHz -- see the helper's own comment):
+    // audio-rate, fast enough to sweep the source's full excursion between
+    // presses.
     const FroggersModulationSlate::VcoDrive fastVco{1.0f, 0.5f, 0.0f};
 
     constexpr int kPresses = 50;

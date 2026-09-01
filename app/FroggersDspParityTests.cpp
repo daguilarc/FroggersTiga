@@ -100,13 +100,18 @@ float ReverbMono(synth_froggers::dsp::Reverb& rv, float input, Args... args)
     return 0.5f * (out.l + out.r);
 }
 
-TEST_CASE(vco_pitch_exp_map_matches_20hz_20khz_range) {
+TEST_CASE(vco_pitch_exp_map_matches_named_range) {
     const float sr = 48000.0f;
-    // knob=0 -> 20 Hz, knob=1 -> 20000 Hz, expressed as phase increment.
-    REQUIRE_NEAR(dsp::Vco::PitchToPhaseIncrement(0.0f, sr), 20.0f / sr, 1e-9);
-    REQUIRE_NEAR(dsp::Vco::PitchToPhaseIncrement(1.0f, sr), 20000.0f / sr, 1e-6);
-    // Midpoint is geometric (exponential map), not arithmetic: sqrt(20*20000)/sr.
-    const float expectedMid = std::sqrt(20.0f * 20000.0f) / sr;
+    // knob=0 -> kPitchMinHz, expressed as phase increment -- bit-exact:
+    // ExpMapCompute's std::pow(ratio, 0.0f) is exactly 1.0, so this holds
+    // regardless of the ceiling (unchanged: 20 Hz before and after).
+    REQUIRE_TRUE(dsp::Vco::PitchToPhaseIncrement(0.0f, sr) == dsp::Vco::kPitchMinHz / sr);
+    // knob=1 -> kPitchMaxHz (was 20000 Hz, now 5000 Hz).
+    REQUIRE_NEAR(dsp::Vco::PitchToPhaseIncrement(1.0f, sr), dsp::Vco::kPitchMaxHz / sr, 1e-6);
+    // Midpoint is geometric (exponential map), not arithmetic:
+    // sqrt(kPitchMinHz*kPitchMaxHz)/sr -- was sqrt(20*20000)/sr =~ 632 Hz,
+    // now sqrt(20*5000)/sr = 316 Hz.
+    const float expectedMid = std::sqrt(dsp::Vco::kPitchMinHz * dsp::Vco::kPitchMaxHz) / sr;
     REQUIRE_NEAR(dsp::Vco::PitchToPhaseIncrement(0.5f, sr), expectedMid, 1e-6);
 }
 
@@ -1522,17 +1527,27 @@ TEST_CASE(comb_feedback_at_both_knob_extremes_decays_to_silence_once_input_stops
 // loose enough to absorb the sample-level uncertainty in exactly when a
 // continuously-decaying signal crosses a fixed floor, tight enough to
 // still fail on the pre-fix curve's shape.
+//
+// (Comb drive, task 2): parameterized over the drive knob's floor/centre/
+// ceiling {0, 0.5, 1} -- combDrive's own comment (FilterFx.hpp) argues the
+// compensated saturator's per-pass decay stays governed by `feedback`
+// alone (never looser than uncompensated, via Saturate's compressivity),
+// at every combDrive setting, not just the unity default this test used
+// to assume implicitly by never calling SetDrive. This is that argument's
+// signature test: the SAME 8% tolerance must hold at all three drive
+// settings, not only at combDrive==1.0.
 // -----------------------------------------------------------------------
 TEST_CASE(comb_feedback_ring_time_scales_geometrically_across_equal_knob_steps) {
     constexpr float kSilenceFloor = 1.0e-4f;
     constexpr int kDrivenSamples = 4000;
     constexpr long kMaxSearchSamples = 200000;
 
-    auto ringTimeSamples = [](float knob) -> long {
+    auto ringTimeSamples = [](float knob, float drive) -> long {
         dsp::Comb comb;
         comb.delaySamples = 37;
         comb.SetFeedback(dsp::Comb::GetFeedback(knob));
         comb.SetCutoffAlpha(1.0f);  // identity lowpass -- isolates the feedback loop gain itself.
+        comb.SetDrive(drive);
         for (int i = 0; i < kDrivenSamples; ++i) {
             comb.Process((i / 2) % 2 == 0 ? 1.0f : -1.0f);
         }
@@ -1545,25 +1560,36 @@ TEST_CASE(comb_feedback_ring_time_scales_geometrically_across_equal_knob_steps) 
     };
 
     const float knobs[3] = {0.8f, 0.875f, 0.95f};  // three equal 0.15 steps in GetFeedback's t argument.
-    const long ringTimes[3] = {ringTimeSamples(knobs[0]), ringTimeSamples(knobs[1]), ringTimeSamples(knobs[2])};
-    REQUIRE_TRUE(ringTimes[0] < kMaxSearchSamples);
-    REQUIRE_TRUE(ringTimes[1] < kMaxSearchSamples);
-    REQUIRE_TRUE(ringTimes[2] < kMaxSearchSamples);
+    const float driveKnobs[3] = {0.0f, 0.5f, 1.0f};  // comb drive's floor, centre (unity), ceiling.
+    for (float driveKnob : driveKnobs) {
+        const float drive = dsp::ExpMapCompute(0.25f, 4.0f, driveKnob);
+        const long ringTimes[3] = {ringTimeSamples(knobs[0], drive), ringTimeSamples(knobs[1], drive),
+                                    ringTimeSamples(knobs[2], drive)};
+        REQUIRE_TRUE(ringTimes[0] < kMaxSearchSamples);
+        REQUIRE_TRUE(ringTimes[1] < kMaxSearchSamples);
+        REQUIRE_TRUE(ringTimes[2] < kMaxSearchSamples);
 
-    const double ratio01 = static_cast<double>(ringTimes[1]) / static_cast<double>(ringTimes[0]);
-    const double ratio12 = static_cast<double>(ringTimes[2]) / static_cast<double>(ringTimes[1]);
-    constexpr double kRatioTolerance = 0.08;
-    REQUIRE_TRUE(std::fabs(ratio01 - ratio12) / ratio12 < kRatioTolerance);
+        const double ratio01 = static_cast<double>(ringTimes[1]) / static_cast<double>(ringTimes[0]);
+        const double ratio12 = static_cast<double>(ringTimes[2]) / static_cast<double>(ringTimes[1]);
+        constexpr double kRatioTolerance = 0.08;
+        REQUIRE_TRUE(std::fabs(ratio01 - ratio12) / ratio12 < kRatioTolerance);
+    }
 
     // The center and both rails are bit-identical to the values the
-    // pre-fix curve produced.
+    // pre-fix curve produced -- drive-independent (GetFeedback takes no
+    // drive argument), so this is checked once, not once per drive knob
+    // above.
     REQUIRE_TRUE(dsp::Comb::GetFeedback(0.0f) == -0.95f);
     REQUIRE_TRUE(dsp::Comb::GetFeedback(0.5f) == 0.0f);
     REQUIRE_TRUE(dsp::Comb::GetFeedback(1.0f) == 0.95f);
 }
 
 TEST_CASE(comb_process_matches_in_plus_fb_sat_lp_delay_formula) {
-    // Comb.hpp:54: out = in + fb*sat(lp(delay[i-N])).
+    // Comb.hpp:54: out = in + fb*sat(lp(delay[i-N])). Never calls
+    // SetDrive, so combDrive sits at its own default (1.0f, unity) --
+    // compensation is a no-op there (`Saturate(x)/1.0f == Saturate(x)`,
+    // see combDrive's own comment, FilterFx.hpp), so this reference
+    // formula omits it deliberately rather than by oversight.
     dsp::Comb comb;
     comb.delaySamples = 1;
     comb.SetFeedback(0.5f);
@@ -1574,6 +1600,149 @@ TEST_CASE(comb_process_matches_in_plus_fb_sat_lp_delay_formula) {
 
     const float in1 = comb.Process(0.2f);   // tapped = in0 (1-sample delay)
     REQUIRE_NEAR(in1, 0.2f + 0.5f * dsp::PadeSaturator::Saturate(in0), 1e-6);
+}
+
+// -----------------------------------------------------------------------
+// (Comb drive, task 2): the compensated form `Saturate(combDrive*x)/
+// combDrive` (Comb::Process, FilterFx.hpp) must reproduce the
+// pre-compensation `Saturate(x)` bit-for-bit at combDrive==1.0 -- IEEE
+// divide-by-1.0 introduces no rounding for any finite operand, so
+// "bit-for-bit" is a hard requirement here, not an aspiration. Unity is
+// reached at the knob's centre (0.5, this field's own default) and, while
+// the transport is stopped, at kStopUnityDriveKnob
+// (FroggersAppCore.hpp:1645, 0.5f) -- the latter is a RouteAudioSample-
+// local constant, unreachable by name from this DSP-only TU (this file's
+// own header comment restricts it to app/dsp/*.hpp), but it is fed through
+// the exact same `ExpMapCompute(0.25, 4.0, .)` call as the knob path, so
+// pinning that map's output at 0.5 below covers both routes to unity at
+// once.
+// -----------------------------------------------------------------------
+TEST_CASE(comb_drive_compensated_form_matches_uncompensated_form_bit_exact_at_unity) {
+    REQUIRE_TRUE(dsp::ExpMapCompute(0.25f, 4.0f, 0.5f) == 1.0f);
+
+    dsp::Comb comb;
+    comb.delaySamples = 1;
+    comb.SetFeedback(0.6f);
+    comb.SetCutoffAlpha(1.0f);  // identity lowpass -- isolates Process()'s own arithmetic.
+    comb.SetDrive(dsp::ExpMapCompute(0.25f, 4.0f, 0.5f));  // the knob-centre route to unity, not a bare literal.
+
+    // Same idiom as comb_process_matches_in_plus_fb_sat_lp_delay_formula
+    // above -- reused, not restated -- but asserting exact equality rather
+    // than REQUIRE_NEAR, since bit-exactness at unity is the property this
+    // case exists to pin. A third sample pushes the saturator's argument
+    // past its knee, where the pre-clamp rational part and the clamp
+    // itself both engage.
+    const float in0 = comb.Process(1.0f);   // delay line starts at 0 -> tapped=0
+    REQUIRE_TRUE(in0 == 1.0f + 0.6f * dsp::PadeSaturator::Saturate(0.0f));
+
+    const float in1 = comb.Process(0.2f);   // tapped = in0 (1-sample delay)
+    REQUIRE_TRUE(in1 == 0.2f + 0.6f * dsp::PadeSaturator::Saturate(in0));
+
+    const float in2 = comb.Process(-3.0f);  // large-magnitude input drives the saturator past its knee.
+    REQUIRE_TRUE(in2 == -3.0f + 0.6f * dsp::PadeSaturator::Saturate(in1));
+}
+
+// -----------------------------------------------------------------------
+// (Comb drive, task 2): travel audibility. Measures the drive knob's
+// saturation-depth metric -- compression, in dB, of the saturator stage
+// alone (`Saturate(combDrive*x)/combDrive` against the pre-saturator `x`)
+// at a full-scale reference level (x==1.0f) -- isolating exactly the
+// quantity this task's compensation targets, independent of the comb's
+// unrelated delay/lowpass/feedback dynamics (unchanged by this task, and
+// otherwise just noise on this measurement). Chosen over a harmonic-band-
+// energy metric because this file has no FFT/spectral fixture to reuse
+// and compression-in-dB is directly computable from the same
+// `dsp::PadeSaturator::Saturate` call every other test in this section
+// already uses -- no new fixture needed.
+//
+// Measured (this harness, refLevel=1.0f): compensated (new) depths at
+// knob {0, 0.25, 0.5, 0.75, 1} are approximately {0.159, 0.615, 2.183,
+// 6.160, 12.041} dB -- monotonic, <=0.5 dB at knob 0, the >=1 dB knee
+// already reached by knob 0.5, and a 9.86 dB span from knob 0.5 to knob 1
+// (comfortably over the 6 dB floor). The OLD (uncompensated,
+// `Saturate(combDrive*x)` with no divide) curve at the SAME metric and
+// knobs -- measured by TEMP-BREAK: temporarily deleting the `/ combDrive`
+// in Comb::Process, rebuilding with the binary removed first, then
+// restoring and rebuilding again -- is approximately {12.200, 6.636,
+// 2.183, 0.139, 0.000} dB: a mirror image, largest where the old knob was
+// actually just quiet (knob 0) and ~0 where it was already clipping a
+// signal at exactly this reference level (knob 1), which is the "useless
+// until the very end" bug this task fixes, not a metric artifact -- the
+// two curves agree exactly at knob 0.5 (2.183 dB either way), since that
+// is combDrive's unity point where the two formulas coincide bit-for-bit
+// (see comb_drive_compensated_form_matches_uncompensated_form_bit_exact_
+// at_unity above).
+// -----------------------------------------------------------------------
+TEST_CASE(comb_drive_travel_is_spent_on_monotonic_saturation_depth) {
+    constexpr float kRefLevel = 1.0f;
+    const float knobs[5] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
+
+    // Exercises the real dsp::Comb::Process, not an independent
+    // hand-computation of the same formula: feedback=0 on the seed call
+    // passes kRefLevel through untouched (the compensation term is
+    // multiplied by 0 regardless of its own value), planting exactly
+    // kRefLevel one sample back in the delay line; feedback=1 and input=0
+    // on the measure call then isolate Process()'s own fed-back term
+    // additively (`0 + 1.0*compensated == compensated`), with the identity
+    // lowpass (alpha=1) leaving `x` (`filter.Process(tapped)`) equal to
+    // the seeded tap exactly.
+    auto measureCompensated = [](float drive) -> float {
+        dsp::Comb comb;
+        comb.delaySamples = 1;
+        comb.SetCutoffAlpha(1.0f);
+        comb.SetDrive(drive);
+        comb.SetFeedback(0.0f);
+        comb.Process(kRefLevel);
+        comb.SetFeedback(1.0f);
+        return comb.Process(0.0f);
+    };
+
+    float depthDb[5];
+    for (int i = 0; i < 5; ++i) {
+        const float drive = dsp::ExpMapCompute(0.25f, 4.0f, knobs[i]);
+        const float compensated = measureCompensated(drive);
+        depthDb[i] = 20.0f * std::log10(kRefLevel / std::fabs(compensated));
+    }
+
+    for (int i = 0; i < 4; ++i) {
+        REQUIRE_TRUE(depthDb[i] < depthDb[i + 1]);  // monotonic across the whole knob.
+    }
+    REQUIRE_TRUE(depthDb[0] <= 0.5);        // knob 0: clean provably clean.
+    REQUIRE_TRUE(depthDb[2] >= 1.0);        // knee (>=1 dB) reached by knob 0.5.
+    REQUIRE_TRUE(depthDb[4] - depthDb[2] >= 6.0);  // >=6 dB span, knob 0.5 to knob 1.
+}
+
+// -----------------------------------------------------------------------
+// Comb::Process's tap read is fractional now, reusing PureDelay's own
+// frac/idx0/idx1 idiom (see Comb::Process's own comment, FilterFx.hpp).
+// Direct integer+0.5 assignment, NOT a round-Hz-derived value (100 Hz maps
+// to 479.99997 samples in float32 -- not a clean fractional part). Seeds
+// two known, adjacent delay-line samples with feedback=0 (output==input,
+// isolating the seed writes from the tap read entirely), then reads the
+// tap back through `output` with feedback=1: input==0 there, so
+// output == Saturate(tapped) directly. PadeSaturator::Saturate is
+// monotonic increasing, so "tapped sits between the two neighbors"
+// survives the saturator as "output sits between Saturate(neighborLow) and
+// Saturate(neighborHigh)" -- exact strict inequalities, no tolerance
+// needed.
+// -----------------------------------------------------------------------
+TEST_CASE(comb_fractional_delay_interpolates_between_adjacent_taps) {
+    dsp::Comb comb;
+    comb.delaySamples = 1.5f;  // integer + 0.5, not a round-Hz-derived value.
+    comb.SetCutoffAlpha(1.0f);  // identity lowpass -- isolates the tap read itself.
+    comb.SetFeedback(0.0f);     // seed writes: output == input, tap read has no effect yet.
+
+    const float neighborLow = comb.Process(0.2f);   // delayLine[0] <- 0.2.
+    REQUIRE_NEAR(neighborLow, 0.2f, 1e-6);
+    const float neighborHigh = comb.Process(0.6f);  // delayLine[1] <- 0.6.
+    REQUIRE_NEAR(neighborHigh, 0.6f, 1e-6);
+
+    // index is now 2: lowExact = 2 + kSize - 1.5, an exact *.5 -> idx0=0,
+    // idx1=1, frac=0.5 -- the exact midpoint of the two samples just seeded.
+    comb.SetFeedback(1.0f);  // read the tap back through `output` (input=0 below).
+    const float readBack = comb.Process(0.0f);
+    REQUIRE_TRUE(readBack > dsp::PadeSaturator::Saturate(neighborLow));
+    REQUIRE_TRUE(readBack < dsp::PadeSaturator::Saturate(neighborHigh));
 }
 
 TEST_CASE(pure_delay_integer_delay_is_exact) {
@@ -1810,7 +1979,7 @@ TEST_CASE(filter_fx_chain_blend_extremes_hold_other_branch_at_floor_gain) {
 }
 
 // -----------------------------------------------------------------------
-// Scoop depth (Filter slot 13, scoopMix) is a true-zero no-effect knob --
+// Scoop (Filter slot 8, scoopMix) is a true-zero no-effect knob --
 // unlike peak gain/fold above, 0.0f here really does mean "no scoop at
 // all", per FilterFxChain::Process's own `mixed * (1 - scoopMix) + scooped
 // * scoopMix` blend. Proven by varying the scoop notch's own freq/width/
@@ -2269,6 +2438,151 @@ TEST_CASE(peak_branch_output_respects_computed_bound_under_audio_rate_height_mod
     }
 }
 
+// -----------------------------------------------------------------------
+// Measures, but does not enforce, three candidate values for the peak
+// branch's height ceiling (kMaxResonantBumpHeight is 2.0 today) against the
+// same adversarial drive the kPeakLimiter* tuning comment above describes:
+// a per-sample-random height, full-scale sine at the bump's own resonant
+// frequency. The production constant is never written here -- each
+// candidate is substituted only into this test's own local
+// `ExpMapCompute(1.0f, candidate, randomKnob)` call, which drives
+// `peak.SetHeight` the same way the real knob-driven call site does (a
+// modulation source varies the KNOB in [0,1], not the mapped height
+// directly, so drawing `randomKnob` uniformly and mapping it is the
+// faithful reproduction of that, not a direct linear draw on height
+// itself -- see the note on numbers below). Driven through the real
+// `FilterFxChain`, under this tree's current defaults: `comb` untouched
+// (feedback 0.0f, centred), `combDrive` untouched (1.0f, unity), Comb/Peak
+// blend floored (`combPeakBlend=0` -> 0.05, this file's established idiom
+// for isolating the peak branch while still holding a small comb
+// contribution in).
+//
+// NUMBERS ARE FRESH, not a reproduction of the 1.669/1.615898 recorded
+// above: those came from a direct linear draw of height itself over
+// [1, maxHeight] (either the single in-repo seed 0xC0FFEE at 20000
+// samples above, or an earlier, never-checked-in scratch harness at 10
+// seeds x 50000 samples/seed). This case draws the knob uniformly instead
+// and maps it through ExpMapCompute, which is a LOG-uniform draw on
+// height, not a linear one -- it spends relatively less time near the very
+// top of the range than a linear draw does. Different sampling, different
+// seeds beyond 0xC0FFEE, different candidate values: expect different
+// numbers, not a match, hence this comment saying so rather than implying
+// reproduction. Ten fixed, listed xorshift32 seeds x 50000 samples/seed
+// (500,000 trials per candidate) -- the same scale the retired scratch
+// harness used.
+//
+// "Pre-limiter" below comes from a SECOND `FilterFxChain`, configured
+// identically and driven by the exact same per-sample height sequence,
+// with only `peakLimiter` reconfigured to a practical no-op (threshold and
+// ceiling both far above anything this file's signals reach). That pins
+// `envelope` at exactly 1.0f for the whole run -- not approximately:
+// `OutputLimiter::Process`'s own declaration comment (Limiter.hpp) proves
+// this is bit-exact whenever the signal never crosses `threshold`, so the
+// second chain's output is provably the un-limited trim-only signal, still
+// produced by the same production Process() path (peak, trim smoothers,
+// comb, blend) as the real one.
+//
+// What is ASSERTED holds no matter which candidate, if any, ever becomes
+// the production value, because it does not depend on the candidate:
+// every sample stays finite, and the real limiter's own `envelope` field
+// never leaves (0, 1] -- `OutputLimiter::NextGain`'s targetGain is always
+// <= 1 (DesiredMagnitude never exceeds its input), and a convex
+// combination of two values <= 1 stays <= 1 -- so the limiter can only
+// hold gain or pull it down, never push output above what fed it, for any
+// input. A loose blowup guard (10x the candidate, well past every ceiling
+// this file's trims/limiters target) catches a genuine regression, e.g. a
+// silently disabled limiter, without pretending to know where the real
+// bound should sit. The candidate numbers themselves are PRINTED, not
+// asserted: whether 3.0 or 4.0 is an acceptable ceiling is a judgment call
+// for whoever reads this table, not something this test decides.
+// -----------------------------------------------------------------------
+TEST_CASE(peak_ceiling_candidate_limiter_measurement) {
+    constexpr float sampleRate = 48000.0f;
+    const float inputAmplitude = 1.0f;   // the chain's input amplitude, held at full scale.
+    const float freqNormalized = 0.05f;  // matches this file's other peak-branch bound tests.
+
+    // Ten fixed, listed seeds -- not derived, not incremented ad hoc.
+    constexpr std::uint32_t kSeeds[] = {0xC0FFEEu, 0xBADF00Du, 0xFEEDFACEu, 0xDEADBEEFu, 0x8BADF00Du,
+                                         0xCAFEBABEu, 0x1337C0DEu, 0xABCDEF01u, 0x0F0F0F0Fu, 0x13579BDFu};
+    constexpr int kSamplesPerSeed = 50000;
+    constexpr float kCandidates[] = {2.0f, 3.0f, 4.0f};  // 2.0 == today's production kMaxResonantBumpHeight.
+
+    std::cout << "  [peak height ceiling candidates] " << (sizeof(kSeeds) / sizeof(kSeeds[0])) << " seeds x "
+              << kSamplesPerSeed
+              << " samples/seed, xorshift32, full-scale sine at freqNormalized=" << freqNormalized
+              << ", knob drawn uniform in [0,1) then mapped through ExpMapCompute(1, candidate, knob) -- "
+                 "fresh numbers, not seed-reproducible against the 1.669/1.615898 recorded above (see "
+                 "this case's own comment):\n";
+
+    for (float candidate : kCandidates) {
+        float worstPreLimiter = 0.0f;
+        float worstPostLimiter = 0.0f;
+        int samplesInReduction = 0;
+        int totalSamples = 0;
+
+        for (std::uint32_t seed : kSeeds) {
+            dsp::FilterFxChain postChain;  // real production tuning -- the constant under measurement.
+            postChain.Configure(sampleRate);
+            postChain.peak.SetFreq(freqNormalized);
+            postChain.peak.SetWidth(1.0f);
+
+            dsp::FilterFxChain preChain;  // identical, except peakLimiter neutralized -- see header comment.
+            preChain.peak.SetFreq(freqNormalized);
+            preChain.peak.SetWidth(1.0f);
+            preChain.peakLimiter.Configure(sampleRate, /*threshold=*/1.0e6f, /*ceiling=*/2.0e6f,
+                                            dsp::kPeakLimiterAttackSeconds, dsp::kPeakLimiterReleaseSeconds);
+
+            std::uint32_t rngState = seed;
+            const auto nextUniform01 = [&rngState]() {
+                rngState ^= rngState << 13;
+                rngState ^= rngState >> 17;
+                rngState ^= rngState << 5;
+                return static_cast<float>(rngState % 1000000u) / 1000000.0f;
+            };
+
+            for (int i = 0; i < kSamplesPerSeed; ++i) {
+                const float randomKnob = nextUniform01();
+                const float height = dsp::ExpMapCompute(1.0f, candidate, randomKnob);
+                postChain.peak.SetHeight(height);
+                preChain.peak.SetHeight(height);
+                const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(i);
+                const float sample = inputAmplitude * std::sin(phase);
+
+                const float preOutput =
+                    preChain.Process(sample, /*topology=*/0.0f, /*combPeakBlend=*/0.0f, /*scoopMix=*/0.0f);
+                const float postOutput =
+                    postChain.Process(sample, /*topology=*/0.0f, /*combPeakBlend=*/0.0f, /*scoopMix=*/0.0f);
+
+                REQUIRE_TRUE(std::isfinite(preOutput));
+                REQUIRE_TRUE(std::isfinite(postOutput));
+                // The limiter's own documented ceiling behaviour: envelope only ever holds
+                // or reduces gain, never amplifies -- true for any input, any candidate.
+                REQUIRE_TRUE(postChain.peakLimiter.envelope > 0.0f
+                             && postChain.peakLimiter.envelope <= 1.0f + 1.0e-6f);
+
+                worstPreLimiter = std::max(worstPreLimiter, std::fabs(preOutput));
+                worstPostLimiter = std::max(worstPostLimiter, std::fabs(postOutput));
+                if (postChain.peakLimiter.envelope < 1.0f - 1.0e-6f) {
+                    ++samplesInReduction;
+                }
+                ++totalSamples;
+            }
+        }
+
+        const double pctInReduction =
+            100.0 * static_cast<double>(samplesInReduction) / static_cast<double>(totalSamples);
+        std::cout << "  [peak height ceiling candidates]   candidate=" << candidate
+                  << "  pre-limiter worst=" << worstPreLimiter << "  post-limiter worst=" << worstPostLimiter
+                  << "  %time-in-reduction=" << pctInReduction << "\n";
+
+        // Loose blowup guard only (mirrors topology_morph_peak_branch_headroom_across_full_range's
+        // own flat guard above) -- catches a genuine regression, not a claim about where the real
+        // ceiling sits; the printed numbers above are the actual finding.
+        REQUIRE_TRUE(worstPreLimiter < 10.0f * candidate);
+        REQUIRE_TRUE(worstPostLimiter < 10.0f * candidate);
+    }
+}
+
 // filter_fx_chain_serial_matches_delay_then_comb_then_peak DELETED: it
 // pinned the `useParallel == false` series branch (`pureDelay -> comb ->
 // peak`, no trims/limiter/blend, ignoring combPeakBlend/scoopMix) that
@@ -2281,7 +2595,7 @@ TEST_CASE(peak_branch_output_respects_computed_bound_under_audio_rate_height_mod
 // topology==0.
 
 // -----------------------------------------------------------------------
-// Filter slot 9 ("Topology"): at high topology the peak biquad's input is
+// Filter slot 13 ("Topology"): at high topology the peak biquad's input is
 // `combPath` (the comb branch's OWN output, FilterFxChain::Process,
 // FilterFx.hpp) instead of the raw chain input -- a new operating point
 // for a stage whose ceiling this codebase has already had to lower
@@ -5464,7 +5778,7 @@ TEST_CASE(ring_mod_depth_scale_zero_off_gate_and_smoothstep_uses_own_floor) {
 
 TEST_CASE(ring_mod_phase_increment_uses_its_own_range_not_pitch_range) {
     // Task A1: same ExpMapCompute shape PitchToPhaseIncrement uses, but
-    // NOT its 20/20000 Hz literals.
+    // NOT its kPitchMinHz/kPitchMaxHz literals.
     const float sr = 48000.0f;
     REQUIRE_NEAR(dsp::Vco::RingModPhaseIncrement(0.0f, sr), dsp::Vco::kRingModMinHz / sr, 1e-9);
     REQUIRE_NEAR(dsp::Vco::RingModPhaseIncrement(1.0f, sr), dsp::Vco::kRingModMaxHz / sr, 1e-6);

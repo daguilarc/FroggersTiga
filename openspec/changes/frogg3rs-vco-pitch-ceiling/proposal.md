@@ -15,8 +15,12 @@ concept, so nothing enumerated it.
 
 Exponential, floor 20 Hz, ceiling 20 000 Hz, both inline literals. All three
 Audio-bank pitch knobs (slots 0-2) route here per sample
-(`FroggersAppCore.hpp`, RouteAudioSample's VCO loop). The pitch knobs carry
-no explicit default, so launch sits at knob 0 = the 20 Hz floor.
+(`FroggersAppCore.hpp:1531-1540`). CORRECTED BY PREFLIGHT: the pitch knobs
+carry EXPLICIT defaults — `0.2468f/0.3471f/0.4058f`
+(`FroggersParameters.hpp:142`), decoding to the 110/220/330 Hz launch chord
+under the current range, written verbatim at launch and Reset by
+`ApplyBankDefaultPatch` (`FroggersModulation.hpp:1379-1384`). Launch is
+therefore preserved by RECOMPUTING the defaults, not by the floor.
 
 The `20000` family, enumerated and classified:
 
@@ -44,12 +48,17 @@ declared beside `kRingModMinHz/MaxHz`, read by `PitchToPhaseIncrement`.
 (C8 ≈ 4186 Hz) with headroom, returning about two octaves of the knob to
 pitches that are actually musical.
 
-Consequences, stated: launch is untouched (the floor does not move and the
-pitch knobs default to it); every knob position above the floor re-voices
-lower — mid-knob moves from √(20·20000) ≈ 632 Hz to √(20·5000) ≈ 316 Hz —
-the same accepted remap trade as the comb feedback curve, and it gets the
-same treatment: a parity-divergence note against the frozen reference, and
-every test pinning a mid-curve pitch value updated with old vs new stated.
+The three defaults are recomputed for the new range so the launch chord is
+numerically preserved: `0.3087f/0.4343f/0.5077f` decode to
+109.97/220.02/329.96 Hz — within 0.05 Hz of today's 109.98/220.03/330.02,
+far inside the fundamental-pinning tests' Goertzel resolution. Those tests
+(`kAudibleFundamentalsHz{110,220,330}`,
+`FroggersAudioRoutingTests.cpp:157` and its 7 assertion sites) stay
+UNCHANGED and become the drift check on the recomputation. Other knob
+positions re-voice (mid-knob 632 → 316 Hz) — the accepted remap trade, with
+the parity-divergence note and any mid-curve pins updated old-vs-new. The
+stale range citation in the comment at `FroggersAudioRoutingTests.cpp:281`
+is refreshed alongside.
 
 ## Enumeration duties for execution
 
@@ -69,8 +78,11 @@ every test pinning a mid-curve pitch value updated with old vs new stated.
 
 - `app/dsp/Vco.hpp` (constants + `PitchToPhaseIncrement` + comment).
 - Tests pinning mid-curve pitch values, per enumeration.
-- Nothing else: filter ceilings, ring-mod range, PM LFO range, defaults,
-  Sheaf, and the submodule pin are all untouched. Commits on `main`.
+- `app/FroggersParameters.hpp:142` (three recomputed pitch defaults) —
+  propagated everywhere by `ApplyBankDefaultPatch` reading the table.
+- Nothing else: filter ceilings, ring-mod range, PM LFO range, Sheaf, and
+  the submodule pin are all untouched. Commits on `main`, HELD until the
+  operator lifts the push hold.
 - Gates: app suite fresh (324 baseline), browser wasm build, operator's
   by-ear confirmation on the deployed site after push (the pitch knobs'
   top should now stay pitched and audible), archive on confirmation.

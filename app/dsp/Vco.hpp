@@ -122,13 +122,25 @@ struct Vco
     static constexpr float kPmLfoFloor = 0.02f;
     static constexpr float kPmLfoRampWidth = 0.08f;
 
+    // pitchKnob01 in [0,1] maps exponentially across [kPitchMinHz,
+    // kPitchMaxHz] (PitchToPhaseIncrement below). kPitchMinHz matches the
+    // frozen reference's floor exactly (FroggersEngine.hpp:439-441, 20 Hz);
+    // kPitchMaxHz does not: the reference's ceiling is 20000 Hz, the
+    // textbook audibility limit -- a display-axis number, not an
+    // oscillator-pitch one, that spent roughly the knob's top third on a
+    // shrill-to-inaudible pitch. 5000 Hz instead clears the top of the
+    // piano (C8, ~4186 Hz) with headroom, deliberately excluding that
+    // shrill-to-inaudible top.
+    static constexpr float kPitchMinHz = 20.0f;
+    static constexpr float kPitchMaxHz = 5000.0f;
+
     // The internal ring-mod carrier's own frequency range (Ring Mod, Audio
-    // slots 9-11) -- deliberately NOT PitchToPhaseIncrement's 20/20000 Hz
-    // pitch literals. 20 Hz-5000 Hz
-    // covers sub-audio "throb" through the classic clangy ring-mod register
-    // while staying well below Nyquist at every sample rate this app
-    // supports, so the carrier itself never folds into noise before the
-    // ring-modulated product does.
+    // slots 9-11) -- its own named constants, not a reuse of
+    // kPitchMinHz/kPitchMaxHz above, even though the two pairs now share
+    // the same numbers. 20 Hz-5000 Hz covers sub-audio "throb" through the
+    // classic clangy ring-mod register while staying well below Nyquist at
+    // every sample rate this app supports, so the carrier itself never
+    // folds into noise before the ring-modulated product does.
     static constexpr float kRingModMinHz = 20.0f;
     static constexpr float kRingModMaxHz = 5000.0f;
 
@@ -159,11 +171,12 @@ struct Vco
     float overCeilingSeconds = 0.0f;
 
     // FroggersEngine.hpp:439-441 -- one VCO's pitch knob (0..1) mapped
-    // exponentially across 20 Hz-20 kHz, expressed as a phase increment
-    // (cycles/sample: freq/sampleRate) so Process() only adds-and-wraps.
+    // exponentially across kPitchMinHz-kPitchMaxHz, expressed as a phase
+    // increment (cycles/sample: freq/sampleRate) so Process() only
+    // adds-and-wraps.
     static float PitchToPhaseIncrement(float pitchKnob01, float sampleRate)
     {
-        return ExpMapCompute(20.0f / sampleRate, 20000.0f / sampleRate, pitchKnob01);
+        return ExpMapCompute(kPitchMinHz / sampleRate, kPitchMaxHz / sampleRate, pitchKnob01);
     }
 
     // FroggersEngine.hpp:150-165 (PmDepthScale). Thresholds at :147-148.

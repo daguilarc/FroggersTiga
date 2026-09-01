@@ -20,11 +20,13 @@ not this requirement's.
 - **THEN** the oscillator's fundamental is a high but audibly pitched note,
   above the top of the piano yet far below the audibility limit
 
-#### Scenario: The floor and launch are untouched
+#### Scenario: The launch chord is preserved
 
 - **WHEN** the instrument launches with the default patch
-- **THEN** each pitch knob sits at the unchanged floor and the launch sound
-  is identical to before the ceiling moved
+- **THEN** the three oscillators sound the same fundamentals as before the
+  ceiling moved, because the stored defaults are recomputed for the new
+  range, and the checks that pin those fundamentals in the audio pass
+  unchanged
 
 #### Scenario: One definition of the pitch range
 
