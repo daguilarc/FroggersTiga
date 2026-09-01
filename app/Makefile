@@ -163,14 +163,14 @@ check-microphone-usage:
 	@bash $(APP_DIR)/check_microphone_usage_strings.sh "$(APP_DIR)"
 
 # --- no-JUCE-in-app-core target ---------------------------------------------
-$(NO_JUCE_CHECK): $(NO_JUCE_CHECK_SRC) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp | $(BUILD_DIR)
+$(NO_JUCE_CHECK): $(NO_JUCE_CHECK_SRC) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(DSP_HEADERS) | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) -I$(JUCE_DIR)/modules $(CXXFLAGS) $(NO_JUCE_CHECK_SRC) -o $@
 
 check-no-juce: $(NO_JUCE_CHECK)
 	@echo "check-no-juce: OK - Froggers.hpp (app core) resolves no JUCE header"
 
 # --- headless test target -------------------------------------------------------------
-$(TEST_BIN): $(TEST_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(SHEAF_LIB) | $(BUILD_DIR)
+$(TEST_BIN): $(TEST_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)
 	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(TEST_SOURCES) $(SHEAF_LIB) -o $@
 
 # --- mono-validation target -------------------------------------------------------------
@@ -178,7 +178,7 @@ $(MONO_VALIDATION_BIN): $(MONO_VALIDATION_SOURCES) $(APP_DIR)/Froggers.hpp $(APP
 	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(MONO_VALIDATION_SOURCES) $(SHEAF_LIB) -o $@
 
 # --- parameter-model target ----------------------------------------------------------
-$(PARAMETER_MODEL_BIN): $(PARAMETER_MODEL_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(APP_DIR)/FroggersParameters.hpp $(SHEAF_LIB) | $(BUILD_DIR)
+$(PARAMETER_MODEL_BIN): $(PARAMETER_MODEL_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(APP_DIR)/FroggersParameters.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)
 	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(PARAMETER_MODEL_SOURCES) $(SHEAF_LIB) -o $@
 
 # --- modulation-slate target ------------------------------------------------
