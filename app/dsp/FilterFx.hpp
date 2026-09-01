@@ -725,11 +725,10 @@ struct FilterFxChain
     // at the default topology. Every stateful unit (comb, peak, pureDelay,
     // combTrimSmoother, peakTrimSmoother, peakLimiter) is still processed
     // exactly once per sample, in the same order as before. The Comb/Peak
-    // blend below is equal-power rather than linear: at `combPeakBlend ==
-    // 0` the result is bit-identical to the peak path alone, while at
-    // `combPeakBlend == 1` it carries only float's `cos(pi/2)` residual of
-    // the peak branch on top of the comb path, a value below the
-    // arithmetic's own noise floor.
+    // blend below is equal-power across a floored `combPeakBlend` range of
+    // 0.05..0.95: at either extreme the held-back branch is still present
+    // at `sin(0.025*pi)` gain (~0.0785, about -22 dB), so neither branch is
+    // ever fully absent.
     float Process(float input, float topology, float combPeakBlend, float scoopMix)
     {
         const float combRaw = comb.Process(pureDelay.Process(input));
@@ -776,8 +775,9 @@ struct FilterFxChain
         // trim leaves behind, not instead of the trim (the trim stays;
         // this is additive).
         const float peakPath = peakLimiter.Process(peakTrimmed);
+        const float flooredBlend = 0.05f + 0.90f * combPeakBlend;
         const float halfPi = 0.5f * static_cast<float>(M_PI);
-        const float mixed = peakPath * std::cos(combPeakBlend * halfPi) + combPath * std::sin(combPeakBlend * halfPi);
+        const float mixed = peakPath * std::cos(flooredBlend * halfPi) + combPath * std::sin(flooredBlend * halfPi);
         const float scooped = scoopNotch.Process(mixed);
         return mixed * (1.0f - scoopMix) + scooped * scoopMix;
     }

@@ -182,7 +182,12 @@ inline const std::array<FroggersBankLayout, kFroggersBankCount>& FroggersBankLay
         }}},
         {FroggersBankId::Filter, "Filter", synth::Color::Blue, {{
             {"Comb offset", "CmbOff"}, {"Peak freq", "PkFreq"}, {"Peak gain", "PkGain"},
-            {"Peak Q", "PkQ"}, {"Comb delay", "CmbDly"}, {"Comb feedback", "CmbFb"},
+            {"Peak Q", "PkQ"}, {"Comb delay", "CmbDly"},
+            // 0.5f is this bipolar knob's centre: GetFeedback maps it to
+            // exactly zero feedback (dsp/FilterFx.hpp), so a fresh
+            // launch's comb passes signal through without ringing -- the
+            // same centred-default treatment VCO balance has above.
+            {"Comb feedback", "CmbFb", 0.5f},
             {"Comb LP", "CmbLP"}, {"Comb/Peak", "Cmb/Pk"}, {"Scoop", "Scoop"},
             // Filter slots 9-13 defaults, chosen so a
             // fresh launch matches the always-parallel, unscooped signal path:
