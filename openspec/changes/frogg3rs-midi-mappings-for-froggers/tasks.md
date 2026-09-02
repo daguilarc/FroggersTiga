@@ -166,7 +166,7 @@ sequential.
       proposal's table names and no other, and the Twister default's side
       buttons sit at ch 3 CC 8-13.
 - [x] 3.4 `MANUAL.md` MIDI section as the proposal's section 10 lists it.
-- [ ] 3.5 Pin bump as its own commit; `nice make -j2 -C app test`; browser
+- [x] 3.5 Pin bump as its own commit; `nice make -j2 -C app test`; browser
       wasm build; push `main`; Pages and VST workflows green.
 
 ## 4. Operator, then archive
