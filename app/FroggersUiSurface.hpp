@@ -820,7 +820,7 @@ FroggersApprovedLabels() {
         {{"A1", "D1", "S1", "R1", "A2", "D2", "S2", "R2", "A3", "D3", "S3", "R3", "Curve", "Grace"}},
         // Filter -- slot 5 shortened ("Comb feedback" -> "Comb FB").
         {{"Peak freq", "Peak gain", "Peak Q", "Comb offset", "Comb delay", "Comb FB", "Comb LP",
-          "Comb drive", "Scoop", "Scoop freq", "Scoop width", "Scoop depth", "Comb/Peak", "Topology"}},
+          "Comb drive", "Scoop mix", "Scoop freq", "Scoop width", "Scoop depth", "Comb/Peak", "Topology"}},
         // Drive -- slot 9 shortened ("Anti-alias brightness" -> "Anti-alias"),
         // slot 13 shortened ("Waveshaper offset" -> "Bias").
         {{"Drive", "Shape", "SRR 1", "SRR 2", "XOR", "Bit depth", "Fuzz", "Blend", "Phase",

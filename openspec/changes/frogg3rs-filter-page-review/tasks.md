@@ -141,3 +141,64 @@ All four land in this wave, one executor, after task 6 completes:
 
 Each fix: proven able to fail once (binaries deleted between builds),
 full suite fresh at the end, wasm rebuilt, zero FAIL.
+
+## 8. Scoop moves upstream of the peak (operator-ordered, 2026-09-01)
+
+The ear finding the matrix's per-knob lens missed: the scoop is a SECOND
+ResonantBump wired as a post-blend series dip over the whole signal
+(`FilterFx.hpp:640,:852`, blend at the return), with freq/width formulas
+and default centers identical to the peak's — so at overlapping centers,
+Scoop-up subtracts exactly what Peak-up added: "more knob = less filter."
+
+The fix — topology, not curves: the scoop shapes the chain's INPUT.
+
+    scoopedIn = input·(1−scoopMix) + scoopNotch(input)·scoopMix
+    (comb and peak both eat scoopedIn; the peak's resonance then lives ON
+    TOP of the scooped material and survives any Scoop setting)
+
+- The Scoop knob (slot 8) keeps its meaning-shape: how much of the input
+  is pre-scooped. Depth/freq/width knobs unchanged (their maps were just
+  fixed; SetHeight semantics untouched).
+- Bounds, preflight-verified and then MEASURED, not assumed: the RBJ cut's
+  |H| ≤ 1 at all frequencies for height ≤ 1 (algebra on
+  `ResonantBump::UpdateCoefficients`, `FilterFx.hpp:276-298`) — but that is
+  steady-state; scoop params refresh per sample, and this file's own record
+  shows analogy-picked transient bounds measuring 80% wrong. RE-RUN the
+  limiter measurement harness (the existing Pattern-2 idiom) with
+  scoop-state modulation included in the adversarial pattern, and record
+  the numbers.
+- NaN blast radius, addressed not ignored: scoopNotch has shipped a
+  non-finite state bug before (`FroggersAppCore.hpp:1787-1798`, fixed
+  2026-07-27); upstream it feeds the comb's delay line and the peak's
+  recursion. Tier-2 recovery (`RecoveryTier.hpp`, the `FilterFx.hpp:697`
+  classification — which is fault recovery, NOT plotting; the plan's old
+  visualizer bullet was miscited and is retired) remains the mechanism; the
+  finiteness suite gains scoop-modulation-while-feeding-the-branches
+  coverage. No new defensive branch without a demonstrated failing input.
+- scoopNotch has NO visualizer wiring (only peak/comb UIStates populate,
+  `FroggersAppCore.hpp:1290-1291`); nothing to reorder there.
+- The internal input mix stays PLAIN LINEAR (`input·(1−m) + notch·m`) so
+  scoopMix 0 is bit-exact pass-through by the same IEEE argument the
+  topology morph's comment already proves (`FilterFx.hpp:791-795`) —
+  launch bit-identical.
+- Tests: `filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend`
+  (`FroggersDspParityTests.cpp:1773-1889`, blend 0.4 / scoop 0.6) —
+  expected expression rewritten to the new order;
+  `filter_fx_chain_zero_scoop_mix_is_unaffected_by_scoop_notch_settings`
+  (:1990-2023) stays valid unchanged. NEW directional pin: peak boosted at
+  a frequency, scoop centered on it, increasing Scoop must not cancel the
+  peak's contribution (band energy at the peak's center with Scoop full
+  stays above the unboosted baseline) — a small Goertzel helper is
+  duplicated into `FroggersDspParityTests.cpp` per that file's
+  independent-replica convention (the routing suite's helper is in a
+  disjoint binary, `app/Makefile:124-125,189-190`); positive control runs
+  the pin against the OLD topology and shows the cancellation caught.
+- Spec wording, enumerated: BOTH copies of the "Peak stage reads the
+  chain's own input" language (main spec
+  `froggers-sheaf-parameter-model/spec.md:84-86` at sync time, the
+  change's delta :26-29 now) say the branches read the SCOOPED input;
+  the delta's Scoop-stage description (:21) and the two "into the
+  output" comment sites (`FroggersAppCore.hpp:1870-1871`) reworded to
+  input-shaping.
+- Preflight (fresh context) first; executor; postflight; commit and push
+  in the normal flow; operator re-ear on the deployed site.

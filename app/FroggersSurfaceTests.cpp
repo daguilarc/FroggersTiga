@@ -1929,7 +1929,7 @@ TEST_CASE(every_rendered_label_matches_the_approved_list_verbatim) {
               "Ringmod 1", "Ringmod 2", "Ringmod 3", "PM rate", "VCO balance"}},
             {{"A1", "D1", "S1", "R1", "A2", "D2", "S2", "R2", "A3", "D3", "S3", "R3", "Curve", "Grace"}},
             {{"Peak freq", "Peak gain", "Peak Q", "Comb offset", "Comb delay", "Comb FB", "Comb LP",
-              "Comb drive", "Scoop", "Scoop freq", "Scoop width", "Scoop depth", "Comb/Peak", "Topology"}},
+              "Comb drive", "Scoop mix", "Scoop freq", "Scoop width", "Scoop depth", "Comb/Peak", "Topology"}},
             {{"Drive", "Shape", "SRR 1", "SRR 2", "XOR", "Bit depth", "Fuzz", "Blend", "Phase", "Anti-alias",
               "Link", "Fold", "Tone", "Bias"}},
             {{"Delay time", "Send", "Feedback", "Stereo width", "Freeze", "Mod depth", "Wet mix", "Reverse",

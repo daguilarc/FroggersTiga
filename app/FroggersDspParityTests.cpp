@@ -1871,18 +1871,20 @@ TEST_CASE(filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend) {
         const float input = 0.1f * static_cast<float>(i + 1);
         const float actual = chain.Process(input, /*topology=*/0.0f, combPeakBlend, scoopMix);
 
-        const float combRaw = refComb.Process(refPureDelay.Process(input));
+        // Task 8: scoop now shapes the shared input both branches below eat,
+        // computed first from `input` -- not, as before, blended into the
+        // output after the comb/peak mix.
+        const float scoopedIn = input * (1.0f - scoopMix) + refScoop.Process(input) * scoopMix;
+        const float combRaw = refComb.Process(refPureDelay.Process(scoopedIn));
         const float trimState = refTrimSmoother.Process(rawCombTrim);
         const float combPath = combRaw * trimState;
-        const float peakRaw = refPeak.Process(input);
+        const float peakRaw = refPeak.Process(scoopedIn);
         const float peakTrimState = refPeakTrimSmoother.Process(rawPeakTrim);
         const float peakTrimmed = peakRaw * peakTrimState;
         const float peakPath = refPeakLimiter.Process(peakTrimmed);
         const float flooredBlend = 0.05f + 0.90f * combPeakBlend;
         const float halfPi = 0.5f * static_cast<float>(M_PI);
-        const float mixed = peakPath * std::cos(flooredBlend * halfPi) + combPath * std::sin(flooredBlend * halfPi);
-        const float scooped = refScoop.Process(mixed);
-        const float expected = mixed * (1.0f - scoopMix) + scooped * scoopMix;
+        const float expected = peakPath * std::cos(flooredBlend * halfPi) + combPath * std::sin(flooredBlend * halfPi);
 
         REQUIRE_NEAR(actual, expected, 1e-5);
     }
@@ -2020,6 +2022,131 @@ TEST_CASE(filter_fx_chain_zero_scoop_mix_is_unaffected_by_scoop_notch_settings) 
         const float outB = chainB.Process(input, /*topology=*/0.0f, /*combPeakBlend=*/0.4f, /*scoopMix=*/0.0f);
         REQUIRE_NEAR(outA, outB, 1e-6);
     }
+}
+
+// Independent replica of the PRE-Task-8 FilterFxChain::Process -- scoop
+// blended in AFTER the comb/peak mix, at the return, rather than shaping
+// the shared input before either branch. This file's own established
+// convention for a regression pin (filter_fx_chain_parallel_matches_
+// manual_comb_peak_scoop_blend above reconstructs production's CURRENT
+// formula the same way): a frozen, independent snapshot of the OLD
+// behaviour, so the pin below cannot silently start passing again just
+// because some future change re-derives the same old formula by accident.
+float OldTopologyFilterFxProcess(dsp::FilterFxChain& chain, float input, float topology, float combPeakBlend,
+                                  float scoopMix) {
+    const float combRaw = chain.comb.Process(chain.pureDelay.Process(input));
+    const float rawCombTrim = 1.0f / (1.0f + std::fabs(chain.comb.feedback));
+    const float combTrim = chain.combTrimSmoother.Process(rawCombTrim);
+    const float combPath = combRaw * combTrim;
+    const float peakIn = input * (1.0f - topology) + combPath * topology;
+    const float peakRaw = chain.peak.Process(peakIn);
+    const float rawPeakTrim = 1.0f / chain.peak.height;
+    const float peakTrim = chain.peakTrimSmoother.Process(rawPeakTrim);
+    const float peakTrimmed = peakRaw * peakTrim;
+    const float peakPath = chain.peakLimiter.Process(peakTrimmed);
+    const float flooredBlend = 0.05f + 0.90f * combPeakBlend;
+    const float halfPi = 0.5f * static_cast<float>(M_PI);
+    const float mixed = peakPath * std::cos(flooredBlend * halfPi) + combPath * std::sin(flooredBlend * halfPi);
+    const float scooped = chain.scoopNotch.Process(mixed);
+    return mixed * (1.0f - scoopMix) + scooped * scoopMix;
+}
+
+// Independent replica of FroggersAudioRoutingTests.cpp's own GoertzelPower
+// (this file's established convention, per app/Makefile:124-125,189-190
+// building the two suites as disjoint binaries with no shared test-support
+// object between them -- a parity/measurement helper is duplicated, not
+// shared, so a bug in one binary's copy cannot silently defeat a check in
+// the other's). Naive single-frequency Goertzel power, valid at any
+// (non-bin-aligned) frequency over a fixed-length window -- see the
+// routing suite's own copy for the algorithm's derivation.
+double GoertzelPower(const std::vector<float>& samples, double freqHz, double sampleRateHz) {
+    const double coeff = 2.0 * std::cos(2.0 * M_PI * freqHz / sampleRateHz);
+    double s1 = 0.0, s2 = 0.0;
+    for (const float sample : samples) {
+        const double s0 = static_cast<double>(sample) + coeff * s1 - s2;
+        s2 = s1;
+        s1 = s0;
+    }
+    return s1 * s1 + s2 * s2 - coeff * s1 * s2;
+}
+
+// -----------------------------------------------------------------------
+// Task 8's directional pin. What this actually measures was traced with a
+// scratch harness before writing it (not part of this suite): comparing a
+// STATIC boosted height against a STATIC flat height, everything else
+// held equal, gives the SAME band energy at the shared centre frequency in
+// EITHER topology, to float precision -- the peak's own `1/height` trim
+// (FilterFxChain::Process's own comment) cancels height's effect on the
+// trimmed branch's centre-frequency contribution exactly, by construction,
+// regardless of where the scoop sits. Height is therefore NOT the knob
+// that distinguishes old topology from new here.
+//
+// What DOES distinguish them: under the OLD (pre-Task-8) topology the peak
+// branch -- and its own `peakLimiter` -- always saw the RAW, un-scooped
+// input, even with Scoop at its maximum; under the NEW topology it only
+// ever sees the already-scooped material. Feeding the limiter a needlessly
+// full-scale signal drives real, measurable gain reduction it would not
+// otherwise need, shrinking the branch's own contribution to the mix. This
+// pin catches exactly that: at a boosted height, the REAL chain (production
+// `FilterFxChain::Process`) must still clear a frozen snapshot of what the
+// OLD topology produced at the SAME frequency with the peak left FLAT (no
+// boost at all) -- i.e. the peak's contribution under the fix must exceed
+// what a listener got under the bug even with no boost dialled in. A
+// single full-scale sine at the shared centre frequency drives both stages
+// to steady state; GoertzelPower above measures the settled band energy.
+// -----------------------------------------------------------------------
+TEST_CASE(filter_fx_chain_scoop_full_does_not_cancel_a_boosted_peak_at_the_shared_center_frequency) {
+    constexpr float sampleRate = 48000.0f;
+    const float freqNormalized = 0.05f;  // matches this file's other peak-branch bound tests.
+    const double freqHz = static_cast<double>(freqNormalized) * static_cast<double>(sampleRate);
+    constexpr int kWarmupSamples = 4000;  // resonance buildup, matches topology_morph_peak_branch_headroom_across_full_range.
+    constexpr int kMeasureSamples = 4096;
+
+    const auto measureBandEnergy = [&](auto processFn, float peakHeight) {
+        dsp::FilterFxChain chain;
+        chain.Configure(sampleRate);
+        chain.peak.SetFreq(freqNormalized);
+        chain.peak.SetHeight(peakHeight);
+        chain.peak.SetWidth(1.0f);
+        chain.scoopNotch.SetFreq(freqNormalized);  // scoop centered on the SAME frequency as the peak.
+        chain.scoopNotch.SetHeight(0.05f);  // deep dip -- ExpMapCompute(1, 0.05, knob)'s own ceiling (Task 7b).
+        chain.scoopNotch.SetWidth(1.0f);
+
+        std::vector<float> samples;
+        samples.reserve(kMeasureSamples);
+        int sampleIx = 0;
+        for (; sampleIx < kWarmupSamples; ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
+            processFn(chain, std::sin(phase));
+        }
+        for (int i = 0; i < kMeasureSamples; ++i, ++sampleIx) {
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(sampleIx);
+            samples.push_back(processFn(chain, std::sin(phase)));
+        }
+        return GoertzelPower(samples, freqHz, sampleRate);
+    };
+
+    // Baseline: a frozen replica of the OLD topology, peak held FLAT (no
+    // boost at all) -- "the unboosted baseline."
+    const double baselineEnergy = measureBandEnergy(
+        [](dsp::FilterFxChain& c, float in) {
+            return OldTopologyFilterFxProcess(c, in, /*topology=*/0.0f, /*combPeakBlend=*/0.0f, /*scoopMix=*/1.0f);
+        },
+        /*peakHeight=*/1.0f);
+
+    // Test: the REAL production chain, peak BOOSTED near the app's own
+    // ceiling, Scoop at its full maximum.
+    const double boostedEnergy = measureBandEnergy(
+        [](dsp::FilterFxChain& c, float in) {
+            return c.Process(in, /*topology=*/0.0f, /*combPeakBlend=*/0.0f, /*scoopMix=*/1.0f);
+        },
+        /*peakHeight=*/dsp::kMaxResonantBumpHeight);
+
+    std::cout << "  [Task 8 directional pin] band energy at the shared centre frequency -- "
+                 "old-topology unboosted baseline="
+              << baselineEnergy << "  new-topology boosted (scoopMix=1.0)=" << boostedEnergy << "\n";
+
+    REQUIRE_TRUE(boostedEnergy > baselineEnergy);
 }
 
 // -----------------------------------------------------------------------
@@ -2581,6 +2708,124 @@ TEST_CASE(peak_ceiling_candidate_limiter_measurement) {
         REQUIRE_TRUE(worstPreLimiter < 10.0f * candidate);
         REQUIRE_TRUE(worstPostLimiter < 10.0f * candidate);
     }
+}
+
+// -----------------------------------------------------------------------
+// Task 8's own re-run of the harness above: the bound argument for the
+// scoop notch (RBJ cut, |H| <= 1 for height <= 1) is steady-state, but
+// scoop's freq/width/depth now refresh per sample AND feed both branches
+// below (FilterFxChain::Process), so this measures the SAME worst-case
+// pre-/post-limiter numbers with that modulation included, at the live
+// ceiling (kMaxResonantBumpHeight) only -- candidate sweeping is the
+// harness above's job, not this one's. scoopMix is held at 1.0 (not
+// redrawn) so the scoop actually feeds the branches on every sample rather
+// than a partial blend diluting the adversarial signal; freq/width/depth
+// are redrawn every sample across their full production ranges (the same
+// ExpMapCompute maps FroggersAppCore.hpp uses for these knobs).
+//
+// This IS where "analogy-picked transient bounds measuring 80% wrong"
+// (this file's own record, cited by Task 8) turned out to apply again: a
+// biquad whose OWN coefficients (not just its input) are redrawn every
+// sample -- both the peak's height and, through what now feeds it, the
+// scoop's freq/width/depth -- can produce a single-sample spike many
+// orders of magnitude past any steady-state bound. No finite-attack-rate
+// limiter (real 0.7-threshold OR this harness's own 1e6-threshold
+// "neutralized" one, same as the harness above) can suppress a spike that
+// large within the ONE sample it occurs on -- traced by hand against this
+// run's own numbers, not assumed: pre- and post-limiter worst-case land at
+// the same order of magnitude precisely because that single sample passes
+// both chains almost unattenuated, not because the limiter is broken.
+// Reproducible under the OLD (pre-Task-8) topology too, at a comparably
+// extreme magnitude -- this is a pre-existing biquad coefficient-
+// modulation property, not a regression Task 8 introduces or a defect its
+// topology change is positioned to fix, so per this task's own brief
+// ("no new defensive branch without a demonstrated failing input") it is
+// reported here, not treated as a bug to close out inline. Hence: assert
+// ONLY the finiteness/limiter-ceiling invariants Task 8 asks for (per
+// sample, below) and PRINT the worst-case numbers rather than bounding
+// them -- a magnitude bound copied from the harness above would be
+// asserting a property this specific adversarial pattern has just shown
+// does not hold.
+// -----------------------------------------------------------------------
+TEST_CASE(peak_ceiling_scoop_modulation_limiter_measurement) {
+    constexpr float sampleRate = 48000.0f;
+    const float inputAmplitude = 1.0f;
+    const float freqNormalized = 0.05f;  // matches this file's other peak-branch bound tests.
+    const float candidate = dsp::kMaxResonantBumpHeight;  // the live ceiling -- read from the shared constant.
+
+    constexpr std::uint32_t kSeeds[] = {0xC0FFEEu, 0xBADF00Du, 0xFEEDFACEu, 0xDEADBEEFu, 0x8BADF00Du,
+                                         0xCAFEBABEu, 0x1337C0DEu, 0xABCDEF01u, 0x0F0F0F0Fu, 0x13579BDFu};
+    constexpr int kSamplesPerSeed = 50000;
+
+    float worstPreLimiter = 0.0f;
+    float worstPostLimiter = 0.0f;
+
+    for (std::uint32_t seed : kSeeds) {
+        dsp::FilterFxChain postChain;  // real production tuning -- the constant under measurement.
+        postChain.Configure(sampleRate);
+        postChain.peak.SetFreq(freqNormalized);
+        postChain.peak.SetWidth(1.0f);
+
+        dsp::FilterFxChain preChain;  // identical, except peakLimiter neutralized -- see the harness above.
+        preChain.peak.SetFreq(freqNormalized);
+        preChain.peak.SetWidth(1.0f);
+        preChain.peakLimiter.Configure(sampleRate, /*threshold=*/1.0e6f, /*ceiling=*/2.0e6f,
+                                        dsp::kPeakLimiterAttackSeconds, dsp::kPeakLimiterReleaseSeconds);
+
+        std::uint32_t rngState = seed;
+        const auto nextUniform01 = [&rngState]() {
+            rngState ^= rngState << 13;
+            rngState ^= rngState >> 17;
+            rngState ^= rngState << 5;
+            return static_cast<float>(rngState % 1000000u) / 1000000.0f;
+        };
+
+        for (int i = 0; i < kSamplesPerSeed; ++i) {
+            const float height = dsp::ExpMapCompute(1.0f, candidate, nextUniform01());
+            postChain.peak.SetHeight(height);
+            preChain.peak.SetHeight(height);
+
+            // Scoop freq/width/depth redrawn per sample too, same maps
+            // FroggersAppCore.hpp uses for these knobs, on both chains.
+            const float scoopFreq = dsp::ExpMapCompute(100.0f / sampleRate, 20000.0f / sampleRate, nextUniform01());
+            const float scoopWidth = dsp::ExpMapCompute(0.4f, 10.0f, nextUniform01());
+            const float scoopDepth = dsp::ExpMapCompute(1.0f, 0.05f, nextUniform01());
+            postChain.scoopNotch.SetFreq(scoopFreq);
+            postChain.scoopNotch.SetWidth(scoopWidth);
+            postChain.scoopNotch.SetHeight(scoopDepth);
+            preChain.scoopNotch.SetFreq(scoopFreq);
+            preChain.scoopNotch.SetWidth(scoopWidth);
+            preChain.scoopNotch.SetHeight(scoopDepth);
+
+            const float phase = 2.0f * static_cast<float>(M_PI) * freqNormalized * static_cast<float>(i);
+            const float sample = inputAmplitude * std::sin(phase);
+
+            const float preOutput =
+                preChain.Process(sample, /*topology=*/0.0f, /*combPeakBlend=*/0.0f, /*scoopMix=*/1.0f);
+            const float postOutput =
+                postChain.Process(sample, /*topology=*/0.0f, /*combPeakBlend=*/0.0f, /*scoopMix=*/1.0f);
+
+            REQUIRE_TRUE(std::isfinite(preOutput));
+            REQUIRE_TRUE(std::isfinite(postOutput));
+            REQUIRE_TRUE(postChain.peakLimiter.envelope > 0.0f
+                         && postChain.peakLimiter.envelope <= 1.0f + 1.0e-6f);
+
+            worstPreLimiter = std::max(worstPreLimiter, std::fabs(preOutput));
+            worstPostLimiter = std::max(worstPostLimiter, std::fabs(postOutput));
+        }
+    }
+
+    std::cout << "  [scoop-modulation limiter measurement] candidate=" << candidate
+              << " (live ceiling), scoop freq/width/depth modulated per sample feeding both branches, scoopMix=1.0: "
+                 "pre-limiter worst="
+              << worstPreLimiter << "  post-limiter worst=" << worstPostLimiter
+              << " -- no magnitude bound asserted here, see this test's own header comment.\n";
+    // Finiteness and the limiter's own envelope invariant were already
+    // asserted per-sample, above, inside the seed loop -- those are the
+    // finiteness/limiter-ceiling invariants this task asks for. No
+    // magnitude bound on the worst-case numbers themselves: see this
+    // test's own header comment for why one would be asserting a property
+    // this run has just shown does not hold.
 }
 
 // filter_fx_chain_serial_matches_delay_then_comb_then_peak DELETED: it
@@ -4326,6 +4571,56 @@ TEST_CASE(self_oscillating_comb_response_is_finite_and_bounded) {
         const float magnitude = state.FrequencyResponse(f);
         REQUIRE_TRUE(std::isfinite(magnitude));
         REQUIRE_TRUE(magnitude <= 1000.0f + 1.0f);  // SafeDenominator's 1/1e-3 bound, +1 rounding headroom.
+    }
+}
+
+// -----------------------------------------------------------------------
+// FilterFxChain::Process's own runtime sibling to the closed-form check
+// above: self-oscillating comb feedback (Comb::GetFeedback's own +-0.95
+// ceiling) together with scoop freq/width/depth AND scoopMix redrawn every
+// sample while the scoop feeds both branches (Task 8's topology) -- the
+// shape of input the scoopNotch self-oscillation bug needed before Tier 2
+// recovery existed (FroggersAppCore.hpp's own restored-setters comment).
+// No recovery is exercised here (that is
+// finiteness_recovery_resets_only_the_poisoned_unit_and_audio_recovers's
+// job, FroggersAudioRoutingTests.cpp); this pins that the chain itself
+// never hands a non-finite sample downstream under this input in the
+// first place.
+// -----------------------------------------------------------------------
+TEST_CASE(filter_fx_chain_stays_finite_under_self_oscillating_comb_with_audio_rate_scoop_modulation) {
+    constexpr float sampleRate = 48000.0f;
+    dsp::FilterFxChain chain;
+    chain.Configure(sampleRate);
+    chain.comb.delaySamples = 1;
+    chain.comb.SetFeedback(dsp::Comb::GetFeedback(1.0f));  // +0.95, self-oscillating ceiling.
+    chain.comb.SetCutoffAlpha(0.999f);  // near-open lowpass, matches the closed-form case just above.
+    chain.pureDelay.delaySamples = 0.0f;
+    chain.peak.SetFreq(0.05f);
+    chain.peak.SetHeight(dsp::kMaxResonantBumpHeight);
+    chain.peak.SetWidth(1.0f);
+
+    std::uint32_t rngState = 0xC0FFEEu;
+    const auto nextUniform01 = [&rngState]() {
+        rngState ^= rngState << 13;
+        rngState ^= rngState >> 17;
+        rngState ^= rngState << 5;
+        return static_cast<float>(rngState % 1000000u) / 1000000.0f;
+    };
+
+    constexpr int kSamples = 20000;
+    for (int i = 0; i < kSamples; ++i) {
+        const float scoopFreq = dsp::ExpMapCompute(100.0f / sampleRate, 20000.0f / sampleRate, nextUniform01());
+        const float scoopWidth = dsp::ExpMapCompute(0.4f, 10.0f, nextUniform01());
+        const float scoopDepth = dsp::ExpMapCompute(1.0f, 0.05f, nextUniform01());
+        const float scoopMix = nextUniform01();  // redrawn every sample, including near 1.0.
+        chain.scoopNotch.SetFreq(scoopFreq);
+        chain.scoopNotch.SetWidth(scoopWidth);
+        chain.scoopNotch.SetHeight(scoopDepth);
+
+        const float phase = 2.0f * static_cast<float>(M_PI) * 0.05f * static_cast<float>(i);
+        const float input = std::sin(phase);
+        const float output = chain.Process(input, /*topology=*/0.0f, /*combPeakBlend=*/0.5f, scoopMix);
+        REQUIRE_TRUE(std::isfinite(output));
     }
 }
 

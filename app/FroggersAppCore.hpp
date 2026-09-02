@@ -1868,8 +1868,9 @@ private:
         // own comment (FilterFx.hpp) for why topology==0 is bit-identical to
         // the old always-true `useParallel` behaviour.
         // Scoop (Filter slot 8) is the notch's wet/dry blend into the
-        // output -- SetHeight above reads Scoop depth (slot 11) instead,
-        // the notch's own dip.
+        // chain's shared input, ahead of both the Comb and Peak stages
+        // (FilterFxChain::Process, FilterFx.hpp) -- SetHeight above reads
+        // Scoop depth (slot 11) instead, the notch's own dip.
         const float filterOut =
             filterChain_.Process(driveOut, knob(FroggersBankId::Filter, 13), knob(FroggersBankId::Filter, 12),
                                   knob(FroggersBankId::Filter, 8));

@@ -121,8 +121,10 @@ struct FroggersBankLayout {
 // The parameter CONTENT of each bank matches that source material.
 //   Audio    -- VCO1, VCO2, VCO3, Shape 1/2/3, Phase mod 1/2/3
 //   Envelope -- Attack/Sustain/Release x VCO1, VCO2, VCO3
-//   Filter   -- Comb offset, Peak freq, Peak gain, Peak Q, Comb delay,
-//               Comb feedback, Comb LP, Comb/Peak, Scoop
+//   Filter   -- Peak freq, Peak gain, Peak Q, Comb offset, Comb delay,
+//               Comb feedback, Comb LP, Comb drive, Scoop mix, Scoop freq,
+//               Scoop width, Scoop depth, Comb/Peak, Topology (grouped by
+//               stage; the v2 source's own order predates the grouping)
 //   Drive    -- Drive, Shape, SRR 1, SRR 2, XOR, Bit depth, Fuzz, Blend,
 //               Phase
 //   Delay    -- Delay time, Send, Feedback, Stereo width, Freeze, Mod
@@ -194,7 +196,7 @@ inline const std::array<FroggersBankLayout, kFroggersBankCount>& FroggersBankLay
             // == 0.25f * sqrt(16.0f) == 1.0f, unity gain (see
             // RouteAudioSample's own Filter slot 7 wiring) -- a fresh
             // launch matches the always-parallel, unscooped signal path.
-            {"Comb drive", "CDrv", 0.5f}, {"Scoop", "Scoop"},
+            {"Comb drive", "CDrv", 0.5f}, {"Scoop mix", "ScMix"},
             // Scoop freq/width/depth defaults, chosen so a fresh launch
             // matches the always-parallel, unscooped signal path:
             //   Scoop freq/width 0.0f -> ExpMapCompute(min,max,0)==min,

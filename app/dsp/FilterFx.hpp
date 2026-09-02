@@ -777,6 +777,18 @@ struct FilterFxChain
     // which is parameter-smoothing infrastructure, not a DSP unit in scope
     // here -- callers pass the already-smoothed 0..1 value).
     //
+    // `scoopMix` (Filter slot 8, "Scoop mix") shapes the chain's shared INPUT,
+    // not its output: `scoopedIn` below feeds BOTH the comb and peak
+    // branches, so the peak's resonance lives ON TOP of whatever material
+    // the scoop leaves behind and survives any Scoop setting. This used to
+    // be a second ResonantBump (`scoopNotch`) wired as a post-blend series
+    // dip over the whole mixed signal, so at overlapping centers dialing
+    // Scoop up subtracted exactly what dialing Peak up had just added --
+    // "more knob, less filter." Moving the scoop upstream of both branches
+    // removes that cancellation. Depth/Freq/Width (Filter slots 9-11) keep
+    // their own independent maps, unchanged; scoopNotch has no visualizer
+    // wiring either way (only peak/comb UIStates populate).
+    //
     // `topology` (Filter slot 13, "Topology"/"Topo") replaces the old
     // `bool useParallel`. The old `useParallel == false` branch (:834-839,
     // `pureDelay -> comb -> peak` with no trims/limiter/blend, ignoring
@@ -785,24 +797,33 @@ struct FilterFxChain
     // rather than kept beside a morph. The
     // surviving path is the former `useParallel == true` branch, continuous
     // morphed by `topology` in [0,1] on ONLY the peak stage's input:
-    //   peakIn = input * (1 - topology) + combPath * topology
+    //   peakIn = scoopedIn * (1 - topology) + combPath * topology
     // Every other computation (combTrim, peakTrim, peakLimiter, the
-    // Comb/Peak blend, the Scoop blend) stays exactly as it was and stays
+    // Comb/Peak blend) stays exactly as it was and stays
     // in force at every topology value. At `topology == 0`,
-    // `peakIn == input * 1.0f + combPath * 0.0f == input` bit-for-bit (IEEE
-    // multiply-by-1 and multiply-by-0/add-0 are exact for finite operands),
-    // reproducing the old `useParallel == true` branch's `peak.Process(input)`
-    // call exactly -- so this is a strict superset, not a behaviour change,
-    // at the default topology. Every stateful unit (comb, peak, pureDelay,
-    // combTrimSmoother, peakTrimSmoother, peakLimiter) is still processed
-    // exactly once per sample, in the same order as before. The Comb/Peak
+    // `peakIn == scoopedIn * 1.0f + combPath * 0.0f == scoopedIn`
+    // bit-for-bit (IEEE multiply-by-1 and multiply-by-0/add-0 are exact for
+    // finite operands), reproducing the old `useParallel == true` branch's
+    // `peak.Process(scoopedIn)` call exactly -- so this is a strict
+    // superset, not a behaviour change, at the default topology (and, at
+    // the also-default scoopMix == 0, `scoopedIn == input` bit-for-bit too,
+    // by the same IEEE argument -- so launch, where both default to 0, is
+    // unaffected all the way through). Every stateful unit (comb, peak,
+    // pureDelay, scoopNotch, combTrimSmoother, peakTrimSmoother,
+    // peakLimiter) is still processed exactly once per sample, in the same
+    // order as before. The Comb/Peak
     // blend below is equal-power across a floored `combPeakBlend` range of
     // 0.05..0.95: at either extreme the held-back branch is still present
     // at `sin(0.025*pi)` gain (~0.0785, about -22 dB), so neither branch is
     // ever fully absent.
     float Process(float input, float topology, float combPeakBlend, float scoopMix)
     {
-        const float combRaw = comb.Process(pureDelay.Process(input));
+        // Scoop shapes the chain's shared input, feeding both branches
+        // below (see this method's own header comment for why). PLAIN
+        // LINEAR blend, same IEEE argument as the topology morph a few
+        // lines down: at scoopMix == 0 this is exactly `input` bit-for-bit.
+        const float scoopedIn = input * (1.0f - scoopMix) + scoopNotch.Process(input) * scoopMix;
+        const float combRaw = comb.Process(pureDelay.Process(scoopedIn));
         // Exact output trim `1/(1+|fb|)` on the comb branch
         // ONLY, before the blend with peakPath below. `|comb| <= A +
         // |fb|` (PadeSaturator bounds the fed-back term to +-1,
@@ -818,9 +839,9 @@ struct FilterFxChain
         const float rawCombTrim = 1.0f / (1.0f + std::fabs(comb.feedback));
         const float combTrim = combTrimSmoother.Process(rawCombTrim);
         const float combPath = combRaw * combTrim;
-        // Topology morph: at topology==0 this is exactly `input` (see this
-        // method's own header comment for the bit-identity argument).
-        const float peakIn = input * (1.0f - topology) + combPath * topology;
+        // Topology morph: at topology==0 this is exactly `scoopedIn` (see
+        // this method's own header comment for the bit-identity argument).
+        const float peakIn = scoopedIn * (1.0f - topology) + combPath * topology;
         // Exact output trim `1/height` on the peak branch, the path
         // the comb trim above deliberately left uncompensated ("one
         // variable at a
@@ -849,8 +870,7 @@ struct FilterFxChain
         const float flooredBlend = 0.05f + 0.90f * combPeakBlend;
         const float halfPi = 0.5f * static_cast<float>(M_PI);
         const float mixed = peakPath * std::cos(flooredBlend * halfPi) + combPath * std::sin(flooredBlend * halfPi);
-        const float scooped = scoopNotch.Process(mixed);
-        return mixed * (1.0f - scoopMix) + scooped * scoopMix;
+        return mixed;
     }
 };
 

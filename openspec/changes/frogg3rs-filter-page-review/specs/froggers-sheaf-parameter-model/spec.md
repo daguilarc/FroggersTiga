@@ -18,13 +18,15 @@ or MAY hold additional named parameters where a bank's slate has been explicitly
   multiplies the in-loop saturator's input while the same factor divides its output, so the loop's
   small-signal gain is unity at every setting, the fed-back term never exceeds the delayed signal it is
   computed from, and the loop's decay argument is preserved at every drive
-- **THEN** slots 8-11 are the Scoop stage: Scoop (`Scoop`, the notch's wet/dry blend into the output),
-  Scoop Freq (`ScFq`, the notch's own center frequency, independent of the Peak stage's), Scoop Width
-  (`ScWd`, the notch's own width, independent of the Peak stage's), Scoop Depth (`ScDp`, the notch's own
-  dip depth, independent of how much of it reaches the output)
+- **THEN** slots 8-11 are the Scoop stage: Scoop Mix (`ScMix`, the notch's wet/dry blend into the chain's
+  shared input, ahead of both the Comb and Peak stages), Scoop Freq (`ScFq`, the notch's own center
+  frequency, independent of the Peak stage's), Scoop Width (`ScWd`, the notch's own width, independent
+  of the Peak stage's), Scoop Depth (`ScDp`, the notch's own dip depth, independent of how much of it
+  reaches the chain's input)
 - **THEN** slots 12-13 are the routing pair: Comb/Peak (`Cmb/Pk`) and Topology (`Topo`) — Topology a
   continuous morph of the Comb and Peak stages from parallel at one end to series at the other, with no
-  switched positions anywhere in its travel; at its minimum the Peak stage reads the chain's own input
-  exactly as today, at its maximum it reads the Comb stage's output, and the Comb/Peak blend, the Scoop
-  blend, and every output trim and limiter stay in force at every position of both controls
+  switched positions anywhere in its travel; at its minimum the Peak stage reads the chain's scooped
+  input, the same input the Comb stage reads, and at its maximum it reads the Comb stage's output
+  instead, with the Comb/Peak blend and every output trim and limiter staying in force at every
+  position of both controls
 - **THEN** the bank's Crispy and the global Crunchy keep slots 14 and 15
