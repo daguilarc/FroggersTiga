@@ -75,26 +75,29 @@ or MAY hold additional named parameters where a bank's slate has been explicitly
 - **THEN** each voice's Attack ramps to a peak, Decay then falls from that peak to the voice's own
   Sustain target level, and Hold sustains at that level exactly as it does today
 
-#### Scenario: The Filter bank holds fourteen parameters, complete
+#### Scenario: The Filter bank holds fourteen parameters, grouped by stage
+
 - **WHEN** the Filter bank is enumerated
-- **THEN** it holds fourteen named parameters at slot indices 0 through 13, not nine
-- **THEN** slots 0-8 are unchanged from the Filter bank's existing nine parameters
-- **THEN** slot 9 is Topology (short name `Topo`), a continuous morph of the Comb and Peak stages from
-  parallel at one end to series at the other, with no switched positions anywhere in its travel
-- **THEN** at its minimum the chain behaves exactly as it does today, with the Peak stage reading the chain's
-  own input
-- **THEN** at its maximum the Peak stage reads the Comb stage's output instead, which is the series topology
-- **THEN** the Comb/Peak blend, the Scoop blend, and every output trim and limiter in the chain stay in
-  force at every position of this control, including its extremes
-- **THEN** slot 10 is Scoop Freq (short name `ScFq`), the Scoop notch's own center frequency, independent
-  of the Peak stage's frequency
-- **THEN** slot 11 is Scoop Width (short name `ScWd`), the Scoop notch's own width, independent of the
-  Peak stage's width
-- **THEN** slot 12 is Comb Drive (short name `CDrv`), a pre-gain applied to the input of the Comb stage's
-  own in-loop saturator, never to that saturator's output, so the loop's per-sample bound is unchanged at
-  every setting
-- **THEN** slot 13 is Scoop Depth (short name `ScDp`), the Scoop notch's own dip depth, independent of
-  the same notch's wet/dry blend into the output
+- **THEN** it holds fourteen named parameters at slot indices 0 through 13, grouped by the stage they
+  belong to, with saved patches unaffected because persistence addresses parameters by name
+- **THEN** slots 0-2 are the Peak stage: Peak Freq (`PkFreq`), Peak Gain (`PkGain`), Peak Q (`PkQ`)
+- **THEN** slots 3-7 are the Comb stage: Comb Offset (`CmbOff`), Comb Delay (`CmbDly`), Comb Feedback
+  (`CmbFb`), Comb LP (`CmbLP`), and Comb Drive (`CDrv`) — a saturation-depth control whose drive factor
+  multiplies the in-loop saturator's input while the same factor divides its output, so the loop's
+  small-signal gain is unity at every setting, the fed-back term never exceeds the delayed signal it is
+  computed from, and the loop's decay argument is preserved at every drive
+- **THEN** slots 8-11 are the Scoop stage: Scoop Mix (`ScMix`, the notch's wet/dry blend into the chain's
+  shared input, ahead of both the Comb and Peak stages), Scoop Freq (`ScFq`, the notch's own center
+  frequency, independent of the Peak stage's), Scoop Width (`ScWd`, the notch's own width, independent
+  of the Peak stage's), Scoop Depth (`ScDp`, the notch's own dip depth, independent of how much of it
+  reaches the chain's input)
+- **THEN** slots 12-13 are the routing pair: Comb/Peak (`Cmb/Pk`) and Topology (`Topo`) — Topology a
+  continuous morph of the Comb and Peak stages from parallel at one end to series at the other, with no
+  switched positions anywhere in its travel; at its minimum the Peak stage reads the chain's scooped
+  input, the same input the Comb stage reads, and at its maximum it reads the Comb stage's output
+  instead, with the Comb/Peak blend and every output trim and limiter staying in force at every
+  position of both controls
+- **THEN** the bank's Crispy and the global Crunchy keep slots 14 and 15
 
 #### Scenario: The Drive bank holds fourteen parameters, complete
 - **WHEN** the Drive bank is enumerated
@@ -337,6 +340,38 @@ the output.
 #### Scenario: The patch the instrument ships with stays audible
 - **WHEN** the default patch is played with Wet mix at maximum
 - **THEN** the instrument is audible
+
+### Requirement: The pitch range excludes the inaudible end
+
+VCO pitch SHALL map its knob exponentially across a named range whose
+ceiling stays in pitched, audible territory — high enough to clear the top
+of the piano with headroom, low enough that no part of the knob's travel is
+spent above what a listener can hear as a pitch. The floor is unchanged and
+launch sits on it. The range has one named definition read by the pitch
+mapping, so the ceiling cannot drift back by way of a repeated literal. The
+filter-frequency ceilings deliberately keep the full audible span: a filter
+opened entirely out of the way is intended behaviour, and their ranges are
+not this requirement's.
+
+#### Scenario: The top of the knob is a pitch, not a whistle
+
+- **WHEN** any VCO pitch knob sits at the top of its travel
+- **THEN** the oscillator's fundamental is a high but audibly pitched note,
+  above the top of the piano yet far below the audibility limit
+
+#### Scenario: The launch chord is preserved
+
+- **WHEN** the instrument launches with the default patch
+- **THEN** the three oscillators sound the same fundamentals as before the
+  ceiling moved, because the stored defaults are recomputed for the new
+  range, and the checks that pin those fundamentals in the audio pass
+  unchanged
+
+#### Scenario: One definition of the pitch range
+
+- **WHEN** the pitch range is changed in a future edit
+- **THEN** the mapping and every check that pins it move together, because
+  all read the same named constants
 
 ### Requirement: The damping range excludes the inaudible end
 
