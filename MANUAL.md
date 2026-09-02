@@ -223,6 +223,12 @@ row afterwards switches the selector to Custom; choosing Custom keeps the curren
 them be edited row by row. A newly connected Twister or APC40 is also offered through the page's
 configure flow.
 
+**Reading a controller row.** Each row is two lines. The first line shows the controller's name, its
+**Device** (MF Twister, Generic, Launchpad), two status dots for its ports, and the **Layout** selector.
+The second line holds the **MIDI in** and **MIDI out** port selectors, a **Rename to** field with its
+**Rename** button, **Delete** and **Blacklist**. A legend above the first row names the dot colours:
+online, offline, not set. The add row at the bottom takes a name and a **Device**.
+
 **What can be mapped.** Every front-screen control. Encoder turns (relative or absolute), encoder pushes
 (which drill into a knob's modulation exactly like an on-screen press), Play, Stop, Freeze, Record,
 Randomize All, Randomize Page, Reset All, Reset Page, Bank 1 to 6, Bank Previous, Bank Next, Scene 1,

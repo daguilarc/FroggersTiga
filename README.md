@@ -103,3 +103,8 @@ Change proposals and specs live under [`openspec/`](openspec/).
 Parameter reference for this app: [`MANUAL.md`](MANUAL.md) (global controls, then all six banks —
 Audio, Envelope, Filter, Drive, Delay, Reverb — parameter by parameter) and [`QUICK_DICT.md`](QUICK_DICT.md)
 (the same six banks, one line per parameter).
+
+MIDI controllers: the standalone and browser builds have a Controllers page where every front-screen
+control can be mapped, with ready-made layouts for the MIDI Fighter Twister and the Akai APC40 mkII.
+The manual's [MIDI controllers](MANUAL.md#midi-controllers) section describes the page, the layouts and
+the device settings each controller needs.
