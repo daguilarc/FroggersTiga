@@ -81,10 +81,13 @@ supersedes the change.
 
 ## 3. frogg3rs
 
-- [ ] 3.1 Pin bump as its own commit; `MANUAL.md` MIDI controllers section
+- [x] 3.1 Pin bump as its own commit; `MANUAL.md` MIDI controllers section
       says "MIDI in", "MIDI out", "Device"; `README.md` gains a short MIDI
       controllers paragraph pointing to the manual; `nice make -j2 -C app
       test`; browser build; push `main`; Pages and VST workflows green.
+      Done 2026-09-02: pin 4654525, docs 9b31d16; `make -C app test` ten
+      binaries green; browser build green; pushed; GitHub Pages run
+      33687442876 and VST Plugin run 33687442860 both succeeded.
 
 ## 4. Postflight, before any commit
 
