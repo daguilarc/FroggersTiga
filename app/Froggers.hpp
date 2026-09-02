@@ -30,6 +30,7 @@
 // is not.
 
 #include "FroggersAppCore.hpp"
+#include "FroggersMidiCatalog.hpp"
 #include "FroggersUiSurface.hpp"
 
 #include "synth/AppConcepts.hpp"
@@ -48,6 +49,8 @@ public:
 
     synth::ui::Surface& PortableSurface() { return ui_; }
 
+    synth::MidiAppCatalog MidiCatalog() const { return FroggersMidiCatalog(); }
+
 private:
     FroggersUiSurface ui_;
 };
@@ -55,5 +58,8 @@ private:
 static_assert(synth::SynthApplication<FroggersApp>,
               "FroggersApp must satisfy the full synth::SynthApplication concept "
               "(SynthApplicationCore + PortableSurface())");
+static_assert(synth::HasMidiCatalog<FroggersApp>,
+              "FroggersApp must satisfy synth::HasMidiCatalog (MidiCatalog() -> "
+              "synth::MidiAppCatalog)");
 
 }  // namespace synth_froggers

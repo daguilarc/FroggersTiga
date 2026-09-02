@@ -1398,7 +1398,7 @@ TEST_CASE(encoder_ring_renders_fuegoized_value_not_raw_scene_center) {
 // (desktop-v2/braid-4/miniapp call sites are frozen/unrelated apps), and it
 // sets `state.wantsFrame = false` unconditionally for every cell, before
 // that one call, so the
-// wantsFrame-gated rect (EncoderDraw.hpp:690-694) is provably dead code on
+// wantsFrame-gated rect (EncoderDraw.hpp:691-698) is provably dead code on
 // this path -- what was still firing was the badge outline.
 //
 // Geometry tells the two apart cleanly. Traced against a live encoder(0)
@@ -1406,7 +1406,7 @@ TEST_CASE(encoder_ring_renders_fuegoized_value_not_raw_scene_center) {
 // across repeated runs -- the default patch's modulator routing is fixed,
 // not randomized): the card frame would be `{bounds.x+1, bounds.y+1,
 // bounds.width-2, bounds.height-2}` off a `bounds` inset from the node
-// extent by a flat 4px on each side (EncoderDraw.hpp:658-664, 690-694) --
+// extent by a flat 4px on each side (EncoderDraw.hpp:658-664, 691-698) --
 // 126.33x78.33, i.e. 92.7%/88.7% of the cell's own extent. A badge side
 // length is `radius * badgeLengthFraction`, `radius = min(bounds.width,
 // bounds.height) * 0.43 * 0.72`, `badgeLengthFraction =

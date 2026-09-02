@@ -106,6 +106,16 @@ MARBLES_CLOCK_BIN := $(BUILD_DIR)/froggers_marbles_clock_tests
 SURFACE_SOURCES := $(APP_DIR)/FroggersSurfaceTests.cpp
 SURFACE_BIN := $(BUILD_DIR)/froggers_surface_tests
 
+# --- MIDI catalog tests -----------------------------------------------
+# Drives FroggersApp through synth_rig::SynthRig, same convention as
+# SURFACE_BIN above -- pushing MessageIn::AppAction/ParamPush on
+# Engine::MidiBus() and letting the rig's own per-block message-thread tick
+# carry the dispatch to FroggersUiSurface::HandleAction, the same route a
+# real controller uses; the catalog's own device defaults are checked
+# in-process against the library's per-kind validator.
+MIDI_CATALOG_SOURCES := $(APP_DIR)/FroggersMidiCatalogTests.cpp
+MIDI_CATALOG_BIN := $(BUILD_DIR)/froggers_midi_catalog_tests
+
 # --- mechanically enforce no-JUCE-in-app-core ----------------------
 # check_no_juce.cpp includes only Froggers.hpp, compiled with JUCE's module
 # directory ON the include path (so "we never pointed at JUCE" can't
@@ -124,7 +134,7 @@ DSP_HEADERS := $(wildcard $(APP_DIR)/dsp/*.hpp)
 DSP_TEST_SOURCES := $(APP_DIR)/FroggersDspParityTests.cpp
 DSP_TEST_BIN := $(BUILD_DIR)/froggers_dsp_parity_tests
 
-.PHONY: all clean check-no-juce check-no-frozen-deps test force
+.PHONY: all clean check-no-juce check-no-frozen-deps check-catalog-covers-screen-actions test force
 
 all: check-no-frozen-deps $(APP)
 
@@ -221,7 +231,24 @@ $(DSP_TEST_BIN): $(DSP_TEST_SOURCES) $(DSP_HEADERS) | $(BUILD_DIR)
 $(SURFACE_BIN): $(SURFACE_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(APP_DIR)/FroggersParameters.hpp $(APP_DIR)/FroggersModulation.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)
 	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(SURFACE_SOURCES) $(SHEAF_LIB) -o $@
 
-test: check-no-juce check-no-frozen-deps check-microphone-usage $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN)
+# --- MIDI catalog target -------------------------------------------------------
+$(MIDI_CATALOG_BIN): $(MIDI_CATALOG_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(APP_DIR)/FroggersMidiCatalog.hpp $(APP_DIR)/FroggersParameters.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)
+	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(MIDI_CATALOG_SOURCES) $(SHEAF_LIB) -o $@
+
+# --- catalog-covers-every-screen-action check -----------------------------
+# Every FroggersActions constant (FroggersUiSurface.hpp) must be both
+# offered by the MIDI catalog and routed by HandleAction, except the five
+# that are not MIDI-mappable actions:
+#   kSceneBlend      -- offered as the library's own analog Scene Blend kind.
+#   kEncoderPress    -- the catalog's own encoderPressAction, not a listed action.
+#   kEncoderDrag     -- the screen's mouse route into the library's ParamIncDec.
+#   kInputSelect     -- the plugin host's input picker, not offered.
+#   kViewportNarrow  -- a browser shell flag, not a control.
+check-catalog-covers-screen-actions:
+	@bash $(APP_DIR)/check_catalog_covers_screen_actions.sh "$(APP_DIR)" \
+	    kSceneBlend kEncoderPress kEncoderDrag kInputSelect kViewportNarrow
+
+test: check-no-juce check-no-frozen-deps check-microphone-usage check-catalog-covers-screen-actions $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN) $(MIDI_CATALOG_BIN)
 	$(TEST_BIN)
 	$(MONO_VALIDATION_BIN)
 	$(DSP_TEST_BIN)
@@ -232,6 +259,7 @@ test: check-no-juce check-no-frozen-deps check-microphone-usage $(TEST_BIN) $(MO
 	$(SCOPE_ADVANCE_INDEX_BIN)
 	$(MARBLES_CLOCK_BIN)
 	$(SURFACE_BIN)
+	$(MIDI_CATALOG_BIN)
 
 clean:
 	rm -rf $(BUILD_DIR)

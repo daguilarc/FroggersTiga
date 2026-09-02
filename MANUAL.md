@@ -180,9 +180,7 @@ closes, so an occasional densely modulated parameter still happens.
 An **Audio I/O** page (reached from the app's sidebar) offers **Output device** and **Input device**
 selectors listing the machine's own audio devices, plus a **Retry Input** button if capture fails. It is
 named Audio I/O rather than Audio so it is not read as the Audio parameter bank. A
-**Controllers** page maps an external MIDI controller's messages to this app's own controls: each mapping
-row targets a MIDI channel (0–15) and CC number (0–127), and can target an encoder, an analog/gesture
-input, or a system action. A **Sync** page lets the transport slave to incoming MIDI clock (**Receive
+**Controllers** page maps an external MIDI controller to this app's own controls; see MIDI controllers, below. A **Sync** page lets the transport slave to incoming MIDI clock (**Receive
 clock**, **Receive transport** toggles, a **PPQN** field 1–960); while slaved, the BPM control (Global
 controls, above) becomes a read-only status display instead of an editable slider.
 
@@ -214,6 +212,50 @@ The transport runs on its own internal clock, the same as the standalone (Play, 
 editable BPM slider). Audio input requires the browser's own microphone permission, granted through a
 **Retry Input** action; nothing is captured, and External Audio stays silent, until that permission is
 granted.
+
+### MIDI controllers
+
+**Overview.** The Controllers page exists in the standalone and browser builds (the plugin takes MIDI
+through host automation, as the Plugin subsection says). Each controller row has a **Layout** selector
+offering **MIDI Fighter Twister**, **Akai APC40 mkII (Generic)**, **Akai APC40 mkII (Ableton)** and
+**Custom**. Choosing a layout installs that device's complete mapping on the row. Editing any mapping
+row afterwards switches the selector to Custom; choosing Custom keeps the current mappings and lets
+them be edited row by row. A newly connected Twister or APC40 is also offered through the page's
+configure flow.
+
+**What can be mapped.** Every front-screen control. Encoder turns (relative or absolute), encoder pushes
+(which drill into a knob's modulation exactly like an on-screen press), Play, Stop, Freeze, Record,
+Randomize All, Randomize Page, Reset All, Reset Page, Bank 1 to 6, Bank Previous, Bank Next, Scene 1,
+Scene 2, the scene blend (an analog control), BPM (an analog control, 30 to 300), and **Hold Drill**.
+Buttons can be addressed by CC or by note number; analog controls by CC.
+
+**Hold Drill.** While a button mapped to Hold Drill is held, turning a knob drills into that knob's
+modulation instead of changing its value, once per knob per hold; releasing the button makes every knob
+a plain knob again. On an absolute knob, the first turn after release jumps to the knob's position.
+
+**MIDI Fighter Twister.** The layout maps the 16 encoders (turn and push, with LED ring feedback) and
+the six side buttons: left side top to bottom Bank Previous, Bank Next, Randomize Page; right side top
+to bottom Randomize All, Reset Page, Reset All. Utility settings the device needs, set in the Midi
+Fighter Utility: every encoder's sensitivity/mode to "Enc 3FH/41H" (relative), all six side buttons to
+"CC Hold", and "Bank Side Buttons" unchecked, so the side buttons keep sending CC 8 to 13 on channel 4
+(channel 3 counted from 0) whatever bank the Twister shows.
+
+**Akai APC40 mkII (Generic).** The unit powers up in this mode; nothing is sent to it. Top-row track
+knobs 1 to 8 are encoders 1 to 8, device knobs 1 to 8 are encoders 9 to 16, SHIFT is Hold Drill,
+PLAY/STOP/RECORD are Play/Stop/Record, SCENE LAUNCH 1 and 2 are Scene 1 and 2, the LEFT and RIGHT
+arrows are Bank Previous and Bank Next, DEVICE ON/OFF is Randomize Page, DEVICE LOCK is Randomize All,
+CLIP/DEVICE VIEW is Reset Page, DETAIL VIEW is Reset All, STOP ALL CLIPS is Freeze, the CLIP STOP
+buttons under tracks 1 to 6 are Bank 1 to 6, the crossfader is the scene blend and the master fader is
+BPM. Keep Track 1 selected: the device knobs follow the selected track, and after pressing another Track
+Select button they stop reaching encoders 9 to 16 until Track 1 is pressed again. The unit lights its own
+buttons in this mode.
+
+**Akai APC40 mkII (Ableton).** The same mapping, and the app switches the unit into Ableton mode when
+its output connects, so the device knobs stay on encoders 9 to 16 whatever track is selected. In this
+mode every button light is controlled by the host and this app sends none, so the buttons stay dark.
+
+**Saving.** The mappings are saved with each patch and restored when the patch loads, and they are also
+kept in the runtime configuration that loads at launch; whichever loads last is what is active.
 
 ---
 

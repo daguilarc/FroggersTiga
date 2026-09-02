@@ -329,16 +329,19 @@ TEST_CASE(shared_crunchy_resolves_and_moves_identically_from_any_bank) {
     // Check (d): "drill-in from any bank targets the same parameter" -- press
     // Crunchy's cell from two different banks; each bank's OWN
     // Bank::selected_ ends up pointing at the identical shared Crunchy
-    // Parameter*.
+    // Parameter*. A press on the UI bus (rig.Press) is this app's drill-in
+    // action and never reaches the library's Bank::HandlePress selection, so
+    // this model-level check presses the library's parameter manager
+    // directly instead.
     rig.SelectBank(0, static_cast<std::size_t>(synth_froggers::FroggersBankId::Audio));
     rig.RunBlocks(4);
-    rig.Press(0, kCrunchyPosition);
+    rig.Engine().Manager().HandlePress(0, kCrunchyPosition);
     rig.RunBlocks(16);
     REQUIRE_TRUE(model.BankAt(synth_froggers::FroggersBankId::Audio).SelectedParameter() == &model.Crunchy());
 
     rig.SelectBank(0, static_cast<std::size_t>(synth_froggers::FroggersBankId::Delay));
     rig.RunBlocks(4);
-    rig.Press(0, kCrunchyPosition);
+    rig.Engine().Manager().HandlePress(0, kCrunchyPosition);
     rig.RunBlocks(16);
     REQUIRE_TRUE(model.BankAt(synth_froggers::FroggersBankId::Delay).SelectedParameter() == &model.Crunchy());
 

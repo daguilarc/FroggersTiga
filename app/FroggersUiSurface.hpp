@@ -261,6 +261,10 @@ inline constexpr const char* kViewportNarrow = "froggers.viewport.narrow";
 
 }  // namespace FroggersActions
 
+// The BPM slider's range, shared with the MIDI catalog.
+inline constexpr float kFroggersBpmMin = 30.0f;
+inline constexpr float kFroggersBpmMax = 300.0f;
+
 // The surface's own extent and design tokens. Everything that used to
 // compute a pixel `Bounds` for the scope/grid regions by hand
 // (`ContentArea`/`RequiredHeight`/`ScopeArea`/`GridArea`/
@@ -1487,8 +1491,8 @@ private:
         // theirs. Upstream ask 14 (caption placement) would let both of these
         // collapse into captions; until it lands, both stay hand-rolled --
         // and they stay hand-rolled TOGETHER, which is the point.
-        builder.Slider(FroggersNodeIds::kBpm, kLabel, static_cast<float>(tempoBpm), 30.0f, 300.0f, 1.0f,
-                       synth::ui::Action::Named(FroggersActions::kBpm), sliderStyle);
+        builder.Slider(FroggersNodeIds::kBpm, kLabel, static_cast<float>(tempoBpm), kFroggersBpmMin,
+                       kFroggersBpmMax, 1.0f, synth::ui::Action::Named(FroggersActions::kBpm), sliderStyle);
         builder.Label(FroggersNodeIds::kBpmLabel, kLabel, synth::ui::ControlStyle{});
     }
 
@@ -1824,7 +1828,7 @@ private:
         // own: the ring's radius is `baseRadius = min(bounds.width,
         // bounds.height) * 0.43f` (EncoderDraw.hpp:669) while the frame is
         // `bounds` inset by a fixed 1px with a 6px corner radius
-        // (EncoderDraw.hpp:690-694) -- two different linear functions of the
+        // (EncoderDraw.hpp:691-698) -- two different linear functions of the
         // SAME cell bounds this app supplies, so at this app's actual cell
         // size they collide (operator-measured: ring outer edge 38.057px
         // from centre vs. frame inner edge 36.257px, a 1.80px overlap). The
