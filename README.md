@@ -105,6 +105,6 @@ Audio, Envelope, Filter, Drive, Delay, Reverb — parameter by parameter) and [`
 (the same six banks, one line per parameter).
 
 MIDI controllers: the standalone and browser builds have a Controllers page where every front-screen
-control can be mapped, with ready-made layouts for the MIDI Fighter Twister and the Akai APC40 mkII.
-The manual's [MIDI controllers](MANUAL.md#midi-controllers) section describes the page, the layouts and
+control can be mapped, with ready-made presets for the MIDI Fighter Twister and the Akai APC40 mkII.
+The manual's [MIDI controllers](MANUAL.md#midi-controllers) section describes the page, the presets and
 the device settings each controller needs.
