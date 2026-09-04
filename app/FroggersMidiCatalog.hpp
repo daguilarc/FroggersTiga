@@ -4,11 +4,12 @@
 // actions a controller can dispatch (transport, randomize/reset, bank and
 // scene selection, BPM), the library kinds the Controllers page keeps
 // around for this app (parameter inc/dec, absolute set, push, scene blend,
-// hold drill), and the three device defaults offered from the Controllers
+// hold drill), and the six device defaults offered from the Controllers
 // page's Layout dropdown -- MIDI Fighter Twister, Akai APC40 mkII
-// (Generic), and Akai APC40 mkII (Ableton). Choosing one of the three
-// installs its mappings onto the selected slot; Custom leaves the slot's
-// mappings untouched and editable by hand.
+// (Generic), Akai APC40 mkII (Ableton), Launchpad X, Launchpad Pro MK3, and
+// Launchpad Mini MK3. Choosing one of the six installs its mappings onto
+// the selected slot; Custom leaves the slot's mappings untouched and
+// editable by hand.
 //
 // Twister: the manual's Utility settings must match this default --
 // every encoder set to relative (Enc 3FH/41H, not the factory absolute
@@ -164,6 +165,91 @@ inline synth::MidiAppDeviceDefault Apc40AbletonDeviceDefault() {
     return device;
 }
 
+// A momentary control that fires one app action on press and nothing on
+// release, addressed by Launchpad grid position rather than a MIDI control
+// address -- the pad-addressed sibling of AppActionButton above.
+inline synth::MidiControllerSystemMessageAssociation LaunchpadPadButton(synth::LaunchpadController controller,
+                                                                         int x, int y, std::string action,
+                                                                         std::string value) {
+    synth::MidiControllerSystemMessageAssociation association;
+    association.launchpadPosition = synth::LaunchpadGridPosition{.controller = controller, .x = x, .y = y};
+    association.press = synth::MessageIn::AppAction(0, 0, 0.0f);
+    association.release = std::nullopt;
+    association.outputFeedback = false;
+    association.appAction = std::move(action);
+    association.appActionValue = std::move(value);
+    return association;
+}
+
+// The transport/randomize/reset/scene row above the pad grid, plus the bank
+// column beside it -- identical across all three Launchpad models, so this
+// one table is shared by every LaunchpadDeviceDefault() call below. The 8x8
+// pad grid itself (x 0..7, y 0..7) is left unmapped.
+inline std::vector<synth::MidiControllerSystemMessageAssociation> LaunchpadPadMap(
+    synth::LaunchpadController controller) {
+    std::vector<synth::MidiControllerSystemMessageAssociation> associations = {
+        LaunchpadPadButton(controller, 0, -1, FroggersActions::kPlay, ""),
+        LaunchpadPadButton(controller, 1, -1, FroggersActions::kStop, ""),
+        LaunchpadPadButton(controller, 2, -1, FroggersActions::kFreeze, ""),
+        LaunchpadPadButton(controller, 3, -1, FroggersActions::kRecord, ""),
+        LaunchpadPadButton(controller, 4, -1, FroggersActions::kSceneSelect, "0"),
+        LaunchpadPadButton(controller, 5, -1, FroggersActions::kSceneSelect, "1"),
+        LaunchpadPadButton(controller, 6, -1, FroggersActions::kRandomizePage, ""),
+        LaunchpadPadButton(controller, 7, -1, FroggersActions::kResetPage, ""),
+    };
+    for (std::size_t ix = 0; ix < kFroggersBankCount; ++ix) {
+        associations.push_back(LaunchpadPadButton(controller, 8, static_cast<int>(ix), FroggersActions::kBankSelect,
+                                                    std::to_string(ix)));
+    }
+    return associations;
+}
+
+// The three Launchpad presets below differ only in the model, the
+// descriptor id, the display name, the port aliases, and the
+// programmer-mode SysEx -- everything else (kind, pad map) is shared, so
+// one helper builds every descriptor.
+inline synth::MidiAppDeviceDefault LaunchpadDeviceDefault(synth::LaunchpadController controller, std::string id,
+                                                           std::string displayName, std::vector<std::string> aliases,
+                                                           std::vector<std::uint8_t> programmerModeSysEx) {
+    synth::MidiAppDeviceDefault device;
+    device.id = std::move(id);
+    device.displayName = std::move(displayName);
+    device.kind = synth::MidiProfileKind::Launchpad;
+    device.inputAliases = aliases;
+    device.outputAliases = std::move(aliases);
+
+    synth::MidiControllerProfileConfig config;
+    config.systemMessages = LaunchpadPadMap(controller);
+    config.openSysEx = {std::move(programmerModeSysEx)};
+    device.config = std::move(config);
+    return device;
+}
+
+// Port aliases per Novation's manuals: the MIDI interface, not the DAW
+// interface (the manuals state Programmer Mode uses the MIDI interface). No
+// unit was available to confirm the exact macOS port string, so each model
+// lists the manual's own name, the combined "<product> <MIDI interface
+// name>" form some hosts report, and the bare product name.
+inline synth::MidiAppDeviceDefault LaunchpadXDeviceDefault() {
+    return LaunchpadDeviceDefault(synth::LaunchpadController::LaunchpadX, "froggers.launchpad.x", "Launchpad X",
+                                   {"LPX MIDI", "Launchpad X LPX MIDI", "Launchpad X"},
+                                   {0xF0, 0x00, 0x20, 0x29, 0x02, 0x0C, 0x0E, 0x01, 0xF7});
+}
+
+inline synth::MidiAppDeviceDefault LaunchpadProMk3DeviceDefault() {
+    return LaunchpadDeviceDefault(
+        synth::LaunchpadController::LaunchpadProMk3, "froggers.launchpad.promk3", "Launchpad Pro MK3",
+        {"LPProMK3 MIDI", "Launchpad Pro MK3 LPProMK3 MIDI", "Launchpad Pro MK3"},
+        {0xF0, 0x00, 0x20, 0x29, 0x02, 0x0E, 0x00, 0x11, 0x00, 0x00, 0xF7});
+}
+
+inline synth::MidiAppDeviceDefault LaunchpadMiniMk3DeviceDefault() {
+    return LaunchpadDeviceDefault(
+        synth::LaunchpadController::LaunchpadMiniMk3, "froggers.launchpad.minimk3", "Launchpad Mini MK3",
+        {"LPMiniMK3 MIDI", "Launchpad Mini MK3 LPMiniMK3 MIDI", "Launchpad Mini MK3"},
+        {0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x0E, 0x01, 0xF7});
+}
+
 }  // namespace
 
 inline synth::MidiAppCatalog FroggersMidiCatalog() {
@@ -202,6 +288,9 @@ inline synth::MidiAppCatalog FroggersMidiCatalog() {
         TwisterDeviceDefault(),
         Apc40GenericDeviceDefault(),
         Apc40AbletonDeviceDefault(),
+        LaunchpadXDeviceDefault(),
+        LaunchpadProMk3DeviceDefault(),
+        LaunchpadMiniMk3DeviceDefault(),
     };
     return catalog;
 }

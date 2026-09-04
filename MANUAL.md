@@ -5,13 +5,13 @@ Operator manual for **Frogg3rs**, the Sheaf app — the current version of this 
 The same instrument core runs in four hosts:
 
 - **Standalone** — a self-contained desktop app, with its own audio-device and
-  MIDI-controller configuration (see Audio and MIDI configuration, below).
+  MIDI-controller configuration (see MIDI controllers, below).
 - **Browser build** — the same core running in a browser page.
 - **VST3** and **AU plugin** — the same core loaded inside a DAW, where the host owns audio
   devices, transport and tempo.
 
 Every parameter and every bank below is identical across all four; what differs between them is covered
-in Audio and MIDI configuration.
+in Audio configuration and MIDI controllers.
 
 A different instrument, the frozen **Daisy Field hardware firmware**, shares this repository and is
 documented separately, since its parameter model does not map onto this one: [`DAISY_MANUAL.md`](DAISY_MANUAL.md).
@@ -173,7 +173,7 @@ closes, so an occasional densely modulated parameter still happens.
 
 ---
 
-## Audio and MIDI configuration
+## Audio configuration
 
 ### Standalone
 
@@ -213,65 +213,119 @@ editable BPM slider). Audio input requires the browser's own microphone permissi
 **Retry Input** action; nothing is captured, and External Audio stays silent, until that permission is
 granted.
 
-### MIDI controllers
+---
 
-**Overview.** The Controllers page exists in the standalone and browser builds (the plugin takes MIDI
-through host automation, as the Plugin subsection says). Each controller row has a **Preset** selector
-offering **MIDI Fighter Twister**, **Akai APC40 mkII (Generic)**, **Akai APC40 mkII (Ableton)** and a
-**Custom** entry for each device kind. Choosing a preset installs that device's complete mapping on the
-row. Editing any mapping row afterwards switches the selector to Custom; choosing Custom keeps the
-current mappings and lets them be edited row by row. A row configured before presets existed reads
-Custom until its preset is chosen. A newly connected Twister or APC40 is also offered through the
-page's configure flow.
+## MIDI controllers
 
-**Reading a controller row.** Each row is two lines. The first line shows the controller's name, its
-device (MF Twister, Generic, Launchpad), the **Preset** selector, and for a Launchpad a **Variant**
-selector. The second line holds the **MIDI in** and **MIDI out** port selectors, each preceded by its
-own status dot, then **Delete**, and **Blacklist** on rows whose preset the current build still
-recognises. A legend above the first row names the dot colours: online, offline, not set.
+### Overview
 
-**Renaming.** Open a row's editor with the disclosure arrow at its left. The editor's first line is a
-**Name** field and a **Rename** button. Renaming leaves the row open with its sections as they were.
-A blacklisted row has no editor: remove it from the blacklist before renaming it.
+The Controllers page exists in the standalone and browser builds (the plugin takes MIDI through host
+automation, as the Plugin subsection says). The add row at the bottom offers a **Preset** selector —
+**MIDI Fighter Twister**, **Akai APC40 mkII (Generic)**, **Akai APC40 mkII (Ableton)**,
+**Launchpad X**, **Launchpad Pro MK3**, **Launchpad Mini MK3**, or a **Custom** entry for each
+device kind — and an **Add** button. Choosing a named preset and pressing Add installs a new row
+carrying that preset's complete mapping; choosing Custom installs an empty, unbound row of that
+device kind. A row keeps the identity of the preset that created it for as long as the row exists,
+even after its mappings are edited by hand; if a row's mappings later diverge from what its preset
+installs, a **Restore** button appears on the row, and pressing it reinstalls the preset's mappings
+without renaming the row, changing its ports, or releasing it. A newly connected Twister, APC40, or
+Launchpad is also offered through the page's configure flow.
 
-**Adding a controller.** The add row at the bottom is a **Preset** selector and an **Add** button.
-Pressing Add without touching the selector adds the preset the selector displays. The new row takes
-its preset's name, with a number appended when that name is taken, and its ports bind to a connected
-device matching the preset. With no such device its ports read "(none)".
+### Reading a controller row
 
-**What can be mapped.** Every front-screen control. Encoder turns (relative or absolute), encoder pushes
-(which drill into a knob's modulation exactly like an on-screen press), Play, Stop, Freeze, Record,
-Randomize All, Randomize Page, Reset All, Reset Page, Bank 1 to 6, Bank Previous, Bank Next, Scene 1,
-Scene 2, the scene blend (an analog control), BPM (an analog control, 30 to 300), and **Hold Drill**.
-Buttons can be addressed by CC or by note number; analog controls by CC.
+Each row is two lines. The first line shows the disclosure arrow, the controller's name, and its
+device (MF Twister, Generic, Launchpad). The second line holds a status dot before each of the
+**MIDI in** and **MIDI out** port selectors, then **Delete**; **Restore**, on a row created from a
+preset whose mappings no longer match it; and **Release**, on a row created from a preset the
+current build still recognises, once both ports are bound. A legend above the first row names the
+dot colours: online, offline, not set.
 
-**Hold Drill.** While a button mapped to Hold Drill is held, turning a knob drills into that knob's
-modulation instead of changing its value, once per knob per hold; releasing the button makes every knob
-a plain knob again. On an absolute knob, the first turn after release jumps to the knob's position.
+A released row shows its name, device, and a **Released** badge on the first line, and its stored
+MIDI in/out ports, **Configure** (when its preset still resolves), and **Reclaim** on the second
+line. It has no disclosure arrow and no live editor.
 
-**MIDI Fighter Twister.** The preset maps the 16 encoders (turn and push, with LED ring feedback) and
-the six side buttons: left side top to bottom Bank Previous, Bank Next, Randomize Page; right side top
-to bottom Randomize All, Reset Page, Reset All. Utility settings the device needs, set in the Midi
-Fighter Utility: every encoder's sensitivity/mode to "Enc 3FH/41H" (relative), all six side buttons to
-"CC Hold", and "Bank Side Buttons" unchecked, so the side buttons keep sending CC 8 to 13 on channel 4
-(channel 3 counted from 0) whatever bank the Twister shows.
+### Renaming
 
-**Akai APC40 mkII (Generic).** The unit powers up in this mode; nothing is sent to it. Top-row track
-knobs 1 to 8 are encoders 1 to 8, device knobs 1 to 8 are encoders 9 to 16, SHIFT is Hold Drill,
-PLAY/STOP/RECORD are Play/Stop/Record, SCENE LAUNCH 1 and 2 are Scene 1 and 2, the LEFT and RIGHT
-arrows are Bank Previous and Bank Next, DEVICE ON/OFF is Randomize Page, DEVICE LOCK is Randomize All,
-CLIP/DEVICE VIEW is Reset Page, DETAIL VIEW is Reset All, STOP ALL CLIPS is Freeze, the CLIP STOP
-buttons under tracks 1 to 6 are Bank 1 to 6, the crossfader is the scene blend and the master fader is
-BPM. Keep Track 1 selected: the device knobs follow the selected track, and after pressing another Track
-Select button they stop reaching encoders 9 to 16 until Track 1 is pressed again. The unit lights its own
-buttons in this mode.
+Open a row's editor with the disclosure arrow at its left. The editor's first line is a **Name**
+field and a **Rename** button. Renaming leaves the row open with its sections as they were. A
+released row has no editor: reclaim it before renaming it.
 
-**Akai APC40 mkII (Ableton).** The same mapping, and the app switches the unit into Ableton mode when
-its output connects, so the device knobs stay on encoders 9 to 16 whatever track is selected. In this
-mode every button light is controlled by the host and this app sends none, so the buttons stay dark.
+### Adding a controller
 
-**Saving.** The mappings are saved with each patch and restored when the patch loads, and they are also
-kept in the runtime configuration that loads at launch; whichever loads last is what is active.
+The add row at the bottom is a **Preset** selector and an **Add** button. Pressing Add without
+touching the selector adds the preset the selector displays. The new row takes its preset's name,
+with a number appended when that name is taken, and its ports bind to a connected device matching
+the preset. With no such device its ports read "(none)".
+
+### What can be mapped
+
+Every front-screen control. Encoder turns (relative or absolute), encoder pushes (which drill into a
+knob's modulation exactly like an on-screen press), Play, Stop, Freeze, Record, Randomize All,
+Randomize Page, Reset All, Reset Page, Bank 1 to 6, Bank Previous, Bank Next, Scene 1, Scene 2, the
+scene blend (an analog control), BPM (an analog control, 30 to 300), and **Hold Drill**. Buttons can
+be addressed by CC or by note number; analog controls by CC.
+
+### Hold Drill
+
+While a button mapped to Hold Drill is held, turning a knob drills into that knob's modulation
+instead of changing its value, once per knob per hold; releasing the button makes every knob a plain
+knob again. On an absolute knob, the first turn after release jumps to the knob's position.
+
+### MIDI Fighter Twister
+
+The preset maps the 16 encoders (turn and push, with LED ring feedback) and the six side buttons:
+left side top to bottom Bank Previous, Bank Next, Randomize Page; right side top to bottom Randomize
+All, Reset Page, Reset All. Utility settings the device needs, set in the Midi Fighter Utility:
+every encoder's sensitivity/mode to "Enc 3FH/41H" (relative), all six side buttons to "CC Hold", and
+"Bank Side Buttons" unchecked, so the side buttons keep sending CC 8 to 13 on channel 4 (channel 3
+counted from 0) whatever bank the Twister shows.
+
+### Akai APC40 mkII (Generic)
+
+The unit powers up in this mode; nothing is sent to it. Top-row track knobs 1 to 8 are encoders 1 to
+8, device knobs 1 to 8 are encoders 9 to 16, SHIFT is Hold Drill, PLAY/STOP/RECORD are
+Play/Stop/Record, SCENE LAUNCH 1 and 2 are Scene 1 and 2, the LEFT and RIGHT arrows are Bank
+Previous and Bank Next, DEVICE ON/OFF is Randomize Page, DEVICE LOCK is Randomize All, CLIP/DEVICE
+VIEW is Reset Page, DETAIL VIEW is Reset All, STOP ALL CLIPS is Freeze, the CLIP STOP buttons under
+tracks 1 to 6 are Bank 1 to 6, the crossfader is the scene blend and the master fader is BPM. Keep
+Track 1 selected: the device knobs follow the selected track, and after pressing another Track
+Select button they stop reaching encoders 9 to 16 until Track 1 is pressed again. The unit lights
+its own buttons in this mode.
+
+### Akai APC40 mkII (Ableton)
+
+The same mapping, and the app switches the unit into Ableton mode when its output connects, so the
+device knobs stay on encoders 9 to 16 whatever track is selected. In this mode every button light is
+controlled by the host and this app sends none, so the buttons stay dark.
+
+### Launchpad X
+
+The preset maps the row of round buttons above the 8x8 pad grid and the column of round buttons to
+its right; the 8x8 grid itself is left unmapped. Top row, left to right: Play, Stop, Freeze, Record,
+Scene 1, Scene 2, Randomize Page, Reset Page. Right column, top six buttons: Bank 1 through Bank 6.
+The app switches the unit into programmer mode when its output connects; in that mode every pad's
+light is controlled by the host and this app sends none, so the pads stay dark.
+
+The ports this preset matches are taken from Novation's manuals, not confirmed on a unit — if a
+connected Launchpad X's MIDI in/out read "(none)" after adding it, bind its ports by hand from the
+port selectors.
+
+### Launchpad Pro MK3
+
+The same pad map as Launchpad X, on the Pro MK3's own row of round buttons above the grid and column
+beside it. The app switches the unit into programmer mode the same way when its output connects, and
+its pads stay dark for the same reason. Its ports are matched the same unconfirmed way as Launchpad
+X's; bind them by hand if they read "(none)".
+
+### Launchpad Mini MK3
+
+The same pad map and programmer-mode switch as Launchpad X. Its ports are matched the same
+unconfirmed way as Launchpad X's; bind them by hand if they read "(none)".
+
+### Saving
+
+The mappings are saved with each patch and restored when the patch loads, and they are also kept in
+the runtime configuration that loads at launch; whichever loads last is what is active.
 
 ---
 

@@ -89,6 +89,31 @@ void RequireForAction(const synth::MidiAppAction& entry, bool condition, const s
     }
 }
 
+// Looks up one device default by id, for the Launchpad-specific tests below
+// that check one named preset at a time rather than walking the whole
+// catalog by position. Throws (failing the calling test) when the id is
+// missing, so a typo in a preset's id shows up at the lookup site.
+const synth::MidiAppDeviceDefault& RequireDeviceDefault(const synth::MidiAppCatalog& catalog,
+                                                          const std::string& id) {
+    for (const synth::MidiAppDeviceDefault& device : catalog.deviceDefaults) {
+        if (device.id == id) {
+            return device;
+        }
+    }
+    throw std::runtime_error("device default not found: " + id);
+}
+
+struct LaunchpadPresetId {
+    const char* id;
+    synth::LaunchpadController controller;
+};
+
+constexpr LaunchpadPresetId kLaunchpadPresetIds[] = {
+    {"froggers.launchpad.x", synth::LaunchpadController::LaunchpadX},
+    {"froggers.launchpad.promk3", synth::LaunchpadController::LaunchpadProMk3},
+    {"froggers.launchpad.minimk3", synth::LaunchpadController::LaunchpadMiniMk3},
+};
+
 synth::RuntimeDataPaths UseScratchRuntimeDataPaths(const char* testName) {
     const std::filesystem::path dataRoot =
         std::filesystem::temp_directory_path() / "froggers-midi-catalog-tests" / testName;
@@ -371,7 +396,7 @@ TEST_CASE(catalog_names_every_front_screen_action) {
 // ---------------------------------------------------------------------------
 TEST_CASE(device_defaults_are_valid_and_address_exactly_the_documented_controls) {
     const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
-    REQUIRE_TRUE(catalog.deviceDefaults.size() == 3);
+    REQUIRE_TRUE(catalog.deviceDefaults.size() == 6);
 
     // Every default must validate against the same per-kind validator the
     // runtime uses (MidiInstrumentConfig::AddController's own check).
@@ -493,6 +518,100 @@ TEST_CASE(device_defaults_are_valid_and_address_exactly_the_documented_controls)
     const std::vector<std::vector<std::uint8_t>> expectedSysEx = {
         {0xF0, 0x47, 0x7F, 0x29, 0x60, 0x00, 0x04, 0x41, 0x09, 0x07, 0x01, 0xF7}};
     REQUIRE_TRUE(ableton.config.openSysEx == expectedSysEx);
+}
+
+// ---------------------------------------------------------------------------
+// launchpad_defaults_open_sysex_is_programmer_mode
+// ---------------------------------------------------------------------------
+TEST_CASE(launchpad_defaults_open_sysex_is_programmer_mode) {
+    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
+
+    const std::vector<std::vector<std::uint8_t>> expectedX = {
+        {0xF0, 0x00, 0x20, 0x29, 0x02, 0x0C, 0x0E, 0x01, 0xF7}};
+    REQUIRE_TRUE(RequireDeviceDefault(catalog, "froggers.launchpad.x").config.openSysEx == expectedX);
+
+    const std::vector<std::vector<std::uint8_t>> expectedProMk3 = {
+        {0xF0, 0x00, 0x20, 0x29, 0x02, 0x0E, 0x00, 0x11, 0x00, 0x00, 0xF7}};
+    REQUIRE_TRUE(RequireDeviceDefault(catalog, "froggers.launchpad.promk3").config.openSysEx == expectedProMk3);
+
+    const std::vector<std::vector<std::uint8_t>> expectedMiniMk3 = {
+        {0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x0E, 0x01, 0xF7}};
+    REQUIRE_TRUE(RequireDeviceDefault(catalog, "froggers.launchpad.minimk3").config.openSysEx == expectedMiniMk3);
+}
+
+// ---------------------------------------------------------------------------
+// launchpad_defaults_positions_carry_their_own_controller
+// ---------------------------------------------------------------------------
+TEST_CASE(launchpad_defaults_positions_carry_their_own_controller) {
+    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
+
+    for (const LaunchpadPresetId& preset : kLaunchpadPresetIds) {
+        const synth::MidiAppDeviceDefault& device = RequireDeviceDefault(catalog, preset.id);
+        REQUIRE_TRUE(!device.config.systemMessages.empty());
+        for (const synth::MidiControllerSystemMessageAssociation& assoc : device.config.systemMessages) {
+            REQUIRE_TRUE(assoc.launchpadPosition.has_value());
+            REQUIRE_TRUE(assoc.launchpadPosition->controller == preset.controller);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// launchpad_defaults_pad_actions_resolve_against_the_catalog
+// ---------------------------------------------------------------------------
+TEST_CASE(launchpad_defaults_pad_actions_resolve_against_the_catalog) {
+    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
+
+    for (const LaunchpadPresetId& preset : kLaunchpadPresetIds) {
+        const synth::MidiAppDeviceDefault& device = RequireDeviceDefault(catalog, preset.id);
+        for (const synth::MidiControllerSystemMessageAssociation& assoc : device.config.systemMessages) {
+            const std::optional<std::size_t> ix =
+                synth::FindMidiAppAction(catalog, assoc.appAction, assoc.appActionValue);
+            if (!ix.has_value()) {
+                std::ostringstream oss;
+                oss << preset.id << ": pad action does not resolve against the catalog: \"" << assoc.appAction
+                    << "\" \"" << assoc.appActionValue << "\"";
+                throw std::runtime_error(oss.str());
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// launchpad_defaults_bank_column_covers_every_bank
+// ---------------------------------------------------------------------------
+TEST_CASE(launchpad_defaults_bank_column_covers_every_bank) {
+    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
+
+    for (const LaunchpadPresetId& preset : kLaunchpadPresetIds) {
+        const synth::MidiAppDeviceDefault& device = RequireDeviceDefault(catalog, preset.id);
+        std::size_t bankPadCount = 0;
+        for (const synth::MidiControllerSystemMessageAssociation& assoc : device.config.systemMessages) {
+            if (assoc.appAction != synth_froggers::FroggersActions::kBankSelect) {
+                continue;
+            }
+            REQUIRE_TRUE(assoc.launchpadPosition.has_value());
+            REQUIRE_TRUE(assoc.launchpadPosition->x == 8);
+            REQUIRE_TRUE(assoc.launchpadPosition->y == static_cast<int>(bankPadCount));
+            REQUIRE_TRUE(assoc.appActionValue == std::to_string(bankPadCount));
+            ++bankPadCount;
+        }
+        REQUIRE_TRUE(bankPadCount == synth_froggers::kFroggersBankCount);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// launchpad_defaults_are_registered_with_expected_ids_and_kind
+// ---------------------------------------------------------------------------
+TEST_CASE(launchpad_defaults_are_registered_with_expected_ids_and_kind) {
+    const synth::MidiAppCatalog catalog = synth_froggers::FroggersMidiCatalog();
+
+    for (const LaunchpadPresetId& preset : kLaunchpadPresetIds) {
+        const synth::MidiAppDeviceDefault& device = RequireDeviceDefault(catalog, preset.id);
+        REQUIRE_TRUE(device.kind == synth::MidiProfileKind::Launchpad);
+    }
+    REQUIRE_TRUE(RequireDeviceDefault(catalog, "froggers.launchpad.x").displayName == "Launchpad X");
+    REQUIRE_TRUE(RequireDeviceDefault(catalog, "froggers.launchpad.promk3").displayName == "Launchpad Pro MK3");
+    REQUIRE_TRUE(RequireDeviceDefault(catalog, "froggers.launchpad.minimk3").displayName == "Launchpad Mini MK3");
 }
 
 }  // namespace
