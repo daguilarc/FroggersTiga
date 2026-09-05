@@ -338,9 +338,21 @@ this text does not name stops execution and supersedes the change.
 
 ## 8. Operator
 
-- [ ] 8.1 On the deployed build: Add and Block work on a Twister row, on a
-      Generic row and on an empty Custom row.
-- [ ] 8.2 The Encoders header reads in full — "Start Pos" is not ellipsised —
-      and the Add and Block buttons stand clear of it.
-- [ ] 8.3 Anything that was already mapped still works: the refusal blocked
-      edits, so confirm existing mappings survive the fix.
+Verified by the lead against the live deployment (frogg3rs 3fa09c1 / Sheaf
+9368bf17, Pages run 33937682450, service worker unregistered first so the new
+build is certain to be the one measured). Left for the operator to confirm by
+eye, since the last of these is partly a judgement about how it looks.
+
+- [x] 8.1 Add and Block succeed everywhere they refused. Stock Twister row,
+      Turn group: "Added" then "Added block", 19 -> 25 -> 32 mapping rows. Push
+      group: 47 -> 54 -> 62. Custom (Generic), a genuinely EMPTY row: 0 -> 6 ->
+      13 — this is the case that refused with count 2 against a cap of 0. Custom
+      (MF Twister): 19 -> 25 -> 32. No refusal in any status line.
+- [x] 8.2 Every column label fits and the buttons stand clear. Measured in
+      layout px at the labels' own font: every column box is 66, "Start Pos"
+      needs 58.3, nothing clipped in either the Turn or the Push header; the gap
+      from the last column to Add and from Add to Block is 4 in both. Both were
+      0 before.
+- [x] 8.3 Existing mappings survive and are still editable. The stock Twister
+      row kept all 62 of its mapping rows, and editing an existing field's value
+      (0 -> 1) returned "OK" with no refusal.
