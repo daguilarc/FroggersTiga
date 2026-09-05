@@ -32,7 +32,7 @@ jobs:
 
       # emsdk version pinned to match the toolchain build-browser.sh's own
       # header comment records as verified-working for this app
-      # (app/browser/build-browser.sh:24-26, checked 2026-08-18) -- not
+      # (app/browser/build-browser.sh:19-20, checked 2026-08-18) -- not
       # Sheaf's own CI pin (6.0.3, .github/workflows/synth-browser-pages.yml
       # in External/Sheaf), which was never exercised against this app.
       - name: Setup emsdk

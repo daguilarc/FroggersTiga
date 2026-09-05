@@ -116,6 +116,16 @@ SURFACE_BIN := $(BUILD_DIR)/froggers_surface_tests
 MIDI_CATALOG_SOURCES := $(APP_DIR)/FroggersMidiCatalogTests.cpp
 MIDI_CATALOG_BIN := $(BUILD_DIR)/froggers_midi_catalog_tests
 
+# --- Controllers page real-catalog tests ------------------------------
+# Drives synth::MidiConfigViewModel/synth::ControllerWizard directly (no
+# Engine/SynthRig, no JUCE) against synth_froggers::FroggersMidiCatalog()'s
+# six real device defaults, the catalog Sheaf's own Controllers page tests
+# never exercise (they build the wizard registry from an empty
+# synth::MidiAppCatalog{}, which only reaches the library's single Twister
+# descriptor).
+CONTROLLERS_PAGE_SOURCES := $(APP_DIR)/FroggersControllersPageTests.cpp
+CONTROLLERS_PAGE_BIN := $(BUILD_DIR)/froggers_controllers_page_tests
+
 # --- mechanically enforce no-JUCE-in-app-core ----------------------
 # check_no_juce.cpp includes only Froggers.hpp, compiled with JUCE's module
 # directory ON the include path (so "we never pointed at JUCE" can't
@@ -235,6 +245,10 @@ $(SURFACE_BIN): $(SURFACE_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAp
 $(MIDI_CATALOG_BIN): $(MIDI_CATALOG_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(APP_DIR)/FroggersMidiCatalog.hpp $(APP_DIR)/FroggersParameters.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)
 	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(MIDI_CATALOG_SOURCES) $(SHEAF_LIB) -o $@
 
+# --- Controllers page real-catalog target -----------------------------------
+$(CONTROLLERS_PAGE_BIN): $(CONTROLLERS_PAGE_SOURCES) $(APP_DIR)/Froggers.hpp $(APP_DIR)/FroggersAppCore.hpp $(APP_DIR)/FroggersUiSurface.hpp $(APP_DIR)/FroggersMidiCatalog.hpp $(APP_DIR)/FroggersParameters.hpp $(DSP_HEADERS) $(SHEAF_LIB) | $(BUILD_DIR)
+	$(CXX) $(TEST_CPPFLAGS) $(CXXFLAGS) $(CONTROLLERS_PAGE_SOURCES) $(SHEAF_LIB) -o $@
+
 # --- catalog-covers-every-screen-action check -----------------------------
 # Every FroggersActions constant (FroggersUiSurface.hpp) must be both
 # offered by the MIDI catalog and routed by HandleAction, except the five
@@ -248,7 +262,7 @@ check-catalog-covers-screen-actions:
 	@bash $(APP_DIR)/check_catalog_covers_screen_actions.sh "$(APP_DIR)" \
 	    kSceneBlend kEncoderPress kEncoderDrag kInputSelect kViewportNarrow
 
-test: check-no-juce check-no-frozen-deps check-microphone-usage check-catalog-covers-screen-actions $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN) $(MIDI_CATALOG_BIN)
+test: check-no-juce check-no-frozen-deps check-microphone-usage check-catalog-covers-screen-actions $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN) $(MIDI_CATALOG_BIN) $(CONTROLLERS_PAGE_BIN)
 	$(TEST_BIN)
 	$(MONO_VALIDATION_BIN)
 	$(DSP_TEST_BIN)
@@ -260,6 +274,7 @@ test: check-no-juce check-no-frozen-deps check-microphone-usage check-catalog-co
 	$(MARBLES_CLOCK_BIN)
 	$(SURFACE_BIN)
 	$(MIDI_CATALOG_BIN)
+	$(CONTROLLERS_PAGE_BIN)
 
 clean:
 	rm -rf $(BUILD_DIR)

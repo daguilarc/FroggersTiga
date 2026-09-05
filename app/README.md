@@ -5,12 +5,6 @@
 The app is built on [Sheaf](https://github.com/jvictor0/Sheaf), a git submodule
 at `External/Sheaf`. Development tracks a fork of it rather than upstream.
 
-**Consequence you will notice:** encoder press and Play/Stop are **double-click**,
-because `Node::doubleClickAction` is the only action hook stock Sheaf dispatches
-for Draw nodes at this pin. When plain-click support lands upstream, flip
-`SetNodeAction`/`SetNodeActionAndLabel` in `FroggersUiSurface.hpp` and the
-matching assertion in `FroggersSurfaceTests.cpp` back to `node.action`.
-
 ## Build the launcher
 
 ```bash
