@@ -332,7 +332,10 @@ this text does not name stops execution and supersedes the change.
         not. The 8 in the two files this change edits substantively were
         stripped; the rest is its own change.
       - Confirmed clean: no other divergence between diff and artifacts;
-        `kEditorColumnGap` FOUND 12, all in-diff; `WASM32_*` FOUND only in
+        `kEditorColumnGap` FOUND 14 (7 in `ControllersPageUI.hpp`, 7 in
+        `controllers_page_ui_tests.cpp`), all in-diff and zero elsewhere in
+        either tree — the reviewer reported 12, which the lead's own re-run
+        corrects; `WASM32_*` FOUND only in
         Sheaf's Makefile; no new comment-hygiene violations; the scope boundary
         against `guitar-and-solo-variants` exact.
 
