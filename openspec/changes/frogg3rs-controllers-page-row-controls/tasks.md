@@ -48,7 +48,7 @@ text: a defect this text does not name stops execution and supersedes the change
 
 ## 2. Sheaf, on branch `app-midi-catalog`
 
-- [ ] 2.0 Split provenance from divergence. Remove the four `slot.wizardId.reset()`
+- [x] 2.0 Split provenance from divergence. Remove the four `slot.wizardId.reset()`
       calls in `ApplyMappingEdit` (`:2714`), `DeleteRow` (`:2934`), `AddSingle`
       (`:3529`) and `AddBlock` (`:3734`), and the comment at `:2714` that explains
       the old behaviour. Add one predicate that answers whether a slot's config
@@ -58,7 +58,7 @@ text: a defect this text does not name stops execution and supersedes the change
       built, next to `hasResolvedWizard` (`:825-831`), and carry it as a bool on
       the row VM; it is O(n) and read per render, so it is not recomputed at the
       call site. Do not add `operator==` to any struct in `MidiController.hpp`.
-- [ ] 2.1 Remove the Variant control and its mechanism:
+- [x] 2.1 Remove the Variant control and its mechanism:
       `BuildLaunchpadVariantOptions`, `LaunchpadVariantIndex`, `SetLaunchpadVariant`,
       `LaunchpadVariantCatalog`, `RewritePresentationLaunchpadVariant`,
       `Actions::kVariantSelect`, `NodeIds::ControllerVariant`, the `hasVariant`
@@ -68,7 +68,7 @@ text: a defect this text does not name stops execution and supersedes the change
       `CurrentLaunchpadVariant` STAYS — it is the derivation `AddSingle` and
       `AddBlock` use, and 3.1's presets are what feed it. Of the six
       `LaunchpadShapeSupports` uses, only `:3265` and `:3944` go.
-- [ ] 2.1b Two items the diff itself created, per §9's re-run of §5 against the diff.
+- [x] 2.1b Two items the diff itself created, per §9's re-run of §5 against the diff.
       First: delete the now-dead `CurrentLaunchpadVariant(const SectionPresentation&)`
       overload at `src/MidiConfigViewModel.cpp:3262`. Its only caller was inside
       `LaunchpadVariantIndex`, which 2.1 removes; the four surviving call sites all
@@ -83,7 +83,7 @@ text: a defect this text does not name stops execution and supersedes the change
       NOT delete the assertions, and do NOT shorten the walk: the checks must still
       run on every step that renders the page.
 
-- [ ] 2.1c The row's minimum-width computation still pays for the two deleted
+- [x] 2.1c The row's minimum-width computation still pays for the two deleted
       combos. `kActiveHeaderLine1Width`
       (`include/synth/ControllersPageUI.hpp:531-534`) sums `kLifecycleLayoutWidth`
       (`:507`, 200.0f) and `kVariantFieldWidth` (`:481`, 200.0f) for controls that
@@ -103,15 +103,15 @@ text: a defect this text does not name stops execution and supersedes the change
       confirmed still correct. Re-derive the fits-within fixture's 700px violation
       count too, since the PR text quotes "29 violations at 700 px".
 
-- [ ] 2.2 The APC40 keeps both descriptors, Generic and Ableton, unchanged. They
+- [x] 2.2 The APC40 keeps both descriptors, Generic and Ableton, unchanged. They
       are two creation-time templates and nothing about them moves in this change.
-- [ ] 2.3 Remove the row's preset combo and everything that served only it:
+- [x] 2.3 Remove the row's preset combo and everything that served only it:
       `BuildLayoutOptions`, `kLayoutCustomOptionLabel`, `HandleControllerLayout`
       (`:2188`), `Actions::kControllerLayout` (`:441`, `:1306`, `:1474`),
       `NodeIds::ControllerLayout` (`:312`) and the emission at `:3239-3253`.
       Nothing replaces it: no dropdown and no readout. Presets are named on the add
       row only.
-- [ ] 2.4 Add Restore: one action, one node id, one call site. It reinstalls the
+- [x] 2.4 Add Restore: one action, one node id, one call site. It reinstalls the
       row's own preset through `InstallDescriptorProfile` (`:928`), the existing
       single definition site, rather than a second install path. It is emitted when
       the row has a resolved wizard id AND 2.0's predicate says the config has
@@ -123,7 +123,7 @@ text: a defect this text does not name stops execution and supersedes the change
       Its header comment (`:919-926`) names `HandleControllerLayout` and the add row
       as the only two callers. 2.3 deletes the first and this task adds the second,
       so rewrite the comment to name the add row and Restore.
-- [ ] 2.5 Blacklist becomes Release and the released row's Remove becomes Reclaim,
+- [x] 2.5 Blacklist becomes Release and the released row's Remove becomes Reclaim,
       at all nine user-visible strings in the proposal's finding 4 table, across
       `ControllersPageUI.hpp` and `src/MidiConfigViewModel.cpp`. Release is emitted
       when both endpoints are bound: replace `if (rowVm.hasResolvedWizard)` at
@@ -131,7 +131,7 @@ text: a defect this text does not name stops execution and supersedes the change
       `:3354`. The `hasResolvedWizard` gate on Configure at `:3199` stays. Action
       names, node ids and the persisted disposition token are unchanged; prove that
       with a round trip that writes a released record and reads it back.
-- [ ] 2.6 Tests.
+- [x] 2.6 Tests.
       - The row no longer offers another kind's preset. Assert directly, since it
         is finding 1 and must fail without 2.3.
       - A mapping edit no longer clears `wizardId` — the direct check on 2.0, and
@@ -152,13 +152,13 @@ text: a defect this text does not name stops execution and supersedes the change
         the postflight reviewer, which grepped every one of
         `NodeIds::ControllerLayout`, `kControllerLayout`, `BuildLayoutOptions` and
         `kLayoutCustomOptionLabel` across the tree and found none.
-- [ ] 2.7 Gates, each built and run by path, `nice make -j2` and never more:
+- [x] 2.7 Gates, each built and run by path, `nice make -j2` and never more:
       `portable_ui_tests`, `controllers_page_ui_tests`, `runtime_main_component_tests`,
       `browser_audio_device_tests`, `browser_runtime_contract_tests`,
       `viewmodel_tests`, `instrument_tests`; then
       `nice make -j2 -C apps/miniapp build/controllers_page_simulation_tests` run
       from `projects/synth`. `make test` is not trusted to reach them.
-- [ ] 2.8 Overflow is measured by the existing fits-within fixture, not by reading
+- [x] 2.8 Overflow is measured by the existing fits-within fixture, not by reading
       screenshots. `requireFits` (`tests/portable_ui_tests.cpp:3136-3152`) runs
       `FitsWithinViolations` against `froggersContentBounds` and already carries a
       positive control at 600px (`:3154-3167`) proving the instrument is live —
@@ -192,13 +192,13 @@ text: a defect this text does not name stops execution and supersedes the change
       present, and if something is missing, report BLOCKED rather than installing.
       The add row's combo open is an operator check, not this one: Chromium does not
       composite a native select's list into a screenshot.
-- [ ] 2.9 Sheaf openspec: sru-4, sru-60 and sru-62 rewritten;
+- [x] 2.9 Sheaf openspec: sru-4, sru-60 and sru-62 rewritten;
       `openspec validate app-midi-catalog --strict`. Every SHALL on a requirement's
       FIRST body line.
 
 ## 3. frogg3rs
 
-- [ ] 3.1 `app/FroggersMidiCatalog.hpp`: add three Launchpad descriptors of kind
+- [x] 3.1 `app/FroggersMidiCatalog.hpp`: add three Launchpad descriptors of kind
       Launchpad through ONE shared helper taking the model and its programmer-mode
       message, so the three differ only in those two things:
       `froggers.launchpad.x` "Launchpad X" `F0 00 20 29 02 0C 0E 01 F7`;
@@ -237,13 +237,13 @@ text: a defect this text does not name stops execution and supersedes the change
       and a preset is a starting point. Do NOT call `LaunchpadDefaultProfileConfig`
       — it emits library `SceneSelect` and `SelectParamBank` messages, and frogg3rs
       drives scenes through its own `froggers.scene.select` app action.
-- [ ] 3.1a Assert each byte sequence against its preset in
+- [x] 3.1a Assert each byte sequence against its preset in
       `app/FroggersMidiCatalogTests.cpp`, so a later edit cannot silently swap two
       models, and assert every association in each Launchpad preset carries that
       preset's model. Also assert every (appAction, appActionValue) pair in the
       three presets resolves against `FroggersMidiCatalog().actions`, since an
       unresolved pair is silently erased at runtime rather than reported.
-- [ ] 3.2 `MANUAL.md`: MIDI control becomes its own top-level section, and its
+- [x] 3.2 `MANUAL.md`: MIDI control becomes its own top-level section, and its
       content is rewritten for what this change delivers.
 
       Structure. `### MIDI controllers` (`:216`) is promoted to `## MIDI
@@ -278,21 +278,21 @@ text: a defect this text does not name stops execution and supersedes the change
       programmer mode hands LED control to the host — the same tell the APC40
       Ableton entry already documents.
 
-- [ ] 3.2a `README.md:107-109`: line 108 says presets exist "for the MIDI Fighter
+- [x] 3.2a `README.md:107-109`: line 108 says presets exist "for the MIDI Fighter
       Twister and the Akai APC40 mkII", which stops being the whole list once the
       three Launchpad presets ship. Update it. Line 109's anchor keeps working if
       3.2's heading text is left alone; confirm it resolves rather than assuming.
 
 ## 4. Postflight, before any commit
 
-- [ ] 4.1 Fresh-context Sonnet reviewer over the whole diff in both repos, against
+- [x] 4.1 Fresh-context Sonnet reviewer over the whole diff in both repos, against
       this proposal's Design, its §5 table and the rendered states from 2.8.
       Divergences reported strictly. Commit only when it passes.
 
 ## 5. Delivery, only after 4.1 passes
 
-- [ ] 5.1 Commit Sheaf; push the fork; PR #13 description updated.
-- [ ] 5.2 frogg3rs: pin bump as its own commit; `nice make -j2 -C app test`;
+- [x] 5.1 Commit Sheaf; push the fork; PR #13 description updated.
+- [x] 5.2 frogg3rs: pin bump as its own commit; `nice make -j2 -C app test`;
       browser build; commit docs and artifacts; push `main`; Pages and VST
       workflows green.
 
