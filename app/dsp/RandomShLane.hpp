@@ -45,7 +45,7 @@ namespace synth_froggers::dsp {
 // `inline uint32_t RGen::s_state = 0xa341316cu;` (RGen.hpp:66). It is NOT
 // per-instance. Every `RGen` object anywhere in the firmware codebase (both
 // of Marbles' channels, 08b5fd3:src/core/FroggersEngine.hpp:311, Parameter.hpp:197/207/223,
-// AudioPairArState.hpp:118/128, and every ad-hoc `RGen()` temporary) reads
+// 08b5fd3:src/core/AudioPairArState.hpp:117, and every ad-hoc `RGen()` temporary) reads
 // and advances that ONE shared stream. Each RGen must be seeded distinctly,
 // or the instances emit identical sequences and the sources become clones
 // of each other -- but the firmware struct has no

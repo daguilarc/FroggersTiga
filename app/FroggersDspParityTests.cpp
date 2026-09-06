@@ -308,8 +308,9 @@ TEST_CASE(max_attack_knob_reaches_sustain_within_the_current_quarter_second_ceil
 }
 
 TEST_CASE(mix_osc_voices_applies_asr_per_voice_then_averages) {
-    // 08b5fd3:src/core/FroggersEngine.hpp:774-784 (apply branch) + FroggersEngine.hpp:540-542 (plain average
-    // return) -- the m_pairAr fallback at FroggersEngine.hpp:543-562 is v1 legacy, not ported.
+    // 08b5fd3:src/core/FroggersEngine.hpp:774-784 (apply branch) + FroggersEngine.hpp:528 (plain average
+    // return) -- the m_pairAr fallback at 08b5fd3:src/core/FroggersEngine.hpp:789-808 was never wired on
+    // the firmware and is deleted there; not ported.
     dsp::VcoAdsrState adsrForMix;
     adsrForMix.init(1000.0f);
     adsrForMix.setGate(true);

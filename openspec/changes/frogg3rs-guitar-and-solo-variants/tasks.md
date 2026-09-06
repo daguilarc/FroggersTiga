@@ -208,6 +208,7 @@ here so a reader does not go looking for it.
       `:791-805`). Guitar must keep calling it. Assert that the pair-AR state
       after N gate-open samples is identical between variants, so no future
       early-out can skip it silently.
+      Pair-AR removed 2026-09-06 by frogg3rs-omni-audit-repairs: it was never wired on the firmware; the VariantMix probe for it is gone with it.
 
 ## 6. Operator
 

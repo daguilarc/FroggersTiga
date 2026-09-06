@@ -305,9 +305,7 @@ under `nice` with `-j2` at most.
       clean at repo and submodule level.
 - [ ] 10.5 OPERATOR: Play, Stop, Freeze on and off in the desktop app; the
       instrument silences on Stop and on Freeze release exactly as before.
-- [ ] 10.6 OPERATOR: the pair-AR fork (P19): wire `AudioPairArState` to a
-      firmware page, or delete it with `PairArEnvelope`, its test and the
-      VariantMix probe.
+- [x] 10.6 The pair-AR path (P19): deleted from src/core, test/firmware, and the specs; see the ledger.
 
 ## Ledger — 2026-09-06
 
@@ -349,5 +347,6 @@ labels 216 regex hits in `app/` (135 labels edited) plus 43 the regex missed
 found, 46 changed, 47 another meaning; 22 `src/common` files deleted, 3
 `src/core` headers deleted, ~300 engine lines deleted.
 
-Open for the operator: 10.5 (Play/Stop/Freeze by ear) and 10.6 (the pair-AR
-fork, P19).
+Pair-AR removal (operator ruling 2026-09-06): PairArEnvelope.hpp, AudioPairArState.hpp, the m_pairAr branch, PairArEnvelope_test, the VariantMix PairArRun probe; REMOVED pair-ar-vcv-time-range; MODIFIED external-ring-mod-mix, mod-blend-semantics, field-operator-doc-parity.
+
+Open for the operator: 10.5 (Play/Stop/Freeze by ear).

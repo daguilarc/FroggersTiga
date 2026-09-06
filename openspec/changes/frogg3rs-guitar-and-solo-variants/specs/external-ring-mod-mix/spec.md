@@ -51,8 +51,7 @@ The ring-mod term SHALL be `(extIn × VCO1 + extIn × VCO2 + extIn × VCO3) / 3`
 in both variants. There SHALL be no product term
 `extIn × VCO1 × VCO2 × VCO3` and no blend or morph between mix shapes.
 
-The ring-mod term SHALL NOT route through `MixOscVoices`. Pair-AR dynamics
-apply to the gate-closed path only.
+The ring-mod term SHALL NOT route through `MixOscVoices`.
 
 Guitar's dry term and its ring-mod term SHALL enter the same chain as one summed
 input, not as two chain instances. The chain is nonlinear, so the terms interact;
@@ -61,7 +60,3 @@ that is the specified behaviour.
 #### Scenario: One chain, not two
 - **WHEN** a Guitar build processes a sample with the gate open
 - **THEN** exactly one `FrogBlock` and one output-FX pass run for that sample
-
-#### Scenario: Pair-AR active with the gate open
-- **WHEN** pair-AR is enabled and the gate is open, in either variant
-- **THEN** the ring-mod term uses raw per-VCO samples, not `MixOscVoices`

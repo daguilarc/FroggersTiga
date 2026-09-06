@@ -12,12 +12,13 @@
 //     average return at :540-542.
 //
 // NOT ported (deliberately, v1 legacy):
-//   - the `m_pairAr` fallback branch, FroggersEngine.hpp:543-562 (pair
-//     attack/release smoothing + copysign recombination). This app's port
+//   - the `m_pairAr` fallback branch, 08b5fd3:src/core/FroggersEngine.hpp:789-808 (pair
+//     attack/release smoothing + copysign recombination), since deleted from the
+//     firmware. This app's port
 //     always has an ASR state (VcoAdsrState is unconditional here, unlike
 //     the firmware engine's optional m_vcoAdsr pointer), so control permanently
 //     takes the 08b5fd3:src/core/FroggersEngine.hpp:774-784 branch and then the plain-average return at
-//     FroggersEngine.hpp:540-542 -- the exact code path the citation says to keep.
+//     FroggersEngine.hpp:528 -- the exact code path the citation says to keep.
 
 #include "DspMath.hpp"
 
@@ -739,7 +740,7 @@ inline void ComputeVcoBalanceWeights(float knob01, float& w1, float& w2, float& 
 // FroggersEngine.hpp:538-563 (MixOscVoices), the m_vcoAdsr && m_adsrParams
 // branch (08b5fd3:src/core/FroggersEngine.hpp:774-784) applied unconditionally -- this app always has an ASR
 // state, so the firmware engine's `if (m_vcoAdsr && m_adsrParams)` guard has
-// no off-state here -- followed by the plain average return at FroggersEngine.hpp:540-542.
+// no off-state here -- followed by the plain average return at FroggersEngine.hpp:528.
 // adsr[v] rows are (attack, sustain, release) per voice, matching
 // the retired simulator's per-VCO ADSR page triplet row order.
 //

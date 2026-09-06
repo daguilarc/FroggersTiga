@@ -390,10 +390,8 @@ plan changed.
   and the pair-AR envelopes `m_pair12`/`m_pair23` never step. The variants
   change's VariantMix test (`VariantMix_body.inl:65-82`) probes this path with
   a state it constructs itself, and `PairArEnvelope_test` tests the envelope
-  in isolation. Whether pair-AR gets wired to a firmware page or deleted with
-  its tests is a design fork on an in-flight change with three operator tasks
-  open; this change leaves the code and the tests as they are and puts the
-  fork to the operator in its report.
+  in isolation. Ruling 2026-09-06: deleted, with its tests, the VariantMix
+  probe, and the spec that described it.
 - **P20** (8.1) `grep -c FroggersTiga DAISY_MANUAL.md` = 0 on 2026-09-06.
 - **P22 (found at execution, 5.2)** `src/TestControl/` has never compiled:
   `TestControl` lacks the `SetSampleRate` and `ButtonCallback` members
@@ -564,7 +562,6 @@ Enumerated from `openspec list` and `git status` on 2026-09-06.
 - The Makefile flash and vendor targets (`vendor-libs`, `program-dfu`,
   `program-boot`): operator entry points, documented at their call site.
 - Sheaf-side work of any kind.
-- The pair-AR fork (P19).
 - Tests for the deleted simulator paths (former tasks 9.2–9.4).
 
 ## Spec deltas
@@ -576,6 +573,13 @@ Enumerated from `openspec list` and `git status` on 2026-09-06.
 - `frogg3rs-firmware-verification` (new): ADDED "The firmware tests have a
   checked-in invocation" and "Every firmware DSP path has a test that can
   fail" (findings 2, 1).
+- `pair-ar-vcv-time-range`: REMOVED all three requirements (P19 ruling).
+- `external-ring-mod-mix`: MODIFIED "Parallel ring mod formula" to drop the
+  pair-AR clause and scenario (P19 ruling).
+- `mod-blend-semantics`: MODIFIED "Modulation applied before fuegoization" to
+  drop the pair-AR sentence (P19 ruling).
+- `field-operator-doc-parity`: MODIFIED "Field manual external mix documented
+  plainly" to drop the pair-AR bullet (P19 ruling).
 
 The structural, comment and citation repairs change no behaviour and get no
 delta; the gates below are what prove that.

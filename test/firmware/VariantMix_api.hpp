@@ -11,19 +11,11 @@ namespace variantmix
 struct Probe
 {
     float mix;
-    float pair12Level;
-    float pair23Level;
 };
 
-// One MixExternalAndOsc call with pair-AR off. `mix` is its return value.
+// One MixExternalAndOsc call. `mix` is its return value.
 Probe SoloMix(float input, float v1, float v2, float v3, float olvl, bool hasExternal);
 Probe GuitarMix(float input, float v1, float v2, float v3, float olvl, bool hasExternal);
-
-// `n` gate-open calls with pair-AR enabled, reporting the envelope state left
-// behind. MixOscVoices advances that state even though the gate-open path
-// discards its return value.
-Probe SoloPairArRun(float input, float v1, float v2, float v3, int n);
-Probe GuitarPairArRun(float input, float v1, float v2, float v3, int n);
 
 // Solo only: drive the engine's output FX with a given reverb mix and report
 // whether the reverb was bypassed for that sample, plus how many times the

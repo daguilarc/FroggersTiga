@@ -73,28 +73,6 @@ int main()
     Check(Exact(guitarOpen, guitarOpenOtherOlvl), "Guitar external mix ignores OLVL");
     Check(Exact(soloOpen, soloOpenOtherOlvl), "Solo external mix ignores OLVL");
 
-    // With pair-AR enabled the ring-mod term still uses raw per-VCO samples, so
-    // the gate-open output is unchanged by pair-AR even though pair-AR state
-    // advances. Both facts are asserted: the value, and the state.
-    const variantmix::Probe soloAr = variantmix::SoloPairArRun(in, v1, v2, v3, 64);
-    const variantmix::Probe guitarAr = variantmix::GuitarPairArRun(in, v1, v2, v3, 64);
-    Check(Near(soloAr.mix, ringMod),
-          "pair-AR on, Solo gate-open still uses raw per-VCO samples");
-    Check(Near(guitarAr.mix, kDry * in + kRing * ringMod),
-          "pair-AR on, Guitar gate-open still uses raw per-VCO samples");
-
-    // The positive control for the line above: pair-AR state must actually have
-    // moved, or "unchanged output" proves nothing about routing.
-    Check(soloAr.pair12Level > 0.0f && soloAr.pair23Level > 0.0f,
-          "pair-AR state advanced on the gate-open path (positive control)");
-
-    // MixOscVoices runs on the gate-open path in both variants and advances
-    // that state identically. A future early-out that skips it would break this.
-    Check(Exact(soloAr.pair12Level, guitarAr.pair12Level),
-          "pair-AR 1-2 envelope identical across variants");
-    Check(Exact(soloAr.pair23Level, guitarAr.pair23Level),
-          "pair-AR 2-3 envelope identical across variants");
-
     // Reverb bypass, Solo only: at a zero mix the reverb does not run, and at a
     // full mix it does. The chain itself runs once per sample either way, which
     // is the "one chain, not two" scenario measured rather than read.
@@ -129,7 +107,7 @@ int main()
 
     if (g_failures == 0)
     {
-        std::printf("PASS: VariantMix_test, 28 checks\n");
+        std::printf("PASS: VariantMix_test, 24 checks\n");
         return 0;
     }
     std::printf("FAILED: %d check(s)\n", g_failures);

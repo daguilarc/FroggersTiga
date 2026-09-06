@@ -4,8 +4,6 @@
 #include "FroggersVariant.hpp"
 #include "Marbles.hpp"
 #include "Page.hpp"
-#include "PairArEnvelope.hpp"
-#include "AudioPairArState.hpp"
 #include "PolynomialDrive.hpp"
 #include "ResonantBump.hpp"
 #include "RGen.hpp"
@@ -107,9 +105,6 @@ struct FroggersEngine
     float m_envelopeLevel = 0.0f;
     SimFxInsertFn m_simFxInsert = nullptr;
     void* m_simFxInsertCtx = nullptr;
-    AudioPairArState* m_pairAr = nullptr;
-    PairArEnvelope m_pair12;
-    PairArEnvelope m_pair23;
 
     struct V2ModTapHooks
     {
@@ -169,13 +164,6 @@ struct FroggersEngine
     {
         m_simFxInsert = fn;
         m_simFxInsertCtx = ctx;
-    }
-
-    void SetAudioPairArState(AudioPairArState* state)
-    {
-        m_pairAr = state;
-        m_pair12.Reset();
-        m_pair23.Reset();
     }
 
     void SetV2ModTapLayout(bool enabled, V2ModTapHooks hooks)
@@ -537,29 +525,7 @@ struct FroggersEngine
 
     float MixOscVoices(float v1, float v2, float v3)
     {
-        if (!m_pairAr)
-        {
-            return (v1 + v2 + v3) * (1.0f / 3.0f);
-        }
-
-        m_pairAr->tickSmoothers();
-        const float sum12 = v1 + v2;
-        const float sum23 = v2 + v3;
-        const float target12 = std::fabs(sum12) * 0.5f;
-        const float target23 = std::fabs(sum23) * 0.5f;
-        const float e12 = m_pair12.Step(
-            target12,
-            m_pairAr->getEffectiveSmoothed(0),
-            m_pairAr->getEffectiveSmoothed(1),
-            m_sampleRate);
-        const float e23 = m_pair23.Step(
-            target23,
-            m_pairAr->getEffectiveSmoothed(2),
-            m_pairAr->getEffectiveSmoothed(3),
-            m_sampleRate);
-        const float p12 = std::copysign(e12, sum12 == 0.0f ? 1.0f : sum12);
-        const float p23 = std::copysign(e23, sum23 == 0.0f ? 1.0f : sum23);
-        return (p12 + v2 + p23) * (1.0f / 3.0f);
+        return (v1 + v2 + v3) * (1.0f / 3.0f);
     }
 
     // Guitar sums the dry external signal with the ring mod. 7:5 puts the dry
@@ -568,15 +534,11 @@ struct FroggersEngine
     static constexpr float x_guitarDryWeight = 7.0f / 12.0f;
     static constexpr float x_guitarRingWeight = 5.0f / 12.0f;
 
-    // MixOscVoices runs before the gate test on both paths and its result is
-    // discarded when the gate is open. That is deliberate: the call advances
-    // pair-AR envelope state, so skipping it would change the envelopes.
     float MixExternalAndOsc(float input, float v1, float v2, float v3, float olvl, bool hasExternal)
     {
-        float oscMix = MixOscVoices(v1, v2, v3);
         if (!hasExternal)
         {
-            return olvl * oscMix;
+            return olvl * MixOscVoices(v1, v2, v3);
         }
 
         const float ringMod = (input * v1 + input * v2 + input * v3) * (1.0f / 3.0f);

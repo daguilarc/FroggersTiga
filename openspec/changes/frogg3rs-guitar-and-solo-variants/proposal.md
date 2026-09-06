@@ -37,10 +37,9 @@ The gate is `m_extGate` over a smoothed `|extIn|` (`:868-870`).
 `src/core/FroggersEngine.hpp`.
 
 `MixOscVoices` is called at `:813` before the gate test and its result is
-discarded when the gate is open. That call is not free of consequence: it
-advances pair-AR state via `tickSmoothers()` and two `Step()` calls
-(`:791-805`). Guitar keeps calling it for that reason, and no early-out may skip
-it.
+discarded when the gate is open. `MixOscVoices` is a pure average of the
+three VCOs with no state of its own; Guitar keeps calling it for parity with
+Solo's control flow, and no early-out may skip it.
 
 `src/core/FroggersEngine.hpp` is included by exactly one file,
 `src/FroggersTiga/FroggersTiga.hpp:3`. Everything else that names it does so in

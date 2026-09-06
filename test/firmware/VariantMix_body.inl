@@ -19,7 +19,6 @@
 
 namespace
 {
-#include "AudioPairArState.hpp"
 #include "FroggersEngine.hpp"
 } // namespace
 
@@ -54,27 +53,8 @@ FroggersEngine& Engine()
 variantmix::Probe OneMix(float input, float v1, float v2, float v3, float olvl, bool hasExternal)
 {
     FroggersEngine& e = Engine();
-    e.m_pairAr = nullptr;
     e.m_sampleRate = 48000.0f;
     const float mix = e.MixExternalAndOsc(input, v1, v2, v3, olvl, hasExternal);
-    return {mix, e.m_pair12.level, e.m_pair23.level};
-}
-
-variantmix::Probe PairArRun(float input, float v1, float v2, float v3, int n)
-{
-    static AudioPairArState pairAr;
-    pairAr.init(48000.0f);
-    FroggersEngine& e = Engine();
-    e.m_pairAr = &pairAr;
-    e.m_sampleRate = 48000.0f;
-    e.m_pair12.level = 0.0f;
-    e.m_pair23.level = 0.0f;
-    float mix = 0.0f;
-    for (int i = 0; i < n; i++)
-    {
-        mix = e.MixExternalAndOsc(input, v1, v2, v3, 0.4f, true);
-    }
-    e.m_pairAr = nullptr;
-    return {mix, e.m_pair12.level, e.m_pair23.level};
+    return {mix};
 }
 } // namespace
