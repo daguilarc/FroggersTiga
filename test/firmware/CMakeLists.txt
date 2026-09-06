@@ -19,6 +19,9 @@ endfunction()
 add_firmware_test(EngineDeterminism_test EngineDeterminism_test.cpp)
 add_firmware_test(ModMgr_test ModMgr_test.cpp)
 add_firmware_test(PairArEnvelope_test PairArEnvelope_test.cpp)
+add_firmware_test(Parameter_fuego_test Parameter_fuego_test.cpp)
+add_firmware_test(DspModules_test DspModules_test.cpp)
+add_firmware_test(Page_test Page_test.cpp)
 
 # One binary, both variants: each variant's engine is a separate translation
 # unit because the variant is a build-time define, and asserting them together
@@ -35,3 +38,6 @@ add_test(NAME ModMgr_test COMMAND ModMgr_test)
 add_test(NAME PairArEnvelope_test COMMAND PairArEnvelope_test)
 add_test(NAME RefreshGate_test COMMAND RefreshGate_test)
 add_test(NAME VariantMix_test COMMAND VariantMix_test)
+add_test(NAME Parameter_fuego_test COMMAND Parameter_fuego_test)
+add_test(NAME DspModules_test COMMAND DspModules_test)
+add_test(NAME Page_test COMMAND Page_test)
