@@ -192,15 +192,6 @@ inline constexpr const char* kBpmGroup = "froggers.bpm.group";
 // `CaptionPlacement::After` only reorders the caption after the control
 // inside that row -- it never stacks them, so a label sitting below its
 // slider cannot be a caption. Both stay hand-rolled TOGETHER.
-//
-// History worth keeping, because this comment previously said the opposite:
-// an earlier change converted scene-blend to a caption and left this one
-// hand-rolled, citing the earlier trailing-label instruction as a second
-// live cause. The CELL MAP then moved scene-blend's label below (retiring
-// its caption and restoring its hand-rolled node), and a later change moved
-// this one below to match -- which retired the trailing-label instruction,
-// since its stated reason was that a LEADING label read as labelling the
-// wrong control, and a label beneath its own control cannot.
 inline constexpr const char* kBpmLabel = "froggers.bpm.label";
 
 inline constexpr const char* kVcoScope = "froggers.scope.vco";

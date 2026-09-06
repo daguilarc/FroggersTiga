@@ -1355,7 +1355,7 @@ inline void ApplyAudioBankOverlay(FroggersParameterModel& model) {
     constexpr std::array<float, 3> kScene1VcoShapes{0.0f, 0.5f, 1.0f};
     for (std::size_t vcoIx = 0; vcoIx < kScene1VcoShapes.size(); ++vcoIx) {
         const float scene1Shape = kScene1VcoShapes[vcoIx];
-        synth::Parameter& shapeParam = model.PageParameter(FroggersBankId::Audio, 3 + vcoIx);
+        synth::Parameter& shapeParam = model.PageParameter(FroggersBankId::Audio, AudioSlot(vcoIx, VcoSlotRole::Shape));
         shapeParam.HandleSetAbsolute(kScenePole0, scene1Shape);
         shapeParam.HandleSetAbsolute(kScenePole1, 1.0f - scene1Shape);
     }

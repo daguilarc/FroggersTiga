@@ -826,7 +826,7 @@ TEST_CASE(compute_ramp_step_bounds_every_stage_duration_across_curve_and_knob_gr
         }
     }
 
-    std::cout << "T1.3(a) duration-bound sweep: worst multiple observed = " << worstMultipleObserved << " ("
+    std::cout << "duration-bound sweep: worst multiple observed = " << worstMultipleObserved << " ("
               << worstLabel << ")\n";
     // The bound itself: a small multiple of the plain-linear duration, at
     // EVERY grid point (including curve==1.0, every knob, both rates) --
@@ -2140,7 +2140,7 @@ TEST_CASE(filter_fx_chain_scoop_full_does_not_cancel_a_boosted_peak_at_the_share
         },
         /*peakHeight=*/dsp::kMaxResonantBumpHeight);
 
-    std::cout << "  [Task 8 directional pin] band energy at the shared centre frequency -- "
+    std::cout << "  [directional pin] band energy at the shared centre frequency -- "
                  "old-topology unboosted baseline="
               << baselineEnergy << "  new-topology boosted (scoopMix=1.0)=" << boostedEnergy << "\n";
 
@@ -3215,7 +3215,7 @@ TEST_CASE(reverb_tilt_never_raises_the_post_limiter_peak_above_the_stage_ceiling
     // Positive control: the rig must actually drive the limiter to its
     // ceiling, or "never exceeds it" is vacuously true of silence. The
     // archived centre measurement WAS 0.8000, i.e. pinned at the ceiling.
-    std::cout << "  [T1.6 tilt-pin] peak at tilt centre=" << peakAtCentre
+    std::cout << "  [tilt-pin] peak at tilt centre=" << peakAtCentre
               << "  worst peak=" << worstPeak << " at tilt=" << worstTilt
               << "  ceiling=" << dsp::kStageCeiling << "\n";
     // The ceiling comparison alone is SELF-REFERENTIAL: raising
@@ -3258,7 +3258,7 @@ TEST_CASE(reverb_tuned_sweeps_never_raise_the_peak_above_the_stage_ceiling) {
         }
     }
 
-    std::cout << "  [T1.6 tuned-pin] peak range across 4 sizes x 3 step periods: [" << minPeak << ", "
+    std::cout << "  [tuned-pin] peak range across 4 sizes x 3 step periods: [" << minPeak << ", "
               << worstPeak << "] worst at size=" << worstSize << " period=" << worstPeriod
               << "  ceiling=" << dsp::kStageCeiling << "\n";
     REQUIRE_NEAR(dsp::kStageCeiling, 0.8, 1.0e-6);            // literal pin -- see the tilt test's own comment.
@@ -3757,12 +3757,12 @@ TEST_CASE(reverb_tank_grit_zero_lets_the_measured_pass_d_seed_decay_where_grit_0
     // really does lock nonzero, or the Grit==0 assertion below never
     // tested anything against a genuine counter-example.
     const float lockedMagnitude = runArm(0.8094f);
-    std::cout << "  [T2.5b] Grit=0.8094 (pre-fix state): FINAL mag=" << lockedMagnitude
+    std::cout << "  [grit decay] Grit=0.8094 (pre-fix state): FINAL mag=" << lockedMagnitude
               << " (measured: 0.306814, locked)\n";
     REQUIRE_TRUE(lockedMagnitude > 0.1f);  // genuinely locked, not a fluke near-zero run.
 
     const float decayedMagnitude = runArm(0.0f);
-    std::cout << "  [T2.5b] Grit=0.0 (T2.5's stopped-state override): FINAL mag=" << decayedMagnitude
+    std::cout << "  [grit decay] Grit=0.0 (stopped-state override): FINAL mag=" << decayedMagnitude
               << " (measured: 1.98e-7, decayed)\n";
     // Task's own bound: decays below 1e-4 within the window.
     REQUIRE_TRUE(decayedMagnitude < 1.0e-4f);
@@ -5128,7 +5128,7 @@ TEST_CASE(stereo_delay_diffusion_state_tracks_the_signal_while_ddif_is_zero) {
     // a signal actually reached the unit. Report the driving quantity's own
     // range beside the result, so a run that proved something true and
     // irrelevant is visible as such rather than reading as a pass.
-    std::cout << "  [P2 postflight] ddif==0 state tracking: wet max|signal|=" << maxAbsWet
+    std::cout << "  [postflight] ddif==0 state tracking: wet max|signal|=" << maxAbsWet
               << "  diffuser state L=" << stateL << " R=" << stateR << "\n";
     REQUIRE_TRUE(maxAbsWet > 0.05f);   // the delay was audibly live for the whole run...
     REQUIRE_TRUE(stateL > 1.0e-4f);    // ...so a tracking diffuser holds signal, and a
@@ -5392,7 +5392,7 @@ TEST_CASE(stereo_delay_reverse_blend_at_maximum_time_reverses_a_sharp_attack_slo
     const float revBefore = windowAvgAbs(revOut, peakRev, kWindow, /*before=*/true);
     const float revAfter = windowAvgAbs(revOut, peakRev, kWindow, /*before=*/false);
 
-    std::cout << "  [T3.1d] forward: before=" << fwdBefore << " after=" << fwdAfter << "  reverse: before="
+    std::cout << "  [reverse asymmetry] forward: before=" << fwdBefore << " after=" << fwdAfter << "  reverse: before="
               << revBefore << " after=" << revAfter << "\n";
 
     // Forward (drev=0): sharp attack THEN slow decay -- the tail comes
@@ -5487,7 +5487,7 @@ TEST_CASE(stereo_delay_reverse_blend_wrap_crossfade_bounds_the_sample_to_sample_
         }
         prev = wet.l;
     }
-    std::cout << "  [T3.1d] reverse wrap max sample-to-sample delta (smoothed) = " << maxDelta << "\n";
+    std::cout << "  [wrap crossfade] reverse wrap max sample-to-sample delta (smoothed) = " << maxDelta << "\n";
     REQUIRE_TRUE(maxDelta < 0.1f);
 }
 
@@ -5528,7 +5528,7 @@ TEST_CASE(stereo_delay_reverse_state_tracks_the_signal_while_drev_is_zero) {
     // Positive control: "the state is non-zero" means nothing
     // unless a signal actually reached the unit. Report the driving
     // quantity's own range beside the result.
-    std::cout << "  [P3] drev==0 state tracking: wet max|signal|=" << maxAbsWet << "  reverser elapsed L=" << stateL
+    std::cout << "  [reverse state tracking] drev==0 state tracking: wet max|signal|=" << maxAbsWet << "  reverser elapsed L=" << stateL
               << " R=" << stateR << "\n";
     REQUIRE_TRUE(maxAbsWet > 0.05f);   // the delay was audibly live for the whole run...
     REQUIRE_TRUE(stateL > 1.0e-4f);    // ...so a tracking reverse pointer has moved, and a
@@ -5718,7 +5718,7 @@ TEST_CASE(stereo_delay_freeze_at_default_reproduces_pinned_original_output_throu
         REQUIRE_TRUE(std::isfinite(lastWet.l) && std::isfinite(lastWet.r));
     }
 
-    std::cout << std::setprecision(9) << "  [T3.1a/T3.1b bit-identical] sample " << (kSamples - 1) << " wet=("
+    std::cout << std::setprecision(9) << "  [bit-identical] sample " << (kSamples - 1) << " wet=("
               << lastWet.l << ", " << lastWet.r << ")\n";
 
     REQUIRE_NEAR(lastWet.l, -0.11269673f, 0.0);
@@ -5758,7 +5758,7 @@ TEST_CASE(stereo_delay_freeze_clamp_does_not_reach_zero_loop_gain_matches_origin
     const float fbDrive = 4.0f;
     const float theoreticalGain = fbk * fbDrive;  // 3.92.
 
-    std::cout << "  [T3.1a clamp-does-not-reach-zero] fbDrive=max(4.0) fbk=0.98 measured loop gain="
+    std::cout << "  [clamp-does-not-reach-zero] fbDrive=max(4.0) fbk=0.98 measured loop gain="
               << measuredGain << " theoretical fbk*fbDrive=" << theoreticalGain << "\n";
 
     REQUIRE_NEAR(measuredGain, theoreticalGain, theoreticalGain * 0.02);  // within 2%.
@@ -5818,7 +5818,7 @@ TEST_CASE(stereo_delay_freeze_feedback_is_monotonically_non_decreasing_across_it
     // Positive control: report the swept ranges and the smallest observed
     // step, so a run that swept nothing is visible as such rather than
     // reading as a pass.
-    std::cout << "  [T3.1e monotonicity] swept fbk 0.00..0.98 (11 steps) x freeze 0.00..1.00 (101 steps); "
+    std::cout << "  [monotonicity] swept fbk 0.00..0.98 (11 steps) x freeze 0.00..1.00 (101 steps); "
               << "value range [" << minSeen << ", " << maxSeen << "]; smallest step " << minStep
               << " at fbk=" << worstFbk << "\n";
     REQUIRE_TRUE(maxSeen > minSeen);  // the sweep actually moved the quantity under test.
@@ -5844,7 +5844,7 @@ TEST_CASE(stereo_delay_freeze_latch_exceeds_every_value_the_encoder_can_reach) {
             maxEncoder = std::max(maxEncoder, dsp::StereoDelay::FreezeFeedback(fbk, freeze, false));
         }
     }
-    std::cout << "  [T3.1e latch-exceeds-encoder] latched=" << latched
+    std::cout << "  [latch-exceeds-encoder] latched=" << latched
               << "  max reachable by encoder across fbk 0.00..0.98 x freeze 0.00..1.00 = " << maxEncoder << "\n";
     REQUIRE_TRUE(latched > maxEncoder);  // the gate: the knob cannot reach it.
     // The latch ignores the encoder entirely -- same value whatever dfrz is.
@@ -5906,7 +5906,7 @@ TEST_CASE(stereo_delay_freeze_latched_grows_the_loop_measurably_beyond_unlatched
     const float gainLatched = peaksLatched[1] / peaksLatched[0];      // per-round-trip, ~1.05 * fbDrive.
     const float gainUnlatched = peaksUnlatched[1] / peaksUnlatched[0];  // per-round-trip, ~1.00 * fbDrive.
 
-    std::cout << "  [T3.1e latched-grows] fbDrive=4.0 (max) latched per-round-trip gain=" << gainLatched
+    std::cout << "  [latched-grows] fbDrive=4.0 (max) latched per-round-trip gain=" << gainLatched
               << "  unlatched (freeze==1) per-round-trip gain=" << gainUnlatched
               << "  ratio=" << (gainLatched / gainUnlatched) << "\n";
 
@@ -5945,7 +5945,7 @@ TEST_CASE(stereo_delay_freeze_latched_below_centre_feedback_drive_does_not_grow)
     REQUIRE_TRUE(peaks[0] > 0.0f);
     const float gain = peaks[1] / peaks[0];
 
-    std::cout << "  [T3.1b latched-below-centre] fbDrive=0.25 (min) latched per-round-trip gain=" << gain << "\n";
+    std::cout << "  [latched-below-centre] fbDrive=0.25 (min) latched per-round-trip gain=" << gain << "\n";
 
     REQUIRE_TRUE(gain < 0.9f);  // clearly does not grow -- decays, matching fbDrive itself (~0.25).
     REQUIRE_NEAR(gain, 0.25, 0.05);
@@ -6009,7 +6009,7 @@ TEST_CASE(stereo_delay_freeze_releasing_the_latch_after_running_hot_decays_towar
         }
     }
 
-    std::cout << "  [T3.1b release-decays] peak while hot=" << peakDuringLatch << "  post-release peak[0]="
+    std::cout << "  [release-decays] peak while hot=" << peakDuringLatch << "  post-release peak[0]="
               << postReleasePeaks[0] << "  post-release peak[" << (kReleaseRoundTrips - 1)
               << "]=" << postReleasePeaks[static_cast<std::size_t>(kReleaseRoundTrips - 1)] << "\n";
 

@@ -3091,7 +3091,7 @@ TEST_CASE(record_captures_audio_while_playing) {
     for (float s : app.RecordedAudio()) {
         maxSample = std::max(maxSample, std::fabs(s));
     }
-    std::cout << "  [T5.3a capture] frames captured=" << app.RecordedFrameCount()
+    std::cout << "  [capture] frames captured=" << app.RecordedFrameCount()
               << "  max|sample|=" << maxSample << "\n";
     REQUIRE_TRUE(maxSample > 0.0f);
 
@@ -3125,7 +3125,7 @@ TEST_CASE(record_truncates_at_capacity_and_stops_growing) {
     rig.RunBlocks(8);
     REQUIRE_TRUE(app.RecordedFrameCount() == kCapacityFrames);
 
-    std::cout << "  [T5.3b truncation] capacity=" << kCapacityFrames
+    std::cout << "  [truncation] capacity=" << kCapacityFrames
               << "  recordedFrameCount=" << app.RecordedFrameCount()
               << "  truncated=" << (app.RecordingTruncated() ? "true" : "false") << "\n";
 

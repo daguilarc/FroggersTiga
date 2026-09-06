@@ -1465,15 +1465,6 @@ private:
         return block.clockPlan->TryTransportQuarterNotesAt(static_cast<double>(absoluteOutputSample));
     }
 
-    // Audio-bank slot layout for a given VCO: pitch at its own index, shape
-    // at +3, phase mod at +6, ring mod at +9 -- one named grouping shared by
-    // ProcessBlock's vcoDrive lambda and RouteAudioSample's VCO loop below,
-    // rather than each hand-writing the same offsets.
-    enum class VcoSlotRole : std::size_t { Pitch = 0, Shape = 3, PhaseMod = 6, RingMod = 9 };
-    static constexpr std::size_t AudioSlot(std::size_t vco, VcoSlotRole role) {
-        return vco + static_cast<std::size_t>(role);
-    }
-
     float RoutedKnob(FroggersBankId bank, std::size_t ix) {
         return parameters_.PageParameter(bank, ix).CachedKnobValue(0);
     }

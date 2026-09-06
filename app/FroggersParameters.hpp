@@ -63,6 +63,15 @@ enum class FroggersBankId : std::size_t {
     Reverb = 5,
 };
 
+// Audio-bank slot layout for a given VCO: pitch at its own index, shape
+// at +3, phase mod at +6, ring mod at +9 -- one named grouping shared by
+// ProcessBlock's vcoDrive lambda and RouteAudioSample's VCO loop below,
+// rather than each hand-writing the same offsets.
+enum class VcoSlotRole : std::size_t { Pitch = 0, Shape = 3, PhaseMod = 6, RingMod = 9 };
+constexpr std::size_t AudioSlot(std::size_t vco, VcoSlotRole role) {
+    return vco + static_cast<std::size_t>(role);
+}
+
 inline constexpr std::size_t kFroggersBankCount = 6;
 inline constexpr std::size_t kFroggersParamsPerBank = 14;  // bank slots 0-13
 inline constexpr std::size_t kFroggersSlotsPerBank = 16;  // bank slots 0-15
