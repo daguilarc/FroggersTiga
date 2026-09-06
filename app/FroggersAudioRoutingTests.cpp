@@ -401,7 +401,7 @@ TEST_CASE(non_default_patch_produces_non_silent_finite_audio) {
 // -----------------------------------------------------------------------
 // Push the Filter bank's Comb feedback to its self-oscillating extreme
 // (knob=1.0 -> dsp::Comb::GetFeedback's +0.95 branch,
-// deliberately below the frozen firmware's +1.1, Comb.hpp:66-76) with the
+// deliberately below the firmware's +1.1, Comb.hpp:66-76) with the
 // Comb/Peak blend turned fully toward Comb, and the Reverb bank's
 // authored Hold control pushed to its ceiling -- the exact
 // self-oscillating-comb scenario reachable by design -- and confirm the

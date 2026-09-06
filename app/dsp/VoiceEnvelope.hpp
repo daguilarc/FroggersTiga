@@ -15,7 +15,7 @@
 //   - the `m_pairAr` fallback branch, FroggersEngine.hpp:789-808 (pair
 //     attack/release smoothing + copysign recombination). This app's port
 //     always has an ASR state (VcoAdsrState is unconditional here, unlike
-//     the frozen engine's optional m_vcoAdsr pointer), so control permanently
+//     the firmware engine's optional m_vcoAdsr pointer), so control permanently
 //     takes the :774-784 branch and then the plain-average return at
 //     :786-788 -- the exact code path the citation says to keep.
 
@@ -52,7 +52,7 @@ struct VcoAdsrState
     // falling sustain, so audio-rate modulation does not ride the envelope --
     // it hard-gates it to zero on every trough.
     //
-    // Deliberate parity divergence from the frozen `src/core` reference,
+    // Deliberate parity divergence from the `src/core` reference,
     // which is linear over [0.10, 1.0]: MapSustain below is exponential over
     // [kMinSustainLevel, 1.0], and this floor moved from 0.10 (-20 dB) to
     // 0.25 (-12 dB) to go with it. A straight exponential over the OLD
@@ -81,7 +81,7 @@ struct VcoAdsrState
     // above, the top tenth of randomized draws still exceeded 269 ms; this
     // halving moves that to about 144 ms.
     static constexpr float kMaxAttackSeconds = 0.25f;
-    // Deliberate parity divergence from the frozen `src/core` reference,
+    // Deliberate parity divergence from the `src/core` reference,
     // which maps Attack/Decay/Release LINEARLY: mapAttack/mapDecay/mapRelease
     // below moved to dsp::ExpMapCompute (every other time/frequency control in
     // the instrument already maps exponentially; these three were the odd
@@ -95,7 +95,7 @@ struct VcoAdsrState
     // staying clear of a literal zero-length ramp.
     static constexpr float kMinAttackSeconds = 0.001f;
     // Deliberate parity divergence: lowered
-    // from the frozen firmware's 10.0s to 5.0s. Note this does NOT by itself
+    // from the firmware's 10.0s to 5.0s. Note this does NOT by itself
     // make Stop responsive -- 5s of release after pressing Stop still reads as
     // broken, which is why FroggersAppCore's stop path forces a ~50ms fade
     // independent of this ceiling (see kStopFadeReleaseKnob there).
@@ -344,7 +344,7 @@ struct VcoAdsrState
     // The third of the three ASR range maps, and the one that was missing.
     // Exponential over [kMinSustainLevel, 1.0] -- see kMinSustainLevel's own
     // comment for why zero is degenerate here, and for the parity divergence
-    // from the frozen linear reference. No longer `constexpr`: ExpMapCompute
+    // from the firmware's linear reference. No longer `constexpr`: ExpMapCompute
     // goes through std::pow, which is not a constant expression on this
     // toolchain.
     //
@@ -738,7 +738,7 @@ inline void ComputeVcoBalanceWeights(float knob01, float& w1, float& w2, float& 
 
 // FroggersEngine.hpp:772-809 (MixOscVoices), the m_vcoAdsr && m_adsrParams
 // branch (:774-784) applied unconditionally -- this app always has an ASR
-// state, so the frozen engine's `if (m_vcoAdsr && m_adsrParams)` guard has
+// state, so the firmware engine's `if (m_vcoAdsr && m_adsrParams)` guard has
 // no off-state here -- followed by the plain average return at :786-788.
 // adsr[v] rows are (attack, sustain, release) per voice, matching
 // the retired simulator's per-VCO ADSR page triplet row order.

@@ -167,7 +167,7 @@ $(SHEAF_LIB): force
 $(APP): $(APP_SOURCES) $(SHEAF_LIB) | $(BUILD_DIR)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) $(APP_SOURCES) $(SHEAF_LIB) -o $@
 
-# --- mechanical frozen-tree-include guard --------------------
+# --- mechanical firmware-tree-include guard --------------------
 # Fails the build if any file under app/ (**/*.hpp, **/*.cpp) #includes
 # from src/ -- the DSP port is a sanctioned copy, not a shared
 # header, so that tree may never be reached from app/ code, however the

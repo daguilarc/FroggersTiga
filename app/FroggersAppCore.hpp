@@ -1742,7 +1742,7 @@ private:
         // knobs (Filter slots 9/10) but its own height is a DIP
         // (max(0.05, 1-0.95*scoop)), not a gain, so it is unaffected and
         // untouched.
-        // Ceiling 4.0f (+12 dB), NOT the frozen firmware's 10.0f
+        // Ceiling 4.0f (+12 dB), NOT the firmware's 10.0f
         // (+20 dB). A pinned self-oscillating comb through a 20 dB peak is what put
         // ~20x full scale into the output stage. Deliberate divergence from the port
         // source -- parity deprioritised by operator decision 2026-07-28.
@@ -1861,7 +1861,7 @@ private:
     }
 
     // -- Delay bank -> dsp::StereoDelay ---------------------
-    // Positioned exactly where the frozen engine's `m_simFxInsert` hook
+    // Positioned exactly where the firmware engine's `m_simFxInsert` hook
     // sits: FroggersEngine.hpp:840-843, between the filter chain
     // (:824-839) and Reverb (:844-847) -- confirmed by the retired
     // simulator's `WasmSimHost`, which wired this exact ported unit's

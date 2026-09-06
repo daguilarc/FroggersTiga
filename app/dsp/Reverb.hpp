@@ -1,7 +1,7 @@
 #pragma once
 
 // synth_froggers::dsp::Reverb -- a **copy** of the cited Froggers formulas
-// -- read directly from the frozen source before porting, not from memory.
+// -- read directly from the firmware source before porting, not from memory.
 //
 // Ported (7 of the Reverb page's 9 params -- Wet/dry, Room size, Decay,
 // Pre-delay, Damping, Stereo width, Diffusion) from:
@@ -26,7 +26,7 @@
 //     x_rvSize-length ring buffers, and m_rvDampFilter's type OPLowPassFilter,
 //     ported here as the shared dsp::OnePoleLowPass).
 //
-// Pre-delay note: the frozen ExpMap divides both endpoints by sampleRate
+// Pre-delay note: the firmware's ExpMap divides both endpoints by sampleRate
 // (`ExpMap(1.0f/sr, 100.0f/sr, knob)`) and ProcessReverb then re-multiplies
 // the result by sampleRate to get a sample count (:497 `preNorm *
 // m_sampleRate`). That double division/multiplication is unusual (it is
@@ -47,7 +47,7 @@
 // NOT ported (deliberately): Mod depth and Hold (Reverb page
 // slots 7 and 8). `m_reverbParams->GetParam(7)`/`GetParam(8)` are never
 // read anywhere in FroggersEngine.hpp -- confirmed by grep -- so there is
-// no frozen formula to pin. They are newly authored below, clearly marked,
+// no formula to pin. They are newly authored below, clearly marked,
 // with behavioral (not parity) tests. At their neutral defaults
 // (modDepthKnob=0, holdKnob=0) the authored stage is a no-op, so the seven
 // ported params reproduce ProcessReverb + the Wet/dry blend exactly.
@@ -133,7 +133,7 @@ inline constexpr float kReverbWetLimiterReleaseSeconds = kSharedReleaseSeconds; 
 // Reverb slots 9-13 ("MdRt"/"TkDv"/"Grit"/
 // "Tilt"/"Tund"): these five parameters were registered
 // (FroggersParameters.hpp) but never read -- every knob defaulted
-// 0.0f and had no effect. No frozen Froggers original exists for any of
+// 0.0f and had no effect. No Froggers original exists for any of
 // them (same footing as Mod depth/Hold above -- a "newly
 // authored" category), so each mapping below is authored, with its own
 // derivation noted at its call site/setter.
@@ -142,7 +142,7 @@ struct Reverb
     // src/core/FroggersEngine.hpp:65 (x_rvSize).
     static constexpr size_t kSize = 4096;
 
-    // Authored Mod depth constants (no frozen equivalent to cite) -- a slow
+    // Authored Mod depth constants (no equivalent to cite) -- a slow
     // wow on the tank read-taps, deliberately small (well under one sample
     // at typical knob values) so it colors the tail without destabilising
     // the delay-line indexing.
@@ -204,7 +204,7 @@ struct Reverb
     size_t preIndex = 0;
 
     // src/core/FroggersEngine.hpp:69, shared between the A and B taps just
-    // as the frozen single m_rvDampFilter instance is (ported faithfully,
+    // as the single m_rvDampFilter instance is (ported faithfully,
     // including the shared-state quirk of filtering A then B in sequence
     // through the same one-pole state each sample).
     OnePoleLowPass dampFilter;
@@ -231,7 +231,7 @@ struct Reverb
     float wetL = 0.0f;
     float wetR = 0.0f;
 
-    // Authored Mod depth's own LFO phase (no frozen equivalent).
+    // Authored Mod depth's own LFO phase (no equivalent).
     float modLfoPhase = 0.0f;
 
     // The stage's own output limiter, applied to what Process() (below)

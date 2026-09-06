@@ -1,6 +1,6 @@
 // FroggersDspParityTests.cpp -- parity test suite for the DSP port. Each
 // TEST_CASE pins one ported unit to its cited Froggers formula. This TU
-// includes ONLY app/dsp/*.hpp (no Sheaf, no JUCE, no frozen-tree headers) --
+// includes ONLY app/dsp/*.hpp (no Sheaf, no JUCE, no firmware-tree headers) --
 // the DSP port is dependency-free, and check_no_firmware_includes.sh
 // mechanically enforces that no file under app/ includes src/.
 //
@@ -1130,7 +1130,7 @@ TEST_CASE(rgen_same_seed_is_deterministic) {
 }
 
 TEST_CASE(rgen_distinct_seeds_produce_independent_streams) {
-    // This guarantee matters because, with the frozen RGen's shared-static
+    // This guarantee matters because, with the firmware RGen's shared-static
     // state, it would be meaningless (all instances share one cursor);
     // this port's instance-level state makes distinct seeds actually
     // matter.
@@ -1363,7 +1363,7 @@ TEST_CASE(resonant_bump_coefficients_match_rbj_peaking_formula) {
 // The Filter bank wires
 // `filterChain_.peak.SetHeight(dsp::ExpMapCompute(1.0f, 10.0f, knob))`
 // (FroggersAppCore.hpp's RouteAudioSample). Ceiling history: 10x (+20 dB,
-// frozen-firmware parity) -> 4x -> 2x (+6 dB), the last on the operator
+// firmware parity) -> 4x -> 2x (+6 dB), the last on the operator
 // hearing it modulated. Drives the app's OWN `dsp::kMaxResonantBumpHeight`
 // (dsp/FilterFx.hpp) at knob==1.0 through the real ResonantBump::Process
 // path with a full-scale sine at the peak's resonant frequency, and confirms
@@ -1433,7 +1433,7 @@ TEST_CASE(resonant_bump_min_knob_settles_at_unity_no_boost) {
     REQUIRE_NEAR(measuredPeak, 1.0f, 0.05);
 }
 
-// DELIBERATE PARITY DIVERGENCE: the frozen firmware's Comb::GetFeedback
+// DELIBERATE PARITY DIVERGENCE: the firmware's Comb::GetFeedback
 // (src/core/Comb.hpp:66-76) returns an asymmetric +-1.1 ceiling. |fb| > 1
 // does NOT diverge -- PadeSaturator sits INSIDE the feedback path
 // (Comb::Process, FilterFx.hpp), so the fed-back term is always bounded to
@@ -1443,7 +1443,7 @@ TEST_CASE(resonant_bump_min_knob_settles_at_unity_no_boost) {
 // the definition of a loop that decays once its input stops, so this
 // port's own GetFeedback caps the magnitude at 0.95 instead of 1.1 -- still
 // close enough to unity to ring for a long, musical time, but no longer
-// able to sustain forever. This is intentionally NOT what the frozen
+// able to sustain forever. This is intentionally NOT what the
 // firmware does; parity was explicitly deprioritized here in favor of a
 // loop that actually decays. The curve shape itself changed too: the
 // feedback gap (one minus the magnitude) now falls geometrically across
@@ -3891,7 +3891,7 @@ TEST_CASE(digital_reorganizer_process_matches_bit_scramble_formula) {
 // input==1.0 exactly, inputUp==256, and `static_cast<uint8_t>(std::round(256.0f))`
 // was undefined behavior before Drive.hpp's clamp. This is newly written
 // code this app owns (unlike fuegoize's UB, which is carried forward
-// because the frozen tree has a correct alternative reference to port
+// because the firmware tree has a correct alternative reference to port
 // instead) -- so it is fixed, not reproduced. With flip==0 and hashBits==0
 // (pass-through configuration, mask==0 so lowerBits stays 0), the clamp's
 // remainder term must reconstruct the input exactly rather than wrapping,

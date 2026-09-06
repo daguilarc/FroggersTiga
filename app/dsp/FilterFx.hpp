@@ -11,7 +11,7 @@
 //     THIS PORT DELIBERATELY DIVERGES to +-0.95; see GetFeedback's own comment
 //     below)
 //   - src/core/Comb.hpp:79-109          PureDelay (fractional interp :98-108;
-//     the frozen file has no trailing newline after its closing `};`, so
+//     the firmware file has no trailing newline after its closing `};`, so
 //     `wc -l` reports 108 while the struct's real content runs through
 //     line 109 -- confirmed by reading the file's raw bytes, not a citation
 //     error)
@@ -98,7 +98,7 @@ inline std::complex<float> SafeDenominator(std::complex<float> denominator)
 
 }  // namespace transfer_function_detail
 
-// src/core/TanhSaturator.hpp:25-30. Despite the frozen struct's name, this
+// src/core/TanhSaturator.hpp:25-30. Despite the firmware struct's name, this
 // is a Pade rational approximation, not std::tanh -- pinned exactly,
 // including the clamp. Compressive: `Saturate(y) <= y` for `y >= 0` (the
 // rational part is `y * ratio` with `ratio = (27+y^2)/(27+9y^2) <= 1` for
@@ -129,7 +129,7 @@ struct PadeSaturator
 // passed unchanged when the app's real ceiling moved 4.0 -> 2.0. Anything
 // asserting this value must read it from here, never retype it.
 //
-// Value history: 10.0 (frozen-firmware parity) -> 4.0 (gross overload) ->
+// Value history: 10.0 (firmware parity) -> 4.0 (gross overload) ->
 // 2.0 (still too harsh when modulated, very close to blowout territory) ->
 // 3.0 (2026-09-01: the pinned-comb launch state behind the 2.0 cap no
 // longer exists, and the candidate measurement showed the limiter holds
@@ -573,7 +573,7 @@ struct Comb
     // scaled by a 0..1 curve built from ExpMapCompute.
     //
     // DELIBERATE PARITY DIVERGENCE (same treatment as Fuegoize.hpp's own
-    // divergence note): the frozen firmware scales by +-1.1. This port
+    // divergence note): the firmware scales by +-1.1. This port
     // scales by +-0.95 instead. The predecessor's analysis claimed |fb| > 1
     // makes the comb diverge
     // exponentially -- that is FALSE. `Process()` above is
@@ -633,7 +633,7 @@ struct PureDelay
 
 // FroggersEngine.hpp:822-848 (ApplyOutputFx), the parallel (:824-833) and
 // serial (:834-839) comb/peak/scoop routing only -- the reverb blend and
-// m_simFxInsert hook that follow in the frozen function are out of scope.
+// m_simFxInsert hook that follow in the firmware function are out of scope.
 struct FilterFxChain
 {
     ResonantBump peak;
@@ -773,7 +773,7 @@ struct FilterFxChain
     }
 
     // combPeakBlend/scoopMix are precomputed 0..1 control values (the
-    // frozen engine derives them from smoothed knob reads via RuntimeParam,
+    // firmware engine derives them from smoothed knob reads via RuntimeParam,
     // which is parameter-smoothing infrastructure, not a DSP unit in scope
     // here -- callers pass the already-smoothed 0..1 value).
     //

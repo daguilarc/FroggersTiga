@@ -2,7 +2,7 @@
 
 // synth_froggers::dsp::Vco -- a DSP port of Froggers' VCO, exposing Sheaf's
 // VCO UIState. A **copy**, not an include, of the cited Froggers formulas --
-// see the per-block citations below, each read directly from the frozen
+// see the per-block citations below, each read directly from the firmware
 // source before porting.
 //
 // Ported from:
@@ -124,7 +124,7 @@ struct Vco
 
     // pitchKnob01 in [0,1] maps exponentially across [kPitchMinHz,
     // kPitchMaxHz] (PitchToPhaseIncrement below). kPitchMinHz matches the
-    // frozen reference's floor exactly (FroggersEngine.hpp:439-441, 20 Hz);
+    // firmware reference's floor exactly (FroggersEngine.hpp:439-441, 20 Hz);
     // kPitchMaxHz does not: the reference's ceiling is 20000 Hz, the
     // textbook audibility limit -- a display-axis number, not an
     // oscillator-pitch one, that spent roughly the knob's top third on a

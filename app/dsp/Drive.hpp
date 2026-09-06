@@ -3,7 +3,7 @@
 // synth_froggers::dsp::{PolynomialDrive, SampleRateReducer,
 // DigitalReorganizer, Oversampler2x, FrogBlock, DriveBlendPhase} -- a
 // **copy** of the cited Froggers formulas -- read directly from
-// the frozen source before porting, not from memory.
+// the firmware source before porting, not from memory.
 //
 // Ported (7 of the Drive page's 9 params -- Drive, Shape [a wavefolder,
 // different from the Audio bank's VCO-morph Shape], SRR 1,
@@ -62,7 +62,7 @@
 // NOT ported (deliberately): Blend and Phase (Drive page slots
 // 7 and 8). `m_driveParams->GetParam(7)`/`GetParam(8)` are never read
 // anywhere in FroggersEngine.hpp -- confirmed by grep -- so there is no
-// frozen formula to pin. They are newly authored below (DriveBlendPhase),
+// formula to pin. They are newly authored below (DriveBlendPhase),
 // clearly marked, with behavioral (not parity) tests.
 
 #include "DspMath.hpp"
@@ -104,7 +104,7 @@ struct PolynomialDrive
     void SetLink(float linkKnob01) { link = linkKnob01 * 0.5f; }
 
     // PolynomialDrive.hpp:38-66 (SetCoefs). Uses the CURRENT `gain` (the
-    // frozen code's m_gain.m_target, i.e. the un-smoothed target) -- call
+    // firmware code's m_gain.m_target, i.e. the un-smoothed target) -- call
     // SetGain before SetCoefs, same order as FroggersEngine.hpp:489-490.
     void SetCoefs(float shapeKnob01)
     {
@@ -281,14 +281,14 @@ struct SampleRateReducer
 // narrowing that is well-defined only while `inputUp` (== (input+1)*128)
 // stays within [0,255] -- i.e. input in roughly [-1, 0.9921875]. At
 // input==1.0 exactly, inputUp==256 and the cast is undefined behavior in
-// the FROZEN source too (confirmed by reading PolynomialDrive.hpp:135-151
+// the firmware source too (confirmed by reading PolynomialDrive.hpp:135-151
 // directly).
 //
 // FIX, NOT A REPRODUCTION: unlike
 // the fuegoize UB (the retired simulator's Fuegoize.hpp), which is carried forward
-// because the frozen tree also contains a *correct* reference (the
+// because the firmware tree also contains a *correct* reference (the
 // firmware's Parameter.hpp:143) to port instead, there is no such correct
-// reference here -- both PolynomialDrive.hpp:138 in the frozen `src/core/`
+// reference here -- both PolynomialDrive.hpp:138 in the `src/core/`
 // tree and this port hit the same undefined cast at input==1.0. This is
 // newly written code this app owns, and reproducing UB has no parity
 // value, so this port clamps the rounded value to the uint8_t-representable
@@ -320,7 +320,7 @@ struct SampleRateReducer
 // in-loop saturator), which amplify that seed without bound -- "Stop
 // doesn't stop," measured and traced end-to-end.
 //
-// PLAINLY: the frozen firmware (src/core/PolynomialDrive.hpp:125-163) has
+// PLAINLY: the firmware (src/core/PolynomialDrive.hpp:125-163) has
 // this exact same f(0) != 0 behaviour -- it is a property of the original
 // bit-scramble math, not a porting error -- and no DC blocker or highpass
 // exists anywhere in this signal chain (src/core/ and app/ both

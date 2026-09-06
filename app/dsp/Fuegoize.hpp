@@ -36,13 +36,13 @@ namespace synth_froggers::dsp {
 // the same signature the retired simulator's V2FuegoStack.hpp Fuegoize already used, so the
 // cascade below (FuegoStack) reads the same as that V2FuegoStack.hpp:9-23.
 //
-// CALLER CONSTRAINT (not stated in the frozen source): `row` must stay
+// CALLER CONSTRAINT (not stated in the firmware source): `row` must stay
 // within the encoder-grid domain this app actually uses, 0-15 (a bank slot
 // index, crispyRow fixed at 14). The algorithm shifts `lowerBits` by `sh` bits,
 // and `sh` can reach `1 + row` when the fuego knob is high enough to make
 // `mask == 255`; once `sh` reaches a 32-bit int's width the shift is
 // undefined behavior. This is a latent property of the algorithm itself
-// (identical in both frozen references this file is pinned to), not
+// (identical in both references this file is pinned to), not
 // something introduced or fixed by this port -- it simply never fires
 // because every real caller's row is 0-15.
 inline float Fuegoize(float value, float fuegKnob, uint8_t row)

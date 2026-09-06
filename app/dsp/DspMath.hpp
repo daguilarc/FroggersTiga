@@ -1,7 +1,7 @@
 #pragma once
 
 // synth_froggers::dsp -- shared math substrate for the DSP port. This
-// header is a **copy**, not an include, of four small frozen-tree utility
+// header is a **copy**, not an include, of four small firmware-tree utility
 // headers that
 // several ported units (Vco.hpp, RandomShLane.hpp, FilterFx.hpp) all need.
 // It must never #include anything under src/ -- see

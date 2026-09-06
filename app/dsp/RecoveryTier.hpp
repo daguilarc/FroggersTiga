@@ -31,7 +31,7 @@
 //
 // WHY THIS FILE, NOT dsp/FilterFx.hpp: FilterFx.hpp's own header comment
 // declares it a *port* -- "a **copy** of the cited Froggers
-// formulas" -- of frozen firmware DSP. These two tag types are a general-
+// formulas" -- of firmware DSP. These two tag types are a general-
 // purpose recovery-policy vocabulary shared by FilterFx.hpp's own
 // FilterFxChain, Drive.hpp's FrogBlock, and FroggersAppCore.hpp -- not a
 // ported filter formula. Same reasoning dsp/Limiter.hpp's own header

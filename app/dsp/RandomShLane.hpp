@@ -39,16 +39,16 @@ namespace synth_froggers::dsp {
 // ----------------------------------------------------------------------
 // src/core/RGen.hpp, ported with ONE necessary structural change.
 //
-// DISCREPANCY FLAGGED: the frozen RGen's
+// DISCREPANCY FLAGGED: the firmware RGen's
 // xorshift32 state is a **static** class member --
 // `static uint32_t s_state;` (RGen.hpp:12), defined out-of-line as
 // `inline uint32_t RGen::s_state = 0xa341316cu;` (RGen.hpp:66). It is NOT
-// per-instance. Every `RGen` object anywhere in the frozen codebase (both
+// per-instance. Every `RGen` object anywhere in the firmware codebase (both
 // of Marbles' channels, FroggersEngine.hpp:311, Parameter.hpp:197/207/223,
 // AudioPairArState.hpp:118/128, and every ad-hoc `RGen()` temporary) reads
 // and advances that ONE shared stream. Each RGen must be seeded distinctly,
 // or the instances emit identical sequences and the sources become clones
-// of each other -- but the frozen struct has no
+// of each other -- but the firmware struct has no
 // per-instance seed at all, so "seed distinctly" cannot be satisfied by a
 // verbatim copy: five verbatim RGens would not merely correlate, they would
 // all be cursors into one interleaved global sequence, each consuming the
@@ -100,7 +100,7 @@ private:
 //                      free-running sources' size is irrelevant to their
 //                      output since they regenerate every step -- see
 //                      dejaVuKnob below -- but must still be in [1,8]).
-//   - dejaVuKnob    -> selects the frozen Increment()'s two regimes:
+//   - dejaVuKnob    -> selects the firmware Increment()'s two regimes:
 //                      0.5 exactly takes the "else" (generative) branch
 //                      with a computed regen chance of 2*(0.5-0.5) = 0, so
 //                      the index only ever steps through the bag -- i.e. a
