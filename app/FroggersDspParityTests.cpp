@@ -1,9 +1,8 @@
 // FroggersDspParityTests.cpp -- parity test suite for the DSP port. Each
 // TEST_CASE pins one ported unit to its cited Froggers formula. This TU
 // includes ONLY app/dsp/*.hpp (no Sheaf, no JUCE, no frozen-tree headers) --
-// the DSP port is dependency-free, and check_no_frozen_includes.sh
-// mechanically enforces that no file under app/ includes src/,
-// desktop-v2/, wasm/, vcv/, web/, or desktop/.
+// the DSP port is dependency-free, and check_no_firmware_includes.sh
+// mechanically enforces that no file under app/ includes src/.
 //
 // Harness mirrors FroggersHeadlessTests.cpp's self-registering TEST_CASE /
 // REQUIRE_TRUE macros (no external test framework).

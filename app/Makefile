@@ -136,7 +136,7 @@ NO_JUCE_CHECK := $(BUILD_DIR)/check_no_juce
 
 # --- DSP port (pure, dependency-free, own test suite) ------
 # app/dsp/*.hpp are copies of Froggers DSP formulas -- no
-# #include of src/ or desktop-v2/, and no Sheaf/JUCE dependency at
+# #include of src/, and no Sheaf/JUCE dependency at
 # all: the port is deliberately pure DSP. DSP_HEADERS is
 # listed as a prerequisite so editing any ported unit rebuilds the suite.
 DSP_HEADERS := $(wildcard $(APP_DIR)/dsp/*.hpp)
@@ -144,9 +144,9 @@ DSP_HEADERS := $(wildcard $(APP_DIR)/dsp/*.hpp)
 DSP_TEST_SOURCES := $(APP_DIR)/FroggersDspParityTests.cpp
 DSP_TEST_BIN := $(BUILD_DIR)/froggers_dsp_parity_tests
 
-.PHONY: all clean check-no-juce check-no-frozen-deps check-catalog-covers-screen-actions test force
+.PHONY: all clean check-no-juce check-no-firmware-includes check-catalog-covers-screen-actions test force
 
-all: check-no-frozen-deps $(APP)
+all: check-no-firmware-includes $(APP)
 
 $(BUILD_DIR):
 	mkdir -p $@
@@ -172,8 +172,8 @@ $(APP): $(APP_SOURCES) $(SHEAF_LIB) | $(BUILD_DIR)
 # from src/ -- the DSP port is a sanctioned copy, not a shared
 # header, so that tree may never be reached from app/ code, however the
 # include path is spelled.
-check-no-frozen-deps:
-	@bash $(APP_DIR)/check_no_frozen_includes.sh "$(APP_DIR)"
+check-no-firmware-includes:
+	@bash $(APP_DIR)/check_no_firmware_includes.sh "$(APP_DIR)"
 
 # --- microphone usage string drift guard -------------------------------------
 # The sentence is declared once per platform because the two build systems
@@ -262,7 +262,7 @@ check-catalog-covers-screen-actions:
 	@bash $(APP_DIR)/check_catalog_covers_screen_actions.sh "$(APP_DIR)" \
 	    kSceneBlend kEncoderPress kEncoderDrag kInputSelect kViewportNarrow
 
-test: check-no-juce check-no-frozen-deps check-microphone-usage check-catalog-covers-screen-actions $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN) $(MIDI_CATALOG_BIN) $(CONTROLLERS_PAGE_BIN)
+test: check-no-juce check-no-firmware-includes check-microphone-usage check-catalog-covers-screen-actions $(TEST_BIN) $(MONO_VALIDATION_BIN) $(DSP_TEST_BIN) $(PARAMETER_MODEL_BIN) $(MODULATION_BIN) $(AUDIO_ROUTING_BIN) $(VISUALIZER_BIN) $(SCOPE_ADVANCE_INDEX_BIN) $(MARBLES_CLOCK_BIN) $(SURFACE_BIN) $(MIDI_CATALOG_BIN) $(CONTROLLERS_PAGE_BIN)
 	$(TEST_BIN)
 	$(MONO_VALIDATION_BIN)
 	$(DSP_TEST_BIN)

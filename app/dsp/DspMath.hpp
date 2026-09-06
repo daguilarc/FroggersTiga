@@ -4,8 +4,8 @@
 // header is a **copy**, not an include, of four small frozen-tree utility
 // headers that
 // several ported units (Vco.hpp, RandomShLane.hpp, FilterFx.hpp) all need.
-// It must never #include anything under src/ or desktop-v2/ -- see
-// check_no_frozen_includes.sh, which enforces that mechanically for every
+// It must never #include anything under src/ -- see
+// check_no_firmware_includes.sh, which enforces that mechanically for every
 // file under app/.
 //
 // Sources copied (read directly, not from memory):

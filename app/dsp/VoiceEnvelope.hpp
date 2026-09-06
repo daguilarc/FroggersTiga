@@ -5,7 +5,7 @@
 //
 // Ported from:
 //   - src/core/VcoAdsrState.hpp (whole file, verbatim -- it already has no
-//     #include of src/ or desktop-v2/ paths of its own, so this is a
+//     #include of src/ paths of its own, so this is a
 //     line-for-line copy under app/, not a shared header)
 //   - src/core/FroggersEngine.hpp:772-809 (MixOscVoices) -- specifically
 //     the `m_vcoAdsr && m_adsrParams` branch at :774-784, plus the plain

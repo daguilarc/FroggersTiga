@@ -1398,7 +1398,7 @@ TEST_CASE(encoder_ring_renders_fuegoized_value_not_raw_scene_center) {
 // wantsFrame, and legitimate chrome the operator never asked to remove --
 // grep confirms AppendEncoderCell (FroggersUiSurface.hpp) is the
 // ONLY call site into BuildEncoderDrawCommands this app's build reaches
-// (desktop-v2/braid-4/miniapp call sites are frozen/unrelated apps), and it
+// (braid-4/miniapp call sites are unrelated apps), and it
 // sets `state.wantsFrame = false` unconditionally for every cell, before
 // that one call, so the
 // wantsFrame-gated rect (EncoderDraw.hpp:691-698) is provably dead code on

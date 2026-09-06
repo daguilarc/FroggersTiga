@@ -99,7 +99,7 @@ struct FroggersBankLayout {
 };
 
 // Independently re-derived from
-// desktop-v2/Source/V2DesktopPageDisplayNames.hpp's forHostPageRow
+// b9a8199^:desktop-v2/Source/V2DesktopPageDisplayNames.hpp's forHostPageRow
 // (:125-164): grid rows < 7 come from kHostRowGrid[gridPage][row]
 // (:148-155, gridPage = hostPage-1 for hostPage in [1,4]), rows 7-9 from
 // kExpansionTailRowLabels[gridPage][row-7] (:156-159). kHostRowGrid's row
