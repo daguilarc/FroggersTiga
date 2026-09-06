@@ -1,4 +1,8 @@
+# The firmware tests build on the host and need no Arm toolchain, so the
+# toolchain check in config.mk is skipped for that goal.
+ifneq ($(MAKECMDGOALS),firmware-test)
 include src/mk/config.mk
+endif
 
 LIBDAISY_DIR ?= External/libDaisy
 DAISYSP_DIR ?= External/DaisySP
