@@ -596,23 +596,11 @@ control. Every build runs under `nice` with `-j2` at most (this machine).
 
 ## Delivery
 
-One branch `omni-audit-repairs` from `main`. No AI attribution lines in any
-commit. Order:
-
-1. The change's own `openspec/changes/frogg3rs-omni-audit-repairs/` is the
-   first commit.
-2. Pushable groups, one commit each, in this order: 2, 3, 4, 7 (its `app/`,
-   `.gitignore` parts), 8 (its `README.md`, archive and validate parts), 6
-   (its `app/` part). None of these commits adds a file under `src/`,
-   `test/firmware/` or `DAISY_MANUAL.md`; the variants' uncommitted edits stay
-   uncommitted in the working tree through this run and are never staged.
-3. The branch is pushed at that commit and the pull request opened, its body
-   the task-group list with each gate's pass line.
-4. One commit snapshotting the variants' uncommitted work as it stands
-   (message names the change and the date), then the local-only groups, one
-   commit each: 5 (with 5.6, 5.7), 6 (its `src/` and `test/` part), 7.2, 8.1's
-   manual line, 9. These stay unpushed until the operator's go; the ledger
-   names them by hash. Task 5.7's commit touches `app/` files only but cites
-   line numbers that exist only with group 5 applied, so it stays local too.
-5. `git status` clean at repo and submodule level. Delete the branch after
-   merge.
+Everything goes to `main` directly; this repository does not use pull
+requests (a pull request opened on 2026-09-06 against the proposal's earlier
+wording was closed unmerged). One branch `omni-audit-repairs` from `main`, one
+commit per task group, no AI attribution lines, pushed to `main` as a
+fast-forward once the final gates are green: the app-side groups first, then,
+on the operator's go, the variants' uncommitted work as one labelled snapshot
+commit and the firmware-side groups on top of it. `git status` clean at repo
+and submodule level. Delete the branch after the push.
