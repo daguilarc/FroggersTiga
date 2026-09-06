@@ -218,8 +218,9 @@ here so a reader does not go looking for it.
 - [x] 6.4 DROPPED with 1.2's boot splash. There is nothing to check on boot;
       identification is by filename before flashing and by page count after.
 
-- [ ] Hygiene handed over by the MIDI mappings change's preflight: the 19
+- [x] Hygiene handed over by the MIDI mappings change's preflight: the 19
       `FroggersEngine.hpp:LINE` citations in `app/FroggersAppCore.hpp` (7)
       and `app/FroggersDspParityTests.cpp` (12) resolve against `main` but
       not against the engine this change rewrites; re-sweep them against
       the engine as committed, in this change's postflight.
+      Done 2026-09-06 by frogg3rs-omni-audit-repairs task 5.7 (every app/ citation into src/core re-resolved after the engine edit).

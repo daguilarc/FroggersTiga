@@ -76,7 +76,7 @@ struct Register {
 namespace dsp = synth_froggers::dsp;
 
 // =========================================================================
-// 3.1 -- VCO (FroggersEngine.hpp:439-441,706-712,735-744; VcoWaveEval.hpp:7-23)
+// 3.1 -- VCO (FroggersEngine.hpp:254-256, 08b5fd3:src/core/FroggersEngine.hpp:706-712,735-744; 08b5fd3:src/core/VcoWaveEval.hpp:7-23)
 // =========================================================================
 
 
@@ -115,7 +115,7 @@ TEST_CASE(vco_pitch_exp_map_matches_named_range) {
 }
 
 TEST_CASE(vco_pm_depth_scale_zero_off_gate_and_smoothstep) {
-    // FroggersEngine.hpp:147-148,150-165.
+    // 08b5fd3:src/core/FroggersEngine.hpp:147-148,150-165.
     REQUIRE_TRUE(dsp::Vco::PmDepthScale(0.0f) == 0.0f);
     REQUIRE_TRUE(dsp::Vco::PmDepthScale(dsp::Vco::kPmLfoFloor) == 0.0f);
     REQUIRE_TRUE(dsp::Vco::PmDepthScale(dsp::Vco::kPmLfoFloor + dsp::Vco::kPmLfoRampWidth) == 1.0f);
@@ -127,7 +127,7 @@ TEST_CASE(vco_pm_depth_scale_zero_off_gate_and_smoothstep) {
 
 TEST_CASE(dsp_true_zero_depth_taper_monotonic_smoothstep_and_pm_parity) {
     // DspMath.hpp TrueZeroDepthTaper, generalized from PmDepthScale
-    // (FroggersEngine.hpp:150-165). A step function would also pass a
+    // (08b5fd3:src/core/FroggersEngine.hpp:150-165). A step function would also pass a
     // floor/ramp-top-only check, so this sweeps the whole [0,1] range and
     // checks (a) monotonic non-decreasing, (b) strictly inside (0,1)
     // strictly inside the ramp window (a step fails this), and (c) exact
@@ -159,7 +159,7 @@ TEST_CASE(dsp_true_zero_depth_taper_monotonic_smoothstep_and_pm_parity) {
 
 TEST_CASE(vco_pm_zero_at_or_below_floor_leaves_carrier_unmodulated) {
     // At pmKnob <= floor, PmDepthScale == 0, so the depth multiply
-    // (FroggersEngine.hpp:741-743) must zero the PM offset entirely --
+    // (08b5fd3:src/core/FroggersEngine.hpp:741-743) must zero the PM offset entirely --
     // output must equal EvalWaveMorph of the bare carrier phase.
     dsp::Vco vco;
     const float sr = 48000.0f;
@@ -191,8 +191,8 @@ TEST_CASE(vco_pm_above_floor_actually_modulates) {
 }
 
 TEST_CASE(vco_zero_cross_vco_terms_independent_of_other_instances) {
-    // FroggersEngine.hpp:735-744 (independent-PM branch only; the legacy
-    // XCPL `else` at :752-754 is NOT ported). Prove a Vco's output sequence
+    // 08b5fd3:src/core/FroggersEngine.hpp:735-744 (independent-PM branch only; the legacy
+    // XCPL `else` at FroggersEngine.hpp:519-521 is NOT ported). Prove a Vco's output sequence
     // is identical whether or not a second Vco is driven in between calls
     // -- i.e. nothing here can reach another instance's state.
     const float sr = 48000.0f;
@@ -220,7 +220,7 @@ TEST_CASE(vco_zero_cross_vco_terms_independent_of_other_instances) {
 }
 
 TEST_CASE(vco_eval_wave_morph_sine_saw_square_endpoints) {
-    // VcoWaveEval.hpp:7-23.
+    // 08b5fd3:src/core/VcoWaveEval.hpp:7-23.
     const float phase = 0.25f;
     REQUIRE_NEAR(dsp::EvalWaveMorph(phase, 0.0f), dsp::Sine01(phase), 1e-6);
     REQUIRE_NEAR(dsp::EvalWaveMorph(phase, 1.0f), (phase < 0.5f) ? 1.0f : -1.0f, 1e-6);
@@ -229,7 +229,7 @@ TEST_CASE(vco_eval_wave_morph_sine_saw_square_endpoints) {
 }
 
 // =========================================================================
-// 3.2 -- ASR + voice mix (FroggersEngine.hpp:772-809; VcoAdsrState.hpp)
+// 3.2 -- ASR + voice mix (FroggersEngine.hpp:538-563; 08b5fd3:src/core/VcoAdsrState.hpp)
 // =========================================================================
 
 TEST_CASE(vco_adsr_state_attacks_holds_and_releases) {
@@ -308,8 +308,8 @@ TEST_CASE(max_attack_knob_reaches_sustain_within_the_current_quarter_second_ceil
 }
 
 TEST_CASE(mix_osc_voices_applies_asr_per_voice_then_averages) {
-    // FroggersEngine.hpp:774-784 (apply branch) + :786-788 (plain average
-    // return) -- the m_pairAr fallback at :789-808 is v1 legacy, not ported.
+    // 08b5fd3:src/core/FroggersEngine.hpp:774-784 (apply branch) + FroggersEngine.hpp:540-542 (plain average
+    // return) -- the m_pairAr fallback at FroggersEngine.hpp:543-562 is v1 legacy, not ported.
     dsp::VcoAdsrState adsrForMix;
     adsrForMix.init(1000.0f);
     adsrForMix.setGate(true);
@@ -1118,7 +1118,7 @@ TEST_CASE(single_envelope_follower_matches_vco_envelope_followers_per_tap_formul
 }
 
 // =========================================================================
-// 3.4 -- Random S&H lanes (Marbles.hpp:90-119,138-144; RGen.hpp)
+// 3.4 -- Random S&H lanes (Marbles.hpp:67-96,115-121; RGen.hpp)
 // =========================================================================
 
 TEST_CASE(rgen_same_seed_is_deterministic) {
@@ -1212,7 +1212,7 @@ TEST_CASE(random_sh_source4_settles_to_one_of_five_quantised_levels) {
 
 TEST_CASE(random_sh_locked_loop_source_replays_without_regenerating) {
     // Sources #1/#2/#3 are LOCKED loops: dejaVuKnob == 0.5 takes
-    // Marbles.hpp's :99 "else" branch with regen chance
+    // Marbles.hpp's :76 "else" branch with regen chance
     // 2*(0.5-0.5) == 0, so the bag never regenerates after construction --
     // only the read index advances. The slew filter (kFastCutoff, alpha
     // ~0.94) still carries transient memory across a full 8-step loop, so
@@ -1319,7 +1319,7 @@ TEST_CASE(fuego_stack_apply_musical_row_warps_crispy_by_crunchy_first) {
 
 // =========================================================================
 // 3.6 -- Filters (ResonantBump.hpp:44-71; Comb.hpp:54,63,66-76,79-109;
-// TanhSaturator.hpp:25-30 Pade approximation; FroggersEngine.hpp:822-848)
+// TanhSaturator.hpp:25-30 Pade approximation; FroggersEngine.hpp:590-622)
 // =========================================================================
 
 TEST_CASE(pade_saturator_matches_rational_approximation_and_clamps) {
@@ -2914,8 +2914,8 @@ TEST_CASE(topology_morph_peak_branch_headroom_across_full_range) {
 }
 
 // =========================================================================
-// 3.8 -- Reverb (FroggersEngine.hpp:493-534 ProcessReverb, :455-461 wiring,
-// :844-846 Wet/dry blend). Mod depth and Hold are newly authored (no
+// 3.8 -- Reverb (FroggersEngine.hpp:301-342 ProcessReverb, :263-269 wiring,
+// :617-618 Wet/dry blend). Mod depth and Hold are newly authored (no
 // Froggers original -- GetParam(7)/(8) unread).
 // =========================================================================
 
@@ -2975,7 +2975,7 @@ TEST_CASE(reverb_damping_stays_geometric_and_never_reaches_the_inaudible_end) {
 }
 
 TEST_CASE(reverb_wet_dry_mix_is_affine_in_mix_knob_at_fixed_history) {
-    // FroggersEngine.hpp:846: output = (1-mix)*input + mix*wet, where `wet`
+    // FroggersEngine.hpp:618: output = (1-mix)*input + mix*wet, where `wet`
     // is whatever ProcessReverb produced from the SAME input/history. Two
     // freshly-constructed (identical zero state) Reverb instances fed the
     // same input and reverb knobs, differing only in mixKnob, must satisfy
@@ -3009,7 +3009,7 @@ TEST_CASE(reverb_process_matches_manual_tank_replica_at_neutral_mod_and_hold) {
     // Full-chain regression pin: an independent manual re-derivation of
     // ProcessReverb's tank (pre-delay ring, twin delay lines with diffusion
     // cross-feed, shared damping filter, stereo width blend), built directly
-    // from FroggersEngine.hpp:493-534 rather than by calling dsp::Reverb, run
+    // from FroggersEngine.hpp:301-342 rather than by calling dsp::Reverb, run
     // in lockstep against dsp::Reverb::Process at modDepth=0/hold=0 (the
     // parity default) over several samples with a fixed knob set.
     constexpr size_t kSize = dsp::Reverb::kSize;
@@ -3770,7 +3770,7 @@ TEST_CASE(reverb_tank_grit_zero_lets_the_measured_pass_d_seed_decay_where_grit_0
 
 // =========================================================================
 // 3.9 -- Drive (PolynomialDrive.hpp whole file, wiring FroggersEngine.hpp:
-// 81-92,207,483-490,569-573,640-650). Blend and Phase are newly authored (no
+// 87-97,151,290-297,373-377,452-462). Blend and Phase are newly authored (no
 // Froggers original -- GetParam(7)/(8) unread).
 // =========================================================================
 

@@ -36,8 +36,8 @@ Directories this change edits, each swept for hygiene in the preflight
   setters (P3), two zero-caller methods (P12).
 - `src/common/`: sixteen forwarding shims, one of them (`Include.hpp`) with a
   single consumer that uses nothing it forwards (P6).
-- `src/FroggersSolo/`, `src/FroggersGuitar/`, `src/TestControl/`: one include
-  line each; not otherwise edited. Sweep: clean.
+- `src/FroggersSolo/`, `src/FroggersGuitar/`: not edited. `src/TestControl/`:
+  deleted (P22).
 - `test/firmware/`: sweep found a restated struct with a promised assertion
   that does not exist (4c); test lines setting deleted members (P3).
 - `openspec/changes/`, `openspec/specs/`: the archive of finding 14, the spec
@@ -331,6 +331,12 @@ plan changed.
   (task 5.6), plus `firmware-test` and the three firmware builds.
   `IsSimAssignableModIndex`/`IsPermanentModSourceIndex` (`SimModSource.hpp`)
   are live (`Page.hpp:308-309`, `AudioPairArState.hpp:75`, `:140`) and stay.
+  Corrected at execution (P24): the output-FX insert hook (`SimFxInsertFn`,
+  `m_simFxInsert`, `SetSimFxInsert`, the call in `ApplyOutputFx`) is a live
+  test seam — `VariantMix_solo.cpp:29-42` installs a counting lambda through
+  it and `VariantMix_test.cpp:114-115` asserts on the count — and is kept.
+  The preflight grep for it was case-sensitive (`SimFx`) and missed the
+  member spelling (`m_simFxInsert`); the executor's stop caught it.
 - **P4** (1.7) No Sheaf source names this repository's `publish/` path. Task
   5.4 deletes.
 - **P5** (1.8) `check_no_frozen_includes.sh` greps one pattern, `src/` (`:14`).
@@ -389,6 +395,21 @@ plan changed.
   open; this change leaves the code and the tests as they are and puts the
   fork to the operator in its report.
 - **P20** (8.1) `grep -c FroggersTiga DAISY_MANUAL.md` = 0 on 2026-09-06.
+- **P22 (found at execution, 5.2)** `src/TestControl/` has never compiled:
+  `TestControl` lacks the `SetSampleRate` and `ButtonCallback` members
+  `src/common/App.hpp:15`, `:36` call, with or without `Include.hpp`; nothing
+  outside its own directory references it (a sibling proposal's prose lists
+  it beside a `Blink/` that does not exist either). Deleted. It was
+  `Include.hpp`'s only consumer, so `Include.hpp` and all sixteen shims go.
+  The preflight's baseline run (1.3) did not include the three Daisy builds
+  the gate table lists, which is how a never-live gate reached execution.
+- **P23 (found at execution, 2.2)** The workflow's first run failed: the root
+  `Makefile` includes `src/mk/config.mk` unconditionally and that file errors
+  when the Arm toolchain is absent. The include is now skipped for the
+  `firmware-test` goal; the second run passes. Pushed as a follow-up commit
+  on the pull request.
+- **P24** See P3's correction. Every remaining deletion operand was re-checked
+  case-insensitively before the engine edit ran.
 - **P21** (1.2) `git status --short` shows no change to
   `app/FroggersUiSurface.hpp` or `app/FroggersAppCore.hpp`. The variants'
   uncommitted diff: `DAISY_MANUAL.md` +86/−, `src/FroggersSolo/*` 15 lines,
@@ -462,11 +483,9 @@ lambda becomes one private method used by every stage; `stoppedKnob` and
 changes. The `:669-671` guard is removed; the `:1297-1299` guard and its
 comment go with it. The three booleans stay (P2).
 
-**`src/common/` shrinks to what is used (10).** The five zero-inbound shims
-are deleted. `TestControl.cpp` drops its `Include.hpp` line and is built; if
-it builds, `Include.hpp` and the remaining eleven shims are deleted, and if it
-does not, `Include.hpp` keeps exactly the `../core/` forwards the build named
-and the shims are deleted. `DaisyIO.hpp:5-6` and `FieldMutationQueue.hpp:3`
+**`src/common/` shrinks to what is used (10, P22).** `src/TestControl/` is
+deleted (never compiled, no consumer). With it gone `Include.hpp` has no
+consumer, so it and all sixteen shims are deleted. `DaisyIO.hpp:5-6` and `FieldMutationQueue.hpp:3`
 include `../core/Page.hpp` and `../core/SchmidtTrigger.hpp` explicitly. The
 gate is a firmware build of `src/TestControl`, `src/FroggersSolo` and
 `src/FroggersGuitar` with the local `arm-none-eabi-gcc` (present at
@@ -571,7 +590,7 @@ control. Every build runs under `nice` with `-j2` at most (this machine).
 | `nice make -C app -j2 test`, then every `app/build/froggers_*_tests` binary by path (the recipe stops at the first red binary) | all of `app/` | 4.7: one arithmetic line in `RouteAudioSample` broken, the audio-routing binary red, restored, binary removed | after every `app/` task group |
 | `nice cmake --build app/vst/build -j2 && ctest --test-dir app/vst/build --output-on-failure` | `app/vst/` and the headers it compiles | the rebuild itself (binaries newer than the headers) | after groups 4 and 6 |
 | `make firmware-test` | `src/core`, `test/firmware` | 5.6: the determinism checksum before and after; 9.4: each new binary once with an assertion inverted | first in 2.3, then after groups 5, 6, 9 |
-| `nice make -C src/TestControl -j2 && nice make -C src/FroggersSolo -j2 && nice make -C src/FroggersGuitar -j2` | all of `src/` | a clean build from `rm -rf src/*/build` | after group 5 |
+| `nice make -C src/FroggersSolo -j2 && nice make -C src/FroggersGuitar -j2` | all of `src/` | a clean build from `rm -rf src/*/build` | after group 5 |
 | `openspec validate --all --strict` | `openspec/` | P14's reflow turns the one red item green | after groups 7 and 8 |
 | `app/browser` e2e | not loaded by any task here | — | carried forward, not run (red since `c81727b9` for reasons outside this change) |
 

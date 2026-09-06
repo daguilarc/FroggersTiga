@@ -11,7 +11,7 @@
 // channels via `m_marbles[2][8]` (:13), `m_filter[2]` (:15), `m_size[2]`,
 // `m_index[2]`, `m_dejaVuKnob[2]`, `m_output[2]` (:16-20), one shared
 // `RGen m_rgen` (:14), and one shared `float m_probability` (:19); every
-// loop is `for (i = 0; i < 2; i++)` (:92,123,140). This port GENERALIZES
+// loop is `for (i = 0; i < 2; i++)` (:69,100,117). This port GENERALIZES
 // the hardcoded 2 down to a single-lane struct (every `[2]` array becomes
 // one plain scalar member, i.e. the per-channel width becomes 1) and gets
 // five sources by constructing five independent RandomShLane instances --
@@ -44,7 +44,7 @@ namespace synth_froggers::dsp {
 // `static uint32_t s_state;` (RGen.hpp:12), defined out-of-line as
 // `inline uint32_t RGen::s_state = 0xa341316cu;` (RGen.hpp:66). It is NOT
 // per-instance. Every `RGen` object anywhere in the firmware codebase (both
-// of Marbles' channels, FroggersEngine.hpp:311, Parameter.hpp:197/207/223,
+// of Marbles' channels, 08b5fd3:src/core/FroggersEngine.hpp:311, Parameter.hpp:197/207/223,
 // AudioPairArState.hpp:118/128, and every ad-hoc `RGen()` temporary) reads
 // and advances that ONE shared stream. Each RGen must be seeded distinctly,
 // or the instances emit identical sequences and the sources become clones
@@ -91,7 +91,7 @@ private:
 
 // ----------------------------------------------------------------------
 // One Random S&H lane: the generalized-to-width-1 Marbles bag/deja-vu core
-// (src/core/Marbles.hpp:90-119 Increment, :138-144 Process), plus
+// (src/core/Marbles.hpp:67-96 Increment, :115-121 Process), plus
 // construction-time-only "character" (no m_page->GetParam() coupling of
 // any kind -- no source-level controls).
 //
@@ -117,7 +117,7 @@ private:
 //                      1.0 (always step) below -- the structural
 //                      capability is per-lane even though no source
 //                      currently uses a non-1.0 value.
-//   - filterCutoff  -> the OPLowPassFilter slew (Marbles.hpp:138-144),
+//   - filterCutoff  -> the OPLowPassFilter slew (Marbles.hpp:115-121),
 //                      per-lane instead of Marbles.hpp's shared-by-neither-
 //                      channel-but-still-two m_filter[2].
 //   - spread, bias  -> NEW DSP, NOT ported from Marbles.hpp (Marbles.hpp
@@ -166,7 +166,7 @@ struct RandomShLane
         , bias_(bias)
         , quantizeLevels_(quantizeLevels)
     {
-        // Marbles.hpp:121-136 (constructor loop): every slot starts as an
+        // Marbles.hpp:98-113 (constructor loop): every slot starts as an
         // independent draw from this lane's own RGen.
         for (size_t i = 0; i < kNumSlots; ++i)
         {
@@ -175,9 +175,9 @@ struct RandomShLane
         filter_.SetAlphaFromNatFreq(filterCutoffCyclesPerSample);
     }
 
-    // Marbles.hpp:90-119 (Increment), generalized from the two-channel
+    // Marbles.hpp:67-96 (Increment), generalized from the two-channel
     // `for (i < 2)` loop to this lane's own scalars. Deja-vu branch at
-    // Marbles.hpp:99 (`if (0.5 < m_dejaVuKnob[i])`).
+    // Marbles.hpp:76 (`if (0.5 < m_dejaVuKnob[i])`).
     void Increment()
     {
         if (probability_ < rgen_.UniGen())
@@ -206,7 +206,7 @@ struct RandomShLane
         }
     }
 
-    // Marbles.hpp:138-144 (Process): read the current slot through the
+    // Marbles.hpp:115-121 (Process): read the current slot through the
     // slew filter. quantize/spread/bias (new DSP, see struct comment) are
     // applied to the raw slot value before filtering, in that order, so a
     // locked loop's construction-time-only values are also quantized /

@@ -17,7 +17,7 @@
 //     error)
 //   - src/core/TanhSaturator.hpp:25-30  Pade rational approximation
 //     x(27+x^2)/(27+9x^2), NOT std::tanh (formula :28, clamp :29)
-//   - src/core/FroggersEngine.hpp:822-848 (ApplyOutputFx) -- specifically
+//   - 08b5fd3:src/core/FroggersEngine.hpp:822-848 (ApplyOutputFx) -- specifically
 //     the parallel branch :824-833 and serial branch :834-839. The reverb
 //     stage and m_simFxInsert hook that follow (:840-847) are not part of
 //     this port.
@@ -631,7 +631,7 @@ struct PureDelay
     }
 };
 
-// FroggersEngine.hpp:822-848 (ApplyOutputFx), the parallel (:824-833) and
+// 08b5fd3:src/core/FroggersEngine.hpp:822-848 (ApplyOutputFx), the parallel (:824-833) and
 // serial (:834-839) comb/peak/scoop routing only -- the reverb blend and
 // m_simFxInsert hook that follow in the firmware function are out of scope.
 struct FilterFxChain

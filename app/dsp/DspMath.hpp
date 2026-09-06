@@ -41,7 +41,7 @@ inline float Sine01(float phase)
     return std::sin(kTwoPi * wrappedPhase);
 }
 
-// -- src/core/FroggersEngine.hpp:177-179 (WrapPhase) ----------------------
+// -- src/core/FroggersEngine.hpp:124-126 (WrapPhase) ----------------------
 inline float WrapPhase(float p)
 {
     return p - std::floor(p);
@@ -61,7 +61,7 @@ inline float ZeroedExpCompute(float base, float value)
     return (std::pow(base, value) - 1.0f) / (base - 1.0f);
 }
 
-// -- src/core/FroggersEngine.hpp:150-165 (Vco::PmDepthScale), generalized -
+// -- 08b5fd3:src/core/FroggersEngine.hpp:150-165 (Vco::PmDepthScale), generalized -
 // true-zero depth taper: exactly 0 at/below `floor`, a smoothstep
 // t*t*(3-2t) ramp up to 1 across `rampWidth` above `floor`, then 1. Shared
 // by any knob that needs PmDepthScale's exact shape with its own floor/

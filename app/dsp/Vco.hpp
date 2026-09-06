@@ -6,17 +6,17 @@
 // source before porting.
 //
 // Ported from:
-//   - src/core/FroggersEngine.hpp:439-441   pitch 20 Hz-20 kHz exp map
-//   - src/core/FroggersEngine.hpp:135-137   x_pmLfoMinHz/MaxHz/Depth
-//   - src/core/FroggersEngine.hpp:147-148,150-165  PmDepthScale smoothstep
-//   - src/core/FroggersEngine.hpp:706-712   StepIndependentPmLfo
-//   - src/core/FroggersEngine.hpp:735-744   the m_simIndependentPm branch
+//   - src/core/FroggersEngine.hpp:254-256   pitch 20 Hz-20 kHz exp map
+//   - 08b5fd3:src/core/FroggersEngine.hpp:135-137   x_pmLfoMinHz/MaxHz/Depth
+//   - 08b5fd3:src/core/FroggersEngine.hpp:147-148,150-165  PmDepthScale smoothstep
+//   - 08b5fd3:src/core/FroggersEngine.hpp:706-712   StepIndependentPmLfo
+//   - 08b5fd3:src/core/FroggersEngine.hpp:735-744   the m_simIndependentPm branch
 //     (the depth multiply x_pmLfoDepth * PmDepthScale(knob) lives at this
 //     CALLER, not inside StepIndependentPmLfo -- ported that way here too)
-//   - src/core/VcoWaveEval.hpp:7-23         EvalWaveMorph sine->saw->square
+//   - 08b5fd3:src/core/VcoWaveEval.hpp:7-23         EvalWaveMorph sine->saw->square
 //
 // NOT ported (deliberately): the legacy `else` branch at
-// FroggersEngine.hpp:752-754, which uses XCPL cross-coupling between VCOs.
+// FroggersEngine.hpp:519-521, which uses XCPL cross-coupling between VCOs.
 // This struct has zero cross-VCO terms by construction -- it holds no
 // reference to any other Vco instance, so "porting only the independent-PM
 // branch" and "zero cross-VCO terms" are the same guarantee expressed one
@@ -62,7 +62,7 @@
 
 namespace synth_froggers::dsp {
 
-// src/core/VcoWaveEval.hpp:7-23, verbatim formula.
+// 08b5fd3:src/core/VcoWaveEval.hpp:7-23, verbatim formula.
 inline float EvalWaveMorph(float phaseWrapped01, float morph)
 {
     if (!std::isfinite(morph))
@@ -104,9 +104,9 @@ struct Vco
     // is their geometric mean -- sqrt(kPmLfoMinHz * kPmLfoMaxHz) -- not
     // the arithmetic average, so moving either endpoint also moves where
     // the middle of the knob's travel lands. kPmLfoMaxHz and kPmLfoDepth
-    // match the parity reference exactly (FroggersEngine.hpp:136-137,
+    // match the parity reference exactly (08b5fd3:src/core/FroggersEngine.hpp:136-137,
     // x_pmLfoMaxHz/x_pmLfoDepth). kPmLfoMinHz does not: the reference's
-    // x_pmLfoMinHz (0.05f, FroggersEngine.hpp:135) is a ~20-second cycle,
+    // x_pmLfoMinHz (0.05f, 08b5fd3:src/core/FroggersEngine.hpp:135) is a ~20-second cycle,
     // slow enough to double as a second off switch. That job already
     // belongs entirely to each VCO's own PM depth knob, which gates the
     // offset to exactly zero at/below kPmLfoFloor (PmDepthScale below) --
@@ -118,13 +118,13 @@ struct Vco
     static constexpr float kPmLfoMaxHz = 20.0f;
     static constexpr float kPmLfoDepth = 0.15f;
 
-    // FroggersEngine.hpp:147-148 (x_pmLfoFloor/x_pmLfoRampWidth).
+    // 08b5fd3:src/core/FroggersEngine.hpp:147-148 (x_pmLfoFloor/x_pmLfoRampWidth).
     static constexpr float kPmLfoFloor = 0.02f;
     static constexpr float kPmLfoRampWidth = 0.08f;
 
     // pitchKnob01 in [0,1] maps exponentially across [kPitchMinHz,
     // kPitchMaxHz] (PitchToPhaseIncrement below). kPitchMinHz matches the
-    // firmware reference's floor exactly (FroggersEngine.hpp:439-441, 20 Hz);
+    // firmware reference's floor exactly (FroggersEngine.hpp:254-256, 20 Hz);
     // kPitchMaxHz does not: the reference's ceiling is 20000 Hz, the
     // textbook audibility limit -- a display-axis number, not an
     // oscillator-pitch one, that spent roughly the knob's top third on a
@@ -170,7 +170,7 @@ struct Vco
     // once the enumeration went hierarchical.
     float overCeilingSeconds = 0.0f;
 
-    // FroggersEngine.hpp:439-441 -- one VCO's pitch knob (0..1) mapped
+    // FroggersEngine.hpp:254-256 -- one VCO's pitch knob (0..1) mapped
     // exponentially across kPitchMinHz-kPitchMaxHz, expressed as a phase
     // increment (cycles/sample: freq/sampleRate) so Process() only
     // adds-and-wraps.
@@ -179,7 +179,7 @@ struct Vco
         return ExpMapCompute(kPitchMinHz / sampleRate, kPitchMaxHz / sampleRate, pitchKnob01);
     }
 
-    // FroggersEngine.hpp:150-165 (PmDepthScale). Thresholds at :147-148.
+    // 08b5fd3:src/core/FroggersEngine.hpp:150-165 (PmDepthScale). Thresholds at :147-148.
     // Body lives in dsp::TrueZeroDepthTaper (DspMath.hpp), shared with any
     // other knob needing the same true-zero taper shape with its own
     // floor/ramp width.
@@ -203,7 +203,7 @@ struct Vco
         return ExpMapCompute(kRingModMinHz / sampleRate, kRingModMaxHz / sampleRate, ringModKnob01);
     }
 
-    // FroggersEngine.hpp:706-712 (StepIndependentPmLfo) -- advances this
+    // 08b5fd3:src/core/FroggersEngine.hpp:706-712 (StepIndependentPmLfo) -- advances this
     // VCO's own PM LFO by one sample; returns its PRE-advance sine value.
     // The RATE argument is the shared PM-rate knob (Audio slot 12, one knob
     // feeding all three VCOs' StepPmLfo calls), decoupled from the per-VCO
@@ -217,7 +217,7 @@ struct Vco
         return lfoValue;
     }
 
-    // FroggersEngine.hpp:735-744, the m_simIndependentPm branch, plus Ring
+    // 08b5fd3:src/core/FroggersEngine.hpp:735-744, the m_simIndependentPm branch, plus Ring
     // Mod and PM-rate decoupling on top. pmKnob01 drives ONLY this VCO's
     // own PM depth (PmDepthScale); pmRateKnob01 is the shared Audio-slot-12
     // rate knob; ringModKnob01 is this VCO's own Ring Mod knob (Audio slot

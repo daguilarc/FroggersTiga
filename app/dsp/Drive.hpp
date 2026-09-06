@@ -20,26 +20,26 @@
 //       Oversampler2x/:69-123             2x oversample + anti-alias wrap
 //         around the polynomial-drive + fuzz stage
 //       FrogBlock/:165-203                the whole chain's order
-//   - src/core/FroggersEngine.hpp:81-92    member declarations (m_srr1,
+//   - src/core/FroggersEngine.hpp:87-97    member declarations (m_srr1,
 //     m_srr2, m_fuzz, m_digr, m_hash, m_frogBlock)
-//   - src/core/FroggersEngine.hpp:207      RuntimeParam smoothing-rate
+//   - src/core/FroggersEngine.hpp:151      RuntimeParam smoothing-rate
 //     application (confirms these are ordinary smoothed knobs; smoothing
 //     itself is NOT ported -- see note below)
-//   - src/core/FroggersEngine.hpp:483-490  param wiring:
-//       :483 SRR 1 = 1e-2 + ZeroedExp(10, 1 - GetParam(2))
-//       :484 SRR 2 = 1e-2 + ZeroedExp(10, 1 - GetParam(3))
-//       :485 XOR (m_digr) = GetParam(4), direct passthrough
-//       :486 Bit depth (m_hash) = GetParam(5), direct passthrough
-//       :487 Fuzz = GetParam(6), direct passthrough
-//       :489 Drive = PolynomialDrive::SetGain(GetParam(0))
-//       :490 Shape = PolynomialDrive::SetCoefs(GetParam(1))
-//   - src/core/FroggersEngine.hpp:569-573  block-rate setter calls
+//   - src/core/FroggersEngine.hpp:290-297  param wiring:
+//       :290 SRR 1 = 1e-2 + ZeroedExp(10, 1 - GetParam(2))
+//       :291 SRR 2 = 1e-2 + ZeroedExp(10, 1 - GetParam(3))
+//       :292 XOR (m_digr) = GetParam(4), direct passthrough
+//       :293 Bit depth (m_hash) = GetParam(5), direct passthrough
+//       :294 Fuzz = GetParam(6), direct passthrough
+//       :296 Drive = PolynomialDrive::SetGain(GetParam(0))
+//       :297 Shape = PolynomialDrive::SetCoefs(GetParam(1))
+//   - src/core/FroggersEngine.hpp:373-377  block-rate setter calls
 //     (SetFreq/SetFlip/SetHash/fuzz assignment) confirming these five feed
 //     FrogBlock's members directly by name.
-//   - src/core/FroggersEngine.hpp:640-650  the Drive page's InitParam order
+//   - src/core/FroggersEngine.hpp:452-462  the Drive page's InitParam order
 //     (GAIN, SHAPE, SRR1, SRR2, DIGR, HASH, FUZZ), confirming param indices
 //     0-6 map to Drive/Shape/SRR1/SRR2/XOR/BitDepth/Fuzz in that order.
-//   - src/core/FroggersEngine.hpp:872      `m_frogBlock.Process(chainIn)`,
+//   - src/core/FroggersEngine.hpp:646      `m_frogBlock.Process(chainIn)`,
 //     confirming FrogBlock is the whole unit's entry point.
 //
 // TanhSaturator<false> reduces to PadeSaturator: FrogBlock's fuzz path
@@ -105,7 +105,7 @@ struct PolynomialDrive
 
     // PolynomialDrive.hpp:38-66 (SetCoefs). Uses the CURRENT `gain` (the
     // firmware code's m_gain.m_target, i.e. the un-smoothed target) -- call
-    // SetGain before SetCoefs, same order as FroggersEngine.hpp:489-490.
+    // SetGain before SetCoefs, same order as FroggersEngine.hpp:296-297.
     void SetCoefs(float shapeKnob01)
     {
         const float computedGain = gain;

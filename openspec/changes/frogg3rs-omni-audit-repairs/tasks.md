@@ -196,11 +196,8 @@ under `nice` with `-j2` at most.
       `PolynomialDrive.hpp`, `ResonantBump.hpp`. Confirm first by grep that no
       include resolves to any of them (operands: `common/<Name>.hpp`, and
       `"<Name>.hpp"` from inside `src/common/`).
-- [ ] 5.2 (S) `src/TestControl/TestControl.cpp:1`: delete the `Include.hpp`
-      line; `nice make -C src/TestControl -j2`. Builds → delete
-      `src/common/Include.hpp` and the remaining eleven shims. Does not build
-      → restore the line, rewrite `Include.hpp` to `../core/` forwards for
-      exactly the headers the errors name, delete the shims. Either way
+- [ ] 5.2 (S) `src/TestControl/` never compiled (P22): `git rm -r` it, then
+      delete `src/common/Include.hpp` and the remaining eleven shims. Then
       `DaisyIO.hpp:5-6` → `../core/Page.hpp`, `../core/SchmidtTrigger.hpp`;
       `FieldMutationQueue.hpp:3` → `../core/Page.hpp`. `App.hpp`,
       `DaisyIO.hpp`, `FieldMutationQueue.hpp`, `FieldSwitchGuard.hpp` stay.
@@ -216,17 +213,17 @@ under `nice` with `-j2` at most.
       restated struct and the `:13-15` comment from
       `test/firmware/RefreshGate_test.cpp`; the test includes the real header.
 - [ ] 5.6 (S) Simulator host hooks out of `src/core/FroggersEngine.hpp`.
-      First: `HookIdentity_test.cpp` drops `:15`, prints
+      First: `HookIdentity_test.cpp` prints
       `checksum=<sum of out[i]*(i+1)>` and `maxabs=<max |out|>` after its
       PASS line, is renamed `EngineDeterminism_test.cpp` (CMakeLists `:19`,
       `:33`); build and run it; record the two numbers (the before line;
       `maxabs` must be > 0 or the instrument is dead). Then delete, keeping
       the legacy branch of every collapsed ternary or `if` verbatim:
       includes `:15-17`; `SimFxInsertFn` `:25`; `m_pm3` `:43` and `:210`;
-      `:111-119` except `m_pairAr` (`:117`); `:122-172` (PM flag, phases,
+      `:111-119` except `m_pairAr` (`:117`) and the FX insert pair (`:115-116`); `:122-172` (PM flag, phases,
       `x_pmLfo*`, `PmDepthScale`) — keep `m_pair12`/`m_pair23`; the
       `EvalWaveMorph` wrapper `:202-205`; `SetSimWaveMorph` `:233-236`;
-      `SetSimDedicatedPm3Knob` `:238-241`; `SetSimFxInsert` `:243-247`;
+      `SetSimDedicatedPm3Knob` `:238-241`;
       `SetVcoAdsrState` `:255-259`; `GetAdsrParamForTest` and its comment
       `:261-270`; `SetSimIndependentPm` `:272-275`; the morph accessors
       `:288-370`; the sanitize loop `:395-401`; the `if` at `:452-458`
@@ -234,7 +231,7 @@ under `nice` with `-j2` at most.
       wave-cycle statements; `StepIndependentPmLfo` and comment `:711-724`;
       `pm3d = ZeroedExp(fuegKnob)` at `:730`; `:736-742` and `:772-774` keep
       `EvalWave`/`SDDSine::Evaluate`; `:744-766` keeps the legacy block;
-      `:786-797` (the `m_vcoAdsr` block); `:853-856` (the FX insert call).
+      `:786-797` (the `m_vcoAdsr` block).
       Delete `src/core/VcoAdsrState.hpp`, `VcoWaveMorph.hpp`,
       `VcoWaveEval.hpp`. `Marbles.hpp:50-71` (`ResetPageToDefaults` and its
       comment). `Page.hpp:262-274` (`SanitizeSimModAssignments`).
@@ -252,10 +249,9 @@ under `nice` with `-j2` at most.
       per file. Tick the handover item at
       `openspec/changes/frogg3rs-guitar-and-solo-variants/tasks.md:221` with
       a one-line pointer to this task.
-- [ ] 5.5 Gate: `rm -rf src/TestControl/build src/FroggersSolo/build
-      src/FroggersGuitar/build`; `nice make -C src/TestControl -j2`, `nice
-      make -C src/FroggersSolo -j2`, `nice make -C src/FroggersGuitar -j2`;
-      `make firmware-test`. Record pass lines and the three `.bin` sizes.
+- [ ] 5.5 Gate: `rm -rf src/FroggersSolo/build src/FroggersGuitar/build`;
+      `nice make -C src/FroggersSolo -j2`, `nice make -C src/FroggersGuitar
+      -j2`; `make firmware-test`. Record pass lines and the two `.bin` sizes.
 
 ## 6b. Comment labels in `src/` and `test/` (finding 12) — H, S
 

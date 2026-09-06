@@ -1658,7 +1658,7 @@ private:
     }
 
     // -- Drive bank -> dsp::FrogBlock + DriveBlendPhase ------
-    // FroggersEngine.hpp:483-490 order: Drive (SetGain) before Shape
+    // FroggersEngine.hpp:290-297 order: Drive (SetGain) before Shape
     // (SetCoefs, which reads the just-set gain target -- Drive.hpp's own
     // comment), then SRR1/SRR2/XOR/BitDepth/Fuzz; Blend/Phase (slots 7-8)
     // are the authored DriveBlendPhase stage, crossfading dry (chainIn)
@@ -1687,7 +1687,7 @@ private:
     }
 
     // -- Filter bank -> dsp::FilterFxChain -------------------
-    // FroggersEngine.hpp:463,465-481 mapping (Comb offset -> pureDelay,
+    // FroggersEngine.hpp:272,274-288 mapping (Comb offset -> pureDelay,
     // Peak freq/gain/Q -> ResonantBump, Comb delay/feedback/LP -> Comb,
     // Comb/Peak -> blend, Scoop -> scoopMix). The old `useParallel` bool
     // (which used to mirror `SetUseV2FilterParallel(UsesV2Fuego(hostKind))`,
@@ -1703,7 +1703,7 @@ private:
             dsp::ExpMapCompute(0.001f, 0.1f, RoutedKnob(FroggersBankId::Filter, 3)),
             static_cast<float>(dsp::PureDelay::kSize - 1) / sampleRate_);
         filterChain_.pureDelay.SetDelaySeconds(combOffsetSeconds, sampleRate_);
-        // FroggersEngine.hpp:561-562: the scoop notch shares the peak bump's
+        // 08b5fd3:src/core/FroggersEngine.hpp:561-562: the scoop notch shares the peak bump's
         // freq and width verbatim -- hoisted into locals because BOTH
         // ResonantBumps consume them.
         // Floor raised from 20 Hz to 100 Hz: this is a peak, not a cutoff
@@ -1757,7 +1757,7 @@ private:
         filterChain_.peak.SetHeight(
             dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, RoutedKnob(FroggersBankId::Filter, 1)));
         filterChain_.peak.SetWidth(bumpWidth);
-        // FroggersEngine.hpp:561-564, restored 2026-07-27. These three
+        // 08b5fd3:src/core/FroggersEngine.hpp:561-564, restored 2026-07-27. These three
         // setters were dropped in the port even though `FilterFxChain`
         // kept the scoop blend, so `scoopNotch` ran forever on
         // `ResonantBump`'s default `freq = 1000.0f` (FilterFx.hpp:133) --
@@ -1821,7 +1821,7 @@ private:
         const float cmlpCeiling = 20000.0f / sampleRate_;
         const float cmlp = dsp::ExpMapCompute(std::min(4.0f * combFreq, cmlpCeiling), cmlpCeiling,
                                                RoutedKnob(FroggersBankId::Filter, 6));
-        // FroggersEngine.hpp:430-432 (Alpha): 1 - exp(-2*pi*natFreq).
+        // FroggersEngine.hpp:245-247 (Alpha): 1 - exp(-2*pi*natFreq).
         filterChain_.comb.SetCutoffAlpha(1.0f - std::exp(-2.0f * static_cast<float>(M_PI) * cmlp));
         // Task C (Filter slot 7, "Comb drive", "CDrv"): knob-driven
         // pre-gain on the comb saturator's argument (dsp::Comb::Process,
@@ -1852,8 +1852,8 @@ private:
 
     // -- Delay bank -> dsp::StereoDelay ---------------------
     // Positioned exactly where the firmware engine's `m_simFxInsert` hook
-    // sits: FroggersEngine.hpp:840-843, between the filter chain
-    // (:824-839) and Reverb (:844-847) -- confirmed by the retired
+    // sits: FroggersEngine.hpp:595-598, between the filter chain
+    // (08b5fd3:src/core/FroggersEngine.hpp:824-839) and Reverb (FroggersEngine.hpp:599-618) -- confirmed by the retired
     // simulator's `WasmSimHost`, which wired this exact ported unit's
     // frozen counterpart (`DelayState::processInsert`) into that hook.
     // `processInsert`'s own shape is `delay.process(bumpIn, params)` then
@@ -1908,7 +1908,7 @@ private:
     }
 
     // -- Reverb bank -> dsp::Reverb --------------------------
-    // Last stage, matching FroggersEngine.hpp:844-847's wet/dry blend
+    // Last stage, matching FroggersEngine.hpp:617-618's wet/dry blend
     // (folded into Reverb::Process's own return -- see that struct's
     // header comment).
     // The wet/dry ceiling is kMaxWetMix, shared with the Delay bank; see
