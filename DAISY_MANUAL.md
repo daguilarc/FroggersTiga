@@ -12,8 +12,7 @@ other.
 The Field holds whichever you flashed last. Guitar is the one with no Reverb
 page.
 
-**Frozen — not under active development**, but still buildable and flashable, and kept here rather than
-deleted since the physical hardware still runs it.
+The firmware builds and flashes from this tree; `make firmware-test` at the repository root builds and runs its host-side tests. The two variants are the table above.
 
 This instrument is unrelated to the Sheaf app that shares this repository. It uses a different parameter
 model entirely: seven knobs per page plus a page-local `FUEG` fuegoizer, `M1..M7` modulation assignment,
