@@ -753,9 +753,9 @@ void FroggersPluginProcessor::timerCallback() {
     // FroggersUiSurface instance already Attach()-ed to this engine
     // (Froggers.hpp:49, run once during engine_.Initialize() above), so
     // DispatchAction() here runs the literal HandleAction kPlay/kStop
-    // branches (FroggersUiSurface.hpp:1826-1876) -- including their
-    // SetFreezeLatched(false) disarm and happens-before-ordered
-    // PushMessage/SetDesiredTransportRunning pair -- rather than a
+    // branches (FroggersUiSurface.hpp:2169-2187) -- including their
+    // LatchThenTransport call, which disarms the latch and pushes the
+    // transport message in happens-before order -- rather than a
     // hand-mirrored copy of that logic that could drift from it. No editor
     // is required for this: DispatchAction() does not touch anything
     // editor-owned.
@@ -954,8 +954,9 @@ void FroggersPluginProcessor::TestStartTransport() {
     // Routed through DispatchAction (the production seam, see
     // timerCallback()'s own comment) rather than pushing
     // MessageIn::Start/SetDesiredTransportRunning directly: a direct push
-    // would miss the Freeze-latch disarm the real Play button performs
-    // (FroggersUiSurface.hpp:1826-1846), and hand-mirroring that fix a
+    // would miss the Freeze-latch disarm the real Play button's
+    // LatchThenTransport call performs (FroggersUiSurface.hpp:2169-2180),
+    // and hand-mirroring that fix a
     // second time would let this seam and the real transport-edge-trigger
     // producer independently drift from HandleAction's actual kPlay
     // branch.
@@ -1196,7 +1197,8 @@ void FroggersPluginProcessor::PumpHostParameterBridge() {
             if (hostTarget != shadowBool) {
                 // host -> core: DispatchAction(kFreeze) TOGGLES
                 // (FroggersUiSurface.hpp's own kFreeze branch: `engaging =
-                // !app_->FreezeLatched(); app_->SetFreezeLatched(engaging)`)
+                // !app_->FreezeLatched(); engaging ?
+                // LatchThenTransport(true, ...) : app_->SetFreezeLatched(false)`)
                 // -- converted here into "set to this absolute target" by
                 // only dispatching when the toggle would actually move the
                 // latch to match what the host asked for.

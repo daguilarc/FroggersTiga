@@ -656,10 +656,6 @@ public:
     }
 
     void ProcessFrame() {
-        if (!drillIn_.has_value()) {
-            drillIn_.emplace(parameters_.BankAt(activeBankIx_));
-        }
-
         // Applies the most recent routed-input transition queued by Init()'s
         // callback (message thread), if any -- at most once per block, never
         // per sample, and always before ProcessBlock() reads it below.
@@ -953,7 +949,15 @@ public:
             // released-while-stopped edge) so the two can never drift apart
             // in what "teardown" means. One lambda instance per sample,
             // cheap (no heap capture; `this` only).
-            const auto runStopTeardown = [this]() {
+            // Resets every stateful unit and clears the pending-clear flag --
+            // the one clear this policy owes, shared by both the
+            // already-idle-at-the-stop-edge site and the deferred-clear site
+            // below so the two can never drift apart in what "clear" means.
+            const auto clearDelayReverb = [this]() {
+                ForEachStatefulUnit([](auto& unit, auto) { unit.Reset(); });
+                delayReverbClearPending_ = false;
+            };
+            const auto runStopTeardown = [this, &clearDelayReverb]() {
                 // Forces
                 // every non-idle voice into Release right at the edge,
                 // BEFORE the AllIdle() check below reads its post-edge
@@ -1014,8 +1018,7 @@ public:
                     // pending-clear-on-AllIdle logic below would never get a
                     // false->true transition to fire on, so the clear has to
                     // happen here instead.
-                    ForEachStatefulUnit([](auto& unit, auto) { unit.Reset(); });
-                    delayReverbClearPending_ = false;
+                    clearDelayReverb();
                 } else {
                     // Still releasing: defer. Arms the sample-accurate watch
                     // below for the one clear this policy owes, fired the
@@ -1066,8 +1069,7 @@ public:
                     // runs exactly once for the whole release, not once per
                     // block for up to kMaxReleaseSeconds (2.5s,
                     // VoiceEnvelope.hpp:84) the way the old policy did.
-                    ForEachStatefulUnit([](auto& unit, auto) { unit.Reset(); });
-                    delayReverbClearPending_ = false;
+                    clearDelayReverb();
                 }
             }
             wasTransportRunning_ = transportRunningNow;
@@ -1082,9 +1084,9 @@ public:
             // cycle -- e.g. the cross-VCO pitch default).
             const auto vcoDrive = [this](std::size_t paramIx) {
                 return FroggersModulationSlate::VcoDrive{
-                    parameters_.PageParameter(FroggersBankId::Audio, paramIx).CachedKnobValue(0),
-                    parameters_.PageParameter(FroggersBankId::Audio, paramIx + 3).CachedKnobValue(0),
-                    parameters_.PageParameter(FroggersBankId::Audio, paramIx + 6).CachedKnobValue(0),
+                    parameters_.PageParameter(FroggersBankId::Audio, AudioSlot(paramIx, VcoSlotRole::Pitch)).CachedKnobValue(0),
+                    parameters_.PageParameter(FroggersBankId::Audio, AudioSlot(paramIx, VcoSlotRole::Shape)).CachedKnobValue(0),
+                    parameters_.PageParameter(FroggersBankId::Audio, AudioSlot(paramIx, VcoSlotRole::PhaseMod)).CachedKnobValue(0),
                 };
             };
             // Operator-ordered, and NOT the F3
@@ -1284,10 +1286,7 @@ public:
         // Publish the current drill-in level for the surface's header --
         // same once-per-block cross-thread publish shape as every other
         // display atomic in this section (see DrillLevel()'s own comment).
-        // drillIn_ always holds a value once Init() has run (constructed
-        // there, and only ever re-emplaced, never reset to nullopt); the
-        // has_value() check is defensive rather than a reachable fallback.
-        drillLevelDisplay_.store(drillIn_.has_value() ? drillIn_->Level() : 0, std::memory_order_release);
+        drillLevelDisplay_.store(drillIn_->Level(), std::memory_order_release);
 
         // Publishes the master clock's active tempo/external-slave
         // state for the surface to read cross-thread (see this file's
@@ -1467,191 +1466,178 @@ private:
         return block.clockPlan->TryTransportQuarterNotesAt(static_cast<double>(absoluteOutputSample));
     }
 
-    // The real audio path -- Audio/Envelope
-    // banks -> 3x dsp::Vco + dsp::MixOscVoices ->
-    // Drive bank -> dsp::FrogBlock + dsp::DriveBlendPhase ->
-    // Filter bank -> dsp::FilterFxChain -> Delay bank ->
-    // dsp::StereoDelay -> Reverb bank -> dsp::Reverb.
+    // Audio-bank slot layout for a given VCO: pitch at its own index, shape
+    // at +3, phase mod at +6, ring mod at +9 -- one named grouping shared by
+    // ProcessBlock's vcoDrive lambda and RouteAudioSample's VCO loop below,
+    // rather than each hand-writing the same offsets.
+    enum class VcoSlotRole : std::size_t { Pitch = 0, Shape = 3, PhaseMod = 6, RingMod = 9 };
+    static constexpr std::size_t AudioSlot(std::size_t vco, VcoSlotRole role) {
+        return vco + static_cast<std::size_t>(role);
+    }
+
+    float RoutedKnob(FroggersBankId bank, std::size_t ix) {
+        return parameters_.PageParameter(bank, ix).CachedKnobValue(0);
+    }
+
+    // Stop-must-stop fix (operator bug report 2026-07-29: "the stop button
+    // doesnt actually stop all audio in all circumstances"). Closing the
+    // transport gate puts every voice into Stage::Release honouring the
+    // PATCH's release knob -- up to kMaxReleaseSeconds. So Stop used to
+    // begin a multi-second fade during which the voices kept re-exciting
+    // the delay and reverb, and ProcessBlock's clear-at-AllIdle could not
+    // fire until that fade finished. Lowering kMaxReleaseSeconds does not
+    // fix this; even 5s reads as "Stop is broken".
     //
-    // Ordering proof (verified by reading the cited source, not assumed):
-    // `Parameter::GetRaw()` (External/Sheaf's
-    // projects/synth/src/ParameterModulation.cpp:1207-1215) sums the
-    // scene-blended center with `Modulators::ApplyActive()` -- i.e.
-    // modulation-depth routing is already baked in there. `Parameter::
-    // ProcessLitePhase1()` (:1459-1461) writes `currentKnobValues_[v] =
-    // GetRaw(v)`, and `ParameterGroup::ProcessSamplePhase1()` calls that for
-    // every parameter (:867-870) -- so by the time `FroggersParameterModel::
-    // ApplyFuegoSeam()` runs (between Phase1 and Phase2, FroggersParameters.
-    // hpp), `Parameter::CachedKnobValue()` already reflects modulation, and
-    // ApplyFuegoSeam() then overwrites it with the fuegoized value via
-    // `ReplaceCachedKnobValue()`. `ProcessSamplePhase2()` ->
-    // `ProcessLitePhase2()` (:1471-1479) only slews `uiDisplayCenters_` from
-    // `currentKnobValues_` and never rewrites the latter, so the cache is
-    // unaffected by Phase2. Every `CachedKnobValue()` read below -- taken
-    // after `parameters_.ProcessSample()` has returned for this sample -- is
-    // therefore post-modulation AND post-fuego, exactly as required; if this
-    // were not achievable as structured, the fallback was to stop and report
-    // rather than reading raw values, which is why this citation chain
-    // exists.
-    dsp::StereoSample RouteAudioSample() {
-        auto knob = [this](FroggersBankId bank, std::size_t ix) -> float {
-            return parameters_.PageParameter(bank, ix).CachedKnobValue(0);
-        };
+    // While the transport is STOPPED, substitute a fast release. The
+    // operator's own release setting is untouched and applies normally the
+    // moment the transport runs again -- this only overrides the knob on
+    // the stop path. ~50ms is short enough to read as immediate and long
+    // enough to avoid a click; an instantaneous cut would click.
+    //
+    // Derived from VcoAdsrState's own mapping rather than hardcoded, so it
+    // stays a true 50ms if kMaxReleaseSeconds/kMinReleaseSeconds are ever
+    // retuned again. mapRelease is now dsp::ExpMapCompute (deliberate
+    // parity divergence, VoiceEnvelope.hpp), so this is that map's
+    // inverse:
+    //   mapRelease(k) = min * (max/min)^k
+    //   k = ln(target/min) / ln(max/min)
+    // `static const`, not `constexpr`: std::log is not a constant
+    // expression on this toolchain, so the inversion is computed once on
+    // this function's first call (function-local static init, no data
+    // race -- audio processing is single-threaded) rather than every
+    // sample, unlike the old linear inverse this replaces, which the
+    // compiler folded to a literal at compile time.
+    //
+    // `wasTransportRunning_` is written earlier in this same per-sample
+    // iteration (ProcessBlock's edge check, above this call), so it holds
+    // THIS sample's transport state, not the previous one's.
+    //
+    // While the transport is
+    // STOPPED, override effective knob values for the release knob
+    // (releaseKnob, below -- already existed) PLUS the three drive
+    // pre-gains (Delay slot 9 "Feedback drive", Reverb slot 10 "Tank
+    // drive", Filter slot 7 "Comb drive" -- each maps through the SAME
+    // ExpMapCompute(0.25,4,knob) idiom, unity at knob==0.5, see each
+    // unit's own SetFeedbackDrive()/TankDriveFromKnob()/this file's
+    // Filter-slot-7 comment for the citation) and Freeze (Delay slot
+    // 4, dsp::DelayParams::dfrz, resolves to 0.0f) -- WITHOUT writing to
+    // the parameter model, exactly as kStopFadeReleaseKnob's release
+    // override above never writes the Release knob. Play resumes
+    // bit-identical because the commanded value was never touched: the
+    // instant `wasTransportRunning_` is true again, `stoppedKnob` below
+    // just returns `knob(bank, slot)` unchanged.
+    //
+    // Reverb's Grit (slot 11) joins
+    // the same list -- a third mechanism found by direct measurement.
+    // With W1+W2 in place the pass-D 20-trial repro
+    // still reproduced 20/20 -- measured cause: Grit's stage
+    // (dsp::DigitalReorganizer::Mangle, dsp/Drive.hpp:363-382) sits
+    // INSIDE the tank feedback path ahead of the loop's own
+    // PadeSaturator::Saturate bound, and Mangle's 8-bit-bucket
+    // quantize-then-XOR has UNBOUNDED local gain across a bucket
+    // boundary, so at Hold-high (fb~=0.999) the ordinary sub-audible
+    // release tail gets re-amplified every round trip into a
+    // saturator-bounded but never-decaying limit cycle (control,
+    // isolated dsp::Reverb: one 0.01 seed then exact zero for 6.25s --
+    // locks at 0.306814 forever at the drawn Grit 0.8094; decays to
+    // 1.98e-7 at Grit 0). Grit 0.0f is its own exact bit-identical
+    // bypass by construction (Mangle(x,0,0) - Mangle(0,0,0) == x,
+    // dsp/Reverb.hpp:526-527), so this override is silent by
+    // construction too, same as the others.
+    //
+    // One shared lookup, not a sixth independent ternary --
+    // `stoppedKnob(bank, slot, stoppedValue)` generalizes the
+    // `wasTransportRunning_ ? knob(...) : override` shape the old
+    // inlined `releaseKnob` used to hardcode to any (bank, slot,
+    // override) triple, and `releaseKnob` itself is now defined in
+    // terms of it below, so all SIX stopped-state overrides (release
+    // x3 voices [already one call site via releaseKnob's own slot
+    // argument], the three drive pre-gains, Freeze, Grit) render
+    // through this ONE lambda instance.
+    //
+    // The condition below reads
+    // TransportTeardownActive(wasTransportRunning_) -- the SAME gate
+    // ForceReleaseAll() and both ForEachStatefulUnit(Reset) clears read
+    // in ProcessBlock() above -- instead of the bare `wasTransportRunning_`
+    // this used to test. `wasTransportRunning_` is current for THIS
+    // sample already (ProcessBlock's edge-detect block updates it
+    // before RouteAudioSample() runs, see that member's own comment),
+    // so passing it through is exactly "is the transport actually
+    // running", and the gate itself folds in "...or held open by the
+    // latch": while FreezeLatched() is true and the transport is
+    // stopped, these six overrides stay OFF (return the live knob, as
+    // if still running) so the drone's above-unity drives and nonzero
+    // Grit survive the stop instead of being forced to their
+    // bypass/unity values.
+    static constexpr float kStopUnityDriveKnob = 0.5f;  // ExpMapCompute(0.25,4,0.5) == 1.0 (unity) -- shared by all three drive pre-gains.
+    static constexpr float kStopFreezeKnob = 0.0f;
+    static constexpr float kStopGritKnob = 0.0f;  // Mangle(x,0,0) - Mangle(0,0,0) == x (dsp/Reverb.hpp:526-527) -- exact bit-identical bypass, same as Grit's own registered default.
+    // The floor on dry signal shared by every wet/dry crossfade -- Reverb's
+    // and Delay's are the same `(1-mix)*dry + mix*wet` expression, so they
+    // get the same ceiling from the same place rather than two constants
+    // that happen to agree. 0.6 leaves at least 40% dry at any knob
+    // position (operator 2026-07-29 "clamp the reverb wetness down, it's
+    // too fucking quiet", tightened again 2026-08-26), so turning a wet
+    // control up adds processed signal instead of trading away the source.
+    // Applied to the mapped value, not the knob range, so each control
+    // still sweeps its whole travel.
+    static constexpr float kMaxWetMix = 0.6f;
 
-        // -- Audio bank -> 3x dsp::Vco ---------------------------
-        // Slots: VCO pitch 0-2, Shape (morph) 3-5, Phase mod 6-8 -- same
-        // (paramIx, +3, +6) grouping ProcessBlock's own vcoDrive lambda uses
-        // above for the modulation slate's separate VCO instances.
-        //
-        // Collapsed from three structurally identical statements
-        // (audioVco1_/2_/3_, differing only by index 0,3,6 / 1,4,7 / 2,5,8)
-        // into a loop over audioVcos_. Per-index order is preserved exactly
-        // (i=0 is the old audioVco1_/slots 0,3,6; i=1 is audioVco2_/slots
-        // 1,4,7; i=2 is audioVco3_/slots 2,5,8), and each dsp::Vco instance's
-        // Process() call only ever reads its OWN persistent state
-        // (carrierPhase/pmLfoPhase) plus this call's own arguments -- no
-        // cross-VCO term exists (Vco.hpp's own header comment) -- so the
-        // iteration order across i cannot change any instance's output.
-        // Ring Mod slots 9-11 + PM rate slot 12:
-        // slot 12 (PMrt) is read ONCE here and passed identically to all
-        // three Process() calls -- deliberately "ONE knob shared
-        // across all three VCOs' StepPmLfo calls, not three per-VCO rates".
-        // Slot i+9 (RM1/RM2/RM3) stays per-VCO, same (paramIx, +9) grouping
-        // the existing +3/+6 groups already use.
-        const float pmRateKnob = knob(FroggersBankId::Audio, 12);
-        std::array<float, 3> vcoOut{};
-        for (std::size_t i = 0; i < audioVcos_.size(); ++i) {
-            vcoOut[i] = audioVcos_[i].Process(knob(FroggersBankId::Audio, i),
-                                               knob(FroggersBankId::Audio, i + 3),
-                                               knob(FroggersBankId::Audio, i + 6),
-                                               pmRateKnob,
-                                               knob(FroggersBankId::Audio, i + 9),
-                                               sampleRate_);
-        }
+    float StoppedKnob(FroggersBankId bank, std::size_t slot, float stoppedValue) {
+        return TransportTeardownActive(wasTransportRunning_) ? stoppedValue : RoutedKnob(bank, slot);
+    }
 
-        // -- Envelope bank -> ASR + voice mix --------------------
-        // Slots: Attack/Sustain/Release x VCO1-3, 0-8 in that order --
-        // matches dsp::MixOscVoices's parameter order exactly.
-        //
-        // `gatedVoices` receives the POST-gate per-voice values via
-        // MixOscVoices's out-parameter (VoiceEnvelope.hpp) -- written to the
-        // scope just below instead of the pre-gate raw VCO output
-        // Vco::Process() used to write (see that struct's own comment for
-        // why). This is the single call site the out-parameter was added
-        // for; do not re-apply `adsr.apply` anywhere else.
-        // Stop-must-stop fix (operator bug report 2026-07-29: "the stop button
-        // doesnt actually stop all audio in all circumstances"). Closing the
-        // transport gate puts every voice into Stage::Release honouring the
-        // PATCH's release knob -- up to kMaxReleaseSeconds. So Stop used to
-        // begin a multi-second fade during which the voices kept re-exciting
-        // the delay and reverb, and ProcessBlock's clear-at-AllIdle could not
-        // fire until that fade finished. Lowering kMaxReleaseSeconds does not
-        // fix this; even 5s reads as "Stop is broken".
-        //
-        // While the transport is STOPPED, substitute a fast release. The
-        // operator's own release setting is untouched and applies normally the
-        // moment the transport runs again -- this only overrides the knob on
-        // the stop path. ~50ms is short enough to read as immediate and long
-        // enough to avoid a click; an instantaneous cut would click.
-        //
-        // Derived from VcoAdsrState's own mapping rather than hardcoded, so it
-        // stays a true 50ms if kMaxReleaseSeconds/kMinReleaseSeconds are ever
-        // retuned again. mapRelease is now dsp::ExpMapCompute (deliberate
-        // parity divergence, VoiceEnvelope.hpp), so this is that map's
-        // inverse:
-        //   mapRelease(k) = min * (max/min)^k
-        //   k = ln(target/min) / ln(max/min)
-        // `static const`, not `constexpr`: std::log is not a constant
-        // expression on this toolchain, so the inversion is computed once on
-        // this function's first call (function-local static init, no data
-        // race -- audio processing is single-threaded) rather than every
-        // sample, unlike the old linear inverse this replaces, which the
-        // compiler folded to a literal at compile time.
-        //
-        // `wasTransportRunning_` is written earlier in this same per-sample
-        // iteration (ProcessBlock's edge check, above this call), so it holds
-        // THIS sample's transport state, not the previous one's.
+    float ReleaseKnob(std::size_t slot) {
         constexpr float kStopFadeSeconds = 0.05f;
         static const float kStopFadeReleaseKnob =
             std::log(kStopFadeSeconds / dsp::VcoAdsrState::kMinReleaseSeconds) /
             std::log(dsp::VcoAdsrState::kMaxReleaseSeconds / dsp::VcoAdsrState::kMinReleaseSeconds);
-        // While the transport is
-        // STOPPED, override effective knob values for the release knob
-        // (releaseKnob, below -- already existed) PLUS the three drive
-        // pre-gains (Delay slot 9 "Feedback drive", Reverb slot 10 "Tank
-        // drive", Filter slot 7 "Comb drive" -- each maps through the SAME
-        // ExpMapCompute(0.25,4,knob) idiom, unity at knob==0.5, see each
-        // unit's own SetFeedbackDrive()/TankDriveFromKnob()/this file's
-        // Filter-slot-7 comment for the citation) and Freeze (Delay slot
-        // 4, dsp::DelayParams::dfrz, resolves to 0.0f) -- WITHOUT writing to
-        // the parameter model, exactly as kStopFadeReleaseKnob's release
-        // override above never writes the Release knob. Play resumes
-        // bit-identical because the commanded value was never touched: the
-        // instant `wasTransportRunning_` is true again, `stoppedKnob` below
-        // just returns `knob(bank, slot)` unchanged.
-        //
-        // Reverb's Grit (slot 11) joins
-        // the same list -- a third mechanism found by direct measurement.
-        // With W1+W2 in place the pass-D 20-trial repro
-        // still reproduced 20/20 -- measured cause: Grit's stage
-        // (dsp::DigitalReorganizer::Mangle, dsp/Drive.hpp:363-382) sits
-        // INSIDE the tank feedback path ahead of the loop's own
-        // PadeSaturator::Saturate bound, and Mangle's 8-bit-bucket
-        // quantize-then-XOR has UNBOUNDED local gain across a bucket
-        // boundary, so at Hold-high (fb~=0.999) the ordinary sub-audible
-        // release tail gets re-amplified every round trip into a
-        // saturator-bounded but never-decaying limit cycle (control,
-        // isolated dsp::Reverb: one 0.01 seed then exact zero for 6.25s --
-        // locks at 0.306814 forever at the drawn Grit 0.8094; decays to
-        // 1.98e-7 at Grit 0). Grit 0.0f is its own exact bit-identical
-        // bypass by construction (Mangle(x,0,0) - Mangle(0,0,0) == x,
-        // dsp/Reverb.hpp:526-527), so this override is silent by
-        // construction too, same as the others.
-        //
-        // One shared lookup, not a sixth independent ternary --
-        // `stoppedKnob(bank, slot, stoppedValue)` generalizes the
-        // `wasTransportRunning_ ? knob(...) : override` shape the old
-        // inlined `releaseKnob` used to hardcode to any (bank, slot,
-        // override) triple, and `releaseKnob` itself is now defined in
-        // terms of it below, so all SIX stopped-state overrides (release
-        // x3 voices [already one call site via releaseKnob's own slot
-        // argument], the three drive pre-gains, Freeze, Grit) render
-        // through this ONE lambda instance.
-        //
-        // The condition below reads
-        // TransportTeardownActive(wasTransportRunning_) -- the SAME gate
-        // ForceReleaseAll() and both ForEachStatefulUnit(Reset) clears read
-        // in ProcessBlock() above -- instead of the bare `wasTransportRunning_`
-        // this used to test. `wasTransportRunning_` is current for THIS
-        // sample already (ProcessBlock's edge-detect block updates it
-        // before RouteAudioSample() runs, see that member's own comment),
-        // so passing it through is exactly "is the transport actually
-        // running", and the gate itself folds in "...or held open by the
-        // latch": while FreezeLatched() is true and the transport is
-        // stopped, these six overrides stay OFF (return the live knob, as
-        // if still running) so the drone's above-unity drives and nonzero
-        // Grit survive the stop instead of being forced to their
-        // bypass/unity values.
-        constexpr float kStopUnityDriveKnob = 0.5f;  // ExpMapCompute(0.25,4,0.5) == 1.0 (unity) -- shared by all three drive pre-gains.
-        constexpr float kStopFreezeKnob = 0.0f;
-        constexpr float kStopGritKnob = 0.0f;  // Mangle(x,0,0) - Mangle(0,0,0) == x (dsp/Reverb.hpp:526-527) -- exact bit-identical bypass, same as Grit's own registered default.
-        // The floor on dry signal shared by every wet/dry crossfade -- Reverb's
-        // and Delay's are the same `(1-mix)*dry + mix*wet` expression, so they
-        // get the same ceiling from the same place rather than two constants
-        // that happen to agree. 0.6 leaves at least 40% dry at any knob
-        // position (operator 2026-07-29 "clamp the reverb wetness down, it's
-        // too fucking quiet", tightened again 2026-08-26), so turning a wet
-        // control up adds processed signal instead of trading away the source.
-        // Applied to the mapped value, not the knob range, so each control
-        // still sweeps its whole travel.
-        constexpr float kMaxWetMix = 0.6f;
-        const auto stoppedKnob = [&](FroggersBankId bank, std::size_t slot, float stoppedValue) -> float {
-            return TransportTeardownActive(wasTransportRunning_) ? stoppedValue : knob(bank, slot);
-        };
-        const auto releaseKnob = [&](std::size_t slot) -> float {
-            return stoppedKnob(FroggersBankId::Envelope, slot, kStopFadeReleaseKnob);
-        };
+        return StoppedKnob(FroggersBankId::Envelope, slot, kStopFadeReleaseKnob);
+    }
 
+    // -- Audio bank -> 3x dsp::Vco ---------------------------
+    // Slots: VCO pitch 0-2, Shape (morph) 3-5, Phase mod 6-8 -- same
+    // (paramIx, +3, +6) grouping ProcessBlock's own vcoDrive lambda uses
+    // above for the modulation slate's separate VCO instances.
+    //
+    // Collapsed from three structurally identical statements
+    // (audioVco1_/2_/3_, differing only by index 0,3,6 / 1,4,7 / 2,5,8)
+    // into a loop over audioVcos_. Per-index order is preserved exactly
+    // (i=0 is the old audioVco1_/slots 0,3,6; i=1 is audioVco2_/slots
+    // 1,4,7; i=2 is audioVco3_/slots 2,5,8), and each dsp::Vco instance's
+    // Process() call only ever reads its OWN persistent state
+    // (carrierPhase/pmLfoPhase) plus this call's own arguments -- no
+    // cross-VCO term exists (Vco.hpp's own header comment) -- so the
+    // iteration order across i cannot change any instance's output.
+    // Ring Mod slots 9-11 + PM rate slot 12:
+    // slot 12 (PMrt) is read ONCE here and passed identically to all
+    // three Process() calls -- deliberately "ONE knob shared
+    // across all three VCOs' StepPmLfo calls, not three per-VCO rates".
+    std::array<float, 3> RouteAudioBank() {
+        const float pmRateKnob = RoutedKnob(FroggersBankId::Audio, 12);
+        std::array<float, 3> vcoOut{};
+        for (std::size_t i = 0; i < audioVcos_.size(); ++i) {
+            vcoOut[i] = audioVcos_[i].Process(RoutedKnob(FroggersBankId::Audio, AudioSlot(i, VcoSlotRole::Pitch)),
+                                               RoutedKnob(FroggersBankId::Audio, AudioSlot(i, VcoSlotRole::Shape)),
+                                               RoutedKnob(FroggersBankId::Audio, AudioSlot(i, VcoSlotRole::PhaseMod)),
+                                               pmRateKnob,
+                                               RoutedKnob(FroggersBankId::Audio, AudioSlot(i, VcoSlotRole::RingMod)),
+                                               sampleRate_);
+        }
+        return vcoOut;
+    }
+
+    // -- Envelope bank -> ASR + voice mix --------------------
+    // Slots: Attack/Sustain/Release x VCO1-3, 0-8 in that order --
+    // matches dsp::MixOscVoices's parameter order exactly.
+    //
+    // `gatedVoices` receives the POST-gate per-voice values via
+    // MixOscVoices's out-parameter (VoiceEnvelope.hpp) -- written to the
+    // scope just below instead of the pre-gate raw VCO output
+    // Vco::Process() used to write (see that struct's own comment for
+    // why). This is the single call site the out-parameter was added
+    // for; do not re-apply `adsr.apply` anywhere else.
+    float RouteEnvelopeBank(std::array<float, 3> vcoOut) {
         dsp::GatedVoices gatedVoices;
         // Envelope bank slots are interleaved ADSR, slot = 4*vco +
         // {0:Attack, 1:Decay, 2:Sustain, 3:Release} (FroggersParameters.hpp's
@@ -1665,11 +1651,11 @@ private:
         // values (scope tap below) are unaffected by balance.
         const float chainIn = dsp::MixOscVoices(
             audioAdsr_, vcoOut[0], vcoOut[1], vcoOut[2],
-            knob(FroggersBankId::Envelope, 0), knob(FroggersBankId::Envelope, 1), knob(FroggersBankId::Envelope, 2), releaseKnob(3),
-            knob(FroggersBankId::Envelope, 4), knob(FroggersBankId::Envelope, 5), knob(FroggersBankId::Envelope, 6), releaseKnob(7),
-            knob(FroggersBankId::Envelope, 8), knob(FroggersBankId::Envelope, 9), knob(FroggersBankId::Envelope, 10), releaseKnob(11),
-            knob(FroggersBankId::Envelope, 12), knob(FroggersBankId::Envelope, 13),
-            knob(FroggersBankId::Audio, 13), &gatedVoices);
+            RoutedKnob(FroggersBankId::Envelope, 0), RoutedKnob(FroggersBankId::Envelope, 1), RoutedKnob(FroggersBankId::Envelope, 2), ReleaseKnob(3),
+            RoutedKnob(FroggersBankId::Envelope, 4), RoutedKnob(FroggersBankId::Envelope, 5), RoutedKnob(FroggersBankId::Envelope, 6), ReleaseKnob(7),
+            RoutedKnob(FroggersBankId::Envelope, 8), RoutedKnob(FroggersBankId::Envelope, 9), RoutedKnob(FroggersBankId::Envelope, 10), ReleaseKnob(11),
+            RoutedKnob(FroggersBankId::Envelope, 12), RoutedKnob(FroggersBankId::Envelope, 13),
+            RoutedKnob(FroggersBankId::Audio, 13), &gatedVoices);
 
         // Post-gate scope tap: writes the GATED values, not
         // the raw pre-gate VCO output -- so the scope stays flat until the
@@ -1678,46 +1664,53 @@ private:
         vco2ScopeHolder_.Write(gatedVoices.v2);
         vco3ScopeHolder_.Write(gatedVoices.v3);
 
-        // -- Drive bank -> dsp::FrogBlock + DriveBlendPhase ------
-        // FroggersEngine.hpp:483-490 order: Drive (SetGain) before Shape
-        // (SetCoefs, which reads the just-set gain target -- Drive.hpp's own
-        // comment), then SRR1/SRR2/XOR/BitDepth/Fuzz; Blend/Phase (slots 7-8)
-        // are the authored DriveBlendPhase stage, crossfading dry (chainIn)
-        // against wet (FrogBlock's output).
-        drive_.polynomialDrive.SetGain(knob(FroggersBankId::Drive, 0));
+        return chainIn;
+    }
+
+    // -- Drive bank -> dsp::FrogBlock + DriveBlendPhase ------
+    // FroggersEngine.hpp:483-490 order: Drive (SetGain) before Shape
+    // (SetCoefs, which reads the just-set gain target -- Drive.hpp's own
+    // comment), then SRR1/SRR2/XOR/BitDepth/Fuzz; Blend/Phase (slots 7-8)
+    // are the authored DriveBlendPhase stage, crossfading dry (chainIn)
+    // against wet (FrogBlock's output).
+    float RouteDriveBank(float chainIn) {
+        drive_.polynomialDrive.SetGain(RoutedKnob(FroggersBankId::Drive, 0));
         // D2 (Drive slot 10, "Link"): must precede SetCoefs, which reads `link`.
-        drive_.polynomialDrive.SetLink(knob(FroggersBankId::Drive, 10));
-        drive_.polynomialDrive.SetCoefs(knob(FroggersBankId::Drive, 1));
+        drive_.polynomialDrive.SetLink(RoutedKnob(FroggersBankId::Drive, 10));
+        drive_.polynomialDrive.SetCoefs(RoutedKnob(FroggersBankId::Drive, 1));
         drive_.sampleRateReducer1.SetFreq(
-            1e-2f + dsp::ZeroedExpCompute(10.0f, 1.0f - knob(FroggersBankId::Drive, 2)));
+            1e-2f + dsp::ZeroedExpCompute(10.0f, 1.0f - RoutedKnob(FroggersBankId::Drive, 2)));
         drive_.sampleRateReducer2.SetFreq(
-            1e-2f + dsp::ZeroedExpCompute(10.0f, 1.0f - knob(FroggersBankId::Drive, 3)));
-        drive_.digitalReorganizer.SetFlip(knob(FroggersBankId::Drive, 4));
-        drive_.digitalReorganizer.SetHash(knob(FroggersBankId::Drive, 5));
-        drive_.fuzz = knob(FroggersBankId::Drive, 6);
+            1e-2f + dsp::ZeroedExpCompute(10.0f, 1.0f - RoutedKnob(FroggersBankId::Drive, 3)));
+        drive_.digitalReorganizer.SetFlip(RoutedKnob(FroggersBankId::Drive, 4));
+        drive_.digitalReorganizer.SetHash(RoutedKnob(FroggersBankId::Drive, 5));
+        drive_.fuzz = RoutedKnob(FroggersBankId::Drive, 6);
         // -- Drive slots 9, 11-13 -----
-        drive_.oversampler.SetAntiAliasBrightness(knob(FroggersBankId::Drive, 9));
-        drive_.SetFold(knob(FroggersBankId::Drive, 11));
-        drive_.SetTone(knob(FroggersBankId::Drive, 12));
-        drive_.SetBias(knob(FroggersBankId::Drive, 13));
+        drive_.oversampler.SetAntiAliasBrightness(RoutedKnob(FroggersBankId::Drive, 9));
+        drive_.SetFold(RoutedKnob(FroggersBankId::Drive, 11));
+        drive_.SetTone(RoutedKnob(FroggersBankId::Drive, 12));
+        drive_.SetBias(RoutedKnob(FroggersBankId::Drive, 13));
         const float driveWet = drive_.Process(chainIn);
         const float driveOut = driveBlendPhase_.Process(
-            chainIn, driveWet, knob(FroggersBankId::Drive, 7), knob(FroggersBankId::Drive, 8));
+            chainIn, driveWet, RoutedKnob(FroggersBankId::Drive, 7), RoutedKnob(FroggersBankId::Drive, 8));
+        return driveOut;
+    }
 
-        // -- Filter bank -> dsp::FilterFxChain -------------------
-        // FroggersEngine.hpp:463,465-481 mapping (Comb offset -> pureDelay,
-        // Peak freq/gain/Q -> ResonantBump, Comb delay/feedback/LP -> Comb,
-        // Comb/Peak -> blend, Scoop -> scoopMix). The old `useParallel` bool
-        // (which used to mirror `SetUseV2FilterParallel(UsesV2Fuego(hostKind))`,
-        // always `true` for this app) has
-        // been replaced by the Filter slot-13 "Topology" knob, a continuous
-        // morph -- see FilterFxChain::Process's own comment (FilterFx.hpp).
-        // Clamped to `PureDelay::kSize` so a very high host sample rate
-        // cannot push `SetDelaySeconds` past the ported unit's fixed-size
-        // ring buffer (defensive; PureDelay itself is not
-        // modified).
+    // -- Filter bank -> dsp::FilterFxChain -------------------
+    // FroggersEngine.hpp:463,465-481 mapping (Comb offset -> pureDelay,
+    // Peak freq/gain/Q -> ResonantBump, Comb delay/feedback/LP -> Comb,
+    // Comb/Peak -> blend, Scoop -> scoopMix). The old `useParallel` bool
+    // (which used to mirror `SetUseV2FilterParallel(UsesV2Fuego(hostKind))`,
+    // always `true` for this app) has
+    // been replaced by the Filter slot-13 "Topology" knob, a continuous
+    // morph -- see FilterFxChain::Process's own comment (FilterFx.hpp).
+    // Clamped to `PureDelay::kSize` so a very high host sample rate
+    // cannot push `SetDelaySeconds` past the ported unit's fixed-size
+    // ring buffer (defensive; PureDelay itself is not
+    // modified).
+    float RouteFilterBank(float driveOut) {
         const float combOffsetSeconds = std::min(
-            dsp::ExpMapCompute(0.001f, 0.1f, knob(FroggersBankId::Filter, 3)),
+            dsp::ExpMapCompute(0.001f, 0.1f, RoutedKnob(FroggersBankId::Filter, 3)),
             static_cast<float>(dsp::PureDelay::kSize - 1) / sampleRate_);
         filterChain_.pureDelay.SetDelaySeconds(combOffsetSeconds, sampleRate_);
         // FroggersEngine.hpp:561-562: the scoop notch shares the peak bump's
@@ -1731,13 +1724,13 @@ private:
         // regularly, not only when an operator dials there. Moves the
         // bottom decile from about 40 Hz to about 170 Hz.
         const float bumpFreq =
-            dsp::ExpMapCompute(100.0f / sampleRate_, 20000.0f / sampleRate_, knob(FroggersBankId::Filter, 0));
+            dsp::ExpMapCompute(100.0f / sampleRate_, 20000.0f / sampleRate_, RoutedKnob(FroggersBankId::Filter, 0));
         // Floor raised from 0.1 to 0.4: at Q 0.4 the RBJ peaking biquad's
         // bandwidth (ResonantBump::UpdateCoefficients's `alpha =
         // sin(w0)/(2*Q)`, FilterFx.hpp) is about 3 octaves -- broad, but
         // still a discernible peak, not the flat pass-through the old
         // floor could sit at.
-        const float bumpWidth = dsp::ExpMapCompute(0.4f, 10.0f, knob(FroggersBankId::Filter, 2));
+        const float bumpWidth = dsp::ExpMapCompute(0.4f, 10.0f, RoutedKnob(FroggersBankId::Filter, 2));
         filterChain_.peak.SetFreq(bumpFreq);
         // Ceiling lowered
         // from 10x (+20 dB) to 4x (+12 dB). An audible resonant peak does
@@ -1772,7 +1765,7 @@ private:
         // that feeds it, not this ceiling -- past a point, lowering this just
         // makes the resonance inaudible.
         filterChain_.peak.SetHeight(
-            dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, knob(FroggersBankId::Filter, 1)));
+            dsp::ExpMapCompute(1.0f, dsp::kMaxResonantBumpHeight, RoutedKnob(FroggersBankId::Filter, 1)));
         filterChain_.peak.SetWidth(bumpWidth);
         // FroggersEngine.hpp:561-564, restored 2026-07-27. These three
         // setters were dropped in the port even though `FilterFxChain`
@@ -1798,10 +1791,10 @@ private:
         // failure). Moves the bottom decile from about 40 Hz to about
         // 170 Hz.
         const float scoopFreq =
-            dsp::ExpMapCompute(100.0f / sampleRate_, 20000.0f / sampleRate_, knob(FroggersBankId::Filter, 9));
+            dsp::ExpMapCompute(100.0f / sampleRate_, 20000.0f / sampleRate_, RoutedKnob(FroggersBankId::Filter, 9));
         // Same floor raise (0.1 -> 0.4) and reasoning as bumpWidth's own
         // comment above.
-        const float scoopWidth = dsp::ExpMapCompute(0.4f, 10.0f, knob(FroggersBankId::Filter, 10));
+        const float scoopWidth = dsp::ExpMapCompute(0.4f, 10.0f, RoutedKnob(FroggersBankId::Filter, 10));
         filterChain_.scoopNotch.SetFreq(scoopFreq);
         filterChain_.scoopNotch.SetWidth(scoopWidth);
         // Deliberate decreasing exponential map (base 0.05 < 1 is
@@ -1811,7 +1804,7 @@ private:
         // how much of that dip reaches the output is Scoop (slot 8, the
         // wet/dry blend below).
         filterChain_.scoopNotch.SetHeight(
-            dsp::ExpMapCompute(1.0f, 0.05f, knob(FroggersBankId::Filter, 11)));
+            dsp::ExpMapCompute(1.0f, 0.05f, RoutedKnob(FroggersBankId::Filter, 11)));
         // Floor raised from 20 Hz to 100 Hz, same inert-below-audibility
         // reasoning as bumpFreq/scoopFreq above. Ceiling here is 10 kHz, not
         // 20 kHz, so this moves the bottom decile from about 37 Hz to about
@@ -1822,12 +1815,12 @@ private:
         // 80 Hz low-pass on a comb is inaudible) but stated here so the
         // coupling is not a surprise later.
         const float combFreq =
-            dsp::ExpMapCompute(100.0f / sampleRate_, 10000.0f / sampleRate_, knob(FroggersBankId::Filter, 4));
+            dsp::ExpMapCompute(100.0f / sampleRate_, 10000.0f / sampleRate_, RoutedKnob(FroggersBankId::Filter, 4));
         // Fractional now (Comb::delaySamples, FilterFx.hpp) -- no truncating
         // cast here; the clamp keeps the same [1, kSize-1] bounds as floats.
         filterChain_.comb.delaySamples =
             std::min(static_cast<float>(dsp::Comb::kSize - 1), std::max(1.0f, dsp::Comb::GetDelaySamples(combFreq)));
-        filterChain_.comb.SetFeedback(dsp::Comb::GetFeedback(knob(FroggersBankId::Filter, 5)));
+        filterChain_.comb.SetFeedback(dsp::Comb::GetFeedback(RoutedKnob(FroggersBankId::Filter, 5)));
         // Comb low-pass floor derives from combFreq above (4x it), so it
         // moved too when combFreq's own floor was raised -- see combFreq's
         // comment just above. The low-pass runs from just above the comb's
@@ -1837,7 +1830,7 @@ private:
         // the knob goes inert there, it never reverses direction.
         const float cmlpCeiling = 20000.0f / sampleRate_;
         const float cmlp = dsp::ExpMapCompute(std::min(4.0f * combFreq, cmlpCeiling), cmlpCeiling,
-                                               knob(FroggersBankId::Filter, 6));
+                                               RoutedKnob(FroggersBankId::Filter, 6));
         // FroggersEngine.hpp:430-432 (Alpha): 1 - exp(-2*pi*natFreq).
         filterChain_.comb.SetCutoffAlpha(1.0f - std::exp(-2.0f * static_cast<float>(M_PI) * cmlp));
         // Task C (Filter slot 7, "Comb drive", "CDrv"): knob-driven
@@ -1852,7 +1845,7 @@ private:
         // overrides this to kStopUnityDriveKnob (0.5, i.e. unity post-map)
         // while the transport is stopped, regardless of the commanded knob.
         filterChain_.comb.SetDrive(
-            dsp::ExpMapCompute(0.25f, 4.0f, stoppedKnob(FroggersBankId::Filter, 7, kStopUnityDriveKnob)));
+            dsp::ExpMapCompute(0.25f, 4.0f, StoppedKnob(FroggersBankId::Filter, 7, kStopUnityDriveKnob)));
         // Task A (Filter slot 13, "Topology", "Topo"): continuous morph
         // replacing the old `useParallel` bool -- see FilterFxChain::Process's
         // own comment (FilterFx.hpp) for why topology==0 is bit-identical to
@@ -1862,43 +1855,46 @@ private:
         // (FilterFxChain::Process, FilterFx.hpp) -- SetHeight above reads
         // Scoop depth (slot 11) instead, the notch's own dip.
         const float filterOut =
-            filterChain_.Process(driveOut, knob(FroggersBankId::Filter, 13), knob(FroggersBankId::Filter, 12),
-                                  knob(FroggersBankId::Filter, 8));
+            filterChain_.Process(driveOut, RoutedKnob(FroggersBankId::Filter, 13), RoutedKnob(FroggersBankId::Filter, 12),
+                                  RoutedKnob(FroggersBankId::Filter, 8));
+        return filterOut;
+    }
 
-        // -- Delay bank -> dsp::StereoDelay ---------------------
-        // Positioned exactly where the frozen engine's `m_simFxInsert` hook
-        // sits: FroggersEngine.hpp:840-843, between the filter chain
-        // (:824-839) and Reverb (:844-847) -- confirmed by the retired
-        // simulator's `WasmSimHost`, which wired this exact ported unit's
-        // frozen counterpart (`DelayState::processInsert`) into that hook.
-        // `processInsert`'s own shape is `delay.process(bumpIn, params)` then
-        // `delay.toReverbMono(bumpIn, wet, params.dmix)`, reproduced
-        // identically below.
-        // T2.2: row4Freeze (the Freeze KNOB, dsp::DelayParams::dfrz) goes
-        // through stoppedKnob too -- kStopFreezeKnob (0.0f) while stopped,
-        // regardless of the commanded knob -- distinct from the Freeze
-        // BUTTON's latch (dfrzLatched, T5.2, set just below: T2.4 pins that
-        // the latch stays a no-op on the audio while stopped, since this
-        // override already zeroes dfrz and T2.1 forces every voice's
-        // Release, so FreezeFeedback's above-unity overdrive has nothing
-        // left feeding it). lastDelayFreezeKnobEffective_ records the
-        // resolved value for TestLastDelayFreezeKnobEffective() -- dfrz has
-        // no other test-readable home since `delayParams` is local to this
-        // function, freshly constructed every sample (this file's own
-        // dfrzLatched comment, below).
-        const float delayFreezeKnobEffective = stoppedKnob(FroggersBankId::Delay, 4, kStopFreezeKnob);
+    // -- Delay bank -> dsp::StereoDelay ---------------------
+    // Positioned exactly where the frozen engine's `m_simFxInsert` hook
+    // sits: FroggersEngine.hpp:840-843, between the filter chain
+    // (:824-839) and Reverb (:844-847) -- confirmed by the retired
+    // simulator's `WasmSimHost`, which wired this exact ported unit's
+    // frozen counterpart (`DelayState::processInsert`) into that hook.
+    // `processInsert`'s own shape is `delay.process(bumpIn, params)` then
+    // `delay.toReverbMono(bumpIn, wet, params.dmix)`, reproduced
+    // identically below.
+    // T2.2: row4Freeze (the Freeze KNOB, dsp::DelayParams::dfrz) goes
+    // through stoppedKnob too -- kStopFreezeKnob (0.0f) while stopped,
+    // regardless of the commanded knob -- distinct from the Freeze
+    // BUTTON's latch (dfrzLatched, T5.2, set just below: T2.4 pins that
+    // the latch stays a no-op on the audio while stopped, since this
+    // override already zeroes dfrz and T2.1 forces every voice's
+    // Release, so FreezeFeedback's above-unity overdrive has nothing
+    // left feeding it). lastDelayFreezeKnobEffective_ records the
+    // resolved value for TestLastDelayFreezeKnobEffective() -- dfrz has
+    // no other test-readable home since `delayParams` is local to this
+    // function, freshly constructed every sample (this file's own
+    // dfrzLatched comment, below).
+    dsp::StereoSample RouteDelayBank(float filterOut) {
+        const float delayFreezeKnobEffective = StoppedKnob(FroggersBankId::Delay, 4, kStopFreezeKnob);
         lastDelayFreezeKnobEffective_ = delayFreezeKnobEffective;
         // The same kMaxWetMix the Reverb bank uses; see its declaration.
         // Delay needs a second protection Reverb does not: its wet path is fed
         // only through Send, which defaults to zero, so ToReverbMono also
         // scales the mix by what that path actually holds. The cap bounds a
         // fed path; the authority handles an unfed one.
-        const float delayWetMixEffective = kMaxWetMix * knob(FroggersBankId::Delay, 6);
+        const float delayWetMixEffective = kMaxWetMix * RoutedKnob(FroggersBankId::Delay, 6);
         lastDelayWetMixEffective_ = delayWetMixEffective;
         dsp::DelayParams delayParams = dsp::MapRowsToDelayParams(
-            knob(FroggersBankId::Delay, 0), knob(FroggersBankId::Delay, 1), knob(FroggersBankId::Delay, 2),
-            knob(FroggersBankId::Delay, 3), delayFreezeKnobEffective, knob(FroggersBankId::Delay, 5),
-            delayWetMixEffective, knob(FroggersBankId::Delay, 7), knob(FroggersBankId::Delay, 8));
+            RoutedKnob(FroggersBankId::Delay, 0), RoutedKnob(FroggersBankId::Delay, 1), RoutedKnob(FroggersBankId::Delay, 2),
+            RoutedKnob(FroggersBankId::Delay, 3), delayFreezeKnobEffective, RoutedKnob(FroggersBankId::Delay, 5),
+            delayWetMixEffective, RoutedKnob(FroggersBankId::Delay, 7), RoutedKnob(FroggersBankId::Delay, 8));
         // The Freeze BUTTON's override, applied where the
         // freeze mapping resolves the encoder's value -- MapRowsToDelayParams
         // just above sets `dfrz` from the clamped (T3.1a) encoder alone and
@@ -1911,30 +1907,33 @@ private:
         // -- Delay slots 9-13 ---------------
         // T2.2: stoppedKnob overrides Feedback drive to kStopUnityDriveKnob
         // while stopped, same idiom as the Filter comb drive above.
-        delay_.SetFeedbackDrive(stoppedKnob(FroggersBankId::Delay, 9, kStopUnityDriveKnob));
-        delay_.SetFeedbackTone(knob(FroggersBankId::Delay, 10));
-        delay_.SetModRate(knob(FroggersBankId::Delay, 11));
-        delay_.SetWidthBalance(knob(FroggersBankId::Delay, 12));
-        delay_.SetCrush(knob(FroggersBankId::Delay, 13));
+        delay_.SetFeedbackDrive(StoppedKnob(FroggersBankId::Delay, 9, kStopUnityDriveKnob));
+        delay_.SetFeedbackTone(RoutedKnob(FroggersBankId::Delay, 10));
+        delay_.SetModRate(RoutedKnob(FroggersBankId::Delay, 11));
+        delay_.SetWidthBalance(RoutedKnob(FroggersBankId::Delay, 12));
+        delay_.SetCrush(RoutedKnob(FroggersBankId::Delay, 13));
         const dsp::DelayWetPair delayWet = delay_.Process(filterOut, delayParams);
         const dsp::StereoSample delayOut = delay_.ToStereo(filterOut, delayWet, delayParams.dmix);
+        return delayOut;
+    }
 
-        // -- Reverb bank -> dsp::Reverb --------------------------
-        // Last stage, matching FroggersEngine.hpp:844-847's wet/dry blend
-        // (folded into Reverb::Process's own return -- see that struct's
-        // header comment).
-        // The wet/dry ceiling is kMaxWetMix, shared with the Delay bank; see
-        // its declaration for why the value is what it is. Reverb's blend
-        // lives in dsp/Reverb.hpp, folded into Process's own return, so what
-        // is capped here is the mix handed to it.
-        // T2.2: stoppedKnob overrides Tank drive (slot 10) to
-        // kStopUnityDriveKnob while stopped, same idiom as the Filter comb
-        // drive and Delay feedback drive above. Reverb::Process computes
-        // its own `tankDrive` from this knob as a LOCAL (dsp/Reverb.hpp,
-        // TankDriveFromKnob), so there is no member to read back after the
-        // fact -- lastReverbTankDriveKnobEffective_ records the resolved
-        // knob value passed in here for TestLastReverbTankDriveKnobEffective().
-        const float reverbTankDriveKnobEffective = stoppedKnob(FroggersBankId::Reverb, 10, kStopUnityDriveKnob);
+    // -- Reverb bank -> dsp::Reverb --------------------------
+    // Last stage, matching FroggersEngine.hpp:844-847's wet/dry blend
+    // (folded into Reverb::Process's own return -- see that struct's
+    // header comment).
+    // The wet/dry ceiling is kMaxWetMix, shared with the Delay bank; see
+    // its declaration for why the value is what it is. Reverb's blend
+    // lives in dsp/Reverb.hpp, folded into Process's own return, so what
+    // is capped here is the mix handed to it.
+    // T2.2: stoppedKnob overrides Tank drive (slot 10) to
+    // kStopUnityDriveKnob while stopped, same idiom as the Filter comb
+    // drive and Delay feedback drive above. Reverb::Process computes
+    // its own `tankDrive` from this knob as a LOCAL (dsp/Reverb.hpp,
+    // TankDriveFromKnob), so there is no member to read back after the
+    // fact -- lastReverbTankDriveKnobEffective_ records the resolved
+    // knob value passed in here for TestLastReverbTankDriveKnobEffective().
+    dsp::StereoSample RouteReverbBank(dsp::StereoSample delayOut) {
+        const float reverbTankDriveKnobEffective = StoppedKnob(FroggersBankId::Reverb, 10, kStopUnityDriveKnob);
         lastReverbTankDriveKnobEffective_ = reverbTankDriveKnobEffective;
         // stoppedKnob overrides Grit (slot 11) to kStopGritKnob
         // (0.0f) while stopped, same idiom as the Tank drive override
@@ -1945,7 +1944,7 @@ private:
         // TestLastReverbGritKnobEffective(), same convention as
         // lastReverbTankDriveKnobEffective_ immediately above (Reverb::
         // Process has no member to read gritKnob01's use back from either).
-        const float reverbGritKnobEffective = stoppedKnob(FroggersBankId::Reverb, 11, kStopGritKnob);
+        const float reverbGritKnobEffective = StoppedKnob(FroggersBankId::Reverb, 11, kStopGritKnob);
         lastReverbGritKnobEffective_ = reverbGritKnobEffective;
         // Reverb slots 9-13 (R1-R5: Mod rate/Tank
         // drive/Grit/Tilt/Tuned) -- passed as Process()'s own trailing
@@ -1954,18 +1953,53 @@ private:
         // own established convention differs from dsp::StereoDelay's, which
         // does use separate setters -- see dsp/Reverb.hpp's own comment on
         // each of these five).
-        const float reverbWetMixEffective = kMaxWetMix * knob(FroggersBankId::Reverb, 0);
+        const float reverbWetMixEffective = kMaxWetMix * RoutedKnob(FroggersBankId::Reverb, 0);
         lastReverbWetMixEffective_ = reverbWetMixEffective;
         const dsp::StereoSample reverbOut = reverb_.Process(
             delayOut,
             reverbWetMixEffective,
-            knob(FroggersBankId::Reverb, 1), knob(FroggersBankId::Reverb, 2),
-            knob(FroggersBankId::Reverb, 3), knob(FroggersBankId::Reverb, 4), knob(FroggersBankId::Reverb, 5),
-            knob(FroggersBankId::Reverb, 6), sampleRate_,
-            knob(FroggersBankId::Reverb, 7), knob(FroggersBankId::Reverb, 8),
-            knob(FroggersBankId::Reverb, 9), reverbTankDriveKnobEffective, reverbGritKnobEffective,
-            knob(FroggersBankId::Reverb, 12), knob(FroggersBankId::Reverb, 13));
+            RoutedKnob(FroggersBankId::Reverb, 1), RoutedKnob(FroggersBankId::Reverb, 2),
+            RoutedKnob(FroggersBankId::Reverb, 3), RoutedKnob(FroggersBankId::Reverb, 4), RoutedKnob(FroggersBankId::Reverb, 5),
+            RoutedKnob(FroggersBankId::Reverb, 6), sampleRate_,
+            RoutedKnob(FroggersBankId::Reverb, 7), RoutedKnob(FroggersBankId::Reverb, 8),
+            RoutedKnob(FroggersBankId::Reverb, 9), reverbTankDriveKnobEffective, reverbGritKnobEffective,
+            RoutedKnob(FroggersBankId::Reverb, 12), RoutedKnob(FroggersBankId::Reverb, 13));
+        return reverbOut;
+    }
 
+    // The real audio path -- Audio/Envelope
+    // banks -> 3x dsp::Vco + dsp::MixOscVoices ->
+    // Drive bank -> dsp::FrogBlock + dsp::DriveBlendPhase ->
+    // Filter bank -> dsp::FilterFxChain -> Delay bank ->
+    // dsp::StereoDelay -> Reverb bank -> dsp::Reverb.
+    //
+    // Ordering proof (verified by reading the cited source, not assumed):
+    // `Parameter::GetRaw()` (External/Sheaf's
+    // projects/synth/src/ParameterModulation.cpp:1207-1215) sums the
+    // scene-blended center with `Modulators::ApplyActive()` -- i.e.
+    // modulation-depth routing is already baked in there. `Parameter::
+    // ProcessLitePhase1()` (:1459-1461) writes `currentKnobValues_[v] =
+    // GetRaw(v)`, and `ParameterGroup::ProcessSamplePhase1()` calls that for
+    // every parameter (:867-870) -- so by the time `FroggersParameterModel::
+    // ApplyFuegoSeam()` runs (between Phase1 and Phase2, FroggersParameters.
+    // hpp), `Parameter::CachedKnobValue()` already reflects modulation, and
+    // ApplyFuegoSeam() then overwrites it with the fuegoized value via
+    // `ReplaceCachedKnobValue()`. `ProcessSamplePhase2()` ->
+    // `ProcessLitePhase2()` (:1471-1479) only slews `uiDisplayCenters_` from
+    // `currentKnobValues_` and never rewrites the latter, so the cache is
+    // unaffected by Phase2. Every `CachedKnobValue()` read below -- taken
+    // after `parameters_.ProcessSample()` has returned for this sample -- is
+    // therefore post-modulation AND post-fuego, exactly as required; if this
+    // were not achievable as structured, the fallback was to stop and report
+    // rather than reading raw values, which is why this citation chain
+    // exists.
+    dsp::StereoSample RouteAudioSample() {
+        const std::array<float, 3> vcoOut = RouteAudioBank();
+        const float chainIn = RouteEnvelopeBank(vcoOut);
+        const float driveOut = RouteDriveBank(chainIn);
+        const float filterOut = RouteFilterBank(driveOut);
+        const dsp::StereoSample delayOut = RouteDelayBank(filterOut);
+        const dsp::StereoSample reverbOut = RouteReverbBank(delayOut);
         return SanitizeOutputSample(reverbOut);
     }
 

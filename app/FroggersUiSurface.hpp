@@ -2167,54 +2167,23 @@ private:
         // Generic, safe over the existing uiBus (see this file's header
         // comment): transport, scene select/blend, encoder drag.
         if (action.name == FroggersActions::kPlay) {
-            // Play disarms the Freeze latch (operator 2026-08-17), for
-            // the same reason kStop does below -- and it is arguably more
-            // urgent here. A latched Freeze holds the voice gate OPEN
-            // unconditionally (FroggersAppCore's `setGate(gateOpen ||
-            // FreezeLatched())`), so starting the transport with the latch
-            // still engaged would run the sequencer while every voice was
-            // pinned sustaining, and leave the delay frozen at its latch
-            // overdrive -- Play would not actually return the instrument to
-            // playing. Cleared BEFORE the Start push, the same happens-before
-            // ordering kStop's own comment traces.
-            app_->SetFreezeLatched(false);
-            PushMessage(synth::MessageIn::Start(NowMicros()));
-            // Robustness fix (see FroggersAppCore::PrepareToPlay's own
-            // comment): record the intent behind this push so a later
-            // audio-device renegotiation (which resets
-            // MasterClock::TransportState() to Stopped out from under the
-            // app, with no message of its own) can re-assert Start rather
-            // than leave the app silently and permanently silent.
-            app_->SetDesiredTransportRunning(true);
+            // Play disarms the Freeze latch (operator 2026-08-17): a
+            // latched Freeze holds the voice gate OPEN unconditionally
+            // (FroggersAppCore's `setGate(gateOpen || FreezeLatched())`),
+            // so starting the transport with the latch still engaged would
+            // run the sequencer while every voice was pinned sustaining,
+            // and leave the delay frozen at its latch overdrive -- Play
+            // would not actually return the instrument to playing. See
+            // LatchThenTransport's own comment for the happens-before
+            // ordering this relies on.
+            LatchThenTransport(false, synth::MessageIn::Start(NowMicros()), true);
             return;
         }
         if (action.name == FroggersActions::kStop) {
-            // Disarm the latch BEFORE pushing Stop, not after -- the two
-            // reach the audio
-            // thread by different paths (freezeLatched_ is a plain
-            // release/acquire atomic FreezeLatched() re-reads every sample;
-            // MessageIn::Stop travels through MessageInBus's ring buffer,
-            // drained once per block by Engine::DrainMessageBus() BEFORE
-            // FroggersAppCore::ProcessBlock's per-sample transport-edge
-            // check runs). Writing the latch first in THIS thread's program
-            // order, before the Push() whose internal fetch_add is the
-            // release half of that ring buffer's release/acquire pair,
-            // makes the write happen-before the corresponding acquire load
-            // in MessageInBus::Pop -- and therefore happen-before every
-            // later read on the audio thread this sample, including the
-            // FreezeLatched() read TransportTeardownActive() makes on the
-            // very edge this Stop causes. So there is no window where the
-            // audio thread can observe "stopped AND still latched": by
-            // construction, not by timing luck. (Reversing the two calls
-            // would still very likely land the latch write in time in
-            // practice -- an atomic store completes far faster than a
-            // message surviving a full block's round trip -- but "very
-            // likely" is not the guarantee TransportTeardownActive()'s
-            // silence contract needs, so this order is deliberate, not
-            // cosmetic.)
-            app_->SetFreezeLatched(false);
-            PushMessage(synth::MessageIn::Stop(NowMicros()));
-            app_->SetDesiredTransportRunning(false);
+            // A later Stop always means stop, regardless of latch state.
+            // See LatchThenTransport's own comment for the happens-before
+            // ordering this relies on.
+            LatchThenTransport(false, synth::MessageIn::Stop(NowMicros()), false);
             return;
         }
         if (action.name == FroggersActions::kFreeze) {
@@ -2224,19 +2193,10 @@ private:
             // Stop press and a later Stop always means stop (see the kStop
             // branch above).
             //
-            // ENGAGE (latch false -> true): push MessageIn::Stop and call
-            // SetDesiredTransportRunning(false), exactly as the kStop branch
-            // above -- including SetDesiredTransportRunning, which is not
-            // optional bookkeeping (see FroggersAppCore::PrepareToPlay's own
-            // comment: without it, a later audio-device renegotiation could
-            // re-assert Start behind the app's back, silently restarting the
-            // transport under a still-latched Freeze). The latch write is
-            // ordered before the Stop push here for the same happens-before
-            // reason the kStop branch's own comment traces -- here the
-            // property it buys is the mirror image: the audio thread must
-            // see the latch ALREADY true on the very edge that stops the
-            // transport, so TransportTeardownActive() reads false and
-            // suppresses teardown (sustains) instead of silencing.
+            // ENGAGE (latch false -> true): same as the kStop branch above,
+            // including SetDesiredTransportRunning(false) -- see
+            // LatchThenTransport's own comment for why both the ordering
+            // and the recorded intent matter here.
             //
             // RELEASE (latch true -> false): do NOT start the transport --
             // the operator resumes with Play, not by releasing Freeze. No
@@ -2246,10 +2206,10 @@ private:
             // notices the plain atomic flip and runs the teardown that
             // silences the held drone.
             const bool engaging = !app_->FreezeLatched();
-            app_->SetFreezeLatched(engaging);
             if (engaging) {
-                PushMessage(synth::MessageIn::Stop(NowMicros()));
-                app_->SetDesiredTransportRunning(false);
+                LatchThenTransport(true, synth::MessageIn::Stop(NowMicros()), false);
+            } else {
+                app_->SetFreezeLatched(false);
             }
             return;
         }
@@ -2426,6 +2386,27 @@ private:
         if (context_ != nullptr && context_->uiBus != nullptr) {
             context_->uiBus->Push(message);
         }
+    }
+
+    // Disarm the Freeze latch BEFORE pushing the transport message, not
+    // after -- the two reach the audio thread by different paths
+    // (freezeLatched_ is a plain release/acquire atomic FreezeLatched()
+    // re-reads every sample; the MessageIn travels through MessageInBus's
+    // ring buffer, drained once per block by Engine::DrainMessageBus()
+    // BEFORE FroggersAppCore::ProcessBlock's per-sample transport-edge check
+    // runs). Writing the latch first in this thread's program order, before
+    // the Push() whose internal fetch_add is the release half of that ring
+    // buffer's release/acquire pair, makes the write happen-before the
+    // corresponding acquire load in MessageInBus::Pop -- and therefore
+    // happen-before every later read on the audio thread this sample. This
+    // order is deliberate, not cosmetic. SetDesiredTransportRunning records
+    // the intent behind the push so a later audio-device renegotiation
+    // (which resets MasterClock::TransportState() to Stopped out from under
+    // the app, with no message of its own) can re-assert it.
+    void LatchThenTransport(bool latched, synth::MessageIn message, bool running) {
+        app_->SetFreezeLatched(latched);
+        PushMessage(message);
+        app_->SetDesiredTransportRunning(running);
     }
 
     std::uint64_t NowMicros() const {
