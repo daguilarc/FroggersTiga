@@ -1062,7 +1062,7 @@ TEST_CASE(short_gate_with_long_attack_and_active_grace_completes_attack_and_deca
 }
 
 // =========================================================================
-// 3.3 -- Envelope followers (ported from the retired simulator's V2EnvelopeFollowerBank)
+// 3.3 -- Envelope followers (ported from f2369151^:sim/V2EnvelopeFollowerBank.hpp)
 // =========================================================================
 
 TEST_CASE(envelope_followers_coeffs_match_exp_formula) {
@@ -1091,9 +1091,8 @@ TEST_CASE(envelope_followers_track_abs_value_with_attack_release_asymmetry) {
     REQUIRE_NEAR(out[2], 0.0f, 1e-6);
 
     ef.Process(0.0f, 0.0f, 0.0f, out);  // falling from > 0 -> release branch
-    const float expectedFall = out[0];  // recompute independently below
-    (void)expectedFall;
-    REQUIRE_TRUE(out[0] < ef.attackCoeff);  // moved back down, not up
+    const float expectedFall = ef.attackCoeff * (1.0f - ef.releaseCoeff);  // level += (0 - level) * releaseCoeff
+    REQUIRE_NEAR(out[0], expectedFall, 1e-6);
 }
 
 // SingleEnvelopeFollower is VcoEnvelopeFollowers's identical per-tap formula
@@ -4195,7 +4194,7 @@ TEST_CASE(drive_blend_phase_static_phase_output_unchanged_by_smoothing_and_limit
 }
 
 // =========================================================================
-// 3.10 -- Delay (ported from the retired simulator's StereoDelay whole file, and
+// 3.10 -- Delay (ported from f2369151^:sim/StereoDelay.hpp whole file, and
 // DelayState's row->DelayParams mapping and Color/Halo fold). A full
 // Froggers original exists for all nine params -- nothing here is authored.
 // =========================================================================
@@ -4223,7 +4222,7 @@ TEST_CASE(map_rows_to_delay_params_passes_through_all_rows_0_to_8_directly) {
 }
 
 TEST_CASE(stereo_delay_send_at_or_below_threshold_returns_silence_and_freezes_state) {
-    // StereoDelay.hpp:60-64: dsnd <= 0.0001 returns {} before touching any
+    // f2369151^:sim/StereoDelay.hpp:60-64: dsnd <= 0.0001 returns {} before touching any
     // internal state (buffers, lfoPhase, writePos untouched).
     dsp::StereoDelay delayA;
     dsp::StereoDelay delayB;
@@ -4255,7 +4254,7 @@ TEST_CASE(stereo_delay_send_at_or_below_threshold_returns_silence_and_freezes_st
 }
 
 TEST_CASE(stereo_delay_time_maps_via_expmap_0p001_to_2s) {
-    // StereoDelay.hpp:66: baseSeconds = ExpMap(0.001, kMaxDelaySeconds=2.0, dtim).
+    // f2369151^:sim/StereoDelay.hpp:66: baseSeconds = ExpMap(0.001, kMaxDelaySeconds=2.0, dtim).
     // With dmod=0 and dwid=0, timeL/timeR both equal baseSeconds exactly
     // (:72-75, modSeconds and widthSpread both zero), so an impulse's return
     // position pins the exact mapped delay time.
@@ -4342,13 +4341,18 @@ TEST_CASE(stereo_delay_clear_buffers_resets_to_silence) {
     p.dtim = 0.4f;
     p.dsnd = 1.0f;
     p.dfbk = 0.5f;
-    for (int i = 0; i < 100; ++i) {
-        delay.Process(std::sin(0.2f * static_cast<float>(i)), p);
+    dsp::DelayWetPair wetBeforeClear{};
+    for (int i = 0; i < 4800; ++i) {
+        wetBeforeClear = delay.Process(std::sin(0.2f * static_cast<float>(i)), p);
     }
+    // Positive control: the line holds signal and the read head has reached
+    // it (dtim=0.4 -> ~1003 samples at 48kHz, dsp/Delay.hpp:863), so the
+    // silence asserted below actually comes from ClearBuffers().
+    REQUIRE_TRUE(std::abs(wetBeforeClear.l) + std::abs(wetBeforeClear.r) > 0.0f);
     delay.ClearBuffers();
     const dsp::DelayWetPair wetAfterClear = delay.Process(0.0f, p);
-    REQUIRE_TRUE(std::isfinite(wetAfterClear.l));
-    REQUIRE_TRUE(std::isfinite(wetAfterClear.r));
+    REQUIRE_TRUE(wetAfterClear.l == 0.0f);
+    REQUIRE_TRUE(wetAfterClear.r == 0.0f);
 }
 
 // -----------------------------------------------------------------------
@@ -4461,7 +4465,7 @@ TEST_CASE(delay_wet_output_stays_at_or_below_limiter_ceiling_at_max_feedback) {
 // after construction/SetSampleRate, `writePos == 0`, so a call with a
 // large-enough delay time makes `readPos` in `ReadAt` negative -- the
 // "first ~delaySamples calls after construction" window the frozen
-// the retired simulator's StereoDelay.hpp:120 and this port's pre-fix code both hit undefined
+// f2369151^:sim/StereoDelay.hpp:120 and this port's pre-fix code both hit undefined
 // behavior on (a negative-float-to-size_t narrowing conversion). As with
 // Fix 1a, there is no correct frozen reference to port instead here -- the
 // frozen source has the identical UB -- so this is a fix, not a

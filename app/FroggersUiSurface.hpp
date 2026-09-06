@@ -186,12 +186,12 @@ inline constexpr const char* kBpm = "froggers.bpm";
 // the full reasoning.
 inline constexpr const char* kBpmGroup = "froggers.bpm.group";
 // A hand-rolled Label node rather than `ControlStyle::caption`, exactly like
-// scene-blend's (kSceneBlendLabel above). Both sit BELOW their slider, and
-// `Builder::FinishControl` (PortableUIBuilders.hpp:428-465) always emits a
-// caption BEFORE its control with no option to place it after -- so neither
-// can be a caption while the labels sit below. Tracked upstream as ask 14
-// (caption placement); when that lands, BOTH collapse into captions
-// together.
+// scene-blend's (kSceneBlendLabel above). Both sit BELOW their slider.
+// `Builder::FinishControl` (PortableUIBuilders.hpp:442-484) always wraps a
+// caption and its control together in one implicit `Row` (:456);
+// `CaptionPlacement::After` only reorders the caption after the control
+// inside that row -- it never stacks them, so a label sitting below its
+// slider cannot be a caption. Both stay hand-rolled TOGETHER.
 //
 // History worth keeping, because this comment previously said the opposite:
 // an earlier change converted scene-blend to a caption and left this one
@@ -267,7 +267,7 @@ inline constexpr float kFroggersBpmMax = 300.0f;
 
 // The surface's own extent and design tokens. Everything that used to
 // compute a pixel `Bounds` for the scope/grid regions by hand
-// (`ContentArea`/`RequiredHeight`/`ScopeArea`/`GridArea`/
+// (`ContentArea`/`ScopeArea`/`GridArea`/
 // `FroggersAutoFlowedChromeModel`, all now removed) is gone -- that
 // arithmetic DIES, but the tokens and the historical ratio it enforced
 // SURVIVE AS DATA below, either still consumed (kMargin/kGap, as the outer
@@ -278,10 +278,9 @@ inline constexpr float kFroggersBpmMax = 300.0f;
 // proportions" rather than a duplicate literal in the test).
 struct FroggersPageLayout {
     static constexpr float kDefaultWidth = 900.0f;
-    // Replaces the old `RequiredHeight()`-derived fallback: a plain literal,
-    // matching `FroggersAppCore::Config().uiHeight` (see that file's own
-    // comment -- demoted from a derived cross-check to an initial window
-    // size; "config.uiHeight is NOT deleted").
+    // A plain literal, matching `FroggersAppCore::Config().uiHeight` (see
+    // that file's own comment): the window's initial height, kept in
+    // hand-sync with this value, not a derived cross-check.
     //
     // So the encoder ring does not shrink, and the missing space is added
     // below each encoder rather than taken from it: 632.0f -> 712.0f, +80px,
@@ -336,7 +335,8 @@ struct FroggersPageLayout {
     // Sliders are equal to each other BY CONSTRUCTION because this is the
     // single definition site, read once in AppendLabelledSlider(). Do not add
     // a second per-control width: two values kept in agreement by hand is the
-    // same defect removed when `uiHeight == RequiredHeight()` was deleted.
+    // same defect `uiHeight`'s hand-sync with `kDefaultHeight` (above)
+    // already carries.
     static constexpr float kSliderWidthFraction = 0.8f;
 
     static synth::ui::Bounds RootBounds(const synth::AppContext* context) {
@@ -1442,7 +1442,7 @@ private:
                          synth::ui::Action::Named(FroggersActions::kSceneBlend), sliderStyle);
                 // Label-visibility fix (2026-07-28): `NodeKind::Slider` routes
                 // `node.label` to `juce::Slider::setName()` only
-                // (PortableJuceBackend.hpp:1229-1232) -- no `juce::Label` is
+                // (PortableJuceBackend.hpp:1163-1166) -- no `juce::Label` is
                 // attached, so the slider's own label argument never draws;
                 // this adjacent Label node is what actually renders the text.
                 b.Label(FroggersNodeIds::kSceneBlendLabel, "Scene blend", synth::ui::ControlStyle{});
@@ -1486,11 +1486,12 @@ private:
         constexpr const char* kLabel = "BPM";
         // Still a hand-rolled adjacent Label rather than
         // `ControlStyle::caption`, for the same reason as scene-blend's:
-        // `Builder::FinishControl` (PortableUIBuilders.hpp:428-465) always
-        // emits a caption BEFORE its control, and both labels now sit BELOW
-        // theirs. Upstream ask 14 (caption placement) would let both of these
-        // collapse into captions; until it lands, both stay hand-rolled --
-        // and they stay hand-rolled TOGETHER, which is the point.
+        // `Builder::FinishControl` (PortableUIBuilders.hpp:442-484) always
+        // wraps a caption and its control together in one implicit `Row`
+        // (:456); `CaptionPlacement::After` only reorders the caption after
+        // the control inside that row -- it never stacks them, and both
+        // labels now sit BELOW theirs. They stay hand-rolled TOGETHER,
+        // which is the point.
         builder.Slider(FroggersNodeIds::kBpm, kLabel, static_cast<float>(tempoBpm), kFroggersBpmMin,
                        kFroggersBpmMax, 1.0f, synth::ui::Action::Named(FroggersActions::kBpm), sliderStyle);
         builder.Label(FroggersNodeIds::kBpmLabel, kLabel, synth::ui::ControlStyle{});
@@ -1824,7 +1825,7 @@ private:
         // outline visibly crossed the encoder's own modulation ring. Both the
         // frame and every ring/arc layer are emitted by ONE Sheaf function,
         // BuildEncoderDrawCommands (External/Sheaf/projects/synth/include/
-        // synth/EncoderDraw.hpp:649-797), from geometry this app does not
+        // synth/EncoderDraw.hpp:649-800), from geometry this app does not
         // own: the ring's radius is `baseRadius = min(bounds.width,
         // bounds.height) * 0.43f` (EncoderDraw.hpp:669) while the frame is
         // `bounds` inset by a fixed 1px with a 6px corner radius
@@ -1972,7 +1973,7 @@ private:
                     // into are cleared together -- leaving stale colours
                     // published while clearing only the masks would still
                     // satisfy `BuildEncoderDrawCommands`'s own bounds
-                    // assert (EncoderDraw.hpp:702), but a disabled source
+                    // assert (EncoderDraw.hpp:705), but a disabled source
                     // must not still look wired to specific modulators or
                     // gestures.
                     // A disconnected source has no colour to dim. The slate

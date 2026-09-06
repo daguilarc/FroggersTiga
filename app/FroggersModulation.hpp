@@ -76,7 +76,7 @@
 // Drill-in level cap
 // ============================================================================
 // Sheaf's `Bank` has no level concept at all: one `Parameter* selected_`
-// (ParameterModulation.hpp:656) plus one bool computed from it
+// (ParameterModulation.hpp:661) plus one bool computed from it
 // (`ShowingModulation()`, :2710-2712); `Bank::HandlePress` opens a
 // modulation view for ANY non-selected pressed cell regardless of how deep
 // the current view already is (`OpenModulationView`, :2813-2859), so it will
@@ -193,11 +193,11 @@ inline float NormalizeBipolarToUnit(float bipolar)
 // Bank::HandlePress's single-argument overload derives its own physical
 // layout from `Bank::CompactPhysicalLayout()`, which returns only the
 // encoder ids this bank has actually registered a parameter at
-// (topLevel_.size(), src/ParameterModulation.cpp:2915-2921) -- 11 for every
+// (topLevel_.size(), src/ParameterModulation.cpp:2935-2941) -- 11 for every
 // Froggers bank (9 page params + Crispy + Crunchy; this bank's slots 9-13
 // are deliberately left empty). `Bank::OpenModulationView` requires
 // `physicalLayout.size() >= numModulators + 1` = 16
-// (ParameterModulation.cpp:2818-2821), so the single-arg overload throws
+// (ParameterModulation.cpp:2838-2841), so the single-arg overload throws
 // ("modulation view has more modulators than slot depth positions") the
 // first time any parameter here is pressed. The two-arg overload takes an
 // EXPLICIT layout instead; `BankSlot::PhysicalEncoders()` (public) already
@@ -445,7 +445,7 @@ public:
 
     // The cell stays pushed with a null parameter whenever this is false
     // (Sheaf's own OpenModulationView/EnsureModulationDepthParameter
-    // behavior, ParameterModulation.cpp:2784-2786,2843-2852), so the slate
+    // behavior, ParameterModulation.cpp:2804-2806,2843-2852), so the slate
     // never changes size or order regardless of cabling. Called once at
     // startup and once per routing transition (FroggersAppCore.hpp's
     // Init()/ProcessFrame()) -- never per sample; a test wanting
@@ -856,13 +856,13 @@ private:
 // ============================================================================
 // Depth randomize does not dispatch a held Modifier::RandomMod press into
 // Bank::HandlePress, which calls the PRIVATE Bank::RandomizeModulationDepths
-// (src/ParameterModulation.cpp:2881-2913). That function's own loop --
+// (src/ParameterModulation.cpp:2901-2933). That function's own loop --
 //     while (manager_->NextRandomCoin() < 0.5f) { ... one depth touched ... }
 // (:2894) -- is a geometric distribution over the count of depths touched
 // STARTING AT ZERO: P(k) = 0.5^(k+1) for k = 0, 1, 2, ..., mean 1.0. A single
 // press typically changed only ~1 depth, and was a complete no-op exactly
 // 50% of the time. That constant is Sheaf's, private, and out of scope to
-// change upstream (src/ParameterModulation.cpp:2894).
+// change upstream (src/ParameterModulation.cpp:2914).
 //
 // `detail::RandomizeParameterModulationDepths` below (used by all four call
 // sites: RandomizeBankLevel1Depths, RandomizePage's drill-in branch, and
@@ -898,7 +898,7 @@ namespace detail {
 
 // The only reliable externally-observable signal that
 // Bank::EnsureModulationDepthParameter's private CanAllocate() early return
-// (ParameterModulation.cpp:2790-2792) is ABOUT to fire for the next press:
+// (ParameterModulation.cpp:2811-2813) is ABOUT to fire for the next press:
 // `ParameterGroup::CanAllocate()` (public) is already false. Checking a
 // per-parameter "does every connected modulator have a materialized depth"
 // count instead would be wrong -- the draw below is geometric
@@ -1049,7 +1049,7 @@ inline void ZeroExistingModulationDepths(synth::Parameter& parameter) {
 // the same source twice, which this does not reproduce), and
 // for each chosen source calls the exact same two public calls Sheaf's own
 // loop makes internally: `Parameter::EnsureModulationDepth` then
-// `Parameter::RandomizeVisibleValue` (ParameterModulation.cpp:2896-2911).
+// `Parameter::RandomizeVisibleValue` (ParameterModulation.cpp:2926-2931).
 // Sheaf performs every write; only the count and the source set are chosen
 // here. Does NOT dispatch through Bank::HandlePress at
 // all -- no press, no modifier-hold, no selection/level state touched -- so
@@ -1150,8 +1150,8 @@ inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager,
 // A single-cell
 // VALUE randomize of whatever parameter is currently VISIBLE at `encoderId`
 // on `bank` -- `bank.VisibleParameter(encoderId)` is exactly
-// `FindVisibleCell(encoderId)->parameter` (src/ParameterModulation.cpp:2718-
-// 2721), the same lookup `Bank::HandlePress`'s modifier branch uses
+// `FindVisibleCell(encoderId)->parameter` (src/ParameterModulation.cpp:2729-
+// 2732), the same lookup `Bank::HandlePress`'s modifier branch uses
 // internally, so this targets the identical cell a press-based path
 // would (top-level or drilled-in, whichever is visible), with no dependency
 // on whether this Bank is the slot's currently *selected* one.
@@ -1175,7 +1175,7 @@ inline bool RandomizeParameterModulationDepths(synth::ParameterManager& manager,
 // literally true regardless of scene-slider position.
 // `manager.NextRandomValue()` is the same RNG source Sheaf's own
 // `RandomizeVisibleValue` call site draws from (`Bank::ApplyModifierToParameter`,
-// ParameterModulation.cpp:2872), so seeded/reproducible randomize is
+// ParameterModulation.cpp:2893), so seeded/reproducible randomize is
 // unaffected.
 //
 // `ParameterManager::SetRandomHeld` is deliberately no longer called here --

@@ -461,12 +461,15 @@ TEST_CASE(every_encoder_cell_lies_fully_inside_the_grid_region) {
 
 // --- fit guards, replacing the deleted height cross-check --------------
 //
-// `declared_ui_height_matches_the_derived_required_extent` DIES WITH ITS
-// `FroggersAutoFlowedChromeModel`/`RequiredHeight()` are
-// deleted, so there is nothing left to cross-check, and per its own
-// finding that test could never actually fail even when its assumptions were
-// already wrong (`FroggersAutoFlowedChromeModel::FlowedControls()` hardcoded
-// a control list it never checked against the real tree). Its FUNCTION --
+// `declared_ui_height_matches_the_derived_required_extent` is gone along
+// with its cross-check: nothing computes a required height any more --
+// `config.uiHeight` is a plain initial window size kept equal to
+// `FroggersPageLayout::kDefaultHeight` by hand, and the layout resolves
+// against whatever root extent it is given
+// (`FroggersPageLayout::RootBounds()`) -- and per its own finding that test
+// could never actually fail even when its assumptions were already wrong
+// (`FroggersAutoFlowedChromeModel::FlowedControls()` hardcoded a control
+// list it never checked against the real tree). Its FUNCTION --
 // proving the surface fits -- is taken over by these three, a strictly
 // stronger guarantee: they resolve the real declarative grid and let
 // `RequireContainerHoldsItsChildren` (PortableUILayout.hpp:267-316) itself
@@ -511,10 +514,10 @@ TEST_CASE(surface_resolves_without_overflow_at_a_large_window_size) {
 //
 // This asserts the two sliders against EACH OTHER, never against a pixel
 // literal. A hardcoded expected width would be two numbers kept in agreement
-// by hand -- the exact defect that rewrite deleted when it removed
-// `uiHeight == RequiredHeight()`, and it would keep passing if both sliders
-// drifted together. Comparing them to each other is what actually pins
-// "equal by construction."
+// by hand -- the same defect `uiHeight`'s hand-sync with `kDefaultHeight`
+// (FroggersUiSurface.hpp) already carries, and it would keep passing if both
+// sliders drifted together. Comparing them to each other is what actually
+// pins "equal by construction."
 //
 // Checked at three window sizes because the width is a FRACTION of the left
 // block: equality has to survive the block resizing, which is the property a

@@ -221,28 +221,18 @@ public:
         config.preferredBlockSize = 256;
         config.uiWidth = 900;
         // This literal is just the window's INITIAL size, not a derived
-        // cross-check. It used to be required to equal
-        // `FroggersPageLayout::RequiredHeight()` (hand-maintained in sync,
-        // verified by a dedicated test) because `FroggersUiSurface.hpp`'s
-        // hand-rolled auto-flow model (`FroggersAutoFlowedChromeModel`)
-        // needed the app to reserve exactly the right amount of vertical
-        // space for its own chrome band ahead of time. That band was
-        // replaced by one declarative grid whose regions are resolved by
-        // Sheaf's own layout engine against whatever root extent it is given
-        // (`FroggersPageLayout::RootBounds()`), so there is nothing left for
-        // this literal to be derived FROM, and the circular-include
-        // workaround that comment used to describe (`FroggersUiSurface.hpp`
-        // cannot call back into this file) no longer applies because there
-        // is no call to make.
+        // cross-check. Sheaf's own layout engine resolves one declarative
+        // grid's regions against whatever root extent it is given
+        // (`FroggersPageLayout::RootBounds()`), so there is nothing for
+        // this literal to be derived FROM.
         // 632 -> 712, +80px (4 encoder rows x
         // `synth_froggers::FroggersEncoderGridLayout::kLabelBandHeight`,
         // 20px each -- FroggersUiSurface.hpp), so the label band added below
         // each encoder ring has somewhere to live without shrinking the ring
         // or the window's other rows -- the operator's own ruling was "do
         // not shrink the encoder ring" / "space you should have ADDED below
-        // each encoder". Otherwise unchanged: still simply a plain,
-        // hand-picked initial window size, matching
-        // `synth_froggers::FroggersPageLayout::kDefaultHeight`
+        // each encoder". This is simply a plain, hand-picked initial window
+        // size, matching `synth_froggers::FroggersPageLayout::kDefaultHeight`
         // (FroggersUiSurface.hpp) by hand, not derivation (that file's own
         // comment explains why no cross-check test exists for this pair --
         // such a test can pass even when both sides are already wrong).
@@ -306,7 +296,7 @@ public:
 
     // Sample-rate-dependent modulation-slate setup: detected and called
     // automatically by synth::Engine via the optional HasPrepareToPlay hook
-    // (AppConcepts.hpp:26-28) once the host negotiates a real sample rate.
+    // (AppConcepts.hpp:28-32) once the host negotiates a real sample rate.
     // Everything else in this class is sample-rate-independent at Init()
     // time.
     // The fallback used when the host hands this hook a non-positive sample
@@ -317,7 +307,7 @@ public:
 
     void PrepareToPlay(double sampleRate, int /*blockSize*/) {
         // `synth::Engine::Prepare()` (External/Sheaf/
-        // projects/synth/include/synth/Engine.hpp:280-301) guards
+        // projects/synth/include/synth/Engine.hpp:289-311) guards
         // `sampleRate > 0.0 && blockSize > 0` before its OWN two uses
         // (MasterClock::Prepare, the uiPublishInterval_ computation) but
         // forwards this hook's `sampleRate`/`blockSize` UNCONDITIONALLY --
@@ -325,7 +315,7 @@ public:
         // guard twice, then hands the raw value to the app hook regardless.
         // The real host origin is `synth_runtime::Runtime<App>::
         // audioDeviceAboutToStart` (External/Sheaf/projects/synth/runtime/
-        // Runtime.hpp:502-511): `double sampleRate =
+        // Runtime.hpp:580-593): `double sampleRate =
         // device->getCurrentSampleRate();` straight into `engine_.Prepare(
         // sampleRate, blockSize)`, no validation of its own -- a live
         // `juce::AudioIODevice` query, not a compile-time constant. A
@@ -365,7 +355,7 @@ public:
         // (ParameterModulation.cpp:859-865) -- otherwise knob glide,
         // modulation-depth smoothing, and UI-display slew all run at the
         // wrong real-time rate at any host rate other than 48 kHz. Mirrors
-        // Braid 4's own PrepareToPlay (Braid4Core.hpp:207-220), which
+        // Braid 4's own PrepareToPlay (Braid4Core.hpp:205-219), which
         // converts against internalSampleRate_ (its oversampled internal
         // parameter-tier rate); this app has no such oversampling at the
         // parameter tier (parameters_/modulation_ share the single mono
@@ -622,7 +612,7 @@ public:
     // True when
     // the MOST RECENT Randomize All/Page operation left
     // `FroggersRandomizeResult.partial` true -- i.e. `EnsureModulationDepth`
-    // hit `!group_.CanAllocate()` (Sheaf, ParameterModulation.cpp:2790-2792)
+    // hit `!group_.CanAllocate()` (Sheaf, ParameterModulation.cpp:1825-1827)
     // and stopped that operation short of drawing its full chosen set.
     // Published from ProcessFrame() (audio thread) alongside the
     // ComputeAllParameters() reseed below, same cross-thread contract as
@@ -684,7 +674,7 @@ public:
                 activeBankIx_ = static_cast<std::size_t>(bankRequest);
                 parameters_.Slot().SelectBank(&parameters_.BankAt(activeBankIx_));
                 // `BankSlot::SelectBank` Deselect()s the OUTGOING bank
-                // (src/ParameterModulation.cpp:2924-2932 in External/Sheaf), so
+                // (src/ParameterModulation.cpp:2944-2951 in External/Sheaf), so
                 // a freshly-constructed drillIn_ (level_ starts at 0) for the
                 // INCOMING bank is always consistent with that bank's real
                 // state: either it was never drilled into, or it was
@@ -804,7 +794,7 @@ public:
             // thread: ProcessFrame() only ever runs on the audio thread (this
             // method's own header comment; `synth::Engine` invokes it once per
             // block, after message drains and before ProcessBlock()), and
-            // `ComputeAllParameters()` (public, ParameterModulation.hpp:796)
+            // `ComputeAllParameters()` (public, ParameterModulation.hpp:809)
             // is a full, non-lock-free graph traversal that `ParameterManager`
             // requires to run there (ParameterModulation.hpp:484-485). It
             // reseeds every parameter including depth children -- ComputeAtDepth's
@@ -856,7 +846,7 @@ public:
         modulation_.PrepareBlockClock(quarterNotesPerSample);
 
         // `block.outputs` is `AudioBlock`'s own field
-        // (External/Sheaf/projects/synth/include/synth/AppContext.hpp:173-201)
+        // (External/Sheaf/projects/synth/include/synth/AppContext.hpp:183-211)
         // -- set once for the whole callback, never reassigned inside this
         // function -- so re-testing it every frame below was re-evaluating a
         // loop-invariant up to 48,000x/second. Hoisted here, once per block.
@@ -1194,7 +1184,7 @@ public:
                 // above, an individual `block.outputs[channelIx]` is NOT
                 // provably non-null by contract. `AudioBlock::outputs` is
                 // `float* const*` -- "Channel counts are the device's actual
-                // counts" (AppContext.hpp:82-83) says nothing about every
+                // counts" (AppContext.hpp:92-93) says nothing about every
                 // slot in that count being populated, and Sheaf's own two
                 // reference apps that consume this exact contract both guard
                 // the identical way: `apps/braid-4/Braid4Core.hpp:678-689`
@@ -1282,7 +1272,7 @@ public:
         // block after the per-sample loop -- the same end-of-ProcessBlock
         // placement apps/braid-4's own ProcessBlock uses for its
         // scopeWriter_.Publish()/PopulateUIState()/PublishUiState() sequence
-        // (Braid4Core.hpp:252-262).
+        // (Braid4Core.hpp:253-263).
         vcoScopeWriter_.Publish();
         audioVcos_[0].PopulateUIState(vco1ScopeUiState_);
         audioVcos_[1].PopulateUIState(vco2ScopeUiState_);
@@ -1456,7 +1446,7 @@ private:
     // site for this class. Returns the transport quarter-note position at
     // `absoluteOutputSample`, or nullopt when the transport isn't running or
     // the committed plan doesn't contain the sample. Null-checking
-    // `block.clockPlan` (`AppContext.hpp:187`) is necessary but not
+    // `block.clockPlan` (`AppContext.hpp:197`) is necessary but not
     // sufficient for containment, so this calls the containment-safe
     // `TryTransportQuarterNotesAt` (`MasterClock.hpp:200`) rather than the
     // precondition-carrying `TransportQuarterNotesAt` (`:198`, precondition
