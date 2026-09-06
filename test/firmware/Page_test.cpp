@@ -9,18 +9,7 @@
 #include <cstdio>
 #include <cstdint>
 
-namespace
-{
-int g_failures = 0;
-void Check(bool ok, const char* what)
-{
-    if (!ok)
-    {
-        std::printf("FAIL: %s\n", what);
-        g_failures++;
-    }
-}
-} // namespace
+#include "Check.hpp"
 
 int main()
 {

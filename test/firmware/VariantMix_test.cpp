@@ -3,19 +3,10 @@
 #include <cmath>
 #include <cstdio>
 
+#include "Check.hpp"
+
 namespace
 {
-int g_failures = 0;
-
-void Check(bool ok, const char* what)
-{
-    if (!ok)
-    {
-        std::printf("FAIL: %s\n", what);
-        g_failures++;
-    }
-}
-
 bool Exact(float a, float b)
 {
     return a == b;

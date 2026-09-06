@@ -12,18 +12,10 @@
 #include <cstdio>
 #include <cstdint>
 
+#include "Check.hpp"
+
 namespace
 {
-int g_failures = 0;
-void Check(bool ok, const char* what)
-{
-    if (!ok)
-    {
-        std::printf("FAIL: %s\n", what);
-        g_failures++;
-    }
-}
-
 // The same bit-scramble as Parameter::Get, kept as an independent
 // re-implementation rather than a call into production code.
 float Scramble(float value, float fuegKnob, uint8_t position)
