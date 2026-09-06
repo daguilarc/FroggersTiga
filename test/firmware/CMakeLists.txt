@@ -6,9 +6,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../src/core")
 
-function(add_firmware_test name source)
-    add_executable(${name} ${source})
+function(add_firmware_test name)
+    add_executable(${name} ${ARGN})
     target_include_directories(${name} PRIVATE "${CORE_DIR}")
+    target_compile_definitions(${name} PRIVATE FROGGERS_TEST_INSTRUMENTATION)
 endfunction()
 
 # This target asserts the Daisy firmware's DSP directly out of src/core, with
@@ -19,7 +20,18 @@ add_firmware_test(HookIdentity_test HookIdentity_test.cpp)
 add_firmware_test(ModMgr_test ModMgr_test.cpp)
 add_firmware_test(PairArEnvelope_test PairArEnvelope_test.cpp)
 
+# One binary, both variants: each variant's engine is a separate translation
+# unit because the variant is a build-time define, and asserting them together
+# is what stops an edit to one silently moving the other.
+add_firmware_test(RefreshGate_test RefreshGate_test.cpp)
+add_firmware_test(VariantMix_test
+    VariantMix_test.cpp
+    VariantMix_solo.cpp
+    VariantMix_guitar.cpp)
+
 enable_testing()
 add_test(NAME HookIdentity_test COMMAND HookIdentity_test)
 add_test(NAME ModMgr_test COMMAND ModMgr_test)
 add_test(NAME PairArEnvelope_test COMMAND PairArEnvelope_test)
+add_test(NAME RefreshGate_test COMMAND RefreshGate_test)
+add_test(NAME VariantMix_test COMMAND VariantMix_test)

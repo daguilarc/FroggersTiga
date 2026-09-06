@@ -20,6 +20,7 @@ struct FieldMutationQueue
     FieldMutation m_queue[kDepth]{};
     int m_write = 0;
     int m_read = 0;
+    uint8_t m_page = 0;
 
     void Enqueue(FieldMutationType type)
     {
@@ -39,6 +40,10 @@ struct FieldMutationQueue
         m_write++;
     }
 
+    // A whole Rand All is one page of work per call, not all of them: running
+    // every page inside a single drain is what stalls the poll loop under
+    // repeated presses. The entry is retired only once its last page is done,
+    // so coalescing in Enqueue still collapses a held button.
     bool DrainOne(PageManager& pageManager)
     {
         if (m_read >= m_write)
@@ -46,14 +51,19 @@ struct FieldMutationQueue
             return false;
         }
         const FieldMutation mutation = m_queue[m_read % kDepth];
-        m_read++;
         if (mutation.type == FieldMutationType::RandAll)
         {
-            pageManager.RandomizeAllPages();
+            pageManager.RandomizePageFromKnobs(m_page);
         }
         else
         {
-            pageManager.RandomizeAllPagesMod();
+            pageManager.RandomizePageModFromKnobs(m_page);
+        }
+        m_page++;
+        if (m_page >= pageManager.m_numPages)
+        {
+            m_page = 0;
+            m_read++;
         }
         return true;
     }

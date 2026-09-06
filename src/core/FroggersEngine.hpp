@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Comb.hpp"
+#include "FroggersVariant.hpp"
 #include "Marbles.hpp"
 #include "Page.hpp"
 #include "PairArEnvelope.hpp"
@@ -27,7 +28,9 @@ struct FroggersEngine
 {
     ModMgr* m_modMgr;
     Page* m_audioGenParams;
+#if FROGGERS_HAS_REVERB
     Page* m_reverbParams;
+#endif
     Page* m_filterParams;
     Page* m_driveParams;
 
@@ -49,6 +52,7 @@ struct FroggersEngine
     float m_m5Out;
     uint32_t m_m5Counter;
 
+#if FROGGERS_HAS_REVERB
     RuntimeParam m_rvMix;
     RuntimeParam m_rvSize;
     RuntimeParam m_rvDecay;
@@ -68,6 +72,14 @@ struct FroggersEngine
     float m_rvPreLine[x_rvSize];
     OPLowPassFilter m_rvDampFilter;
 
+    // Reverb stays bypassed while the mix rests at zero. Separate enter and
+    // exit thresholds so a knob parked on the boundary cannot alternate
+    // between processed and skipped every sample.
+    static constexpr float x_rvBypassEnter = 1e-4f;
+    static constexpr float x_rvBypassExit = 5e-4f;
+    bool m_rvBypassed = true;
+#endif
+
     RuntimeParam m_pureDelaySeconds;
     RuntimeParam m_bumpFreq;
     RuntimeParam m_bumpResonance;
@@ -75,8 +87,6 @@ struct FroggersEngine
     RuntimeParam m_comf;
     RuntimeParam m_comq;
     RuntimeParam m_cmlp;
-    RuntimeParam m_filterCombPeak;
-    RuntimeParam m_filterScoop;
 
     RuntimeParam m_srr1;
     RuntimeParam m_srr2;
@@ -85,7 +95,6 @@ struct FroggersEngine
     RuntimeParam m_hash;
 
     ResonantBump m_resonantBump;
-    ResonantBump m_scoopNotch;
     Comb m_comFilter;
     PureDelay m_pureDelay;
 
@@ -110,8 +119,6 @@ struct FroggersEngine
     Page* m_adsrParams = nullptr;
     PairArEnvelope m_pair12;
     PairArEnvelope m_pair23;
-    bool m_useV2FilterParallel = false;
-
     // D11/D12/D14 (task 7.4): V2-hosts-only (desktop-v2 + web) flag. Daisy/v1
     // never set this (default false), so their StepOscillators path is the
     // untouched, coupler-gated legacy branch below. When true: no XCPL
@@ -201,9 +208,11 @@ struct FroggersEngine
     {
         RuntimeParam* params[] = {
             &m_v1vo, &m_v2vo, &m_v3vo, &m_xcpl, &m_pm1, &m_pm2, &m_pm3, &m_oscLvl,
+#if FROGGERS_HAS_REVERB
             &m_rvMix, &m_rvSize, &m_rvDecay, &m_rvPre, &m_rvDamp, &m_rvWidth, &m_rvDiffusion,
+#endif
             &m_pureDelaySeconds, &m_bumpFreq, &m_bumpResonance, &m_bumpWidth,
-            &m_comf, &m_comq, &m_cmlp, &m_filterCombPeak, &m_filterScoop,
+            &m_comf, &m_comq, &m_cmlp,
             &m_srr1, &m_srr2, &m_fuzz, &m_digr, &m_hash,
         };
         for (RuntimeParam* param : params)
@@ -258,11 +267,6 @@ struct FroggersEngine
     float GetAdsrParamForTest(uint8_t position) const
     {
         return m_adsrParams ? m_adsrParams->GetParam(position) : -1.0f;
-    }
-
-    void SetUseV2FilterParallel(bool enabled)
-    {
-        m_useV2FilterParallel = enabled;
     }
 
     void SetSimIndependentPm(bool enabled)
@@ -372,6 +376,7 @@ struct FroggersEngine
 
     void SoftResetFxState()
     {
+#if FROGGERS_HAS_REVERB
         for (size_t i = 0; i < x_rvSize; i++)
         {
             m_rvLineA[i] = 0.0f;
@@ -384,6 +389,8 @@ struct FroggersEngine
         m_reverbWetL = 0.0f;
         m_reverbWetR = 0.0f;
         m_rvDampFilter = OPLowPassFilter();
+        m_rvBypassed = true;
+#endif
         m_comFilter.Reset();
         for (size_t i = 0; i < 3; i++)
         {
@@ -452,6 +459,7 @@ struct FroggersEngine
             m_oscLvl.SetTarget(ExpMap(0.01f, 1.0f, m_audioGenParams->GetParam(6)));
         }
 
+#if FROGGERS_HAS_REVERB
         m_rvMix.SetTarget(m_reverbParams->GetParam(0));
         m_rvSize.SetTarget(ExpMap(0.05f, 1.0f, m_reverbParams->GetParam(1)));
         m_rvDecay.SetTarget(ExpMap(0.1f, 0.98f, m_reverbParams->GetParam(2)));
@@ -459,6 +467,7 @@ struct FroggersEngine
         m_rvDamp.SetTarget(ExpMap(0.001f, 0.2f, 1.0f - m_reverbParams->GetParam(4)));
         m_rvWidth.SetTarget(m_reverbParams->GetParam(5));
         m_rvDiffusion.SetTarget(m_reverbParams->GetParam(6));
+#endif
 
         m_pureDelaySeconds.SetTarget(PhaseUtils::ExpParam::Compute(0.001f, 0.1f, m_filterParams->GetParam(0)));
 
@@ -477,8 +486,6 @@ struct FroggersEngine
         m_comq.SetTarget(Comb::GetFeedback(m_filterParams->GetParam(5)));
         float cmlp = PhaseUtils::ExpParam::Compute(4.0f * comf, 20000.0f / sr, m_filterParams->GetParam(6));
         m_cmlp.SetTarget(Alpha(cmlp));
-        m_filterCombPeak.SetTarget(m_filterParams->GetParam(7));
-        m_filterScoop.SetTarget(m_filterParams->GetParam(8));
 
         m_srr1.SetTarget(1e-2f + PhaseUtils::ZeroedExpParam::Compute(10.0f, 1 - m_driveParams->GetParam(2)));
         m_srr2.SetTarget(1e-2f + PhaseUtils::ZeroedExpParam::Compute(10.0f, 1 - m_driveParams->GetParam(3)));
@@ -490,6 +497,7 @@ struct FroggersEngine
         m_frogBlock.m_polynomialDrive.SetCoefs(m_driveParams->GetParam(1));
     }
 
+#if FROGGERS_HAS_REVERB
     float ProcessReverb(float input)
     {
         float preNorm = m_rvPre.Process();
@@ -551,17 +559,13 @@ struct FroggersEngine
     {
         return m_lastRvMix;
     }
+#endif
 
     void UpdateParams()
     {
         m_pureDelay.SetDelaySeconds(m_pureDelaySeconds.Process(), m_sampleRate);
-        m_resonantBump.SetFreq(m_bumpFreq.Process());
-        m_resonantBump.SetHeight(m_bumpResonance.Process());
-        m_resonantBump.SetWidth(m_bumpWidth.Process());
-        m_scoopNotch.SetFreq(m_bumpFreq.Process());
-        m_scoopNotch.SetWidth(m_bumpWidth.Process());
-        const float scoop = m_filterScoop.Process();
-        m_scoopNotch.SetHeight(std::max(0.05f, 1.0f - 0.95f * scoop));
+        m_resonantBump.SetParams(
+            m_bumpFreq.Process(), m_bumpResonance.Process(), m_bumpWidth.Process());
         m_comFilter.m_delaySamples = Comb::GetDelaySamples(m_comf.Process());
         m_comFilter.m_feedback = m_comq.Process();
         m_comFilter.SetCutoffAlpha(m_cmlp.Process());
@@ -571,7 +575,9 @@ struct FroggersEngine
         m_frogBlock.m_digitalReorganizer.SetFlip(m_digr.Process());
         m_frogBlock.m_digitalReorganizer.SetHash(m_hash.Process());
         m_frogBlock.m_fuzz = m_fuzz.Process();
+#if FROGGERS_HAS_REVERB
         m_rvDampFilter.m_alpha = m_rvDamp.Process();
+#endif
 
         m_marbles.UpdateParams();
     }
@@ -579,7 +585,9 @@ struct FroggersEngine
     FroggersEngine()
         : m_modMgr(nullptr)
         , m_audioGenParams(nullptr)
+#if FROGGERS_HAS_REVERB
         , m_reverbParams(nullptr)
+#endif
         , m_filterParams(nullptr)
         , m_driveParams(nullptr)
         , m_ph1(0.0f)
@@ -590,6 +598,7 @@ struct FroggersEngine
         , m_m5Hold(0.0f)
         , m_m5Out(0.0f)
         , m_m5Counter(0)
+#if FROGGERS_HAS_REVERB
         , m_rvIndexA(0)
         , m_rvIndexB(0)
         , m_rvPreIndex(0)
@@ -597,6 +606,7 @@ struct FroggersEngine
         , m_rvLineB{0.0f}
         , m_rvPreLine{0.0f}
         , m_rvDampFilter()
+#endif
         , m_extGate(0.01f, 0.005f)
     {
     }
@@ -618,6 +628,7 @@ struct FroggersEngine
         Page* marblesPage = pageManager->AddPage();
         m_marbles.InitPage(pageManager, marblesPage);
 
+#if FROGGERS_HAS_REVERB
         m_reverbParams = pageManager->AddPage();
         m_reverbParams->InitParam("RVMX", 0, 0.2f);
         m_reverbParams->InitParam("RSIZ", 1, 0.4f);
@@ -627,6 +638,7 @@ struct FroggersEngine
         m_reverbParams->InitParam("RMOD", 5, 0.2f);
         m_reverbParams->InitParam("RRAT", 6, 0.2f);
         m_reverbParams->SetFuegoization();
+#endif
 
         m_filterParams = pageManager->AddPage();
         m_filterParams->InitParam("DELF", 0, 0.5f);
@@ -808,6 +820,15 @@ struct FroggersEngine
         return (p12 + v2 + p23) * (1.0f / 3.0f);
     }
 
+    // Guitar sums the dry external signal with the ring mod. 7:5 puts the dry
+    // path 1.4x above the ring-mod path, and the weights sum to 1, so the
+    // gate-open level matches Solo at the same knobs.
+    static constexpr float x_guitarDryWeight = 7.0f / 12.0f;
+    static constexpr float x_guitarRingWeight = 5.0f / 12.0f;
+
+    // MixOscVoices runs before the gate test on both paths and its result is
+    // discarded when the gate is open. That is deliberate: the call advances
+    // pair-AR envelope state, so skipping it would change the envelopes.
     float MixExternalAndOsc(float input, float v1, float v2, float v3, float olvl, bool hasExternal)
     {
         float oscMix = MixOscVoices(v1, v2, v3);
@@ -816,35 +837,46 @@ struct FroggersEngine
             return olvl * oscMix;
         }
 
-        return (input * v1 + input * v2 + input * v3) * (1.0f / 3.0f);
+        const float ringMod = (input * v1 + input * v2 + input * v3) * (1.0f / 3.0f);
+#if FROGGERS_EXTERNAL_DRY_PARALLEL
+        return x_guitarDryWeight * input + x_guitarRingWeight * ringMod;
+#else
+        return ringMod;
+#endif
     }
 
     float ApplyOutputFx(float output)
     {
-        if (m_useV2FilterParallel)
-        {
-            const float combPath = m_comFilter.Process(m_pureDelay.Process(output));
-            const float peakPath = m_resonantBump.Process(output);
-            const float blend = m_filterCombPeak.Process();
-            const float mixed = peakPath * (1.0f - blend) + combPath * blend;
-            const float scoopMix = m_filterScoop.Process();
-            const float scooped = m_scoopNotch.Process(mixed);
-            output = mixed * (1.0f - scoopMix) + scooped * scoopMix;
-        }
-        else
-        {
-            output = m_pureDelay.Process(output);
-            output = m_comFilter.Process(output);
-            output = m_resonantBump.Process(output);
-        }
+        output = m_pureDelay.Process(output);
+        output = m_comFilter.Process(output);
+        output = m_resonantBump.Process(output);
         if (m_simFxInsert)
         {
             output = m_simFxInsert(output, m_simFxInsertCtx);
         }
-        const float rvb = ProcessReverb(output);
+#if FROGGERS_HAS_REVERB
         const float rvMix = m_rvMix.Process();
         m_lastRvMix = rvMix;
+        if (m_rvBypassed)
+        {
+            if (rvMix > x_rvBypassExit)
+            {
+                m_rvBypassed = false;
+            }
+        }
+        else if (rvMix < x_rvBypassEnter)
+        {
+            m_rvBypassed = true;
+        }
+        if (m_rvBypassed)
+        {
+            return output;
+        }
+        const float rvb = ProcessReverb(output);
         return (1.0f - rvMix) * output + rvMix * rvb;
+#else
+        return output;
+#endif
     }
 
     float ProcessSample(float input)

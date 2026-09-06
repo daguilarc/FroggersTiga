@@ -9,10 +9,30 @@
 #include <cstdio>
 #include <functional>
 
+// The OLED and the LED bus refresh on the same terms: immediately when
+// something changed, and otherwise no faster than ~30 Hz. Both are outputs
+// whose cost the poll loop pays, so both are rationed the same way.
+struct RefreshGate
+{
+    static constexpr uint32_t kIntervalMs = 33;
+
+    bool m_dirty = true;
+    uint32_t m_lastMs = 0;
+
+    bool Due(uint32_t nowMs) const
+    {
+        return m_dirty || kIntervalMs <= (nowMs - m_lastMs);
+    }
+
+    void MarkSent(uint32_t nowMs)
+    {
+        m_lastMs = nowMs;
+        m_dirty = false;
+    }
+};
+
 struct DaisyIO
 {
-    static constexpr uint32_t kScreenThrottleMs = 33;
-
     PageManager m_pageManager;
     daisy::DaisyField m_field;
     std::function<void(int)> m_buttonCallback;
@@ -21,12 +41,26 @@ struct DaisyIO
     float m_cvPresence[4]{0.0f, 0.0f, 0.0f, 0.0f};
     FieldSwitchGuard m_switchGuard;
     FieldMutationQueue m_mutationQueue;
-    bool m_screenDirty = true;
-    uint32_t m_lastScreenMs = 0;
+    RefreshGate m_screenGate;
+    RefreshGate m_ledGate;
+    float m_ledShadow[daisy::DaisyField::LED_LAST]{};
+
+    // LED values are computed every poll; only the I2C transmit is rationed.
+    // Without this the bus is driven at whatever rate MainLoop happens to spin
+    // at, which is what starves the poll loop under load.
+    void SetLedTracked(size_t index, float value)
+    {
+        if (m_ledShadow[index] != value)
+        {
+            m_ledShadow[index] = value;
+            m_ledGate.m_dirty = true;
+        }
+        m_field.led_driver.SetLed(index, value);
+    }
 
     void MarkScreenDirty()
     {
-        m_screenDirty = true;
+        m_screenGate.m_dirty = true;
     }
 
     void ProcessControls()
@@ -120,21 +154,26 @@ struct DaisyIO
                 m_pageManager.StopModTracking();
             }
 
-            m_field.led_driver.SetLed(i, m_pageManager.m_modIndex == i ? 1.0f : 0.0f);
+            SetLedTracked(i, m_pageManager.m_modIndex == i ? 1.0f : 0.0f);
         }
 
-        m_field.led_driver.SetLed(7, 0.0f);
+        SetLedTracked(7, 0.0f);
 
         for (size_t i = 0; i < Parameter::x_numParameters; i++)
         {
             m_pageManager.KnobUpdate(i, m_field.knob[i].Process());
-            m_field.led_driver.SetLed(i + 16, m_pageManager.IsTracking(i) ? 1.0f : 0.0f);
+            SetLedTracked(i + 16, m_pageManager.IsTracking(i) ? 1.0f : 0.0f);
         }
 
-        m_field.led_driver.SetLed(daisy::DaisyField::LED_SW_1, m_field.sw[0].Pressed() ? 1.0f : 0.0f);
-        m_field.led_driver.SetLed(daisy::DaisyField::LED_SW_2, m_field.sw[1].Pressed() ? 1.0f : 0.0f);
+        SetLedTracked(daisy::DaisyField::LED_SW_1, m_field.sw[0].Pressed() ? 1.0f : 0.0f);
+        SetLedTracked(daisy::DaisyField::LED_SW_2, m_field.sw[1].Pressed() ? 1.0f : 0.0f);
 
-        m_field.led_driver.SwapBuffersAndTransmit();
+        const uint32_t nowLed = daisy::System::GetNow();
+        if (m_ledGate.Due(nowLed))
+        {
+            m_field.led_driver.SwapBuffersAndTransmit();
+            m_ledGate.MarkSent(nowLed);
+        }
 
         if (m_mutationQueue.DrainOne(m_pageManager))
         {
@@ -204,8 +243,8 @@ struct DaisyIO
         m_gateTrigger.Reset(m_field.gate_in.State());
 
         m_pageManager.Finalize();
-        m_screenDirty = true;
-        m_lastScreenMs = daisy::System::GetNow();
+        m_screenGate.m_dirty = true;
+        m_screenGate.m_lastMs = daisy::System::GetNow();
     }
 
     void MainLoop()
@@ -215,11 +254,10 @@ struct DaisyIO
             ProcessControls();
 
             const uint32_t now = daisy::System::GetNow();
-            if (m_screenDirty || kScreenThrottleMs <= (now - m_lastScreenMs))
+            if (m_screenGate.Due(now))
             {
                 UpdateScreen();
-                m_lastScreenMs = now;
-                m_screenDirty = false;
+                m_screenGate.MarkSent(now);
             }
         }
     }

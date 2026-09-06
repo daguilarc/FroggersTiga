@@ -380,25 +380,38 @@ struct PageManager
         }
     }
 
+    // Randomize relative to the live knob positions. RandomizePage above is a
+    // different operation: it randomizes relative to each parameter's stored
+    // value, which is not the same reference and not interchangeable here.
+    void RandomizePageFromKnobs(uint8_t page)
+    {
+        for (size_t j = 0; j < Parameter::x_numParameters; j++)
+        {
+            m_pages[page].m_parameters[j].Randomize(m_knobPositions[j]);
+        }
+    }
+
+    void RandomizePageModFromKnobs(uint8_t page)
+    {
+        for (size_t j = 0; j < Parameter::x_numParameters; j++)
+        {
+            m_pages[page].m_parameters[j].RandomizeMod(m_knobPositions[j]);
+        }
+    }
+
     void RandomizeAllPages()
     {
-        for (size_t i = 0; i < m_numPages; i++)
+        for (uint8_t i = 0; i < m_numPages; i++)
         {
-            for (size_t j = 0; j < Parameter::x_numParameters; j++)
-            {
-                m_pages[i].m_parameters[j].Randomize(m_knobPositions[j]);
-            }
+            RandomizePageFromKnobs(i);
         }
     }
 
     void RandomizeAllPagesMod()
     {
-        for (size_t i = 0; i < m_numPages; i++)
+        for (uint8_t i = 0; i < m_numPages; i++)
         {
-            for (size_t j = 0; j < Parameter::x_numParameters; j++)
-            {
-                m_pages[i].m_parameters[j].RandomizeMod(m_knobPositions[j]);
-            }
+            RandomizePageModFromKnobs(i);
         }
     }
 

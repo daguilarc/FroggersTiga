@@ -1,6 +1,16 @@
-# FroggersTiga Daisy Field Manual
+# Froggers Daisy Field Manual
 
-Firmware for the original **Daisy Field** Eurorack module (`src/FroggersTiga/`).
+Firmware for the original **Daisy Field** Eurorack module. It builds as two
+separate programs, and the Field holds one at a time — flashing one replaces the
+other.
+
+| variant | app directory | artifact | reverb page | external input |
+|---|---|---|---|---|
+| **Froggers Solo** | `src/FroggersSolo/` | `build/FroggersSolo.bin` | yes | ring mod replaces the oscillators |
+| **Froggers Guitar** | `src/FroggersGuitar/` | `build/FroggersGuitar.bin` | no | dry signal runs alongside the ring mod |
+
+The Field holds whichever you flashed last. Guitar is the one with no Reverb
+page.
 
 **Frozen — not under active development**, but still buildable and flashable, and kept here rather than
 deleted since the physical hardware still runs it.
@@ -13,7 +23,7 @@ a cross-coupler, and a Marbles-style random page. None of that maps onto the app
 
 ---
 
-Firmware for **Daisy Field**: external input plus three VCOs, drive/DSP, algorithmic reverb, CV
+Firmware for **Daisy Field**: external input plus three VCOs, drive/DSP, algorithmic reverb (Solo only), CV
 modulation, and Marbles-style random sources.
 
 ## Quick Start
@@ -29,22 +39,35 @@ modulation, and Marbles-style random sources.
 
 ```text
 external input + three VCOs
-  → mix (parallel ring mod when external present; VCO-only at OLVL when silent)
+  → mix (external present: parallel ring mod alone on Solo, dry + ring mod on Guitar;
+     VCO-only at OLVL when silent)
   → Drive (polynomial drive, fuzz, digital reorganizer, SRR)
   → Pure delay
   → Comb filter
   → Resonant bump
-  → Reverb (wet/dry)
+  → Reverb (wet/dry) — Solo only
   → output
 ```
 
-**External input** (when audio is detected above ~−40 dBFS): each VCO ring-modulates the external signal; the firmware averages those three products — parallel ring mod. When the input is silent, you hear **VCO-only** at `OLVL` × the oscillator mix. `FUEG` does not change the external ring-mod mix.
+**External input** (when audio is detected above ~−40 dBFS): each VCO
+ring-modulates the external signal and the firmware averages those three
+products — parallel ring mod.
+
+- **Froggers Solo:** that average is the whole signal. The oscillators' own voice
+  is gone, not quieter.
+- **Froggers Guitar:** the dry external signal is summed with it, weighted 7:5 —
+  the dry path is 1.4× the ring-mod path, and the two weights add to 1, so the
+  level matches Solo at the same knobs. You hear the instrument and the ring mod
+  together. Both terms go into one chain, so the drive and filter act on the sum.
+
+When the input is silent both variants are identical: **VCO-only** at `OLVL` ×
+the oscillator mix. `FUEG` does not change the external mix on either.
 
 Modulation and Marbles run in parallel; they shape **parameter values**, not a separate audio bus.
 
 ## Fuegoizer (`FUEG`, knob 8)
 
-The fuegoizer is key to how FroggersTiga feels on the Field. The FUEG parameter controls how strongly knobs **1–7** are “fuegoized” before they reach the DSP.
+The fuegoizer is key to how Froggers feels on the Field. The FUEG parameter controls how strongly knobs **1–7** are “fuegoized” before they reach the DSP.
 
 Each affected parameter is a value from **0 to 1** (after CV/modulation). The firmware treats that value like an **8-bit number** (0–255). With fuegoization active:
 
@@ -72,7 +95,7 @@ See [Knob tracking](#knob-tracking) for what the display symbols mean and how to
 |--------|----------------------|--------|
 | Audio  | Yes                  | `FUEG` (also PM3 on Audio page — see below) |
 | Marbles| Yes                  | `FUEG` |
-| Reverb | Yes                  | `FUEG` |
+| Reverb | Yes                  | `FUEG` (Solo only) |
 | Filter | Yes                  | `FUEG` |
 | Drive  | Yes                  | `FUEG` |
 
@@ -111,12 +134,24 @@ With **fuegoization** active, “close enough” compares only the **high bits**
 
 ## Page order (`SW1` / `SW2`)
 
+**Froggers Solo** — five pages:
+
 1. **Audio** — oscillators, coupling, PM, level  
 2. **Marbles** — random mod sources `M6` / `M7`  
 3. **Reverb** — stereo-ish algorithmic reverb send  
 4. **Filter** — delay, comb, resonant peak (in series before reverb)  
 5. **Drive** — distortion / digital destruction (first in the FX chain after osc mix)
-(note: on some initializations, device may start on page 5; we may try to fix this)
+
+**Froggers Guitar** — four pages, the same list without Reverb:
+
+1. **Audio**  
+2. **Marbles**  
+3. **Filter**  
+4. **Drive**
+
+`SW1` / `SW2` wrap around whatever the page count is, so Guitar has no gap where
+Reverb used to be.
+(note: on some initializations, device may start on the last page; we may try to fix this)
 
 ---
 
@@ -180,7 +215,7 @@ Three oscillators feed the mix, with cross-coupling and three phase-mod paths.
 
 **Phase mod:** `PM1A` = VCO2 modulates VCO1 when 1→2 coupling is active. `PM2A` = VCO1 and VCO3 modulate VCO2. `PM3A` (via stored Audio-page `FUEG`) = VCO2 modulates VCO3 when 2→3 coupling is on.
 
-**External input:** optional line/mic. When silent, output is VCO-only at `OLVL`. When loud enough (gate open), parallel ring mod — average of external × each VCO. `FUEG` does not change that mix shape.
+**External input:** optional line/mic. When silent, output is VCO-only at `OLVL` on both variants. When loud enough (gate open): parallel ring mod alone on Solo, dry-plus-ring-mod at 7:5 on Guitar. `FUEG` does not change that mix shape.
 
 | Knob | Label | What it does |
 |------|-------|----------------|
@@ -226,13 +261,18 @@ Each press, **per channel**:
 
 No presses = frozen random level (still smoothed). Fast presses = fast random walks.
 
-**Typical use:** set Marbles on this page; assign `M6`/`M7` on Reverb/Filter/Audio; tap **`B5`** in time with music.
+**Typical use:** set Marbles on this page; assign `M6`/`M7` on Filter/Audio (and Reverb on Solo); tap **`B5`** in time with music.
 
 ---
 
-## Reverb page
+## Reverb page (Froggers Solo only)
 
-Dual delay-line reverb with pre-delay, damping, and delay-time LFO.
+Dual delay-line reverb with pre-delay, damping, and delay-time LFO. Froggers
+Guitar does not have this page; its delay lines are not in that binary at all.
+
+While the mix rests at zero the reverb is bypassed entirely, so it costs nothing
+when you are not using it. The bypass has separate enter and exit thresholds so a
+knob parked at the very bottom does not chatter in and out.
 
 | Knob | Label | What it does |
 |------|-------|----------------|
@@ -249,7 +289,7 @@ Dual delay-line reverb with pre-delay, damping, and delay-time LFO.
 
 ## Filter page
 
-Serial tone shaping **after** Drive, **before** reverb.
+Serial tone shaping **after** Drive, **before** reverb (Solo) or as the last stage (Guitar).
 
 | Knob | Label | What it does |
 |------|-------|----------------|
@@ -285,7 +325,10 @@ First processing stage on `(input + oscillators)`.
 
 ## Build and flash (firmware update)
 
-Matches [dazed-and-con-fielded](https://github.com/jvictor0/dazed-and-con-fielded) except the app directory is **`src/FroggersTiga`** (not `src/Froggers`).
+Matches [dazed-and-con-fielded](https://github.com/jvictor0/dazed-and-con-fielded) except that the app directories are **`src/FroggersSolo`** and **`src/FroggersGuitar`** (not `src/Froggers`).
+
+The two variants are separate builds with separate `build/` directories, so
+building one does not disturb the other. Pick the one you want on the device.
 
 ### Toolchain
 
@@ -308,7 +351,7 @@ make vendor-libs
 **Every firmware update:**
 
 ```sh
-cd src/FroggersTiga
+cd src/FroggersGuitar   # or: cd src/FroggersSolo
 make clean
 make
 ```
@@ -320,7 +363,7 @@ Put the Field in **DFU mode** (required every flash):
 3. Press **RESET** (or power-cycle) while holding **BOOT**.
 4. Release **BOOT** — verify with `dfu-util -l` that **`[0483:df11]`** appears.
 
-Then flash (still in `src/FroggersTiga`):
+Then flash (from the same app directory):
 
 ```sh
 make program-dfu
@@ -328,7 +371,8 @@ make program-dfu
 
 `program-dfu` uses `-s 0x08000000:leave` and resets into the new firmware when flash succeeds. That address comes from `APP_TYPE=BOOT_NONE`, the one supported build mode for apps in this repo — it links against `STM32H750IB_flash.lds` and targets internal flash at `0x08000000`. The underlying Daisy build system also has `BOOT_SRAM` and `BOOT_QSPI`, which link against `STM32H750IB_sram.lds` / `STM32H750IB_qspi.lds` and load through the bootloader at `0x90040000` instead — this repo does not build apps that way.
 
-**Confirm you flashed FroggersTiga:** `build/FroggersTiga.bin` should be ~84 KB (the older `src/Froggers` build in dazed-and-con-fielded is ~81 KB and lacks the Audio/VCO page).
+**Confirm which one you flashed:** page through with `SW1` / `SW2`. Guitar has
+four pages and no Reverb; Solo has five.
 
 ### Updating the bootloader
 
@@ -344,10 +388,10 @@ That flashes the bootloader itself to `0x08000000` with `:leave`.
 
 ## Troubleshooting
 
-- **`SW1` / `SW2` seem dead:** the tactile switch LEDs should light while each switch is held. If an LED lights but OLED page labels do not change (`V1VO` ↔ `PROB` ↔ `RVMX` …), the UI path is wrong; if neither LED lights, the switch or flash failed. Re-flash **`src/FroggersTiga`** (not dazed `src/Froggers`). Old dazed firmware blocks page switches while **`A1..A7`** mod-assign is held.  
+- **`SW1` / `SW2` seem dead:** the tactile switch LEDs should light while each switch is held. If an LED lights but OLED page labels do not change (`V1VO` ↔ `PROB` ↔ `RVMX` …), the UI path is wrong; if neither LED lights, the switch or flash failed. Re-flash **`src/FroggersSolo`** or **`src/FroggersGuitar`** (not dazed `src/Froggers`). Old dazed firmware blocks page switches while **`A1..A7`** mod-assign is held.  
 - **`SW1` stuck / always pressed (`r=1 p=1` on diag firmware):** a hardware fault on `D30`, not a firmware one — a pin audit cannot clear the raw stuck state. Firmware suppression stops runaway page flips but cannot fix a stuck switch.  
-- **Intermittent slowness on `SW2` / randomize (`B1`–`B4`):** FroggersTiga decouples control polling from OLED refresh (~30 FPS) and queues heavy **Rand All** (`B2`/`B4`) so the poll loop stays fast under audio load. Bootloader is not involved (`BOOT_NONE` @ `0x08000000`).  
+- **Intermittent slowness on `SW2` / randomize (`B1`–`B4`):** the firmware decouples control polling from OLED refresh (~30 FPS), rations LED I2C traffic to the same rate, and spreads a queued **Rand All** (`B2`/`B4`) over one page per poll so the loop stays fast under audio load. Bootloader is not involved (`BOOT_NONE` @ `0x08000000`).  
 - **Weird knob behavior on a page:** check **`FUEG`** — high fuegoization is supposed to make small moves jumpy.  
 - **Modulation seems dead on CV:** confirm cable and that the input is above the auto-bypass threshold.  
 - **Marbles not changing:** you must press **`B5`**; it does not free-run.  
-- **After editing firmware:** from `src/FroggersTiga`, run `clean → make`, DFU mode, then `program-dfu` before judging behavior.
+- **After editing firmware:** from the app directory you are building, run `clean → make`, DFU mode, then `program-dfu` before judging behavior.

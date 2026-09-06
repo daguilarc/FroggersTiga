@@ -1,9 +1,9 @@
 #include "../common/App.hpp"
-#include "FroggersSolo.hpp"
+#include "FroggersGuitar.hpp"
 
 int main(void)
 {
-    static App<FroggersSolo> app;
+    static App<FroggersGuitar> app;
     app.LetsFuckingDoThisShit();
     return 0;
 }

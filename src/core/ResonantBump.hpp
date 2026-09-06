@@ -21,26 +21,29 @@ struct ResonantBump
         UpdateCoefficients();
     }
     
-    void SetFreq(float freq)
+    // The only caller sets all three together, so this is the only setter. Three
+    // separate ones would each recompute the biquad and the first two results
+    // would be discarded before any audio read them.
+    void SetParams(float freq, float height, float width)
     {
         m_freq = freq;
-        UpdateCoefficients();
-    }
-
-    void SetHeight(float height)
-    {
         m_height = height;
-        UpdateCoefficients();
-    }
-
-    void SetWidth(float width)
-    {
         m_width = width;
         UpdateCoefficients();
     }
 
+#if defined(FROGGERS_TEST_INSTRUMENTATION)
+    // Host-test only: counts coefficient recomputes so a test can assert the
+    // per-sample cost rather than infer it from the call sites. The firmware
+    // builds do not define this, so the counter is not in either binary.
+    static inline int s_updateCount = 0;
+#endif
+
     void UpdateCoefficients()
     {
+#if defined(FROGGERS_TEST_INSTRUMENTATION)
+        s_updateCount++;
+#endif
         // Standard peaking EQ biquad
         // When height = 1.0 (0dB), filter is transparent
         //

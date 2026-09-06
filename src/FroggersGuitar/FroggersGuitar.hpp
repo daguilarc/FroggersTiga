@@ -5,7 +5,7 @@
 
 using namespace daisy;
 
-struct FroggersSolo : FroggersEngine
+struct FroggersGuitar : FroggersEngine
 {
     void Process(AudioHandle::InputBuffer& in, AudioHandle::OutputBuffer& out, size_t size)
     {
