@@ -7,7 +7,7 @@ DFU_UTIL ?= dfu-util
 DFU_ID ?= ,0483:df11
 INTERNAL_ADDRESS ?= 0x08000000
 
-.PHONY: vendor-libs clean-vendor program-boot
+.PHONY: vendor-libs clean-vendor program-boot firmware-test
 
 vendor-libs:
 	$(MAKE) -C $(LIBDAISY_DIR) GCC_PATH="$(GCC_PATH)" AR="$(AR)" OPT="$(OPT_LEVEL) $(if $(filter 1,$(USE_LTO)),-flto)"
@@ -25,3 +25,7 @@ endif
 
 program-boot:
 	$(DFU_UTIL) -a 0 -s $(INTERNAL_ADDRESS):leave -D $(BOOT_BIN) -d $(DFU_ID)
+
+# Configures, builds, and runs the firmware DSP test suite under test/firmware.
+firmware-test:
+	cmake -S test/firmware -B test/firmware/build -DCMAKE_BUILD_TYPE=Release && cmake --build test/firmware/build -j2 && ctest --test-dir test/firmware/build --output-on-failure

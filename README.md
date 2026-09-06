@@ -71,6 +71,7 @@ new work.
   Sheaf app
 - **Daisy Field manual:** [`DAISY_MANUAL.md`](DAISY_MANUAL.md) — the frozen Eurorack firmware (pages,
   buttons, modulation workflow, safe flash sequence)
+- **Firmware tests:** run `make firmware-test` to build and run the Daisy firmware's test suite.
 - **Quick Dict:** [`QUICK_DICT.md`](QUICK_DICT.md) — terse, slot-ordered parameter glossary for the
   current Sheaf app
 - **License:** MIT — see [`LICENSE`](LICENSE) (copyright JoYoFresh and Diego Aguilar-Canabal)
