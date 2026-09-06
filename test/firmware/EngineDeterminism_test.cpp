@@ -1,3 +1,6 @@
+// Two fresh engines produce identical output over the same input; the
+// printed checksum lets an edit to the engine be checked for a changed
+// output.
 #include "FroggersEngine.hpp"
 #include "Page.hpp"
 
@@ -41,10 +44,24 @@ int main()
 
     if (maxDiff > 0.0f)
     {
-        std::printf("HookIdentity_test FAIL maxDiff=%g\n", maxDiff);
+        std::printf("EngineDeterminism_test FAIL maxDiff=%g\n", maxDiff);
         return 1;
     }
 
-    std::printf("HookIdentity_test PASS\n");
+    std::printf("EngineDeterminism_test PASS\n");
+
+    double checksum = 0.0;
+    double maxabs = 0.0;
+    for (size_t i = 0; i < outA.size(); i++)
+    {
+        checksum += static_cast<double>(outA[i]) * static_cast<double>(i + 1);
+        const double absVal = std::fabs(static_cast<double>(outA[i]));
+        if (absVal > maxabs)
+        {
+            maxabs = absVal;
+        }
+    }
+    std::printf("checksum=%.9g maxabs=%.9g\n", checksum, maxabs);
+
     return 0;
 }

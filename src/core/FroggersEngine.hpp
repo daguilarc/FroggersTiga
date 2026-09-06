@@ -12,9 +12,6 @@
 #include "SchmidtTrigger.hpp"
 #include "SDDSine.hpp"
 #include "TanhSaturator.hpp"
-#include "VcoAdsrState.hpp"
-#include "VcoWaveEval.hpp"
-#include "VcoWaveMorph.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -40,7 +37,6 @@ struct FroggersEngine
     RuntimeParam m_xcpl;
     RuntimeParam m_pm1;
     RuntimeParam m_pm2;
-    RuntimeParam m_pm3;
     RuntimeParam m_oscLvl;
 
     float m_ph1;
@@ -108,68 +104,12 @@ struct FroggersEngine
     static constexpr float x_extInputLimiterDrive = 5.0f;
 
     float m_sampleRate = 44100.0f;
-    bool m_simWaveMorph = false;
-    bool m_simDedicatedPm3Knob = false;
-    VcoWaveMorph m_vcoMorph[3];
     float m_envelopeLevel = 0.0f;
     SimFxInsertFn m_simFxInsert = nullptr;
     void* m_simFxInsertCtx = nullptr;
     AudioPairArState* m_pairAr = nullptr;
-    VcoAdsrState* m_vcoAdsr = nullptr;
-    Page* m_adsrParams = nullptr;
     PairArEnvelope m_pair12;
     PairArEnvelope m_pair23;
-    // D11/D12/D14 (task 7.4): V2-hosts-only (desktop-v2 + web) flag. Daisy/v1
-    // never set this (default false), so their StepOscillators path is the
-    // untouched, coupler-gated legacy branch below. When true: no XCPL
-    // coupler terms at all (c12/c23 dropped entirely); each VCO's phase is
-    // instead modulated by its own dedicated sine LFO running at a frequency
-    // derived from that VCO's PM knob value, with a fixed modulation index
-    // (see x_pmLfoDepth -- an implementer default, flagged for operator
-    // tuning). No self-feedback, no cross-VCO terms.
-    bool m_simIndependentPm = false;
-    float m_pmLfoPh1 = 0.0f;
-    float m_pmLfoPh2 = 0.0f;
-    float m_pmLfoPh3 = 0.0f;
-
-    // Implementer defaults for the self-contained PM sine LFO (D14 "resolved"
-    // note: "phase-mod index/depth is an implementer default, flag it for
-    // later tuning"). PM knob value (0..1, already ZeroedExp-curved by
-    // ReadParamsBlock) maps exponentially across this Hz range; the sine's
-    // peak phase excursion is x_pmLfoDepth cycles. FLAGGED FOR OPERATOR
-    // TUNING -- untested against the musical target, chosen only to make the
-    // knob audibly effective end-to-end.
-    static constexpr float x_pmLfoMinHz = 0.05f;
-    static constexpr float x_pmLfoMaxHz = 20.0f;
-    static constexpr float x_pmLfoDepth = 0.15f;
-
-    // D14 zero-off (operator 2026-07-23, "the knob's minimum position = PM
-    // fully OFF"): below/at x_pmLfoFloor the phase-mod depth is exactly zero
-    // (no modulation applied at all, independent of the LFO frequency that
-    // knob value would otherwise map to). From the floor up to
-    // x_pmLfoFloor + x_pmLfoRampWidth, depth ramps 0 -> 1 (smoothstep, for a
-    // click-free transition into audible PM); above that it is the normal
-    // fixed x_pmLfoDepth. FLAGGED FOR OPERATOR TUNING, same as the Hz/depth
-    // constants above -- chosen only to give the knob a real off position.
-    static constexpr float x_pmLfoFloor = 0.02f;
-    static constexpr float x_pmLfoRampWidth = 0.08f;
-
-    // Returns 0 at/below x_pmLfoFloor, 1 at/above x_pmLfoFloor +
-    // x_pmLfoRampWidth, smoothstep-interpolated between.
-    static float PmDepthScale(float pmKnobValue)
-    {
-        if (pmKnobValue <= x_pmLfoFloor)
-        {
-            return 0.0f;
-        }
-        const float rampTop = x_pmLfoFloor + x_pmLfoRampWidth;
-        if (pmKnobValue >= rampTop)
-        {
-            return 1.0f;
-        }
-        const float t = (pmKnobValue - x_pmLfoFloor) / x_pmLfoRampWidth;
-        return t * t * (3.0f - 2.0f * t);
-    }
 
     struct V2ModTapHooks
     {
@@ -199,15 +139,10 @@ struct FroggersEngine
         return (phaseWrapped01 < 0.5f) ? 1.0f : -1.0f;
     }
 
-    static float EvalWaveMorph(float phaseWrapped01, float morph)
-    {
-        return ::EvalWaveMorph(phaseWrapped01, morph);
-    }
-
     void ApplySmoothingRates()
     {
         RuntimeParam* params[] = {
-            &m_v1vo, &m_v2vo, &m_v3vo, &m_xcpl, &m_pm1, &m_pm2, &m_pm3, &m_oscLvl,
+            &m_v1vo, &m_v2vo, &m_v3vo, &m_xcpl, &m_pm1, &m_pm2, &m_oscLvl,
 #if FROGGERS_HAS_REVERB
             &m_rvMix, &m_rvSize, &m_rvDecay, &m_rvPre, &m_rvDamp, &m_rvWidth, &m_rvDiffusion,
 #endif
@@ -230,16 +165,6 @@ struct FroggersEngine
         ApplySmoothingRates();
     }
 
-    void SetSimWaveMorph(bool enabled)
-    {
-        m_simWaveMorph = enabled;
-    }
-
-    void SetSimDedicatedPm3Knob(bool enabled)
-    {
-        m_simDedicatedPm3Knob = enabled;
-    }
-
     void SetSimFxInsert(SimFxInsertFn fn, void* ctx)
     {
         m_simFxInsert = fn;
@@ -253,27 +178,6 @@ struct FroggersEngine
         m_pair23.Reset();
     }
 
-    void SetVcoAdsrState(VcoAdsrState* state, Page* adsrPage)
-    {
-        m_vcoAdsr = state;
-        m_adsrParams = adsrPage;
-    }
-
-    // Test-only accessor (task 7.5 prerequisite fix): reads back the ADSR
-    // page currently wired via SetVcoAdsrState, so a unit test can drive a
-    // host-param write to the ADSR page and confirm the engine's m_adsrParams
-    // pointer actually targets that same PageManager page. Returns -1.0f if
-    // no page is wired (matches Daisy/v1, where m_adsrParams stays null).
-    float GetAdsrParamForTest(uint8_t position) const
-    {
-        return m_adsrParams ? m_adsrParams->GetParam(position) : -1.0f;
-    }
-
-    void SetSimIndependentPm(bool enabled)
-    {
-        m_simIndependentPm = enabled;
-    }
-
     void SetV2ModTapLayout(bool enabled, V2ModTapHooks hooks)
     {
         m_v2ModTapLayout = enabled;
@@ -283,95 +187,6 @@ struct FroggersEngine
     float GetEnvelopeLevel() const
     {
         return m_envelopeLevel;
-    }
-
-    void SetVcoMorph(size_t index, float value)
-    {
-        if (index < 3)
-        {
-            m_vcoMorph[index].SetKnob(value);
-        }
-    }
-
-    void SetVcoMorphMod(size_t index, uint8_t modIndex, float modAmount)
-    {
-        if (index < 3)
-        {
-            m_vcoMorph[index].SetMod(modIndex, modAmount);
-        }
-    }
-
-    float GetVcoMorph(size_t index) const
-    {
-        if (index < 3)
-        {
-            return m_vcoMorph[index].m_knobValue;
-        }
-        return 0.0f;
-    }
-
-    void RandomizeVcoMorphs()
-    {
-        RGen rgen;
-        for (size_t i = 0; i < 3; i++)
-        {
-            m_vcoMorph[i].SetKnob(rgen.UniGenRange(0.0f, 1.0f));
-        }
-    }
-
-    void NudgeVcoMorph(size_t index, float delta)
-    {
-        if (index < 3)
-        {
-            float v = m_vcoMorph[index].m_knobValue + delta;
-            if (v < 0.0f)
-            {
-                v = 0.0f;
-            }
-            if (v > 1.0f)
-            {
-                v = 1.0f;
-            }
-            m_vcoMorph[index].SetKnob(v);
-        }
-    }
-
-    void CycleVcoMorph(size_t index)
-    {
-        if (index >= 3)
-        {
-            return;
-        }
-        const float v = m_vcoMorph[index].m_knobValue;
-        float next = 0.0f;
-        if (v < 0.25f)
-        {
-            next = 0.5f;
-        }
-        else if (v < 0.75f)
-        {
-            next = 1.0f;
-        }
-        m_vcoMorph[index].SetKnob(next);
-    }
-
-    float GetVcoDisplayMorph(size_t index) const
-    {
-        return ModulatedMorph(index);
-    }
-
-    float ModulatedMorph(size_t index) const
-    {
-        if (index < 3)
-        {
-            const float morph = m_vcoMorph[index].GetMorph(m_modMgr);
-            if (!std::isfinite(morph))
-            {
-                return 0.0f;
-            }
-            return morph;
-        }
-        return 0.0f;
     }
 
     void SoftResetFxState()
@@ -392,13 +207,6 @@ struct FroggersEngine
         m_rvBypassed = true;
 #endif
         m_comFilter.Reset();
-        for (size_t i = 0; i < 3; i++)
-        {
-            if (!std::isfinite(m_vcoMorph[i].m_knobValue))
-            {
-                m_vcoMorph[i].SetKnob(0.0f);
-            }
-        }
     }
 
     float ExpMap(float min, float max, float value)
@@ -449,15 +257,7 @@ struct FroggersEngine
         m_xcpl.SetTarget(m_audioGenParams->GetParam(3));
         m_pm1.SetTarget(ZeroedExp(m_audioGenParams->GetParam(4)));
         m_pm2.SetTarget(ZeroedExp(m_audioGenParams->GetParam(5)));
-        if (m_simDedicatedPm3Knob)
-        {
-            m_pm3.SetTarget(ZeroedExp(m_audioGenParams->GetParam(6)));
-            m_oscLvl.SetTarget(ExpMap(0.01f, 1.0f, 0.4f));
-        }
-        else
-        {
-            m_oscLvl.SetTarget(ExpMap(0.01f, 1.0f, m_audioGenParams->GetParam(6)));
-        }
+        m_oscLvl.SetTarget(ExpMap(0.01f, 1.0f, m_audioGenParams->GetParam(6)));
 
 #if FROGGERS_HAS_REVERB
         m_rvMix.SetTarget(m_reverbParams->GetParam(0));
@@ -687,91 +487,45 @@ struct FroggersEngine
         }
         else if (button == 3)
         {
-            if (m_simWaveMorph)
-            {
-                NudgeVcoMorph(1, 0.1f);
-            }
-            else
-            {
-                m_vco2Wave = static_cast<uint8_t>((m_vco2Wave + 1u) % 3u);
-            }
+            m_vco2Wave = static_cast<uint8_t>((m_vco2Wave + 1u) % 3u);
         }
         else if (button == 4)
         {
-            if (m_simWaveMorph)
-            {
-                NudgeVcoMorph(0, 0.1f);
-            }
-            else
-            {
-                m_vco1Wave = static_cast<uint8_t>((m_vco1Wave + 1u) % 3u);
-            }
+            m_vco1Wave = static_cast<uint8_t>((m_vco1Wave + 1u) % 3u);
         }
-    }
-
-    // D14 self-contained PM (V2-only, flag-on): advances one VCO's dedicated
-    // PM LFO by one sample and returns its current (pre-advance) sine value.
-    // pmKnobValue (0..1, already ZeroedExp-curved) maps exponentially to a
-    // frequency in [x_pmLfoMinHz, x_pmLfoMaxHz]; the LFO phase is completely
-    // independent of the VCO's own phase (no self-feedback, no cross-VCO
-    // terms).
-    float StepIndependentPmLfo(float& lfoPhase, float pmKnobValue)
-    {
-        const float hz = x_pmLfoMinHz * std::pow(x_pmLfoMaxHz / x_pmLfoMinHz, pmKnobValue);
-        const float lfoValue = SDDSine::Evaluate(lfoPhase);
-        lfoPhase = WrapPhase(lfoPhase + hz / m_sampleRate);
-        return lfoValue;
     }
 
     std::tuple<float, float, float> StepOscillators(float fuegKnob)
     {
         float pm1d = m_pm1.Process();
         float pm2d = m_pm2.Process();
-        float pm3d = m_simDedicatedPm3Knob ? m_pm3.Process() : ZeroedExp(fuegKnob);
+        float pm3d = ZeroedExp(fuegKnob);
 
         float f1 = m_v1vo.Process();
         float f2 = m_v2vo.Process();
         float f3 = m_v3vo.Process();
 
-        float morph1 = ModulatedMorph(0);
-        float morph2 = ModulatedMorph(1);
-        float morph3 = ModulatedMorph(2);
-
-        float u1 = m_simWaveMorph ? EvalWaveMorph(m_ph1, morph1) : EvalWave(m_ph1, m_vco1Wave);
-        float u2 = m_simWaveMorph ? EvalWaveMorph(m_ph2, morph2) : EvalWave(m_ph2, m_vco2Wave);
-        float u3 = m_simWaveMorph ? EvalWaveMorph(m_ph3, morph3) : SDDSine::Evaluate(m_ph3);
+        float u1 = EvalWave(m_ph1, m_vco1Wave);
+        float u2 = EvalWave(m_ph2, m_vco2Wave);
+        float u3 = SDDSine::Evaluate(m_ph3);
 
         float pmOff1;
         float pmOff2;
         float pmOff3;
-        if (m_simIndependentPm)
-        {
-            // D11/D12/D14 (V2 hosts only): no coupler, zero cross-VCO terms.
-            // Each VCO's phase is modulated by its own dedicated sine LFO,
-            // gated to exactly zero depth at/below the knob's zero-off floor
-            // (PmDepthScale) so the knob's minimum position is truly inert.
-            pmOff1 = x_pmLfoDepth * PmDepthScale(pm1d) * StepIndependentPmLfo(m_pmLfoPh1, pm1d);
-            pmOff2 = x_pmLfoDepth * PmDepthScale(pm2d) * StepIndependentPmLfo(m_pmLfoPh2, pm2d);
-            pmOff3 = x_pmLfoDepth * PmDepthScale(pm3d) * StepIndependentPmLfo(m_pmLfoPh3, pm3d);
-        }
-        else
-        {
-            // Legacy Daisy/v1 path (D14 flag-off) -- byte-for-byte unchanged.
-            float xc = m_xcpl.Process();
-            float centered = 2.0f * xc - 1.0f;
-            float c12 = (centered < 0.0f) ? CouplingMagnitude(xc) : 0.0f;
-            float c23 = (0.0f < centered) ? CouplingMagnitude(xc) : 0.0f;
-            pmOff1 = pm1d * c12 * u2;
-            pmOff2 = pm2d * (c12 * u1 + c23 * u3);
-            pmOff3 = pm3d * c23 * u2;
-        }
+        float xc = m_xcpl.Process();
+        float centered = 2.0f * xc - 1.0f;
+        float c12 = (centered < 0.0f) ? CouplingMagnitude(xc) : 0.0f;
+        float c23 = (0.0f < centered) ? CouplingMagnitude(xc) : 0.0f;
+        pmOff1 = pm1d * c12 * u2;
+        pmOff2 = pm2d * (c12 * u1 + c23 * u3);
+        pmOff3 = pm3d * c23 * u2;
 
         float ph1 = WrapPhase(m_ph1 + pmOff1);
         float ph2 = WrapPhase(m_ph2 + pmOff2);
         float ph3 = WrapPhase(m_ph3 + pmOff3);
-        float v1 = m_simWaveMorph ? EvalWaveMorph(ph1, morph1) : EvalWave(ph1, m_vco1Wave);
-        float v2 = m_simWaveMorph ? EvalWaveMorph(ph2, morph2) : EvalWave(ph2, m_vco2Wave);
-        float v3 = m_simWaveMorph ? EvalWaveMorph(ph3, morph3) : SDDSine::Evaluate(ph3);
+        float v1 = EvalWave(ph1, m_vco1Wave);
+        float v2 = EvalWave(ph2, m_vco2Wave);
+        float v3 = SDDSine::Evaluate(ph3);
         UpdateM5FromVco(v1, v2, v3);
 
         m_ph1 = WrapPhase(m_ph1 + f1);
@@ -783,18 +537,6 @@ struct FroggersEngine
 
     float MixOscVoices(float v1, float v2, float v3)
     {
-        if (m_vcoAdsr && m_adsrParams)
-        {
-            // Task 7.5 (D15): per-VCO triplet row order (Attack, Sustain,
-            // Release) x3, matching the retired simulator's per-VCO ADSR page
-            // InitParam layout below.
-            v1 = m_vcoAdsr->apply(
-                0, v1, m_adsrParams->GetParam(0), m_adsrParams->GetParam(1), m_adsrParams->GetParam(2));
-            v2 = m_vcoAdsr->apply(
-                1, v2, m_adsrParams->GetParam(3), m_adsrParams->GetParam(4), m_adsrParams->GetParam(5));
-            v3 = m_vcoAdsr->apply(
-                2, v3, m_adsrParams->GetParam(6), m_adsrParams->GetParam(7), m_adsrParams->GetParam(8));
-        }
         if (!m_pairAr)
         {
             return (v1 + v2 + v3) * (1.0f / 3.0f);

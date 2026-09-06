@@ -47,29 +47,6 @@ struct Marbles
         m_sampleRate = 44100.0f;
     }
 
-    // Desktop-v2 preset silent-drop (design D5 "Locked defaults", task 4.4).
-    // Desktop-v2 deleted the Random S&H module page but the shared engine keeps this
-    // Marbles page (PM index 1) to drive the surviving Random S&H 1/2 mod lanes. A
-    // pre-deletion preset restores stale bag values / mod routes straight into this
-    // still-live page via the shared raw SimPresetSnapshot blob, so desktop-v2 resets
-    // it back to InitPage defaults after every restore. Returns the number of reset
-    // rows (for logging). Not called by v1 desktop, which legitimately keeps the page.
-    uint8_t ResetPageToDefaults()
-    {
-        if (m_page == nullptr)
-        {
-            return 0;
-        }
-        ApplyDefaultKnobs();
-        constexpr uint8_t kBagRows = 7;
-        for (uint8_t row = 0; row < kBagRows; ++row)
-        {
-            m_page->m_parameters[row].m_modIndex = 255;
-            m_page->m_parameters[row].m_modAmount = 0.0f;
-        }
-        return kBagRows;
-    }
-
     void SetSampleRate(float sampleRate)
     {
         m_sampleRate = sampleRate;

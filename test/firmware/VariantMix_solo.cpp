@@ -18,8 +18,6 @@ FxProbe SoloReverbAt(float rvMixKnob, int settleSamples, bool startEngaged)
 {
     FroggersEngine& e = Engine();
     e.m_pairAr = nullptr;
-    e.m_vcoAdsr = nullptr;
-    e.m_adsrParams = nullptr;
     e.SetSampleRate(48000.0f);
     // The engine is a static, so the smoother carries whatever the previous
     // probe left in it. Place it explicitly on the side we mean to approach

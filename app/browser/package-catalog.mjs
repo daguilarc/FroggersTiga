@@ -54,21 +54,12 @@
 // object validated with parseCatalog before being written.
 //
 // PUBLISHER IDENTITY (permanent once published -- spec "Permanent
-// publisher identity", froggers-browser-package/spec.md:43-49): already
-// pinned by a previously *committed, git-tracked* artifact --
-// publish/froggers-apps.json and publish/catalogs/daguilarc/catalog.json
-// (git-tracked at commit b2e0a54) -- publisher.id = "daguilarc", publisher.name = "daguilarc".
-// Reused verbatim here, NOT reinvented. This happens to match the
-// GitHub owner ("daguilarc") as a fallback -- this identity is permanent
-// once actually published, so it is flagged here rather than silently
-// assumed.
+// publisher identity", froggers-browser-package/spec.md:43-49):
+// publisher.id = "daguilarc", publisher.name = "daguilarc".
 //
-// NOTE: that existing publish/ catalog.json is STALE (abiVersion 2; the
-// current Sheaf protocol is abiVersion 4 -- protocol.ts:2) and is left
-// untouched (out of scope: hard constraint restricts new files to
-// app/browser/). This script produces a fresh package+catalog under
-// app/browser/dist/site/, gitignored (app/browser/dist/ is already
-// ignored), from the current build.
+// This script generates a fresh package and catalog under
+// app/browser/dist/site/ (gitignored) from the current build on every
+// deploy.
 import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";

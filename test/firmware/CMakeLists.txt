@@ -16,7 +16,7 @@ endfunction()
 # only src/core on the include path, so it compiles with nothing else in the
 # repository present.
 
-add_firmware_test(HookIdentity_test HookIdentity_test.cpp)
+add_firmware_test(EngineDeterminism_test EngineDeterminism_test.cpp)
 add_firmware_test(ModMgr_test ModMgr_test.cpp)
 add_firmware_test(PairArEnvelope_test PairArEnvelope_test.cpp)
 
@@ -30,7 +30,7 @@ add_firmware_test(VariantMix_test
     VariantMix_guitar.cpp)
 
 enable_testing()
-add_test(NAME HookIdentity_test COMMAND HookIdentity_test)
+add_test(NAME EngineDeterminism_test COMMAND EngineDeterminism_test)
 add_test(NAME ModMgr_test COMMAND ModMgr_test)
 add_test(NAME PairArEnvelope_test COMMAND PairArEnvelope_test)
 add_test(NAME RefreshGate_test COMMAND RefreshGate_test)

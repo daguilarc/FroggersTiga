@@ -259,22 +259,6 @@ struct PageManager
         }
     }
 
-    void SanitizeSimModAssignments()
-    {
-        for (uint8_t p = 0; p < m_numPages; p++)
-        {
-            for (size_t i = 0; i < Parameter::x_numParameters; i++)
-            {
-                Parameter& param = m_pages[p].m_parameters[i];
-                if (param.m_modIndex >= 1 && param.m_modIndex <= 3)
-                {
-                    param.m_modIndex = 255;
-                    param.m_modAmount = 0.0f;
-                }
-            }
-        }
-    }
-
     void SetAllParamsTracking()
     {
         for (uint8_t p = 0; p < m_numPages; p++)

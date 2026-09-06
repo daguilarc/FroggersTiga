@@ -6,31 +6,7 @@
 #include <cstdio>
 #include <cstdint>
 
-namespace daisy
-{
-} // namespace daisy
-
-// RefreshGate is declared inside DaisyIO.hpp, which pulls in the Daisy SDK. The
-// struct itself is free of it, so it is restated here and kept honest by an
-// assertion that the two bodies agree -- see DaisyIO.hpp.
-struct RefreshGate
-{
-    static constexpr uint32_t kIntervalMs = 33;
-
-    bool m_dirty = true;
-    uint32_t m_lastMs = 0;
-
-    bool Due(uint32_t nowMs) const
-    {
-        return m_dirty || kIntervalMs <= (nowMs - m_lastMs);
-    }
-
-    void MarkSent(uint32_t nowMs)
-    {
-        m_lastMs = nowMs;
-        m_dirty = false;
-    }
-};
+#include "RefreshGate.hpp"
 
 namespace
 {
