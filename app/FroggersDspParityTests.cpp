@@ -250,7 +250,7 @@ TEST_CASE(vco_adsr_state_attacks_holds_and_releases) {
     }
     REQUIRE_NEAR(peak, 1.0f, 1e-3);  // Attack reached its independent peak
     const float last = adsr.apply(0, 1.0f, 0.5f, 0.5f, 0.8f, 0.5f);
-    // F3-adjacent (2026-08-07): sustain is now floored by
+    // Sustain is now floored by
     // dsp::VcoAdsrState::kMinSustainLevel so audio-rate modulation cannot gate
     // a voice to silence, so a 0.8 KNOB no longer settles at a 0.8 LEVEL.
     // Deliberate parity divergence, same class as this struct's own
@@ -358,15 +358,15 @@ struct StageResult {
 // Steps `adsr` voice 0 forward sample by sample (curveKnob applied every
 // call) until `level` first crosses `target` (>= for ascending stages, <=
 // for descending), returning the 1-based sample count and the level
-// reached. VcoAdsrState exposes no per-voice stage getter, so every T1 test
+// reached. VcoAdsrState exposes no per-voice stage getter, so every test
 // below infers stage completion purely from the level trajectory -- exact,
 // because ComputeRampStep's finishing-step early return (`absRemaining <=
-// stepMagnitude -> return target`, untouched by T1.1) always snaps exactly
+// stepMagnitude -> return target`, untouched by the progress floor) always snaps exactly
 // to target regardless of curve. `capSamples` turns an UNBOUNDED pre-fix
 // ramp into a clean test FAILURE instead of a multi-hour hang.
 // `graceKnob` defaults to 0.0f (inactive, apply()'s own default) so callers
 // that don't care about Grace -- most of this helper's call sites -- don't
-// have to name it; T1.2(a) passes it explicitly because that test's whole
+// have to name it; it is passed explicitly by the test whose whole
 // point is measuring behaviour WHILE grace is active.
 StageResult StepUntilLevelCrosses(dsp::VcoAdsrState& adsr, float attackKnob, float decayKnob, float sustainKnob,
                                    float releaseKnob, float curveKnob, bool ascending, float target, long capSamples,
@@ -397,7 +397,7 @@ StageResult StepUntilLevelCrosses(dsp::VcoAdsrState& adsr, float attackKnob, flo
 // sustain level, sidestepping RuntimeFloat's whole class of divergence
 // risk entirely rather than merely working around it. Assumes the caller's
 // knob/curve choice does not produce a degenerate zero-length Decay step
-// that could plateau before Hold -- true for every T1 test that uses this.
+// that could plateau before Hold -- true for every test that uses this.
 StageResult StepUntilLevelStabilizes(dsp::VcoAdsrState& adsr, float attackKnob, float decayKnob, float sustainKnob,
                                       float releaseKnob, float curveKnob, long capSamples,
                                       float graceKnob = 0.0f) {
@@ -427,7 +427,7 @@ StageResult StepUntilLevelStabilizes(dsp::VcoAdsrState& adsr, float attackKnob, 
 // does (VcoAdsrState::MapSustain(0.6f) folds to 0.640000045f at compile
 // time but evaluates to 0.639999986f at runtime on this build; 0.5f
 // happened not to diverge, which is exactly what makes trusting this
-// silently is dangerous). Every T1 test below that needs its own
+// silently is dangerous). Every test below that needs its own
 // independently-recomputed value to bit-match (or near-match within much
 // less than one ramp step) VcoAdsrState's internal computation routes its
 // inputs through this first.
@@ -464,7 +464,7 @@ float MapSustainRuntime(float knob) {
 // kCurveMinProgress (VoiceEnvelope.hpp, currently 0.4f) -- assumed much
 // smaller (0.1f) than the real floor so this cap stays valid (generous, not
 // tight) even if kCurveMinProgress is retuned by ear later, without this
-// test file needing to track that private value. T1.3(a)'s own sweep below
+// test file needing to track that private value. The sweep below
 // is the one that measures and reports the ACTUAL worst multiple observed;
 // this helper only needs to be loose enough to fail fast on a genuinely
 // unbounded ramp, not tight enough to pin the real bound.
@@ -635,8 +635,8 @@ TEST_CASE(grace_knob_zero_still_maps_to_exactly_zero_seconds_and_releases_immedi
 }
 
 // -----------------------------------------------------------------------
-// T1.3(c) -- bit-identity at curve == 0. ComputeRampStep's `curveAmount <=
-// 0.0f` branch is the ORIGINAL linear early-return, untouched by T1.1's
+// Bit-identity at curve == 0. ComputeRampStep's `curveAmount <=
+// 0.0f` branch is the ORIGINAL linear early-return, untouched by the
 // progress floor (which lives entirely past that branch's own `return`).
 // Proven here not by code inspection alone but by an independent,
 // hand-rolled per-sample replica of stepVoice()'s own stage arithmetic
@@ -844,7 +844,7 @@ TEST_CASE(compute_ramp_step_bounds_every_stage_duration_across_curve_and_knob_gr
 // unchanged).
 // -----------------------------------------------------------------------
 
-// (a) With T1.1's floor in, a pending release under active Grace reaches
+// (a) With the progress floor in place, a pending release under active Grace reaches
 // Release within (bounded stage completion + grace) at every curve
 // including 1.0 exactly. "Reaches Release" is read from the level
 // trajectory: Hold keeps level pinned exactly at sustainLevel every sample
@@ -867,7 +867,7 @@ TEST_CASE(compute_ramp_step_bounds_every_stage_duration_across_curve_and_knob_gr
 // rounding at all) was the one value immune to this, which is why only it
 // was used here.
 //
-// Fixed by T1.6 (VoiceEnvelope.hpp's Hold-stage grace block, 2026-08-17):
+// Fixed in VoiceEnvelope.hpp's Hold-stage grace block (2026-08-17):
 // the init guard now matches the exact -1.0f sentinel instead of any
 // negative value, so a decremented-negative, non-sentinel value falls
 // through to the `<= 0.0f` expiry check on the very next call instead of
@@ -933,8 +933,8 @@ TEST_CASE(grace_active_pending_release_reaches_release_within_bounded_completion
 }
 
 // -----------------------------------------------------------------------
-// T1.6 -- Grace countdown sentinel-conflation bug (found during P1,
-// VoiceEnvelope.hpp's stepVoice() Hold-stage grace block). The init guard
+// Grace countdown sentinel-conflation bug found in
+// VoiceEnvelope.hpp's stepVoice() Hold-stage grace block. The init guard
 // used to fire on `m_graceRemaining < 0.0f` -- ANY negative value, not just
 // the exact -1.0f "not started" sentinel. A countdown initialized to a
 // non-float-exact `graceSeconds * m_sampleRate` (most grace knobs; the
@@ -987,7 +987,7 @@ TEST_CASE(grace_countdown_with_float_inexact_values_expires_within_grace_plus_a_
                                    std::nextafter(sustainLevel, 0.0f), cap, graceKnob)
                 .samples;
 
-        // T1.6 asks for expiry "within grace + 1 sample"; the enforced
+        // The fix asks for expiry "within grace + 1 sample"; the enforced
         // tolerance is +/-2 samples (corrected 2026-08-17 -- the comment
         // previously quoted the task's "+1" while the assertion below has
         // always allowed 2). Two samples is the honest bound: the countdown
@@ -1003,8 +1003,8 @@ TEST_CASE(grace_countdown_with_float_inexact_values_expires_within_grace_plus_a_
 // (b) The minimum-hold guarantee holds: a short gate with a long attack and
 // active grace still completes Attack and Decay before Release begins --
 // the approved main-spec Grace behaviour ("a short gate cannot clip a note
-// before its envelope completes Attack and Decay"), unaffected by T1.1's
-// floor. Attack knob at max (kMaxAttackSeconds, 0.25f ceiling) so a naive
+// before its envelope completes Attack and Decay"), unaffected by the
+// progress floor. Attack knob at max (kMaxAttackSeconds, 0.25f ceiling) so a naive
 // "gate released mid-attack forces Release" bug would be obvious: the gate
 // here closes after 1ms, far short of any mapped attack time.
 TEST_CASE(short_gate_with_long_attack_and_active_grace_completes_attack_and_decay_before_release) {
@@ -1033,11 +1033,11 @@ TEST_CASE(short_gate_with_long_attack_and_active_grace_completes_attack_and_deca
         }
         adsr.setGate(false);  // marks pending; grace is active, stage is still Attack -- must NOT force Release.
 
-        // If grace is honoured, Attack (bounded by T1.1) still reaches its
+        // If grace is honoured, Attack (bounded by the progress floor) still reaches its
         // own peak (1.0) despite the short gate -- a naive "gate released
         // mid-attack forces Release" bug would instead see the level keep
         // heading toward 0 from here and never reach 1.0 within this
-        // generous, T1.1-bounded cap.
+        // generous, progress-floor-bounded cap.
         const StageResult peakReached =
             StepUntilLevelCrosses(adsr, attackKnob, decayKnob, sustainKnob, releaseKnob, curve, /*ascending=*/true,
                                    1.0f, static_cast<long>(10.0f * kSampleRate), graceKnob);
@@ -1186,7 +1186,7 @@ TEST_CASE(random_sh_same_seed_reconstructed_lane_matches) {
 }
 
 TEST_CASE(random_sh_source3_is_narrow_and_centred) {
-    // D8a: source #3 is the only narrow, centred source. spread=0.3 bounds
+    // Source #3 is the only narrow, centred source. spread=0.3 bounds
     // output to [0.5-0.15, 0.5+0.15] = [0.35, 0.65] (bias=0).
     dsp::RandomShLane lane = dsp::lanes::MakeSource3(0xABCDu);
     for (int i = 0; i < 200; ++i) {
@@ -1211,7 +1211,7 @@ TEST_CASE(random_sh_source4_settles_to_one_of_five_quantised_levels) {
 }
 
 TEST_CASE(random_sh_locked_loop_source_replays_without_regenerating) {
-    // D8a sources #1/#2/#3 are LOCKED loops: dejaVuKnob == 0.5 takes
+    // Sources #1/#2/#3 are LOCKED loops: dejaVuKnob == 0.5 takes
     // Marbles.hpp's :99 "else" branch with regen chance
     // 2*(0.5-0.5) == 0, so the bag never regenerates after construction --
     // only the read index advances. The slew filter (kFastCutoff, alpha
@@ -1461,7 +1461,7 @@ TEST_CASE(comb_get_delay_samples_and_asymmetric_feedback) {
     REQUIRE_NEAR(fbLow, -(1.0f - dsp::ExpMapCompute(1.0f, 1.0f - 0.95f, 2.0f * (0.5f - 0.25f))), 1e-6);
     REQUIRE_NEAR(fbHigh, 1.0f - dsp::ExpMapCompute(1.0f, 1.0f - 0.95f, 2.0f * (0.75f - 0.5f)), 1e-6);
     // No endpoint may reach or exceed unity magnitude -- that is the whole
-    // point of item 1 (a sub-unity loop gain is what makes the comb decay).
+    // point of the sub-unity comb feedback (a sub-unity loop gain is what makes the comb decay).
     REQUIRE_TRUE(std::fabs(fbLow) < 1.0f);
     REQUIRE_TRUE(std::fabs(fbHigh) < 1.0f);
     REQUIRE_TRUE(std::fabs(dsp::Comb::GetFeedback(0.0f)) < 1.0f);
@@ -1526,7 +1526,7 @@ TEST_CASE(comb_feedback_at_both_knob_extremes_decays_to_silence_once_input_stops
 // continuously-decaying signal crosses a fixed floor, tight enough to
 // still fail on the pre-fix curve's shape.
 //
-// (Comb drive, task 2): parameterized over the drive knob's floor/centre/
+// Comb drive: parameterized over the drive knob's floor/centre/
 // ceiling {0, 0.5, 1} -- combDrive's own comment (FilterFx.hpp) argues the
 // compensated saturator's per-pass decay stays governed by `feedback`
 // alone (never looser than uncompensated, via Saturate's compressivity),
@@ -1601,7 +1601,7 @@ TEST_CASE(comb_process_matches_in_plus_fb_sat_lp_delay_formula) {
 }
 
 // -----------------------------------------------------------------------
-// (Comb drive, task 2): the compensated form `Saturate(combDrive*x)/
+// Comb drive: the compensated form `Saturate(combDrive*x)/
 // combDrive` (Comb::Process, FilterFx.hpp) must reproduce the
 // pre-compensation `Saturate(x)` bit-for-bit at combDrive==1.0 -- IEEE
 // divide-by-1.0 introduces no rounding for any finite operand, so
@@ -1641,7 +1641,7 @@ TEST_CASE(comb_drive_compensated_form_matches_uncompensated_form_bit_exact_at_un
 }
 
 // -----------------------------------------------------------------------
-// (Comb drive, task 2): travel audibility. Measures the drive knob's
+// Comb drive: travel audibility. Measures the drive knob's
 // saturation-depth metric -- compression, in dB, of the saturator stage
 // alone (`Saturate(combDrive*x)/combDrive` against the pre-saturator `x`)
 // at a full-scale reference level (x==1.0f) -- isolating exactly the
@@ -1869,7 +1869,7 @@ TEST_CASE(filter_fx_chain_parallel_matches_manual_comb_peak_scoop_blend) {
         const float input = 0.1f * static_cast<float>(i + 1);
         const float actual = chain.Process(input, /*topology=*/0.0f, combPeakBlend, scoopMix);
 
-        // Task 8: scoop now shapes the shared input both branches below eat,
+        // Scoop now shapes the shared input both branches below eat,
         // computed first from `input` -- not, as before, blended into the
         // output after the comb/peak mix.
         const float scoopedIn = input * (1.0f - scoopMix) + refScoop.Process(input) * scoopMix;
@@ -2069,7 +2069,7 @@ double GoertzelPower(const std::vector<float>& samples, double freqHz, double sa
 }
 
 // -----------------------------------------------------------------------
-// Task 8's directional pin. What this actually measures was traced with a
+// This test's directional pin. What this actually measures was traced with a
 // scratch harness before writing it (not part of this suite): comparing a
 // STATIC boosted height against a STATIC flat height, everything else
 // held equal, gives the SAME band energy at the shared centre frequency in
@@ -2107,7 +2107,7 @@ TEST_CASE(filter_fx_chain_scoop_full_does_not_cancel_a_boosted_peak_at_the_share
         chain.peak.SetHeight(peakHeight);
         chain.peak.SetWidth(1.0f);
         chain.scoopNotch.SetFreq(freqNormalized);  // scoop centered on the SAME frequency as the peak.
-        chain.scoopNotch.SetHeight(0.05f);  // deep dip -- ExpMapCompute(1, 0.05, knob)'s own ceiling (Task 7b).
+        chain.scoopNotch.SetHeight(0.05f);  // deep dip -- ExpMapCompute(1, 0.05, knob)'s own ceiling.
         chain.scoopNotch.SetWidth(1.0f);
 
         std::vector<float> samples;
@@ -2344,7 +2344,7 @@ TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_at_max_height) {
     chain.peak.SetWidth(1.0f);
 
     const float inputAmplitude = 1.0f;  // A: filter input is bounded |A| <= 1 (Drive output, W2.1-MATH).
-    const float bound = inputAmplitude;  // A * height / height == A -- B1's exact target.
+    const float bound = inputAmplitude;  // A * height / height == A -- the trim's exact target.
     // Held-in comb-branch contribution the floored blend adds on top of
     // `bound` (see this test's own header comment) -- chain.comb defaults
     // to feedback=0.0f, so its own bound is exactly `inputAmplitude` too.
@@ -2380,7 +2380,7 @@ TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_at_max_height) {
 // (peakTrimSmoother shares kTrimGlideCyclesPerSample with combTrimSmoother,
 // FilterFx.hpp) -- reused here rather than re-derived.
 //
-// FINDING (measured, not fixed -- out of B1's scope, which is "mirror
+// FINDING (measured, not fixed -- out of the trim fix's scope, which is "mirror
 // W2.2a's mechanism exactly"): pattern 1 (hard step) settles to ~0
 // overshoot, same as the comb -- but pattern 2 (audio-rate sweep) does NOT
 // reach the comb's "exactly 0 overshoot at glide>=0.33" result. Root cause,
@@ -2398,16 +2398,16 @@ TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_at_max_height) {
 // worsens a height-decrease; slower would reopen R1's original
 // height-increase gap). Measured (500,000 trials across 10 fixed seeds,
 // xorshift32, 50000 samples/seed): trimmed worst-case 1.669 vs raw
-// (untrimmed) worst-case 1.819 -- B1 measurably helps (worst case pulled
+// (untrimmed) worst-case 1.819 -- the trim fix measurably helps (worst case pulled
 // down from near the untrimmed ceiling) but does not achieve the static
 // case's tight `A` bound under this adversarial pattern. What IS still
 // provably true, and what this test pins: the trim never makes the
 // worst case WORSE than the pre-existing, already-accepted ceiling
 // `A * kMaxResonantBumpHeight` (W2.1-MATH's own `|peak| <= A * height`,
-// height <= kMaxResonantBumpHeight) -- i.e. B1 is a net improvement and a
+// height <= kMaxResonantBumpHeight) -- i.e. the trim fix is a net improvement and a
 // safe no-regression, not a complete fix of the audio-rate case. Recorded
 // as a residual finding for a future dispatch, not invented as a fix here
-// (B1's brief is "mirror W2.2a's mechanism exactly", not "redesign it").
+// (the trim fix's brief is "mirror W2.2a's mechanism exactly", not "redesign it").
 //
 // Both bounds below are widened by the SAME held-in comb-branch slack
 // peak_branch_output_stays_at_or_below_computed_bound_at_max_height derives
@@ -2436,7 +2436,7 @@ TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_under_audio_rate_h
     // this file's resonant_bump_coefficients_match_rbj_peaking_formula's own
     // math) to the app's ceiling, held -- the sharpest transient a
     // scramble/randomize can produce. Measured worst overshoot here: ~4e-6
-    // (float noise floor) -- this pattern DOES reach B1's tight `A` bound.
+    // (float noise floor) -- this pattern DOES reach the trim fix's tight `A` bound.
     {
         dsp::FilterFxChain chain = makeChain();
         chain.peak.SetHeight(1.0f);
@@ -2465,8 +2465,8 @@ TEST_CASE(peak_branch_output_stays_at_or_below_computed_bound_under_audio_rate_h
     // to the tight `A` bound the way the comb's audio-rate sweep does --
     // asserted here against the pre-existing, already-established ceiling
     // `A * kMaxResonantBumpHeight` (W2.1-MATH) instead: the property this
-    // test CAN honestly pin is "B1 does not regress the worst case past the
-    // already-accepted untrimmed ceiling", not "B1 fully bounds the
+    // test CAN honestly pin is "the trim fix does not regress the worst case past the
+    // already-accepted untrimmed ceiling", not "the trim fix fully bounds the
     // audio-rate case" (it measurably does not, per the header comment).
     {
         dsp::FilterFxChain chain = makeChain();
@@ -2709,7 +2709,7 @@ TEST_CASE(peak_ceiling_candidate_limiter_measurement) {
 }
 
 // -----------------------------------------------------------------------
-// Task 8's own re-run of the harness above: the bound argument for the
+// This test's own re-run of the harness above: the bound argument for the
 // scoop notch (RBJ cut, |H| <= 1 for height <= 1) is steady-state, but
 // scoop's freq/width/depth now refresh per sample AND feed both branches
 // below (FilterFxChain::Process), so this measures the SAME worst-case
@@ -2722,7 +2722,7 @@ TEST_CASE(peak_ceiling_candidate_limiter_measurement) {
 // ExpMapCompute maps FroggersAppCore.hpp uses for these knobs).
 //
 // This IS where "analogy-picked transient bounds measuring 80% wrong"
-// (this file's own record, cited by Task 8) turned out to apply again: a
+// (this file's own record, cited again here) turned out to apply again: a
 // biquad whose OWN coefficients (not just its input) are redrawn every
 // sample -- both the peak's height and, through what now feeds it, the
 // scoop's freq/width/depth -- can produce a single-sample spike many
@@ -2735,11 +2735,11 @@ TEST_CASE(peak_ceiling_candidate_limiter_measurement) {
 // both chains almost unattenuated, not because the limiter is broken.
 // Reproducible under the OLD (pre-Task-8) topology too, at a comparably
 // extreme magnitude -- this is a pre-existing biquad coefficient-
-// modulation property, not a regression Task 8 introduces or a defect its
+// modulation property, not a regression the scoop-topology change introduces or a defect its
 // topology change is positioned to fix, so per this task's own brief
 // ("no new defensive branch without a demonstrated failing input") it is
 // reported here, not treated as a bug to close out inline. Hence: assert
-// ONLY the finiteness/limiter-ceiling invariants Task 8 asks for (per
+// ONLY the finiteness/limiter-ceiling invariants this test asks for (per
 // sample, below) and PRINT the worst-case numbers rather than bounding
 // them -- a magnitude bound copied from the harness above would be
 // asserting a property this specific adversarial pattern has just shown
@@ -3261,7 +3261,7 @@ TEST_CASE(reverb_tuned_sweeps_never_raise_the_peak_above_the_stage_ceiling) {
     std::cout << "  [T1.6 tuned-pin] peak range across 4 sizes x 3 step periods: [" << minPeak << ", "
               << worstPeak << "] worst at size=" << worstSize << " period=" << worstPeriod
               << "  ceiling=" << dsp::kStageCeiling << "\n";
-    REQUIRE_NEAR(dsp::kStageCeiling, 0.8, 1.0e-6);            // literal pin -- see the tilt test's P8v comment.
+    REQUIRE_NEAR(dsp::kStageCeiling, 0.8, 1.0e-6);            // literal pin -- see the tilt test's own comment.
     REQUIRE_TRUE(minPeak > dsp::kStageCeiling - 0.01f);       // every configuration drove the ceiling...
     REQUIRE_TRUE(worstPeak <= dsp::kStageCeiling + 1.0e-4f);  // ...and none broke through it.
 }
@@ -3314,7 +3314,7 @@ struct UnsaturatedTankReplica {
     size_t indexA = 0, indexB = 0, preIndex = 0;
 
     // Same formulas, same argument order as dsp::Reverb::Process's own
-    // pre-delay/room-size/diffusion/fb math -- minus S2a.1's
+    // pre-delay/room-size/diffusion/fb math -- minus the
     // PadeSaturator::Saturate wrap (the one line this struct exists to
     // omit, marked below).
     //
@@ -3353,7 +3353,7 @@ struct UnsaturatedTankReplica {
         const float aFb = valB * (1.0f - cross) + valA * cross;
         const float bFb = valA * (1.0f - cross) + valB * cross;
 
-        // Pre-S2a.1 shape, deliberately: no PadeSaturator::Saturate here --
+        // Pre-fix shape, deliberately: no PadeSaturator::Saturate here --
         // this is the whole reason this struct exists.
         const float aIn = preOut + aFb * fb;
         const float bIn = preOut + bFb * fb;
@@ -3381,14 +3381,14 @@ struct UnsaturatedTankReplica {
 };
 
 // -----------------------------------------------------------------------
-// Second fixture: a FULL pre-S2a.1 reconstruction of dsp::Reverb::Process
+// Second fixture: a FULL pre-fix reconstruction of dsp::Reverb::Process
 // -- the tank above, plus the damping filter, width blend, mix, AND a
 // `dsp::OutputLimiter` configured identically to dsp::Reverb's own
-// `wetLimiter` (B6b, which predates S2a.1 and belongs in both the "before"
-// and "after" pictures unchanged) -- minus ONLY the S2a.1 saturator wrap.
+// `wetLimiter` (the reverb wetLimiter fix, which predates the saturator fix and belongs in both the "before"
+// and "after" pictures unchanged) -- minus ONLY the saturator wrap.
 //
 // This reconstructs the actual AUDIBLE OUTPUT (Process()'s own return
-// value) the pre-S2a.1 code produced, which is what "Hold sustains a long
+// value) the pre-fix code produced, which is what "Hold sustains a long
 // tail" is a claim about -- not the internal tank register
 // UnsaturatedTankReplica measures. Both fixtures are warranted because they
 // answer different questions; neither restates the other's math.
@@ -3422,9 +3422,9 @@ struct PreFixReverbReplica {
 };
 
 // -----------------------------------------------------------------------
-// S2a.1 -- bounded under sustained overdrive, decay and Hold both at their
+// The saturator fix -- bounded under sustained overdrive, decay and Hold both at their
 // ceiling (`fb` -> ~0.99998; 1/(1-fb) ~= 50,000x steady state, unreachable
-// in a bounded test but the mechanism this whole task is about).
+// in a bounded test but the mechanism this whole fix is about).
 // -----------------------------------------------------------------------
 TEST_CASE(reverb_tank_stays_bounded_under_sustained_overdrive_at_max_decay_and_hold) {
     dsp::Reverb rv;
@@ -3432,13 +3432,13 @@ TEST_CASE(reverb_tank_stays_bounded_under_sustained_overdrive_at_max_decay_and_h
 
     // Smallest room size -> fastest round trip (baseA=180 samples,
     // RoomSizeFromKnob(0)==0.05 floor), the same "shortest round trip is
-    // the worst case" choice B6b's own reverb-wetLimiter test above makes
+    // the worst case" choice the reverb-wetLimiter test above makes
     // -- most round trips per sample, so any real divergence (or its
     // absence) shows up fastest.
     constexpr float sizeKnob = 0.0f;
     constexpr float decayKnob = 1.0f;      // -> decayFb = 0.98 (ceiling).
     constexpr float preKnob = 0.1f;
-    constexpr float diffusionKnob = 0.4f;  // nonzero cross-feed -- exercises both taps, "both lines" per B2.
+    constexpr float diffusionKnob = 0.4f;  // nonzero cross-feed -- exercises both taps.
     constexpr float widthKnob = 0.5f;      // in [0,1]: this test's bound derivation below needs that range.
     constexpr float dampKnob = 0.5f;
     constexpr float holdKnob = 1.0f;       // -> fb = 0.98 + 0.02*0.999 = 0.99998.
@@ -3453,8 +3453,8 @@ TEST_CASE(reverb_tank_stays_bounded_under_sustained_overdrive_at_max_decay_and_h
     // Per-sample bound: aIn = preOut + fb*Saturate(aFb), |preOut| <=
     // |input| (a pure delay of `input`, no gain) and |Saturate(.)| <= 1
     // unconditionally (dsp::PadeSaturator::Saturate's own hard clamp), so
-    // |aIn| <= |input| + fb regardless of round-trip count -- exactly B2's
-    // own bound shape (dsp/Delay.hpp's test: bound = inputAmplitude*p.dsnd
+    // |aIn| <= |input| + fb regardless of round-trip count -- exactly the same
+    // bound shape (dsp/Delay.hpp's test: bound = inputAmplitude*p.dsnd
     // + fbk). dampFilter.output/wetL/wetR are each a convex combination
     // (coefficients in [0,1]) of quantities already <= this same bound
     // (dampFilter.alpha in (0.001,0.2); widthKnob fixed at 0.5 above, in
@@ -3474,8 +3474,8 @@ TEST_CASE(reverb_tank_stays_bounded_under_sustained_overdrive_at_max_decay_and_h
         REQUIRE_TRUE(std::isfinite(out));
         const float rawMagnitude = rv.StateMagnitude();
         REQUIRE_TRUE(std::isfinite(rawMagnitude));
-        // Per-sample bound (B2's own style: asserted every sample, not
-        // merely checked once at the end of the run).
+        // Per-sample bound (same style as the Delay per-sample-bound test:
+        // asserted every sample, not merely checked once at the end of the run).
         REQUIRE_TRUE(rawMagnitude <= bound + 1.0e-4f);
         maxRawMagnitude = std::max(maxRawMagnitude, rawMagnitude);
 
@@ -3483,11 +3483,11 @@ TEST_CASE(reverb_tank_stays_bounded_under_sustained_overdrive_at_max_decay_and_h
         maxControlMagnitude = std::max(maxControlMagnitude, control.StateMagnitude());
     }
 
-    std::cout << "  [S2a.1 bounded-vs-unbounded] input=" << kOverdriveInput << " fb=" << fb
+    std::cout << "  [bounded-vs-unbounded] input=" << kOverdriveInput << " fb=" << fb
               << " bound=|input|+fb=" << bound << "\n"
-              << "  [S2a.1 bounded-vs-unbounded]   WITH saturator (post-fix, StateMagnitude() max over "
+              << "  [bounded-vs-unbounded]   WITH saturator (post-fix, StateMagnitude() max over "
               << kSamples << " samples):    " << maxRawMagnitude << "\n"
-              << "  [S2a.1 bounded-vs-unbounded]   WITHOUT saturator (positive control, identical run): "
+              << "  [bounded-vs-unbounded]   WITHOUT saturator (positive control, identical run): "
               << maxControlMagnitude << "\n";
 
     // The positive control must actually have exceeded the bound the real
@@ -3499,9 +3499,9 @@ TEST_CASE(reverb_tank_stays_bounded_under_sustained_overdrive_at_max_decay_and_h
 }
 
 // -----------------------------------------------------------------------
-// S2a.1 -- ordinary (quiet) level not degraded, Hold still at its ceiling.
+// The saturator fix -- ordinary (quiet) level not degraded, Hold still at its ceiling.
 //
-// MEASURED FIRST, then written to match (OMNI: measured, not assumed): a
+// MEASURED FIRST, then written to match (measured, not assumed): a
 // draft of this test tried "ordinary" == the loud, full-scale,
 // 4000-sample-sustained scenario the loud-tail TEST_CASE below uses, and
 // asserted the saturated tank's raw retention should match the unsaturated
@@ -3568,10 +3568,10 @@ TEST_CASE(reverb_quiet_ordinary_level_tail_matches_unsaturated_control_at_max_ho
     const float rawRetention = rawPeakAfterSilence / rawPeakAfterExcite;
     const float controlRetention = controlPeakAfterSilence / controlPeakAfterExcite;
 
-    std::cout << "  [S2a.1 quiet-ordinary-tail] input=" << kOrdinaryInput << " Hold=max, Decay=max:\n"
-              << "  [S2a.1 quiet-ordinary-tail]   WITH saturator:    peakAfterExcite=" << rawPeakAfterExcite
+    std::cout << "  [quiet-ordinary-tail] input=" << kOrdinaryInput << " Hold=max, Decay=max:\n"
+              << "  [quiet-ordinary-tail]   WITH saturator:    peakAfterExcite=" << rawPeakAfterExcite
               << " peakAfterSilence=" << rawPeakAfterSilence << " retention=" << rawRetention << "\n"
-              << "  [S2a.1 quiet-ordinary-tail]   WITHOUT saturator: peakAfterExcite=" << controlPeakAfterExcite
+              << "  [quiet-ordinary-tail]   WITHOUT saturator: peakAfterExcite=" << controlPeakAfterExcite
               << " peakAfterSilence=" << controlPeakAfterSilence << " retention=" << controlRetention << "\n";
 
     // At this quiet level the fix must not have made tail retention
@@ -3663,12 +3663,12 @@ TEST_CASE(reverb_hold_at_max_tail_stays_audible_and_decays_gradually_not_pinned)
     const auto [afterMidSilence, beforeMidSilence] = measurePeak(2000);    // ~0.042s further silence.
     const auto [afterLongSilence, beforeLongSilence] = measurePeak(8000);  // total ~0.21s.
 
-    std::cout << "  [S2a.1 loud-tail] Hold=max, Decay=max, full-scale 4000-sample burst:\n"
-              << "  [S2a.1 loud-tail]   BEFORE (pre-fix, reconstructed): rightAfterBurst=" << beforeRightAfterBurst
+    std::cout << "  [loud-tail] Hold=max, Decay=max, full-scale 4000-sample burst:\n"
+              << "  [loud-tail]   BEFORE (pre-fix, reconstructed): rightAfterBurst=" << beforeRightAfterBurst
               << " +2000samples=" << beforeMidSilence << " +10000samples=" << beforeLongSilence
               << "  (retention=" << (beforeLongSilence / beforeRightAfterBurst)
               << " -- pinned at the limiter ceiling, the defect itself)\n"
-              << "  [S2a.1 loud-tail]   AFTER  (post-fix, real):         rightAfterBurst=" << afterRightAfterBurst
+              << "  [loud-tail]   AFTER  (post-fix, real):         rightAfterBurst=" << afterRightAfterBurst
               << " +2000samples=" << afterMidSilence << " +10000samples=" << afterLongSilence
               << "  (retention=" << (afterLongSilence / afterRightAfterBurst) << " -- a genuine decay)\n";
 
@@ -3855,7 +3855,7 @@ TEST_CASE(digital_reorganizer_process_matches_bit_scramble_formula) {
     // otherwise be UB, are covered separately below by
     // digital_reorganizer_process_at_and_beyond_input_1_0_is_defined_and_saturates.
     //
-    // The bit-scramble MATH transcribed below is UNCHANGED by S1.3 -- this
+    // The bit-scramble MATH transcribed below is UNCHANGED -- this
     // test's whole point is an INDEPENDENT check that Process() matches a
     // hand-transcribed formula, so it deliberately does not call Drive.hpp's
     // own Mangle() (that would only prove Process() calls Mangle() as
@@ -4123,7 +4123,7 @@ TEST_CASE(drive_blend_phase_output_stays_at_or_below_computed_bound_under_audio_
 }
 
 // -----------------------------------------------------------------------
-// B7.2 tonal-neutrality proof: coeffSmoother/outputLimiter (dsp/Drive.hpp)
+// Tonal-neutrality proof: coeffSmoother/outputLimiter (dsp/Drive.hpp)
 // only matter when `a`/the stage output move at audio rate. At a STATIC
 // Phase knob the fixed-coefficient allpass was already unity-gain (class
 // header comment), so the fix must leave a static-Phase patch unchanged --
@@ -4373,7 +4373,7 @@ TEST_CASE(stereo_delay_clear_buffers_resets_to_silence) {
 // pre-fix loop's runaway growth, happen well inside this test's sample
 // budget), Width to 0.3 (nonzero cross-feed, so both channels exercise the
 // saturator through the `fbL = dL*(1-cross) + dR*cross` blend -- "both
-// lines" per B2's brief, not just an isolated single-channel case).
+// lines", not just an isolated single-channel case).
 // -----------------------------------------------------------------------
 TEST_CASE(delay_feedback_loop_stays_bounded_at_max_feedback) {
     dsp::StereoDelay delay;
@@ -4390,15 +4390,15 @@ TEST_CASE(delay_feedback_loop_stays_bounded_at_max_feedback) {
 
     const float inputAmplitude = 1.0f;
     const float fbk = 0.98f;                             // the clamp StereoDelay::Process itself applies.
-    const float bound = inputAmplitude * p.dsnd + fbk;    // |inSignal| + fbk -- B2's per-sample guarantee.
+    const float bound = inputAmplitude * p.dsnd + fbk;    // |inSignal| + fbk -- the per-sample guarantee.
 
     constexpr int kSamples = 3000;  // ~60 round trips at 48 samples/trip -- pre-fix, this is already
                                      // well past the ~50x-input steady state (in*send/(1-0.98)==50.0).
-    // B6a note: `wet.l`/`wet.r` measured here are now what `wetLimiterL`/`R`
+    // Note: `wet.l`/`wet.r` measured here are now what `wetLimiterL`/`R`
     // (dsp/Delay.hpp) return, not the raw loop tap -- still `<= bound`
     // (trivially: limiter output <= raw tap <= bound, since the limiter
     // only ever reduces magnitude), just no longer the tightest statement
-    // about them. The tighter, B6a-specific bound (the limiter's own
+    // about them. The tighter, limiter-specific bound (the limiter's own
     // ceiling, ~1.0 rather than this test's ~1.98) is pinned separately
     // below (delay_wet_output_stays_at_or_below_limiter_ceiling_at_max_feedback).
     for (int i = 0; i < kSamples; ++i) {
@@ -4422,7 +4422,7 @@ TEST_CASE(delay_feedback_loop_stays_bounded_at_max_feedback) {
 // value).
 //
 // Same scenario as the test immediately above (shortest reachable delay
-// time -- the fastest round trip, B6a's own measured worst case; see
+// time -- the fastest round trip, this fix's own measured worst case; see
 // dsp/Delay.hpp's header comment for the full sweep), run long enough
 // (5000 samples) to comfortably clear the transient window the measurement
 // found the worst-case overshoot inside.
@@ -4441,7 +4441,7 @@ TEST_CASE(delay_wet_output_stays_at_or_below_limiter_ceiling_at_max_feedback) {
     delay.SetSampleRate(sr);
 
     dsp::DelayParams p;
-    p.dtim = 0.0f;   // shortest reachable round trip -- B6a's own measured worst case.
+    p.dtim = 0.0f;   // shortest reachable round trip -- this fix's own measured worst case.
     p.dsnd = 1.0f;
     p.dfbk = 1.0f;   // -> fbk clamps to 0.98.
     p.dwid = 0.3f;
@@ -4581,7 +4581,7 @@ TEST_CASE(self_oscillating_comb_response_is_finite_and_bounded) {
 // FilterFxChain::Process's own runtime sibling to the closed-form check
 // above: self-oscillating comb feedback (Comb::GetFeedback's own +-0.95
 // ceiling) together with scoop freq/width/depth AND scoopMix redrawn every
-// sample while the scoop feeds both branches (Task 8's topology) -- the
+// sample while the scoop feeds both branches (the current topology) -- the
 // shape of input the scoopNotch self-oscillation bug needed before Tier 2
 // recovery existed (FroggersAppCore.hpp's own restored-setters comment).
 // No recovery is exercised here (that is
@@ -4635,7 +4635,7 @@ TEST_CASE(filter_fx_chain_stays_finite_under_self_oscillating_comb_with_audio_ra
 // =========================================================================
 
 TEST_CASE(locked_loop_source_cycles_a_fixed_loop_across_two_full_cycles) {
-    dsp::RandomShLane lane = dsp::lanes::MakeSource1(0x3333u);  // dejaVuKnob=0.5 (locked loop, D8a source #1).
+    dsp::RandomShLane lane = dsp::lanes::MakeSource1(0x3333u);  // dejaVuKnob=0.5 (locked loop, source #1).
     dsp::RandomShLane::UiState state;
 
     std::vector<float> firstCycle(dsp::RandomShLane::kNumSlots);
@@ -4656,7 +4656,7 @@ TEST_CASE(locked_loop_source_cycles_a_fixed_loop_across_two_full_cycles) {
 }
 
 TEST_CASE(free_running_source_keeps_producing_new_values_across_two_full_cycles) {
-    dsp::RandomShLane lane = dsp::lanes::MakeSource4(0x4444u);  // dejaVuKnob=0.0 (free-running, D8a source #4).
+    dsp::RandomShLane lane = dsp::lanes::MakeSource4(0x4444u);  // dejaVuKnob=0.0 (free-running, source #4).
     dsp::RandomShLane::UiState state;
 
     std::vector<float> firstCycle(dsp::RandomShLane::kNumSlots);
@@ -4942,7 +4942,7 @@ TEST_CASE(stereo_delay_feedback_drive_at_maximum_does_not_raise_the_per_sample_b
 
     const float inputAmplitude = 1.0f;
     const float fbk = 0.98f;
-    const float bound = inputAmplitude * p.dsnd + fbk;  // same |inSignal| + fbk bound as B2's own test.
+    const float bound = inputAmplitude * p.dsnd + fbk;  // same |inSignal| + fbk bound as the earlier bound test.
 
     for (int i = 0; i < 3000; ++i) {
         const dsp::DelayWetPair wet = delay.Process(inputAmplitude, p);
@@ -4996,7 +4996,7 @@ TEST_CASE(stereo_delay_default_knob_values_reproduce_original_output_exactly) {
 // =========================================================================
 
 TEST_CASE(stereo_delay_diffusion_at_default_zero_is_bit_identical_to_no_diffusion) {
-    // T3.1c binding requirement: ddif==0.0f (the Diffusion knob's own
+    // Binding requirement: ddif==0.0f (the Diffusion knob's own
     // default, FroggersParameters.hpp; dsp::DelayParams::ddif's own
     // in-class default) must leave the wet tap EXACTLY -- bit-for-bit, not
     // merely close -- what it would be with no diffuser at all.
@@ -5124,7 +5124,7 @@ TEST_CASE(stereo_delay_diffusion_state_tracks_the_signal_while_ddif_is_zero) {
     const float stateL = delay.diffuserL.StateMagnitude();
     const float stateR = delay.diffuserR.StateMagnitude();
 
-    // OMNI 9.1 positive control: "the state is non-zero" means nothing unless
+    // Positive control: "the state is non-zero" means nothing unless
     // a signal actually reached the unit. Report the driving quantity's own
     // range beside the result, so a run that proved something true and
     // irrelevant is visible as such rather than reading as a pass.
@@ -5177,7 +5177,7 @@ TEST_CASE(stereo_delay_diffusion_midpoint_differs_from_both_endpoints) {
 }
 
 TEST_CASE(stereo_delay_diffusion_coefficient_stays_strictly_inside_unit_circle_across_full_sweep) {
-    // T3.1c's binding requirement: a = ddif * 0.7f (kDiffusionCoeffScale)
+    // Binding requirement: a = ddif * 0.7f (kDiffusionCoeffScale)
     // must stay strictly inside the unit circle (|a| < 1) at every ddif in
     // the knob's own [0,1] range. Swept range: ddif in [0.0, 1.0], 101
     // points. 0.7f is asserted here as a literal (not merely re-read from
@@ -5298,7 +5298,7 @@ TEST_CASE(stereo_delay_reverse_blend_at_maximum_time_reverses_a_sharp_attack_slo
     // the reverse tap (drev=1) reads the SAME line content, just backward.
     // Both instances see identical writes throughout -- drev only selects
     // which tap is READ, applied before the feedback write, and with
-    // dfbk=0 the write is `inSignal` regardless of dL/dR's value (B2/D9) --
+    // dfbk=0 the write is `inSignal` regardless of dL/dR's value (D9) --
     // so the two instances' delay lines stay identical and only the OUTPUT
     // differs.
     //
@@ -5525,7 +5525,7 @@ TEST_CASE(stereo_delay_reverse_state_tracks_the_signal_while_drev_is_zero) {
     const float stateL = delay.reverserL.StateMagnitude();
     const float stateR = delay.reverserR.StateMagnitude();
 
-    // OMNI 9.1 positive control: "the state is non-zero" means nothing
+    // Positive control: "the state is non-zero" means nothing
     // unless a signal actually reached the unit. Report the driving
     // quantity's own range beside the result.
     std::cout << "  [P3] drev==0 state tracking: wet max|signal|=" << maxAbsWet << "  reverser elapsed L=" << stateL
@@ -5605,7 +5605,7 @@ TEST_CASE(stereo_delay_reverse_blend_does_not_raise_wet_output_beyond_limiter_ce
 // trip with dfrz/dfrzLatched FORCED to 0.0f/false regardless of what `p`
 // asks for, injecting `burstAmplitude` as that phase's own first sample
 // only. This is not optional bookkeeping -- freezeEff==1.0f (whenever
-// dfrz==1 OR dfrzLatched, T3.1a/T3.1b's own unconditional "new input never
+// dfrz==1 OR dfrzLatched, the freeze tests' own unconditional "new input never
 // enters while frozen" contract) zeroes the new-input term at the write,
 // so a caller whose OWN `p` already asks for freeze==1/latched could never
 // get its probe signal into the line at all if injected under those same
@@ -5766,7 +5766,7 @@ TEST_CASE(stereo_delay_freeze_clamp_does_not_reach_zero_loop_gain_matches_origin
 }
 
 TEST_CASE(stereo_delay_freeze_feedback_is_monotonically_non_decreasing_across_its_whole_range) {
-    // T3.1e's own guard, and the test whose ABSENCE let the defect ship.
+    // This test is the guard whose ABSENCE let the defect ship.
     // Operator, 2026-08-14: "obviously an encoder turning left to right
     // should make a value go from zero to a higher value." The prior
     // mapping, `fbk + (1/fbDrive - fbk) * freeze`, ran DOWNWARD at high
@@ -5825,7 +5825,7 @@ TEST_CASE(stereo_delay_freeze_feedback_is_monotonically_non_decreasing_across_it
 }
 
 TEST_CASE(stereo_delay_freeze_latch_exceeds_every_value_the_encoder_can_reach) {
-    // T3.1e, replacing the retired "full freeze holds the PRODUCT at unity"
+    // Replacing the retired "full freeze holds the PRODUCT at unity"
     // test. The encoder's ceiling is now unity feedback (lossless), and the
     // latch's whole purpose is to exceed it -- operator, 2026-08-13: "when
     // toggled, the freeze button should override the freeze encoder
@@ -5883,7 +5883,7 @@ TEST_CASE(stereo_delay_freeze_latched_grows_the_loop_measurably_beyond_unlatched
     delayUnlatched.SetFeedbackDrive(1.0f);  // identical fbDrive -- isolates dfrzLatched as the only difference.
 
     dsp::DelayParams pUnlatched = pLatched;
-    pUnlatched.dfrzLatched = false;  // same patch, latch released -- T3.1a's hold applies instead.
+    pUnlatched.dfrzLatched = false;  // same patch, latch released -- the freeze encoder's hold applies instead.
 
     const std::vector<float> peaksLatched =
         MeasureFreezeRoundTripPeaks(delayLatched, pLatched, kBurstAmplitude, kRoundTripSamples, 2);
@@ -5892,7 +5892,7 @@ TEST_CASE(stereo_delay_freeze_latched_grows_the_loop_measurably_beyond_unlatched
 
     REQUIRE_TRUE(peaksLatched[0] > 0.0f);
     REQUIRE_TRUE(peaksUnlatched[0] > 0.0f);
-    // T3.1e retune. Under the retired product-clamp mapping these were
+    // Retuned here. Under the retired product-clamp mapping these were
     // ~4.0 (latched) vs ~1.0 (the hold), so a `> 2x` threshold read as
     // "measurably greater". That ratio was an artifact of fbDrive living
     // inside Freeze's mapping. It no longer does: both branches are now

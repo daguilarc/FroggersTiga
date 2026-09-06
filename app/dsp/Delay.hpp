@@ -409,7 +409,7 @@ struct DelayReverser
     // the control shippable"). `fading` is true only while a freshly-armed sweep
     // (fadePos) is being blended in against the outgoing one (pos); both
     // `pos` and `fadePos` advance every call while fading -- same
-    // unconditional-advance rule as `pos`/`elapsed` above (item 5).
+    // unconditional-advance rule as `pos`/`elapsed` above.
     float fadePos = 0.0f;
     float fadeGain = 0.0f;
     bool fading = false;
@@ -1231,7 +1231,7 @@ private:
         }
         else if (rev.elapsed >= delaySamplesWindow - fadeSamples)
         {
-            // Enter the wrap crossfade (item 2/3: the sweep covers one
+            // Enter the wrap crossfade (the sweep covers one
             // delay-time of history, then wraps, and the wrap must be
             // declicked): arm a second pointer starting a fresh lap at
             // "now" -- one sample behind the write head, the freshest

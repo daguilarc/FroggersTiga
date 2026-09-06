@@ -159,7 +159,7 @@ TEST_CASE(vco_scope_traces_are_flat_when_transport_never_started) {
 // -----------------------------------------------------------------------
 TEST_CASE(self_oscillating_comb_visualizer_plot_stays_within_bounds) {
     synth_froggers::dsp::Comb::UIState state;
-    state.feedback.store(0.95f);       // Comb::GetFeedback's maximum magnitude (item 1).
+    state.feedback.store(0.95f);       // Comb::GetFeedback's maximum magnitude.
     state.lowPassAlpha.store(0.999f);  // near-unity lowpass -- broad, near-1 passband.
     state.delaySamples.store(1);       // shortest delay -- widest periodic lobe.
 

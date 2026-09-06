@@ -136,7 +136,7 @@ TEST_CASE(bank_layouts_have_nine_named_parameters_plus_fixed_crispy_and_crunchy)
         synth::Parameter* crispy = bank.VisibleParameter(
             static_cast<synth::PhysicalEncoderId>(synth_froggers::kFroggersCrispySlot));
         REQUIRE_TRUE(crispy == &model.Crispy(bankIx));
-        REQUIRE_TRUE(crispy->BaseColor() == layout.color);  // D5a: Crispy takes the bank colour.
+        REQUIRE_TRUE(crispy->BaseColor() == layout.color);  // Crispy takes the bank colour.
 
         synth::Parameter* crunchy = bank.VisibleParameter(
             static_cast<synth::PhysicalEncoderId>(synth_froggers::kFroggersCrunchySlot));
@@ -204,7 +204,7 @@ TEST_CASE(per_bank_colour_reaches_encoder_draw_state_base_color) {
         REQUIRE_TRUE(crispyDraw.connected);
         REQUIRE_TRUE(crispyDraw.baseColor == layouts[bankIx].color);
 
-        // D5a: the shared Crunchy has ONE fixed colour, the same in every
+        // The shared Crunchy has ONE fixed colour, the same in every
         // bank -- it cannot take on each bank's colour.
         const auto crunchyDraw = synth::ui::EncoderDrawStateFromParameter(
             slotState.cells[synth_froggers::kFroggersCrunchySlot]);
@@ -587,7 +587,7 @@ TEST_CASE(fuegoized_value_is_published_to_ui_state_values) {
     const synth::Parameter::UIState& cell = uiState.slots[0].cells[0];
     const float publishedValue = synth::ui::EncoderDrawStateFromParameter(cell).voices.at(0).value;
 
-    // The published ring value is the fuegoized one (D9a), not the raw
+    // The published ring value is the fuegoized one, not the raw
     // scene-center value it started from.
     REQUIRE_NEAR(publishedValue, expected, 0.02f);
     REQUIRE_TRUE(std::fabs(publishedValue - rawPage0) > 0.01f);

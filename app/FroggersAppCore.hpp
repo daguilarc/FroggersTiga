@@ -96,11 +96,11 @@
 #include <array>
 #include <atomic>
 #include <cmath>
-#include <cstdio>   // F3 diagnostic (stopDiagBlocks_): std::fprintf.
-#include <cstdlib>  // F3 diagnostic (stopDiagEnabled_): std::getenv.
+#include <cstdio>   // Stop diagnostic (stopDiagBlocks_): std::fprintf.
+#include <cstdlib>  // Stop diagnostic (stopDiagEnabled_): std::getenv.
 #include <cstddef>
-#include <cstdint>      // T5.3c: EncodeWavPcm16Mono's byte/sample types.
-#include <functional>   // T5.3c: SetOnRecordingFinished/SetOnRecordRefused host seams.
+#include <cstdint>      // EncodeWavPcm16Mono's byte/sample types.
+#include <functional>   // SetOnRecordingFinished/SetOnRecordRefused host seams.
 #include <limits>
 #include <optional>
 #include <span>
@@ -382,13 +382,13 @@ public:
         // (VcoAdsrState::init() sets m_gateHigh = false, Stage::Idle), which
         // is the correct starting state for "silent until the transport
         // runs."
-        delay_.SetSampleRate(sampleRate_);  // B6a: also (re)configures wetLimiterL/R's coeffs, see dsp/Delay.hpp.
-        outputLimiter_.Configure(sampleRate_);  // item 3: attack/release coeffs are sample-rate-dependent.
-        filterChain_.Configure(sampleRate_);  // B5: peak-branch limiter's own coeffs, same reason.
-        reverb_.Configure(sampleRate_);  // B6b: reverb's own wetLimiter coeffs, same reason.
-        driveBlendPhase_.Configure(sampleRate_);  // B7.2: this stage's own outputLimiter coeffs, same reason.
+        delay_.SetSampleRate(sampleRate_);  // Also (re)configures wetLimiterL/R's coeffs, see dsp/Delay.hpp.
+        outputLimiter_.Configure(sampleRate_);  // The limiter's attack/release coefficients are sample-rate-dependent.
+        filterChain_.Configure(sampleRate_);  // Peak-branch limiter's own coeffs, same reason.
+        reverb_.Configure(sampleRate_);  // Reverb's own wetLimiter coeffs, same reason.
+        driveBlendPhase_.Configure(sampleRate_);  // This stage's own outputLimiter coeffs, same reason.
 
-        // Root-cause fix (D17 robustness gap, found while diagnosing "Play
+        // Root-cause fix (a robustness gap found while diagnosing "Play
         // produces no audio in the real Runtime"): `synth::Engine::Prepare()`
         // calls `MasterClock::Prepare()` UNCONDITIONALLY before this hook
         // runs (Engine.hpp's own Prepare(), which calls
@@ -406,7 +406,7 @@ public:
         // ~/Library/Sheaf/synth/sheaf-patch/logs/: three separate "Audio
         // prepared" lines fired before any user interaction at all, one of
         // them renegotiating the block size from 256 to 512 frames). Each
-        // one silently re-closes the D17 transport-gated ASR with no visual
+        // one silently re-closes the transport-gated ASR with no visual
         // indication and no automatic recovery -- a user who pressed Play
         // and then hit (or caused, e.g. by switching output devices while
         // troubleshooting) any such renegotiation gets permanent silence
@@ -572,7 +572,7 @@ public:
     }
     void RequestRandomizeAll() { pendingRandomizeAll_.store(true, std::memory_order_release); }
     void RequestRandomizePage() { pendingRandomizePage_.store(true, std::memory_order_release); }
-    // T5.1 (Reset Page / Reset All): same UI-thread -> audio-thread request
+    // Reset Page / Reset All: same UI-thread -> audio-thread request
     // idiom as the two Randomize flags above, deliberately not a new one.
     void RequestResetAll() { pendingResetAll_.store(true, std::memory_order_release); }
     void RequestResetPage() { pendingResetPage_.store(true, std::memory_order_release); }
@@ -714,7 +714,7 @@ public:
             // published below instead.
             bool randomizeRan = false;
             bool anyPartial = false;
-            // F4: each call's result is hoisted into its own named local
+            // Each call's result is hoisted into its own named local
             // BEFORE combining, so both RandomizeAll/RandomizePage always run
             // when their request is pending -- `anyPartial = a.partial ||
             // anyPartial` reads fine but is only correct because the call
@@ -916,10 +916,10 @@ public:
             // gets the same unconditional Reset() regardless of its
             // Recovery tier.
             const bool transportRunningNow = transportQuarterNotes.has_value();
-            // F3 DIAGNOSTIC: open the logging window on the Stop edge. The app
-            // is the only place F3 reproduces -- F3.1 and F3.2c both measured
-            // Stop working in the harness, and F3.2c refuted the parametric
-            // hypothesis with the swept knob proven live -- so the remaining
+            // DIAGNOSTIC: open the logging window on the Stop edge. The app
+            // is the only place the bug reproduces -- two separate
+            // measurements both found Stop working in the harness, and the
+            // swept-knob one refuted the parametric hypothesis live -- so the remaining
             // question is which of these two the real failure is, and that can
             // only be read from a real session:
             //   pending stays true / AllIdle stays false -> the flush NEVER
@@ -1089,11 +1089,10 @@ public:
                     parameters_.PageParameter(FroggersBankId::Audio, AudioSlot(paramIx, VcoSlotRole::PhaseMod)).CachedKnobValue(0),
                 };
             };
-            // Operator-ordered, and NOT the F3
-            // fix -- kept labelled accurately on purpose. F3 was a static DC
-            // seed inside DigitalReorganizer, a pure function of frozen knob
-            // state (fixed separately); freezing modulation could
-            // never have removed it. This gate is the operator's own ruling
+            // Operator-ordered, not the DigitalReorganizer DC-seed fix --
+            // that fix was a static DC seed inside DigitalReorganizer, a pure
+            // function of frozen knob state (fixed separately); freezing
+            // modulation could never have removed it. This gate is the operator's own ruling
             // instead, verbatim: "no, modulation should not free-run
             // while stopped lol. come on."
             //
@@ -1157,7 +1156,7 @@ public:
             // delay's and the reverb's Width controls reach a listener.
             const dsp::StereoSample sample = RouteAudioSample();
 
-            // F3 DIAGNOSTIC (2026-08-07), OFF unless FROGG3RS_STOP_DIAG is set
+            // DIAGNOSTIC (2026-08-07), OFF unless FROGG3RS_STOP_DIAG is set
             // in the environment -- see stopDiagBlocks_'s own comment. Tracks
             // this block's output peak only while the diagnostic window is
             // open, so a normal run pays one already-loaded bool test.
@@ -1256,7 +1255,7 @@ public:
         // masked the symptom, it never cleared the cause.
         RecoverPoisonedUnitState(block.numFrames);
 
-        // F3 DIAGNOSTIC: one line per block while the post-Stop window is
+        // DIAGNOSTIC: one line per block while the post-Stop window is
         // open. Once per BLOCK, never per sample, and entirely skipped unless
         // FROGG3RS_STOP_DIAG is set. It does write to stderr from the audio
         // thread, which is a real-time violation and exactly why it is
@@ -1359,7 +1358,7 @@ public:
     dsp::ResonantBump& TestFilterPeak() { return filterChain_.peak; }
     dsp::ResonantBump& TestFilterScoopNotch() { return filterChain_.scoopNotch; }
     dsp::Comb& TestFilterComb() { return filterChain_.comb; }
-    // B5: test/inspection access to the peak branch's OWN limiter instance
+    // Test/inspection access to the peak branch's OWN limiter instance
     // (`FilterFxChain::peakLimiter`, `dsp/FilterFx.hpp`) -- same convention
     // as `TestOutputLimiter()` above, but for the independently-tuned
     // second instance rather than the master.
@@ -1368,7 +1367,7 @@ public:
     // convention as the accessors above -- lets tests call Process()/
     // Reset() directly and read `envelope` without going through the full
     // RouteAudioSample chain, e.g. to prove the bit-identical-passthrough
-    // acceptance test. `auto&` kept as-is post-B5 (`dsp::OutputLimiter` is
+    // acceptance test. `auto&` kept as-is after that change (`dsp::OutputLimiter` is
     // now a public type, so `dsp::OutputLimiter&` would spell fine too, but
     // every other TestXxx() accessor above already returns `dsp::Xxx&` by
     // deduction-free convention -- `auto&` here is simply consistent with
@@ -1377,7 +1376,7 @@ public:
     // (`TestFilterPeakLimiter()`, mirroring `TestFilterPeak()` above).
     auto& TestOutputLimiter() { return outputLimiter_; }
 
-    // F3.1 (frogg3rs-blowout-and-drilldown-repair): test/inspection access
+    // Test/inspection access
     // to `delay_`/`reverb_`, same convention as the accessors above --
     // added because the Stop-flush measurement harness needs to read their
     // internal state magnitude directly (their delay lines/tanks, not just
@@ -1388,7 +1387,7 @@ public:
     dsp::StereoDelay& TestDelay() { return delay_; }
     dsp::Reverb& TestReverb() { return reverb_; }
 
-    // T2.2 (frogg3rs-stop-isolation-and-legible-labels): test/inspection
+    // Test/inspection
     // access to the resolved Freeze-KNOB (dsp::DelayParams::dfrz) and
     // Reverb Tank-drive knob values RouteAudioSample() (below) last used,
     // same "TestXxx() convention read-only, measurement not control" as
@@ -1429,13 +1428,13 @@ public:
     // site actually ran, as opposed to merely re-reading FreezeLatched()'s
     // own atomic a second time.
 
-    // B7.5: test/inspection access to the live synth::ParameterManager, same
+    // Test/inspection access to the live synth::ParameterManager, same
     // convention as TestOutputLimiter() above. `context_` (below) is
     // private and there is no other public route to it; this is the
     // narrowest accessor that reaches ComputeAllParameters(), which
     // FroggersAudioRoutingTests.cpp's ApplyPatchNow() needs to make a
     // SceneCenter write converge exactly before the first RunBlocks()
-    // (B7.5.0's settling rule).
+    // (the convergence's own settling rule).
     synth::ParameterManager& TestParameterManager() { return *context_->parameterManager; }
 
 private:
@@ -1734,8 +1733,8 @@ private:
         filterChain_.peak.SetFreq(bumpFreq);
         // Ceiling lowered
         // from 10x (+20 dB) to 4x (+12 dB). An audible resonant peak does
-        // not need a 20 dB multiplier sitting on top of a comb that (post
-        // item 1) can still ring for seconds -- 10x was the primary gain
+        // not need a 20 dB multiplier sitting on top of a comb that (with
+        // its feedback now bounded below unity) can still ring for seconds -- 10x was the primary gain
         // offender in the operator's blowout (multiplying the comb's
         // saturator-pinned output before the
         // limiter). scoopNotch (below) has its own independent freq/width
@@ -1841,7 +1840,7 @@ private:
         // 0.5) == 0.25 * sqrt(16) == 1.0. The Filter slot-7 default
         // (FroggersParameters.hpp) is set to 0.5f for exactly this reason
         // (Task E).
-        // T2.2: stoppedKnob (defined above, beside kStopFadeReleaseKnob)
+        // stoppedKnob (defined above, beside kStopFadeReleaseKnob)
         // overrides this to kStopUnityDriveKnob (0.5, i.e. unity post-map)
         // while the transport is stopped, regardless of the commanded knob.
         filterChain_.comb.SetDrive(
@@ -1869,13 +1868,13 @@ private:
     // `processInsert`'s own shape is `delay.process(bumpIn, params)` then
     // `delay.toReverbMono(bumpIn, wet, params.dmix)`, reproduced
     // identically below.
-    // T2.2: row4Freeze (the Freeze KNOB, dsp::DelayParams::dfrz) goes
+    // row4Freeze (the Freeze KNOB, dsp::DelayParams::dfrz) goes
     // through stoppedKnob too -- kStopFreezeKnob (0.0f) while stopped,
     // regardless of the commanded knob -- distinct from the Freeze
-    // BUTTON's latch (dfrzLatched, T5.2, set just below: T2.4 pins that
-    // the latch stays a no-op on the audio while stopped, since this
-    // override already zeroes dfrz and T2.1 forces every voice's
-    // Release, so FreezeFeedback's above-unity overdrive has nothing
+    // BUTTON's latch (dfrzLatched, set just below: that latch stays a no-op
+    // on the audio while stopped, since this override already zeroes dfrz
+    // and every voice is forced into Release, so FreezeFeedback's
+    // above-unity overdrive has nothing
     // left feeding it). lastDelayFreezeKnobEffective_ records the
     // resolved value for TestLastDelayFreezeKnobEffective() -- dfrz has
     // no other test-readable home since `delayParams` is local to this
@@ -1897,7 +1896,7 @@ private:
             delayWetMixEffective, RoutedKnob(FroggersBankId::Delay, 7), RoutedKnob(FroggersBankId::Delay, 8));
         // The Freeze BUTTON's override, applied where the
         // freeze mapping resolves the encoder's value -- MapRowsToDelayParams
-        // just above sets `dfrz` from the clamped (T3.1a) encoder alone and
+        // just above sets `dfrz` from the clamped encoder alone and
         // never touches `dfrzLatched`, which dsp::StereoDelay::Process()
         // (dsp/Delay.hpp) already honours as a SINK but nothing
         // else ever sets as a SOURCE. Not folded into
@@ -1905,7 +1904,7 @@ private:
         // file's own DelayParams::dfrzLatched comment).
         delayParams.dfrzLatched = FreezeLatched();
         // -- Delay slots 9-13 ---------------
-        // T2.2: stoppedKnob overrides Feedback drive to kStopUnityDriveKnob
+        // stoppedKnob overrides Feedback drive to kStopUnityDriveKnob
         // while stopped, same idiom as the Filter comb drive above.
         delay_.SetFeedbackDrive(StoppedKnob(FroggersBankId::Delay, 9, kStopUnityDriveKnob));
         delay_.SetFeedbackTone(RoutedKnob(FroggersBankId::Delay, 10));
@@ -1925,7 +1924,7 @@ private:
     // its declaration for why the value is what it is. Reverb's blend
     // lives in dsp/Reverb.hpp, folded into Process's own return, so what
     // is capped here is the mix handed to it.
-    // T2.2: stoppedKnob overrides Tank drive (slot 10) to
+    // stoppedKnob overrides Tank drive (slot 10) to
     // kStopUnityDriveKnob while stopped, same idiom as the Filter comb
     // drive and Delay feedback drive above. Reverb::Process computes
     // its own `tankDrive` from this knob as a LOCAL (dsp/Reverb.hpp,
@@ -2054,13 +2053,13 @@ private:
     // Genuine recovery -- detecting and resetting the poisoned unit itself
     // -- is `RecoverPoisonedUnitState()` below, which the
     // limiter cooperates with but does not replace: the Filter bank's Comb
-    // can self-oscillate (its feedback curve is asymmetric +-0.95 as of
-    // item 1, `dsp::Comb::GetFeedback` in FilterFx.hpp -- see that
-    // function's own divergence-note comment) and the Reverb bank's
+    // can self-oscillate (its feedback curve is asymmetric +-0.95 -- the
+    // comb's sub-unity feedback bound, `dsp::Comb::GetFeedback` in
+    // FilterFx.hpp -- see that function's own divergence-note comment) and the Reverb bank's
     // authored Hold control pushes its internal feedback
     // coefficient toward, but strictly below, 1.0, so both are ordinarily
     // bounded by construction -- the limiter is the safety net for when
-    // "ordinarily" stops holding, not the primary defense (items 1/2 are).
+    // "ordinarily" stops holding, not the primary defense (the sub-unity feedback bounds are).
     // Per-channel guards, then ONE linked limiter pass over the pair. The
     // guards are per-channel because a non-finite or subnormal value is a
     // property of the sample, not of the frame; the limiter is linked
@@ -2070,7 +2069,7 @@ private:
     dsp::StereoSample SanitizeOutputSample(dsp::StereoSample x) {
         x.l = GuardOutputSample(x.l);
         x.r = GuardOutputSample(x.r);
-        constexpr float kMakeUpGain = 1.0f / dsp::kStageCeiling;  // F2.2: 1.25x, +1.9 dB.
+        constexpr float kMakeUpGain = 1.0f / dsp::kStageCeiling;  // 1.25x, +1.9 dB.
         const dsp::StereoSample limited = outputLimiter_.Process(x);
         return {std::clamp(limited.l * kMakeUpGain, -1.0f, 1.0f),
                 std::clamp(limited.r * kMakeUpGain, -1.0f, 1.0f)};
@@ -2106,7 +2105,7 @@ private:
     // reduction has already brought the signal near 1.0 is a
     // different, harmless thing.
     //
-    // F2.2 make-up gain: F2.1b narrowed every per-stage limiter's
+    // Make-up gain: an earlier fix narrowed every per-stage limiter's
     // ceiling to dsp::kStageCeiling (0.80, dsp/Limiter.hpp) so the
     // master stops riding continuously below unity -- which also means
     // a fully-driven chain now arrives here around 0.80 instead of
@@ -2120,7 +2119,7 @@ private:
 
     // The ceiling is DERIVED,
     // not measured, and re-derived here rather than re-tuned by feel.
-    // Re-derived 2026-07-29 after items 1/2 tightened both inputs below;
+    // Re-derived 2026-07-29 after the feedback bounds tightened both inputs below;
     // the ceiling constant itself is UNCHANGED (100.0 was
     // already comfortably above the tighter figures too, so there was
     // nothing to retune):
@@ -2130,13 +2129,13 @@ private:
     //     stage this recovery watches.
     //   - `ResonantBump`'s peak gain is `A^2 == height`, `height ==
     //     dsp::ExpMapCompute(1.0f, 4.0f, knob)` (FroggersAppCore.hpp's own
-    //     RouteAudioSample, Filter bank wiring, item 2) -- at most 4x for
+    //     RouteAudioSample, Filter bank wiring -- the filter-bank gain bound) -- at most 4x for
     //     any reachable knob value (was 10x).
     //   - `scoopNotch`'s height is a DIP, not a gain: `max(0.05, 1 - 0.95 *
-    //     scoop)` in [0.05, 1] -- adds no gain at all, unaffected by item 2.
+    //     scoop)` in [0.05, 1] -- adds no gain at all, unaffected by the filter-bank gain bound.
     //   - So the largest legitimate magnitude this chain can produce is
     //     roughly 4 (ResonantBump's peak gain), maybe ~8-10 with ringing
-    //     (Comb's now sub-unity +-0.95 feedback, item 1 -- a decaying loop,
+    //     (Comb's now sub-unity +-0.95 feedback -- a decaying loop,
     //     not a compounding one, but still capable of several round trips'
     //     worth of buildup before it settles). 100.0 remains a full 10x-25x
     //     above ANY of that -- comfortably above legitimate ringing,
@@ -2312,7 +2311,7 @@ private:
     dsp::FilterFxChain filterChain_;
     dsp::StereoDelay delay_;
     dsp::Reverb reverb_;
-    // T2.2/T2.5: RouteAudioSample()'s last-resolved effective values for the
+    // RouteAudioSample()'s last-resolved effective values for the
     // Freeze knob (dsp::DelayParams::dfrz), Reverb Tank-drive knob, and
     // Reverb Grit knob -- written every sample, read only by
     // TestLastDelayFreezeKnobEffective()/TestLastReverbTankDriveKnobEffective()/
@@ -2439,7 +2438,7 @@ private:
     std::atomic<int> pendingEncoderPress_{-1};
     std::atomic<bool> pendingRandomizeAll_{false};
     std::atomic<bool> pendingRandomizePage_{false};
-    // T5.1: Reset's own request flags, beside the Randomize pair they mirror.
+    // Reset's own request flags, beside the Randomize pair they mirror.
     std::atomic<bool> pendingResetAll_{false};
     std::atomic<bool> pendingResetPage_{false};
     std::atomic<double> pendingTempoBpmRequest_{-1.0};
@@ -2469,7 +2468,7 @@ private:
 
     // The Freeze transport button's latch (see SetFreezeLatched()/
     // FreezeLatched() above) -- defaults false so a fresh app's Delay stays
-    // on the ordinary clamped-encoder path (T3.1a) until the operator
+    // on the ordinary clamped-encoder path until the operator
     // latches it.
     std::atomic<bool> freezeLatched_{false};
 
@@ -2494,15 +2493,15 @@ private:
     static constexpr const char* kRecordRefusalReason = "Press Play before recording.";
     const char* recordRefusalReason_ = nullptr;
 
-    // T5.3c: storage for the two host-facing seams (SetOnRecordingFinished/
+    // Storage for the two host-facing seams (SetOnRecordingFinished/
     // SetOnRecordRefused above) -- message-thread-only, same as
     // recordRefusalReason_ just above (never touched by the audio thread).
     std::function<void()> onRecordingFinished_;
     std::function<void(const char*)> onRecordRefused_;
 
-    // F3 DIAGNOSTIC (2026-08-07). F3 -- "Stop does not stop" -- has never
-    // reproduced in the test harness: F3.1 measured a clean decay on a static
-    // patch, and F3.2c refuted the parametric-oscillation hypothesis with the
+    // DIAGNOSTIC (2026-08-07). "Stop does not stop" has never
+    // reproduced in the test harness: one measurement found a clean decay on a static
+    // patch, and another refuted the parametric-oscillation hypothesis with the
     // modulated comb-feedback knob proven to sweep its full range while output
     // held at exactly 0. The operator still hears it in the real app, so the
     // harness is not reaching the real condition and the measurement has to

@@ -237,7 +237,7 @@ bool AnyDrawnTextContains(const synth::ui::NodeTree& tree, const std::string& ne
 }
 
 // A resolved node's `bounds` are PARENT-relative, not accumulated screen
-// coordinates (PortableUI.hpp's coordinate contract, `sru-46`): "every node's
+// coordinates (PortableUI.hpp's coordinate contract): "every node's
 // bounds are relative to its parent's origin," and a backend's rendered
 // position is that node's own bounds "folded over the accumulated origins of
 // its ancestor chain" (PortableUI.hpp:44-46; the JUCE backend's own fold is
@@ -667,7 +667,7 @@ TEST_CASE(drill_in_swaps_grid_in_place_scope_and_chrome_stay_put) {
     REQUIRE_TRUE(!rig.UIState().slots[0].showingModulationView.load());
 }
 
-// E.3 (design A7b, operator override 2026-07-29): "clicking on the page bank
+// Operator override 2026-07-29: "clicking on the page bank
 // for the page we are on is the way the user should always be able to get to
 // that page, even when they are in a modulation drilldown for a parameter on
 // that page." `FroggersAppCore::ProcessFrame`'s RequestBankSelect handling
@@ -1233,7 +1233,7 @@ TEST_CASE(bank_carousel_arrow_actions_are_rejected_while_drilled_in) {
     REQUIRE_TRUE(rig.Application().ActiveDrillIn().Level() == 1);
 }
 
-// S5.1 (operator regression report, 2026-08-07: "the drilldown back button
+// Operator regression report, 2026-08-07: "the drilldown back button
 // still doesn't go one back, it goes all the way back") -- traced to
 // FroggersModulationDrillIn::PressEncoder (FroggersModulation.hpp): every
 // on-screen press, including the Target/Back cell, dispatches through
@@ -1309,14 +1309,14 @@ TEST_CASE(pressing_target_back_cell_through_the_surface_pops_exactly_one_drill_l
 
 // --- 10.5: the encoder ring renders the fuegoized value, never rawKnobValue --
 
-// D9a (resolved decision 3): the ring matches Braid -- processed value only.
+// The ring matches Braid -- processed value only.
 // `EncoderDrawStateFromParameter` (EncoderDraw.hpp:306-364) reads
 // `Parameter::UIState.values[]` (the UIDisplayCenter chain) and its return
 // type, `synth::ui::EncoderDrawState`/`EncoderVoiceDrawState`
 // (EncoderDraw.hpp:279-304), has NO rawKnobValue field at all -- there is no
 // way for FroggersUiSurface's one call site (AppendEncoderGrid(), the only
 // place this surface reads a Parameter::UIState) to read it even by
-// accident. This test proves the runtime consequence: after fuego (D6)
+// accident. This test proves the runtime consequence: after fuego
 // materially changes a parameter's value, the rendered ring reflects that
 // changed value, not the pre-fuego scene center.
 TEST_CASE(encoder_ring_renders_fuegoized_value_not_raw_scene_center) {
@@ -1366,13 +1366,13 @@ TEST_CASE(encoder_ring_renders_fuegoized_value_not_raw_scene_center) {
     const float renderedRingValue = synth::ui::EncoderDrawStateFromParameter(cell).voices.at(0).value;
 
     // The fuegoized/UI-displayed value must differ from the raw scene
-    // center by more than a rounding margin -- proving fuego (D6) is
-    // visible on the ring exactly the way D9a's traced chain says it must
+    // center by more than a rounding margin -- proving fuego is
+    // visible on the ring exactly the way this test's traced chain says it must
     // be, with no separate "raw ghost tick" anywhere.
     REQUIRE_TRUE(std::fabs(renderedRingValue - rawSceneCenter) > 0.02f);
 }
 
-// --- S6.1: dropped frame around the encoder (operator screenshot, ring/frame
+// --- Dropped frame around the encoder (operator screenshot, ring/frame
 // collision) ------------------------------------------------------------
 
 // Operator screenshot: the parameter card's rounded-rect frame outline
@@ -2025,7 +2025,7 @@ TEST_CASE(every_approved_label_fits_the_single_row_grid) {
 
 // --- 3.5: scene buttons toggle the blend to its extremes --------------------
 
-// Design E3d: S1/S2's old behaviour (`SetLessSelectedScene`) reassigned
+// S1/S2's old behaviour (`SetLessSelectedScene`) reassigned
 // which stored scene occupied the less-weighted endpoint and never moved
 // the blend, so clicking did nothing audible at either blend extreme. This
 // test drives the fix end-to-end through the real surface/message-bus path
@@ -2042,7 +2042,7 @@ TEST_CASE(scene_buttons_push_scene_blend_to_the_correct_extremes) {
     synth::ui::Surface& surface = rig.Application().PortableSurface();
     const synth::ui::NodeTree tree = surface.BuildTree();
 
-    // Relabelled per design E3d -- no lingering "S1"/"S2".
+    // Relabelled -- no lingering "S1"/"S2".
     REQUIRE_TRUE(HasButtonLabeled(tree, "Scene 1"));
     REQUIRE_TRUE(HasButtonLabeled(tree, "Scene 2"));
     REQUIRE_TRUE(!HasButtonLabeled(tree, "S1"));
@@ -2125,7 +2125,7 @@ TEST_CASE(scene_blend_slider_has_an_adjacent_label_node_carrying_its_text) {
 }
 
 // Operator follow-up (2026-08-17): the scene-blend slider must PRESENT
-// 1.0-2.0 to match the "Scene 1"/"Scene 2" buttons (design E3d, unchanged),
+// 1.0-2.0 to match the "Scene 1"/"Scene 2" buttons (unchanged),
 // while Sheaf's own `SceneState.blend` stays 0..1 -- see
 // FroggersUiSurface.hpp's `kSceneBlendDisplayOffset` for the full trace.
 // This asserts the slider node's declared bounds and presented value are
@@ -2148,7 +2148,7 @@ TEST_CASE(scene_blend_slider_presents_1_to_2_while_the_underlying_blend_stays_0_
     REQUIRE_TRUE(std::fabs(blendNodeAtDefault->value - 1.0f) < 0.001f);
 
     // Push the underlying blend to its other extreme via the Scene 2
-    // button (design E3d, unaffected by this change) and confirm the
+    // button (unaffected by this change) and confirm the
     // presented value follows with the same +1 offset -- 1.0 blend presents
     // as 2.0.
     surface.DispatchAction(
@@ -2637,7 +2637,7 @@ TEST_CASE(play_and_stop_controls_exist_and_gate_the_transport) {
     // (FroggersUiSurface.hpp) -- replacing the EMOJI-glyph Button nodes
     // (UI-rework ITEM 4/B.4, 2026-07-29) that were themselves a workaround
     // for `Draw` nodes needing a double click and `Node` having no colour
-    // field. Both causes are gone at this pin (ask 1: plain click via
+    // field. Both causes are gone at this pin (plain click via
     // `ControlStyle::action`; a `Draw` node's own commands always carried
     // colour, which is why the emoji workaround chose emoji in the first
     // place -- see the removed comment's own reasoning). Assert by id: Draw
@@ -2706,12 +2706,12 @@ TEST_CASE(play_and_stop_controls_exist_and_gate_the_transport) {
     rig.RunBlocks(4);
 }
 
-// --- T5.2: Freeze button ----------------------------------------------------
+// --- Freeze button ----------------------------------------------------
 //
 // A third Draw node beside Stop. Latching it OVERRIDES the Freeze encoder's
-// own clamp (T3.1a) rather than merely shortcutting the encoder to its
+// own clamp rather than merely shortcutting the encoder to its
 // clamped maximum -- see dsp/Delay.hpp's DelayParams::dfrzLatched comment
-// and FroggersAppCore.hpp's own T5.2 wiring comment for the full mapping.
+// and FroggersAppCore.hpp's own wiring comment for the full mapping.
 
 TEST_CASE(transport_row_has_freeze_as_third_child_beside_play_and_stop) {
     synth_rig::SynthRig<synth_froggers::FroggersApp> rig(
@@ -2723,7 +2723,7 @@ TEST_CASE(transport_row_has_freeze_as_third_child_beside_play_and_stop) {
 
     const synth::ui::Node* rowNode = FindNodeById(tree, synth_froggers::FroggersNodeIds::kTransportRow);
     REQUIRE_TRUE(rowNode != nullptr);
-    // P7b: now 4 (Play, Stop, Freeze, Record) -- see
+    // Now 4 (Play, Stop, Freeze, Record) -- see
     // transport_row_has_record_as_fourth_child_beside_play_stop_and_freeze
     // below for the dedicated Record-child assertion; this test still only
     // re-checks the three buttons it originally covered.
@@ -2853,7 +2853,7 @@ float ApplyFreezeEndToEndPatchAndPrime(synth_rig::SynthRig<synth_froggers::Frogg
 
     rig.StartAt(0);
     // Freeze encoder stays at its own default (0) throughout priming:
-    // T3.1a/T3.1b's freezeEff==1 blocks ALL new input the instant dfrz
+    // freezeEff==1 blocks ALL new input the instant dfrz
     // reaches 1, latched or not (dsp/Delay.hpp) -- priming needs real
     // signal actually entering the line.
     constexpr std::size_t kPrimeBlocks = 40;
@@ -2862,7 +2862,7 @@ float ApplyFreezeEndToEndPatchAndPrime(synth_rig::SynthRig<synth_froggers::Frogg
 
 // "This is the test that proves the override reached the DSP through the
 // real path rather than the DSP behaving correctly in isolation"
-// -- unlike FroggersDspParityTests.cpp's own T3.1b tests
+// -- unlike FroggersDspParityTests.cpp's own freeze-latch tests
 // (e.g. stereo_delay_freeze_latched_grows_the_loop_measurably_beyond_unlatched_full_freeze,
 // which drives a bare dsp::StereoDelay/DelayParams by hand), this drives
 // audio through the real FroggersAppCore::ProcessBlock/RouteAudioSample
@@ -2900,7 +2900,7 @@ TEST_CASE(freeze_latched_grows_the_recirculating_level_beyond_unlatched_end_to_e
     unlatchedModel.PageParameter(synth_froggers::FroggersBankId::Delay, 4).SceneCenter(0) =
         1.0f;  // SAME Freeze encoder.
     // unlatchedRig.Application().SetFreezeLatched(...) is never called --
-    // T3.1a's clamped encoder value prevails instead.
+    // The clamped encoder value prevails instead.
 
     constexpr std::size_t kMeasureBlocks = 16;
     const float latchedLevel = PeakDelayWetMagnitude(latchedRig, kMeasureBlocks);
@@ -2915,7 +2915,7 @@ TEST_CASE(freeze_latched_grows_the_recirculating_level_beyond_unlatched_end_to_e
               << primedLatched << " unlatched-rig=" << primedUnlatched << "; swept to, after " << kMeasureBlocks
               << " post-divergence blocks: latched=" << latchedLevel << " unlatched=" << unlatchedLevel << "\n";
 
-    // T3.1e retune. This asserted `> 2x`, a threshold that only made sense
+    // Retuned here. This asserted `> 2x`, a threshold that only made sense
     // under the retired product-clamp mapping (latched 4.0 vs unlatched
     // 1.0). Freeze's mapping no longer mentions fbDrive
     // (dsp::StereoDelay::FreezeFeedback), so both branches are multiplied by
@@ -2951,7 +2951,7 @@ TEST_CASE(freeze_latched_grows_the_recirculating_level_beyond_unlatched_end_to_e
 // prepared" lines fired before any user interaction at all during one
 // real run, one of them renegotiating the block size from 256 to 512
 // frames, and three more after the user manually switched output devices
-// while troubleshooting. Every one of those silently re-closes the D17
+// while troubleshooting. Every one of those silently re-closes the
 // transport-gated ASR with no visual indication and no automatic
 // recovery -- a user who pressed Play and then hit (or caused) any such
 // renegotiation gets permanent silence.
@@ -3037,7 +3037,7 @@ TEST_CASE(transport_survives_audio_device_reprepare_after_play) {
     REQUIRE_TRUE(rig.Engine().Clock().TransportState() == synth::ClockTransportState::Stopped);
 }
 
-// --- T5.3a/T5.3b: record capture, app core only -----------------------------
+// --- Record capture, app core only -----------------------------
 //
 // FroggersAppCore's own bounded mono capture buffer -- arm/stop API, refusal
 // with a reason while the transport is stopped, truncation at capacity. No
@@ -3085,7 +3085,7 @@ TEST_CASE(record_captures_audio_while_playing) {
     REQUIRE_TRUE(app.RecordedFrameCount() == framesTransportRan);
     REQUIRE_TRUE(!app.RecordingTruncated());
 
-    // OMNI 9.1: a silent capture proves nothing -- report the max |sample|
+    // A silent capture proves nothing -- report the max |sample|
     // actually observed, not just that the count moved.
     float maxSample = 0.0f;
     for (float s : app.RecordedAudio()) {
@@ -3133,13 +3133,13 @@ TEST_CASE(record_truncates_at_capacity_and_stops_growing) {
     rig.RunBlocks(4);
 }
 
-// --- T5.3b/T5.3c: Record button + WAV export --------------------------------
+// --- Record button + WAV export --------------------------------
 //
 // The transport-row Record button (fourth Draw child beside Play/Stop/
 // Freeze), its HandleAction wiring to ArmRecording()/StopRecording() plus
 // the two host-facing callbacks (SetOnRecordRefused/SetOnRecordingFinished,
-// FroggersAppCore.hpp), and the pure std:: WAV encoder (EncodeWavPcm16Mono)
-// T5.3c moved into the core specifically so it is testable headlessly here
+// FroggersAppCore.hpp), and the pure std:: WAV encoder (EncodeWavPcm16Mono),
+// moved into the core specifically so it is testable headlessly here
 // -- no binary this Makefile builds compiles FroggersMain.cpp (verified by
 // reading app/Makefile: every target's source list stops at Main.cpp/
 // FroggersHeadlessTests.cpp/.../FroggersSurfaceTests.cpp -- FroggersMain.cpp
@@ -3305,9 +3305,9 @@ TEST_CASE(wav_encoding_produces_a_correct_pcm16_header_and_round_trips_sample_ze
 
     const std::int16_t sample0 = static_cast<std::int16_t>(readU16(44));
     const float decoded0 = static_cast<float>(sample0) / 32767.0f;
-    // OMNI 9.1: report the actual read-back values, not just that the
+    // Report the actual read-back values, not just that the
     // assertions passed.
-    std::cout << "  [T5.3c WAV header] sampleRateField=" << readU32(24) << "  dataChunkSize=" << readU32(40)
+    std::cout << "  [WAV header] sampleRateField=" << readU32(24) << "  dataChunkSize=" << readU32(40)
               << "  sample0 input=" << ramp[0] << "  sample0 decoded=" << decoded0 << "\n";
     REQUIRE_TRUE(std::fabs(decoded0 - ramp[0]) <= (1.0f / 32767.0f) + 1.0e-6f);
 }

@@ -127,7 +127,7 @@
 // compiled-in 900x712 (synth_froggers::FroggersPageLayout::kDefaultWidth/
 // kDefaultHeight, app/FroggersUiSurface.hpp -- that struct's own header
 // comment: "a fixed, compiled-in size ... making the layout track the
-// ACTUAL window requires an upstream shell change [Sheaf ask 15]"), NEVER a
+// ACTUAL window requires an upstream shell change"), NEVER a
 // live window extent -- so resizing THIS editor's JUCE window can never, by
 // itself, make FroggersUiSurface relayout; the standalone launcher sidesteps
 // this by sizing its OWN window from the content's fixed intrinsic size
